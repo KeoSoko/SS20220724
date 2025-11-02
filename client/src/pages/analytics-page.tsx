@@ -168,10 +168,10 @@ export default function AnalyticsPage() {
       {/* Key Metrics Overview */}
       <Section title="Financial Overview" description="Your spending summary at a glance">
         <div className={`grid gap-6 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
-          <Card>
+          <Card data-testid="card-total-spending">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Spending</CardTitle>
-              <Banknote className="h-4 w-4 text-muted-foreground" />
+              <Banknote className="h-4 w-4 text-muted-foreground" data-testid="icon-banknote" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(totalSpending)}</div>
@@ -181,10 +181,10 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
           
-          <Card>
+          <Card data-testid="card-average-receipt">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Average per Receipt</CardTitle>
-              <Receipt className="h-4 w-4 text-muted-foreground" />
+              <Receipt className="h-4 w-4 text-muted-foreground" data-testid="icon-receipt" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(averagePerReceipt)}</div>

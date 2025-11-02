@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TrendingUp, Calendar, DollarSign, CheckCircle, X, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Calendar, Banknote, CheckCircle, X, AlertTriangle } from 'lucide-react';
 import { useRecurringAnalysis } from '@/hooks/use-recurring-analysis';
 
 interface RecurringExpenseDetectorProps {

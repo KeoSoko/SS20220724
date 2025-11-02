@@ -1,5 +1,5 @@
 import React from "react";
-import { Search, Calendar, Store, DollarSign, Tag } from "lucide-react";
+import { Search, Calendar, Store, Banknote, Tag } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -69,7 +69,7 @@ export function PredictiveSearch({
             label: 'Expenses under R100',
             description: 'Small purchases',
             action: () => handleSearch('amount:<100'),
-            icon: <DollarSign className="h-4 w-4" />
+            icon: <Banknote className="h-4 w-4" />
           },
           {
             id: 'under-50',
@@ -77,7 +77,7 @@ export function PredictiveSearch({
             label: 'Expenses under R50',
             description: 'Minor purchases',
             action: () => handleSearch('amount:<50'),
-            icon: <DollarSign className="h-4 w-4" />
+            icon: <Banknote className="h-4 w-4" />
           }
         ]
       },
@@ -143,7 +143,7 @@ export function PredictiveSearch({
           label: 'Large expenses',
           description: 'Over R500',
           action: () => handleSearch('amount:>500'),
-          icon: <DollarSign className="h-4 w-4" />
+          icon: <Banknote className="h-4 w-4" />
         },
         {
           id: 'food-category',

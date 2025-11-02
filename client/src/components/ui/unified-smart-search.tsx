@@ -14,7 +14,7 @@ import {
   TrendingUp, 
   ShoppingBag, 
   Calendar,
-  DollarSign,
+  Banknote,
   Tag,
   Camera,
   BarChart3,

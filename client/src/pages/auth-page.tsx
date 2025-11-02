@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLocation } from "wouter";
@@ -23,7 +23,7 @@ export default function AuthPage() {
   // const { toast } = useToast(); // REMOVED - using enhanced error dialogs only
 
   // Check for verification success message
-  React.useEffect(() => {
+  useEffect(() => {
     const params = new URLSearchParams(location.split('?')[1] || '');
     const verified = params.get('verified');
     const message = params.get('message');

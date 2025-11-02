@@ -13,6 +13,8 @@ import type { Client, Quotation, Invoice } from "@shared/schema";
 interface InvoiceStats {
   totalUnpaid: number;
   overdueCount: number;
+  totalPaid?: number;
+  thisMonthRevenue?: number;
 }
 
 const formatCurrency = (amount: string | number) => {
@@ -56,6 +58,23 @@ export default function BusinessHubPage() {
   const recentQuotations = quotations.slice(0, 5);
   const recentInvoices = invoices.slice(0, 5);
 
+  // Calculate sales metrics
+  const totalSales = invoices
+    .filter((inv) => inv.status === "paid")
+    .reduce((sum, inv) => sum + parseFloat(inv.total), 0);
+
+  const thisMonth = new Date();
+  const thisMonthRevenue = invoices
+    .filter((inv) => {
+      const invDate = new Date(inv.date);
+      return (
+        inv.status === "paid" &&
+        invDate.getMonth() === thisMonth.getMonth() &&
+        invDate.getFullYear() === thisMonth.getFullYear()
+      );
+    })
+    .reduce((sum, inv) => sum + parseFloat(inv.total), 0);
+
   const isLoading = loadingClients || loadingQuotations || loadingInvoices;
 
   return (
@@ -65,8 +84,8 @@ export default function BusinessHubPage() {
       showBackButton={true}
     >
       <div className="p-6 space-y-6">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Sales Report Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card data-testid="stat-total-clients">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Clients</CardTitle>
@@ -82,10 +101,44 @@ export default function BusinessHubPage() {
             </CardContent>
           </Card>
 
+          <Card data-testid="stat-total-sales">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
+              <Banknote className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-8 w-24" />
+              ) : (
+                <div className="text-2xl font-bold">
+                  {formatCurrency(totalSales)}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">All paid invoices</p>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="stat-this-month-revenue">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">This Month</CardTitle>
+              <Banknote className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-8 w-24" />
+              ) : (
+                <div className="text-2xl font-bold">
+                  {formatCurrency(thisMonthRevenue)}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">Revenue this month</p>
+            </CardContent>
+          </Card>
+
           <Card data-testid="stat-unpaid-invoices">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
-              <Banknote className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Outstanding</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -98,21 +151,6 @@ export default function BusinessHubPage() {
               <p className="text-xs text-muted-foreground mt-1">
                 {invoiceStats?.overdueCount || 0} overdue
               </p>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="stat-recent-quotations">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Recent Quotations</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : (
-                <div className="text-2xl font-bold">{quotations.length}</div>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">All time</p>
             </CardContent>
           </Card>
         </div>

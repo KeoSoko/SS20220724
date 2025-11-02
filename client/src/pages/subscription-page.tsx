@@ -176,7 +176,7 @@ export function SubscriptionPage() {
 
   // Cancel subscription mutation
   const cancelMutation = useMutation({
-    mutationFn: () => apiRequest('/api/billing/cancel', 'POST'),
+    mutationFn: () => apiRequest('POST', '/api/billing/cancel'),
     onSuccess: () => {
       toast({
         title: "Subscription Cancelled",
@@ -372,7 +372,7 @@ export function SubscriptionPage() {
 
   // Process Google Play purchase mutation
   const processPurchaseMutation = useMutation({
-    mutationFn: (purchase: any) => apiRequest('/api/billing/google-play/purchase', 'POST', purchase),
+    mutationFn: (purchase: any) => apiRequest('POST', '/api/billing/google-play/purchase', purchase),
     onSuccess: () => {
       toast({
         title: "Subscription Activated",
@@ -392,7 +392,7 @@ export function SubscriptionPage() {
 
   // Process Paystack subscription mutation
   const processPaystackMutation = useMutation({
-    mutationFn: (reference: string) => apiRequest('/api/billing/paystack/subscription', 'POST', { reference }),
+    mutationFn: (reference: string) => apiRequest('POST', '/api/billing/paystack/subscription', { reference }),
     onSuccess: () => {
       toast({
         title: "Subscription Activated",

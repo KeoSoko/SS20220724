@@ -52,7 +52,7 @@ export function useGooglePlayBilling(): UseGooglePlayBillingReturn {
   // Process purchase mutation
   const processPurchaseMutation = useMutation({
     mutationFn: (purchase: GooglePlayPurchase) => 
-      apiRequest('/api/billing/google-play/purchase', 'POST', purchase),
+      apiRequest('POST', '/api/billing/google-play/purchase', purchase),
     onSuccess: () => {
       toast({
         title: "Subscription Activated",

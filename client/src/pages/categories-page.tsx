@@ -208,7 +208,7 @@ export default function CategoriesPage() {
       <div className="min-h-screen p-4 md:p-8">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <div className="flex items-center">
               <BackButton fallbackPath="/profile" />
               <div className="ml-2">
@@ -231,7 +231,8 @@ export default function CategoriesPage() {
             </div>
             <Button 
               onClick={() => setIsDialogOpen(true)} 
-              className="bg-[#0073AA] hover:bg-[#005d87]"
+              className="bg-[#0073AA] hover:bg-[#005d87] w-full sm:w-auto"
+              data-testid="button-add-category"
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Category

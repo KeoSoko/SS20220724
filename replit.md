@@ -37,6 +37,16 @@ The system is built as a full-stack TypeScript application within a monorepo str
   - **Smart Learning System**: Database tables track user corrections (user_corrections) and merchant patterns (merchant_patterns) to improve future categorization accuracy based on user preferences.
   - **Needs Review Filter**: Quick filter button to show only receipts with confidence scores below 80% for easy verification.
 - **Database Schema**: Designed to manage users, receipts, tags, budgets, and custom categories, with support for receipt sharing.
+- **Expense Categories**: 24 preset categories optimized for the South African market:
+  - Groceries, Electricity & Water, Municipal Rates & Taxes, Rent/Bond
+  - Domestic Help & Home Services, Home Maintenance
+  - Transport (Public & Taxi), Fuel, Vehicle Maintenance & Licensing
+  - Airtime, Data & Internet, Subscriptions (Netflix, Showmax, DStv, etc.)
+  - Insurance (Car, Home, Life, Funeral), Pharmacy & Medication
+  - Education & Courses, Dining & Takeaways, Entertainment
+  - Travel & Accommodation, Clothing & Shopping, Personal Care & Beauty
+  - Gifts & Celebrations, Donations & Tithes, Family Support & Remittances
+  - Load Shedding Costs, Other/Miscellaneous
 - **Smart Search & Analytics**: AI-powered natural language search, spending trend analysis, real-time budget monitoring, and export options (PDF, CSV).
 - **AI Tax Assistant Chatbot**: An OpenAI GPT-4o powered chatbot provides contextual tax advice specific to South African regulations.
 - **Recurring Expense System**: Detects and manages recurring expenses through pattern recognition and predictive analysis.

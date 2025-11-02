@@ -126,6 +126,8 @@ export default function QuotationFormPage() {
     mutationFn: async (data: QuotationFormData & { status: string }) => {
       const quotationData = {
         ...data,
+        date: new Date(data.date),
+        expiryDate: new Date(data.expiryDate),
         subtotal: subtotal.toString(),
         vatAmount: vatAmount.toString(),
         total: total.toString(),
@@ -153,6 +155,8 @@ export default function QuotationFormPage() {
     mutationFn: async (data: QuotationFormData & { status: string }) => {
       const quotationData = {
         ...data,
+        date: new Date(data.date),
+        expiryDate: new Date(data.expiryDate),
         subtotal: subtotal.toString(),
         vatAmount: vatAmount.toString(),
         total: total.toString(),

@@ -150,6 +150,8 @@ export default function InvoiceFormPage() {
     mutationFn: async (data: InvoiceFormData & { quotationId?: number }) => {
       const invoiceData = {
         ...data,
+        date: new Date(data.date),
+        dueDate: new Date(data.dueDate),
         subtotal: subtotal.toString(),
         vatAmount: vatAmount.toString(),
         total: total.toString(),
@@ -182,6 +184,8 @@ export default function InvoiceFormPage() {
     mutationFn: async (data: InvoiceFormData) => {
       const invoiceData = {
         ...data,
+        date: new Date(data.date),
+        dueDate: new Date(data.dueDate),
         subtotal: subtotal.toString(),
         vatAmount: vatAmount.toString(),
         total: total.toString(),

@@ -1,4 +1,6 @@
-type ExpenseCategory = 'groceries' | 'dining' | 'shopping' | 'transportation' | 'healthcare' | 'other';
+import { EXPENSE_CATEGORIES } from '@shared/schema';
+
+type ExpenseCategory = typeof EXPENSE_CATEGORIES[number];
 
 interface SmartPrediction {
   category: ExpenseCategory;
@@ -25,21 +27,21 @@ export function predictCategory(storeName: string, amount?: number): SmartPredic
     // Fuel/Transportation
     {
       pattern: /bp|shell|sasol|caltex|engen|total/i,
-      category: 'transportation' as ExpenseCategory,
+      category: 'fuel' as ExpenseCategory,
       confidence: 0.95,
       reasoning: 'Known fuel station brand'
     },
     // Dining
     {
       pattern: /kfc|mcdonald|steers|nando|wimpy|spur|ocean.*basket/i,
-      category: 'dining' as ExpenseCategory,
+      category: 'dining_takeaways' as ExpenseCategory,
       confidence: 0.9,
       reasoning: 'Restaurant chain'
     },
     // Coffee
     {
       pattern: /starbucks|vida.*cafe|seattle.*coffee|mugg.*bean/i,
-      category: 'dining' as ExpenseCategory,
+      category: 'dining_takeaways' as ExpenseCategory,
       confidence: 0.85,
       reasoning: 'Coffee shop chain',
       tags: ['coffee']
@@ -47,14 +49,14 @@ export function predictCategory(storeName: string, amount?: number): SmartPredic
     // Pharmacies
     {
       pattern: /clicks|dis.*chem|link.*pharmacy/i,
-      category: 'healthcare' as ExpenseCategory,
+      category: 'pharmacy_medication' as ExpenseCategory,
       confidence: 0.9,
       reasoning: 'Pharmacy chain'
     },
     // Clothing
     {
       pattern: /mrp|edgars|truworths|foschini|ackermans/i,
-      category: 'shopping' as ExpenseCategory,
+      category: 'clothing_shopping' as ExpenseCategory,
       confidence: 0.85,
       reasoning: 'Clothing retailer',
       tags: ['clothing']
@@ -62,7 +64,7 @@ export function predictCategory(storeName: string, amount?: number): SmartPredic
     // Electronics
     {
       pattern: /game|incredible.*connection|takealot|musica/i,
-      category: 'shopping' as ExpenseCategory,
+      category: 'clothing_shopping' as ExpenseCategory,
       confidence: 0.8,
       reasoning: 'Electronics retailer',
       tags: ['electronics']
@@ -85,7 +87,7 @@ export function predictCategory(storeName: string, amount?: number): SmartPredic
   const keywordPatterns = [
     {
       keywords: ['cafe', 'restaurant', 'bistro', 'grill', 'kitchen', 'diner'],
-      category: 'dining' as ExpenseCategory,
+      category: 'dining_takeaways' as ExpenseCategory,
       confidence: 0.7,
       reasoning: 'Contains dining-related keywords'
     },
@@ -103,19 +105,19 @@ export function predictCategory(storeName: string, amount?: number): SmartPredic
     },
     {
       keywords: ['pharmacy', 'chemist', 'clinic', 'medical', 'health'],
-      category: 'medical' as ExpenseCategory,
+      category: 'pharmacy_medication' as ExpenseCategory,
       confidence: 0.75,
       reasoning: 'Contains medical-related keywords'
     },
     {
       keywords: ['store', 'shop', 'mall', 'retail', 'boutique'],
-      category: 'shopping' as ExpenseCategory,
+      category: 'clothing_shopping' as ExpenseCategory,
       confidence: 0.6,
       reasoning: 'Contains shopping-related keywords'
     },
     {
       keywords: ['transport', 'taxi', 'uber', 'bolt', 'bus'],
-      category: 'transportation' as ExpenseCategory,
+      category: 'transport_public_taxi' as ExpenseCategory,
       confidence: 0.8,
       reasoning: 'Contains transport-related keywords'
     }
@@ -135,7 +137,7 @@ export function predictCategory(storeName: string, amount?: number): SmartPredic
   if (amount) {
     if (amount < 20) {
       return {
-        category: 'dining',
+        category: 'dining_takeaways',
         confidence: 0.4,
         reasoning: 'Small amount suggests snack or coffee',
         suggestedTags: ['small-purchase']
@@ -144,7 +146,7 @@ export function predictCategory(storeName: string, amount?: number): SmartPredic
     
     if (amount > 1000) {
       return {
-        category: 'shopping',
+        category: 'other',
         confidence: 0.5,
         reasoning: 'Large amount suggests major purchase',
         suggestedTags: ['large-purchase']
@@ -173,24 +175,25 @@ export function suggestTags(storeName: string, amount: number, category: Expense
 
   // Category-specific tags
   switch (category) {
-    case 'dining':
+    case 'dining_takeaways':
       if (name.includes('coffee') || name.includes('cafe')) tags.push('coffee');
       if (name.includes('takeaway') || name.includes('delivery')) tags.push('takeaway');
       break;
     case 'groceries':
       if (amount > 300) tags.push('weekly-shop');
       break;
-    case 'transportation':
+    case 'transport_public_taxi':
+    case 'fuel':
       tags.push('vehicle-expense');
       break;
-    case 'healthcare':
+    case 'pharmacy_medication':
       if (name.includes('pharmacy')) tags.push('medication');
       break;
   }
 
   // Time-based suggestions (would be enhanced with actual date)
   const hour = new Date().getHours();
-  if (category === 'dining') {
+  if (category === 'dining_takeaways') {
     if (hour < 10) tags.push('breakfast');
     else if (hour < 15) tags.push('lunch');
     else tags.push('dinner');

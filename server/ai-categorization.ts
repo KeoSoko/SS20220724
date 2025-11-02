@@ -309,7 +309,7 @@ Respond in JSON format: {
     if (storeNameLower.includes('restaurant') || storeNameLower.includes('café') || 
         storeNameLower.includes('coffee') || storeNameLower.includes('pizza')) {
       return {
-        category: "dining",
+        category: "dining_takeaways",
         confidence: 0.7,
         reasoning: "Keyword-based categorization", 
         suggestedTags: ["food", "dining"],
@@ -320,8 +320,7 @@ Respond in JSON format: {
     if (storeNameLower.includes('gas') || storeNameLower.includes('fuel') || 
         storeNameLower.includes('petrol') || storeNameLower.includes('shell')) {
       return {
-        category: "transportation",
-        subcategory: "fuel",
+        category: "fuel",
         confidence: 0.7,
         reasoning: "Keyword-based categorization",
         suggestedTags: ["fuel", "vehicle"],

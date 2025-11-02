@@ -14,11 +14,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Plus, Edit, Trash2, Building2, Mail, Phone } from "lucide-react";
 import { insertClientSchema, type Client, type InsertClient } from "@shared/schema";
 
 export default function ClientsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -149,10 +151,24 @@ export default function ClientsPage() {
   };
 
   const handleSubmit = (data: InsertClient) => {
+    if (!user?.id) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to perform this action",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const clientData = {
+      ...data,
+      userId: user.id,
+    };
+
     if (editingClient) {
-      updateMutation.mutate({ id: editingClient.id, data });
+      updateMutation.mutate({ id: editingClient.id, data: clientData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(clientData);
     }
   };
 

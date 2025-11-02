@@ -57,7 +57,7 @@ export default function QuotationFormPage() {
   });
 
   const { data: existingQuotation } = useQuery<Quotation>({
-    queryKey: ["/api/quotations", quotationId],
+    queryKey: [`/api/quotations/${quotationId}`],
     enabled: !!quotationId,
   });
 
@@ -165,7 +165,7 @@ export default function QuotationFormPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/quotations"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/quotations", quotationId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/quotations/${quotationId}`] });
       toast({
         title: "Success",
         description: "Quotation updated successfully",

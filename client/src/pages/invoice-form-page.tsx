@@ -60,12 +60,12 @@ export default function InvoiceFormPage() {
   });
 
   const { data: existingInvoice } = useQuery<Invoice>({
-    queryKey: ["/api/invoices", invoiceId],
+    queryKey: [`/api/invoices/${invoiceId}`],
     enabled: !!invoiceId,
   });
 
   const { data: sourceQuotation } = useQuery<Quotation>({
-    queryKey: ["/api/quotations", quotationId],
+    queryKey: [`/api/quotations/${quotationId}`],
     enabled: !!quotationId,
   });
 
@@ -194,7 +194,7 @@ export default function InvoiceFormPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoiceId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoices/${invoiceId}`] });
       toast({
         title: "Success",
         description: "Invoice updated successfully",

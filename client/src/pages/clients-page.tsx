@@ -33,6 +33,7 @@ export default function ClientsPage() {
   const form = useForm<InsertClient>({
     resolver: zodResolver(insertClientSchema),
     defaultValues: {
+      userId: user?.id || 0,
       name: "",
       email: "",
       phone: "",
@@ -134,6 +135,7 @@ export default function ClientsPage() {
     } else {
       setEditingClient(null);
       form.reset({
+        userId: user?.id || 0,
         name: "",
         email: "",
         phone: "",
@@ -151,9 +153,6 @@ export default function ClientsPage() {
   };
 
   const handleSubmit = (data: InsertClient) => {
-    console.log("Form submitted with data:", data);
-    console.log("Form errors:", form.formState.errors);
-    
     if (!user?.id) {
       toast({
         title: "Error",
@@ -167,8 +166,6 @@ export default function ClientsPage() {
       ...data,
       userId: user.id,
     };
-
-    console.log("Creating client with data:", clientData);
 
     if (editingClient) {
       updateMutation.mutate({ id: editingClient.id, data: clientData });

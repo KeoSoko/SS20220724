@@ -475,16 +475,9 @@ function HomePage() {
                     AI Insights
                   </Link>
                 </div>
-                <div className="text-xs text-gray-500 flex items-center gap-1 overflow-hidden">
+                <div className="text-xs text-gray-500 flex items-center gap-1">
                   <Brain className="h-3 w-3 flex-shrink-0" />
-                  <div className="flex items-center gap-1 min-w-0">
-                    <span className="flex-shrink-0">Try:</span>
-                    <span className="text-blue-600 flex-shrink-0 hidden sm:inline">"coffee this month"</span>
-                    <span className="text-blue-600 flex-shrink-0 sm:hidden">"coffee"</span>
-                    <span className="flex-shrink-0 hidden sm:inline">or</span>
-                    <span className="text-blue-600 flex-shrink-0 hidden sm:inline">"groceries over R200"</span>
-                    <span className="text-blue-600 flex-shrink-0 sm:hidden">"groceries"</span>
-                  </div>
+                  <span>Search receipts by store, category, amount, or date</span>
                 </div>
               </div>
             </div>

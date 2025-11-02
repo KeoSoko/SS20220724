@@ -970,3 +970,170 @@ export type InsertUserCorrection = z.infer<typeof insertUserCorrectionSchema>;
 // Merchant patterns types
 export type MerchantPattern = typeof merchantPatterns.$inferSelect;
 export type InsertMerchantPattern = z.infer<typeof insertMerchantPatternSchema>;
+
+// ===== BUSINESS HUB SCHEMA =====
+
+// Business profile for invoice/quotation branding
+export const businessProfiles = pgTable("business_profiles", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  companyName: text("company_name").notNull(),
+  tradingName: text("trading_name"),
+  registrationNumber: text("registration_number"),
+  vatNumber: text("vat_number"),
+  isVatRegistered: boolean("is_vat_registered").default(false).notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  website: text("website"),
+  address: text("address"),
+  city: text("city"),
+  province: text("province"),
+  postalCode: text("postal_code"),
+  country: text("country").default("South Africa"),
+  bankName: text("bank_name"),
+  accountHolder: text("account_holder"),
+  accountNumber: text("account_number"),
+  branchCode: text("branch_code"),
+  swiftCode: text("swift_code"),
+  logoUrl: text("logo_url"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Clients table
+export const clients = pgTable("clients", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  companyName: text("company_name"),
+  vatNumber: text("vat_number"),
+  address: text("address"),
+  city: text("city"),
+  province: text("province"),
+  postalCode: text("postal_code"),
+  country: text("country").default("South Africa"),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Quotations table
+export const quotations = pgTable("quotations", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clientId: integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  quotationNumber: text("quotation_number").notNull().unique(),
+  date: timestamp("date").notNull().defaultNow(),
+  expiryDate: timestamp("expiry_date").notNull(),
+  status: text("status").notNull().default("draft"), // draft, sent, accepted, declined, expired
+  subtotal: text("subtotal").notNull(),
+  vatAmount: text("vat_amount").notNull().default("0"),
+  total: text("total").notNull(),
+  notes: text("notes"),
+  terms: text("terms"),
+  convertedToInvoiceId: integer("converted_to_invoice_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Invoices table
+export const invoices = pgTable("invoices", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clientId: integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  invoiceNumber: text("invoice_number").notNull().unique(),
+  quotationId: integer("quotation_id").references(() => quotations.id),
+  date: timestamp("date").notNull().defaultNow(),
+  dueDate: timestamp("due_date").notNull(),
+  status: text("status").notNull().default("unpaid"), // unpaid, partially_paid, paid, overdue, cancelled
+  subtotal: text("subtotal").notNull(),
+  vatAmount: text("vat_amount").notNull().default("0"),
+  total: text("total").notNull(),
+  amountPaid: text("amount_paid").notNull().default("0"),
+  notes: text("notes"),
+  terms: text("terms"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Line items for both quotations and invoices
+export const lineItems = pgTable("line_items", {
+  id: serial("id").primaryKey(),
+  quotationId: integer("quotation_id").references(() => quotations.id, { onDelete: "cascade" }),
+  invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  quantity: text("quantity").notNull().default("1"),
+  unitPrice: text("unit_price").notNull(),
+  total: text("total").notNull(),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Payment records for invoices
+export const invoicePayments = pgTable("invoice_payments", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  amount: text("amount").notNull(),
+  paymentDate: timestamp("payment_date").notNull().defaultNow(),
+  paymentMethod: text("payment_method"), // cash, eft, card, etc.
+  reference: text("reference"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Insert schemas for business hub
+export const insertBusinessProfileSchema = createInsertSchema(businessProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertClientSchema = createInsertSchema(clients).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertQuotationSchema = createInsertSchema(quotations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertLineItemSchema = createInsertSchema(lineItems).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Types for business hub
+export type BusinessProfile = typeof businessProfiles.$inferSelect;
+export type InsertBusinessProfile = z.infer<typeof insertBusinessProfileSchema>;
+
+export type Client = typeof clients.$inferSelect;
+export type InsertClient = z.infer<typeof insertClientSchema>;
+
+export type Quotation = typeof quotations.$inferSelect;
+export type InsertQuotation = z.infer<typeof insertQuotationSchema>;
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
+
+export type LineItem = typeof lineItems.$inferSelect;
+export type InsertLineItem = z.infer<typeof insertLineItemSchema>;
+
+export type InvoicePayment = typeof invoicePayments.$inferSelect;
+export type InsertInvoicePayment = z.infer<typeof insertInvoicePaymentSchema>;

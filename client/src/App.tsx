@@ -36,6 +36,12 @@ import { SubscriptionPage } from "@/pages/subscription-page";
 import PaymentHistory from "@/pages/payment-history";
 import { SubscriptionBanner } from "@/components/subscription-banner";
 import EmailTrackingPage from "@/pages/email-tracking-page";
+import BusinessHubPage from "@/pages/business-hub-page";
+import ClientsPage from "@/pages/clients-page";
+import QuotationsPage from "@/pages/quotations-page";
+import QuotationFormPage from "@/pages/quotation-form-page";
+import InvoicesPage from "@/pages/invoices-page";
+import InvoiceFormPage from "@/pages/invoice-form-page";
 
 function Router() {
   // Add scroll restoration to automatically scroll to top on navigation
@@ -63,6 +69,15 @@ function Router() {
       <ProtectedRoute path="/subscription" component={SubscriptionPage} />
       <ProtectedRoute path="/payment-history" component={PaymentHistory} />
       <AdminRoute path="/admin/email-tracking" component={EmailTrackingPage} />
+      <ProtectedRoute path="/business-hub" component={BusinessHubPage} />
+      <ProtectedRoute path="/clients" component={ClientsPage} />
+      <ProtectedRoute path="/quotations" component={QuotationsPage} />
+      <ProtectedRoute path="/quotations/new" component={QuotationFormPage} />
+      <ProtectedRoute path="/quotations/:id/edit" component={QuotationFormPage} />
+      <ProtectedRoute path="/quotations/:id/convert" component={InvoiceFormPage} />
+      <ProtectedRoute path="/invoices" component={InvoicesPage} />
+      <ProtectedRoute path="/invoices/new" component={InvoiceFormPage} />
+      <ProtectedRoute path="/invoices/:id/edit" component={InvoiceFormPage} />
       <ProtectedRoute path="/profile" component={() => <ProfilePage />} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/verify-email" component={VerifyEmailPage} />

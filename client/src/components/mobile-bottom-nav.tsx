@@ -1,4 +1,4 @@
-import { Home, TrendingUp, Users, User, Brain } from "lucide-react";
+import { Home, TrendingUp, Briefcase, User, Brain } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -19,9 +19,9 @@ const navItems = [
     icon: TrendingUp 
   },
   { 
-    name: "Tax Pros", 
-    path: "/tax-pros", 
-    icon: Users 
+    name: "Business", 
+    path: "/business-hub", 
+    icon: Briefcase 
   },
   { 
     name: "Profile", 

@@ -3,7 +3,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { BackButton } from "@/components/back-button";
 import { Button } from "@/components/ui/button";
-import { LogOut, Loader2, Brain, BarChart3, Users, FileText, Home } from "lucide-react";
+import { LogOut, Loader2, Brain, BarChart3, Briefcase, FileText, Home } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 
@@ -78,10 +78,10 @@ export function PageLayout({
                     Reports
                   </Button>
                 </Link>
-                <Link href="/tax-pros">
+                <Link href="/business-hub">
                   <Button variant="outline">
-                    <Users className="h-4 w-4 mr-2" />
-                    Tax Pros
+                    <Briefcase className="h-4 w-4 mr-2" />
+                    Business
                   </Button>
                 </Link>
                 <Link href="/profile">

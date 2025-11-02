@@ -6,6 +6,12 @@ Simple Slips is an AI-powered receipt management system for the South African ma
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+## Recent Updates (November 2025)
+### Business Hub Feature
+- Added comprehensive quotation and invoicing system for solopreneurs and freelancers
+- Replaced "Tax Pros" navigation with "Business Hub" for better feature alignment
+- Tax Dashboard now accessible from Business Hub section
+
 ## System Architecture
 The system is built as a full-stack TypeScript application within a monorepo structure, separating client, server, and shared code.
 
@@ -47,6 +53,13 @@ The system is built as a full-stack TypeScript application within a monorepo str
   - Travel & Accommodation, Clothing & Shopping, Personal Care & Beauty
   - Gifts & Celebrations, Donations & Tithes, Family Support & Remittances
   - Load Shedding Costs, Other/Miscellaneous
+- **Business Hub (New)**: Comprehensive quotation and invoicing system for solopreneurs and freelancers:
+  - **Client Management**: Full CRUD for client records with contact details, VAT numbers, and addresses
+  - **Quotations**: Create, send, and track quotations with line items, expiry dates, and status tracking (draft, sent, accepted, declined, expired)
+  - **Invoices**: Generate invoices with line items, due dates, payment tracking, and status management (unpaid, partially paid, paid, overdue, cancelled)
+  - **Convert Quote to Invoice**: One-click conversion from accepted quotations to invoices
+  - **Business Profile**: Configure company branding, VAT registration, banking details for professional documents
+  - **Dashboard Analytics**: Track unpaid invoices, client counts, and business performance at a glance
 - **Smart Search & Analytics**: AI-powered natural language search, spending trend analysis, real-time budget monitoring, and export options (PDF, CSV).
 - **AI Tax Assistant Chatbot**: An OpenAI GPT-4o powered chatbot provides contextual tax advice specific to South African regulations.
 - **Recurring Expense System**: Detects and manages recurring expenses through pattern recognition and predictive analysis.

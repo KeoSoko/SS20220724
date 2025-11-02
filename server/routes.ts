@@ -2,7 +2,36 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
-import { insertReceiptSchema, insertTagSchema, insertBudgetSchema, insertReceiptShareSchema, insertCustomCategorySchema, insertTaxSettingsSchema, ExpenseCategory, EXPENSE_CATEGORIES, EXPENSE_SUBCATEGORIES, receipts } from "@shared/schema";
+import { 
+  insertReceiptSchema, 
+  insertTagSchema, 
+  insertBudgetSchema, 
+  insertReceiptShareSchema, 
+  insertCustomCategorySchema, 
+  insertTaxSettingsSchema, 
+  insertBusinessProfileSchema,
+  insertClientSchema,
+  insertQuotationSchema,
+  insertInvoiceSchema,
+  insertLineItemSchema,
+  insertInvoicePaymentSchema,
+  ExpenseCategory, 
+  EXPENSE_CATEGORIES, 
+  EXPENSE_SUBCATEGORIES, 
+  receipts,
+  businessProfiles,
+  clients,
+  quotations,
+  invoices,
+  lineItems,
+  invoicePayments,
+  Client,
+  Invoice,
+  Quotation,
+  BusinessProfile,
+  LineItem,
+  InvoicePayment
+} from "@shared/schema";
 import { azureStorage } from "./azure-storage";
 import { azureFormRecognizer } from "./azure-form-recognizer";
 import { replitStorage } from "./replit-storage";
@@ -3144,6 +3173,943 @@ export async function registerRoutes(app: Express): Promise<Server> {
       log(`Error in SendGrid webhook: ${error.message}`, 'email');
       // Still return 200 to prevent SendGrid from retrying
       res.status(200).send('OK');
+    }
+  });
+
+  // ===== BUSINESS HUB ENDPOINTS =====
+
+  // Helper function to generate unique quotation number
+  const generateQuotationNumber = async (): Promise<string> => {
+    const date = new Date();
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    
+    // Get count of quotations today to generate sequential number
+    const todayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+    
+    const todayQuotations = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(quotations)
+      .where(and(
+        gte(quotations.date, todayStart),
+        lte(quotations.date, todayEnd)
+      ));
+    
+    const count = todayQuotations[0]?.count || 0;
+    const sequence = String(count + 1).padStart(3, '0');
+    
+    return `QUOT-${dateStr}-${sequence}`;
+  };
+
+  // Helper function to generate unique invoice number
+  const generateInvoiceNumber = async (): Promise<string> => {
+    const date = new Date();
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    
+    // Get count of invoices today to generate sequential number
+    const todayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+    
+    const todayInvoices = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(invoices)
+      .where(and(
+        gte(invoices.date, todayStart),
+        lte(invoices.date, todayEnd)
+      ));
+    
+    const count = todayInvoices[0]?.count || 0;
+    const sequence = String(count + 1).padStart(3, '0');
+    
+    return `INV-${dateStr}-${sequence}`;
+  };
+
+  // ===== BUSINESS PROFILE ROUTES =====
+
+  // Get current user's business profile
+  app.get("/api/business-profile", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      
+      const profile = await db.query.businessProfiles.findFirst({
+        where: eq(businessProfiles.userId, userId),
+      });
+
+      if (!profile) {
+        return res.status(404).json({ error: "Business profile not found" });
+      }
+
+      res.json(profile);
+    } catch (error: any) {
+      log(`Error fetching business profile: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to fetch business profile" });
+    }
+  });
+
+  // Create or update business profile
+  app.post("/api/business-profile", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      
+      // Validate request body
+      const validatedData = insertBusinessProfileSchema.parse({
+        ...req.body,
+        userId,
+      });
+
+      // Check if profile already exists
+      const existingProfile = await db.query.businessProfiles.findFirst({
+        where: eq(businessProfiles.userId, userId),
+      });
+
+      let profile;
+      if (existingProfile) {
+        // Update existing profile
+        const [updated] = await db
+          .update(businessProfiles)
+          .set({ ...validatedData, updatedAt: new Date() })
+          .where(eq(businessProfiles.userId, userId))
+          .returning();
+        profile = updated;
+      } else {
+        // Create new profile
+        const [created] = await db
+          .insert(businessProfiles)
+          .values(validatedData)
+          .returning();
+        profile = created;
+      }
+
+      res.status(existingProfile ? 200 : 201).json(profile);
+    } catch (error: any) {
+      log(`Error creating/updating business profile: ${error.message}`, 'business-hub');
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Validation error", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to save business profile" });
+    }
+  });
+
+  // Update existing business profile
+  app.put("/api/business-profile", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      
+      // Validate request body
+      const validatedData = insertBusinessProfileSchema.partial().parse(req.body);
+
+      const [updated] = await db
+        .update(businessProfiles)
+        .set({ ...validatedData, updatedAt: new Date() })
+        .where(eq(businessProfiles.userId, userId))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ error: "Business profile not found" });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      log(`Error updating business profile: ${error.message}`, 'business-hub');
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Validation error", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update business profile" });
+    }
+  });
+
+  // ===== CLIENT ROUTES =====
+
+  // Get all clients for current user
+  app.get("/api/clients", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      
+      const clientsList = await db.query.clients.findMany({
+        where: eq(clients.userId, userId),
+        orderBy: [asc(clients.name)],
+      });
+
+      res.json(clientsList);
+    } catch (error: any) {
+      log(`Error fetching clients: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to fetch clients" });
+    }
+  });
+
+  // Get single client
+  app.get("/api/clients/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const clientId = parseInt(req.params.id, 10);
+
+      if (isNaN(clientId)) {
+        return res.status(400).json({ error: "Invalid client ID" });
+      }
+
+      const client = await db.query.clients.findFirst({
+        where: and(
+          eq(clients.id, clientId),
+          eq(clients.userId, userId)
+        ),
+      });
+
+      if (!client) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      res.json(client);
+    } catch (error: any) {
+      log(`Error fetching client: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to fetch client" });
+    }
+  });
+
+  // Create new client
+  app.post("/api/clients", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      
+      // Validate request body
+      const validatedData = insertClientSchema.parse({
+        ...req.body,
+        userId,
+      });
+
+      const [client] = await db
+        .insert(clients)
+        .values(validatedData)
+        .returning();
+
+      res.status(201).json(client);
+    } catch (error: any) {
+      log(`Error creating client: ${error.message}`, 'business-hub');
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Validation error", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create client" });
+    }
+  });
+
+  // Update client
+  app.put("/api/clients/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const clientId = parseInt(req.params.id, 10);
+
+      if (isNaN(clientId)) {
+        return res.status(400).json({ error: "Invalid client ID" });
+      }
+
+      // Validate request body
+      const validatedData = insertClientSchema.partial().parse(req.body);
+
+      const [updated] = await db
+        .update(clients)
+        .set({ ...validatedData, updatedAt: new Date() })
+        .where(and(
+          eq(clients.id, clientId),
+          eq(clients.userId, userId)
+        ))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      log(`Error updating client: ${error.message}`, 'business-hub');
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Validation error", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update client" });
+    }
+  });
+
+  // Delete client (soft delete)
+  app.delete("/api/clients/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const clientId = parseInt(req.params.id, 10);
+
+      if (isNaN(clientId)) {
+        return res.status(400).json({ error: "Invalid client ID" });
+      }
+
+      const [deleted] = await db
+        .update(clients)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(
+          eq(clients.id, clientId),
+          eq(clients.userId, userId)
+        ))
+        .returning();
+
+      if (!deleted) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      res.json({ message: "Client deleted successfully" });
+    } catch (error: any) {
+      log(`Error deleting client: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to delete client" });
+    }
+  });
+
+  // ===== QUOTATION ROUTES =====
+
+  // Get all quotations for current user
+  app.get("/api/quotations", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      
+      const quotationsList = await db.query.quotations.findMany({
+        where: eq(quotations.userId, userId),
+        orderBy: [asc(quotations.date)],
+      });
+
+      res.json(quotationsList);
+    } catch (error: any) {
+      log(`Error fetching quotations: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to fetch quotations" });
+    }
+  });
+
+  // Get single quotation with line items
+  app.get("/api/quotations/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const quotationId = parseInt(req.params.id, 10);
+
+      if (isNaN(quotationId)) {
+        return res.status(400).json({ error: "Invalid quotation ID" });
+      }
+
+      const quotation = await db.query.quotations.findFirst({
+        where: and(
+          eq(quotations.id, quotationId),
+          eq(quotations.userId, userId)
+        ),
+      });
+
+      if (!quotation) {
+        return res.status(404).json({ error: "Quotation not found" });
+      }
+
+      // Get line items
+      const items = await db.query.lineItems.findMany({
+        where: eq(lineItems.quotationId, quotationId),
+        orderBy: [asc(lineItems.sortOrder)],
+      });
+
+      res.json({ ...quotation, lineItems: items });
+    } catch (error: any) {
+      log(`Error fetching quotation: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to fetch quotation" });
+    }
+  });
+
+  // Create quotation with line items
+  app.post("/api/quotations", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const { lineItems: items, ...quotationData } = req.body;
+
+      // Generate quotation number
+      const quotationNumber = await generateQuotationNumber();
+
+      // Validate quotation data
+      const validatedQuotation = insertQuotationSchema.parse({
+        ...quotationData,
+        userId,
+        quotationNumber,
+      });
+
+      // Start transaction
+      const result = await db.transaction(async (tx) => {
+        // Insert quotation
+        const [newQuotation] = await tx
+          .insert(quotations)
+          .values(validatedQuotation)
+          .returning();
+
+        // Insert line items if provided
+        if (items && Array.isArray(items) && items.length > 0) {
+          const validatedItems = items.map((item: any, index: number) =>
+            insertLineItemSchema.parse({
+              ...item,
+              quotationId: newQuotation.id,
+              sortOrder: item.sortOrder ?? index,
+            })
+          );
+
+          await tx.insert(lineItems).values(validatedItems);
+        }
+
+        return newQuotation;
+      });
+
+      res.status(201).json(result);
+    } catch (error: any) {
+      log(`Error creating quotation: ${error.message}`, 'business-hub');
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Validation error", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create quotation" });
+    }
+  });
+
+  // Update quotation
+  app.put("/api/quotations/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const quotationId = parseInt(req.params.id, 10);
+
+      if (isNaN(quotationId)) {
+        return res.status(400).json({ error: "Invalid quotation ID" });
+      }
+
+      const { lineItems: items, ...quotationData } = req.body;
+
+      // Validate quotation data
+      const validatedQuotation = insertQuotationSchema.partial().parse(quotationData);
+
+      // Start transaction
+      const result = await db.transaction(async (tx) => {
+        // Update quotation
+        const [updated] = await tx
+          .update(quotations)
+          .set({ ...validatedQuotation, updatedAt: new Date() })
+          .where(and(
+            eq(quotations.id, quotationId),
+            eq(quotations.userId, userId)
+          ))
+          .returning();
+
+        if (!updated) {
+          throw new Error("Quotation not found");
+        }
+
+        // Update line items if provided
+        if (items && Array.isArray(items)) {
+          // Delete existing line items
+          await tx.delete(lineItems).where(eq(lineItems.quotationId, quotationId));
+
+          // Insert new line items
+          if (items.length > 0) {
+            const validatedItems = items.map((item: any, index: number) =>
+              insertLineItemSchema.parse({
+                ...item,
+                quotationId: quotationId,
+                sortOrder: item.sortOrder ?? index,
+              })
+            );
+
+            await tx.insert(lineItems).values(validatedItems);
+          }
+        }
+
+        return updated;
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      log(`Error updating quotation: ${error.message}`, 'business-hub');
+      if (error.message === "Quotation not found") {
+        return res.status(404).json({ error: "Quotation not found" });
+      }
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Validation error", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update quotation" });
+    }
+  });
+
+  // Delete quotation
+  app.delete("/api/quotations/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const quotationId = parseInt(req.params.id, 10);
+
+      if (isNaN(quotationId)) {
+        return res.status(400).json({ error: "Invalid quotation ID" });
+      }
+
+      const [deleted] = await db
+        .delete(quotations)
+        .where(and(
+          eq(quotations.id, quotationId),
+          eq(quotations.userId, userId)
+        ))
+        .returning();
+
+      if (!deleted) {
+        return res.status(404).json({ error: "Quotation not found" });
+      }
+
+      res.json({ message: "Quotation deleted successfully" });
+    } catch (error: any) {
+      log(`Error deleting quotation: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to delete quotation" });
+    }
+  });
+
+  // Convert quotation to invoice
+  app.post("/api/quotations/:id/convert-to-invoice", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const quotationId = parseInt(req.params.id, 10);
+
+      if (isNaN(quotationId)) {
+        return res.status(400).json({ error: "Invalid quotation ID" });
+      }
+
+      // Get quotation with line items
+      const quotation = await db.query.quotations.findFirst({
+        where: and(
+          eq(quotations.id, quotationId),
+          eq(quotations.userId, userId)
+        ),
+      });
+
+      if (!quotation) {
+        return res.status(404).json({ error: "Quotation not found" });
+      }
+
+      // Check if already converted
+      if (quotation.convertedToInvoiceId) {
+        return res.status(400).json({ error: "Quotation already converted to invoice" });
+      }
+
+      // Get quotation line items
+      const quotationLineItems = await db.query.lineItems.findMany({
+        where: eq(lineItems.quotationId, quotationId),
+        orderBy: [asc(lineItems.sortOrder)],
+      });
+
+      // Generate invoice number
+      const invoiceNumber = await generateInvoiceNumber();
+
+      // Start transaction
+      const result = await db.transaction(async (tx) => {
+        // Create invoice
+        const [newInvoice] = await tx
+          .insert(invoices)
+          .values({
+            userId,
+            clientId: quotation.clientId,
+            invoiceNumber,
+            quotationId,
+            date: new Date(),
+            dueDate: req.body.dueDate ? new Date(req.body.dueDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days default
+            subtotal: quotation.subtotal,
+            vatAmount: quotation.vatAmount,
+            total: quotation.total,
+            notes: quotation.notes,
+            terms: quotation.terms,
+            status: "unpaid",
+            amountPaid: "0",
+          })
+          .returning();
+
+        // Copy line items to invoice
+        if (quotationLineItems.length > 0) {
+          const invoiceLineItems = quotationLineItems.map((item) => ({
+            invoiceId: newInvoice.id,
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            total: item.total,
+            sortOrder: item.sortOrder,
+          }));
+
+          await tx.insert(lineItems).values(invoiceLineItems);
+        }
+
+        // Update quotation to mark as converted
+        await tx
+          .update(quotations)
+          .set({ 
+            convertedToInvoiceId: newInvoice.id,
+            status: "accepted",
+            updatedAt: new Date() 
+          })
+          .where(eq(quotations.id, quotationId));
+
+        return newInvoice;
+      });
+
+      res.status(201).json(result);
+    } catch (error: any) {
+      log(`Error converting quotation to invoice: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to convert quotation to invoice" });
+    }
+  });
+
+  // ===== INVOICE ROUTES =====
+
+  // Get invoice stats
+  app.get("/api/invoices/stats", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      
+      // Get all invoices for user
+      const userInvoices = await db.query.invoices.findMany({
+        where: eq(invoices.userId, userId),
+      });
+
+      // Calculate stats
+      const now = new Date();
+      let totalUnpaid = 0;
+      let totalOverdue = 0;
+      let overdueCount = 0;
+
+      for (const invoice of userInvoices) {
+        const total = parseFloat(invoice.total);
+        const paid = parseFloat(invoice.amountPaid);
+        const remaining = total - paid;
+
+        if (invoice.status === 'unpaid' || invoice.status === 'partially_paid') {
+          totalUnpaid += remaining;
+
+          // Check if overdue
+          if (invoice.dueDate < now) {
+            totalOverdue += remaining;
+            overdueCount++;
+          }
+        }
+      }
+
+      res.json({
+        totalUnpaid: totalUnpaid.toFixed(2),
+        totalOverdue: totalOverdue.toFixed(2),
+        overdueCount,
+        totalInvoices: userInvoices.length,
+      });
+    } catch (error: any) {
+      log(`Error fetching invoice stats: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to fetch invoice stats" });
+    }
+  });
+
+  // Get all invoices for current user
+  app.get("/api/invoices", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      
+      const invoicesList = await db.query.invoices.findMany({
+        where: eq(invoices.userId, userId),
+        orderBy: [asc(invoices.date)],
+      });
+
+      res.json(invoicesList);
+    } catch (error: any) {
+      log(`Error fetching invoices: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to fetch invoices" });
+    }
+  });
+
+  // Get single invoice with line items and payments
+  app.get("/api/invoices/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      const invoice = await db.query.invoices.findFirst({
+        where: and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.userId, userId)
+        ),
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      // Get line items
+      const items = await db.query.lineItems.findMany({
+        where: eq(lineItems.invoiceId, invoiceId),
+        orderBy: [asc(lineItems.sortOrder)],
+      });
+
+      // Get payments
+      const payments = await db.query.invoicePayments.findMany({
+        where: eq(invoicePayments.invoiceId, invoiceId),
+        orderBy: [asc(invoicePayments.paymentDate)],
+      });
+
+      res.json({ ...invoice, lineItems: items, payments });
+    } catch (error: any) {
+      log(`Error fetching invoice: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to fetch invoice" });
+    }
+  });
+
+  // Create invoice with line items
+  app.post("/api/invoices", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const { lineItems: items, ...invoiceData } = req.body;
+
+      // Generate invoice number
+      const invoiceNumber = await generateInvoiceNumber();
+
+      // Validate invoice data
+      const validatedInvoice = insertInvoiceSchema.parse({
+        ...invoiceData,
+        userId,
+        invoiceNumber,
+      });
+
+      // Start transaction
+      const result = await db.transaction(async (tx) => {
+        // Insert invoice
+        const [newInvoice] = await tx
+          .insert(invoices)
+          .values(validatedInvoice)
+          .returning();
+
+        // Insert line items if provided
+        if (items && Array.isArray(items) && items.length > 0) {
+          const validatedItems = items.map((item: any, index: number) =>
+            insertLineItemSchema.parse({
+              ...item,
+              invoiceId: newInvoice.id,
+              sortOrder: item.sortOrder ?? index,
+            })
+          );
+
+          await tx.insert(lineItems).values(validatedItems);
+        }
+
+        return newInvoice;
+      });
+
+      res.status(201).json(result);
+    } catch (error: any) {
+      log(`Error creating invoice: ${error.message}`, 'business-hub');
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Validation error", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create invoice" });
+    }
+  });
+
+  // Update invoice
+  app.put("/api/invoices/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      const { lineItems: items, ...invoiceData } = req.body;
+
+      // Validate invoice data
+      const validatedInvoice = insertInvoiceSchema.partial().parse(invoiceData);
+
+      // Start transaction
+      const result = await db.transaction(async (tx) => {
+        // Update invoice
+        const [updated] = await tx
+          .update(invoices)
+          .set({ ...validatedInvoice, updatedAt: new Date() })
+          .where(and(
+            eq(invoices.id, invoiceId),
+            eq(invoices.userId, userId)
+          ))
+          .returning();
+
+        if (!updated) {
+          throw new Error("Invoice not found");
+        }
+
+        // Update line items if provided
+        if (items && Array.isArray(items)) {
+          // Delete existing line items
+          await tx.delete(lineItems).where(eq(lineItems.invoiceId, invoiceId));
+
+          // Insert new line items
+          if (items.length > 0) {
+            const validatedItems = items.map((item: any, index: number) =>
+              insertLineItemSchema.parse({
+                ...item,
+                invoiceId: invoiceId,
+                sortOrder: item.sortOrder ?? index,
+              })
+            );
+
+            await tx.insert(lineItems).values(validatedItems);
+          }
+        }
+
+        return updated;
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      log(`Error updating invoice: ${error.message}`, 'business-hub');
+      if (error.message === "Invoice not found") {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Validation error", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update invoice" });
+    }
+  });
+
+  // Delete invoice
+  app.delete("/api/invoices/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      const [deleted] = await db
+        .delete(invoices)
+        .where(and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.userId, userId)
+        ))
+        .returning();
+
+      if (!deleted) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      res.json({ message: "Invoice deleted successfully" });
+    } catch (error: any) {
+      log(`Error deleting invoice: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to delete invoice" });
+    }
+  });
+
+  // Record payment for invoice
+  app.post("/api/invoices/:id/payments", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      // Verify invoice exists and belongs to user
+      const invoice = await db.query.invoices.findFirst({
+        where: and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.userId, userId)
+        ),
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      // Validate payment data
+      const validatedPayment = insertInvoicePaymentSchema.parse({
+        ...req.body,
+        invoiceId,
+      });
+
+      // Start transaction
+      const result = await db.transaction(async (tx) => {
+        // Insert payment
+        const [payment] = await tx
+          .insert(invoicePayments)
+          .values(validatedPayment)
+          .returning();
+
+        // Calculate new amount paid
+        const allPayments = await tx.query.invoicePayments.findMany({
+          where: eq(invoicePayments.invoiceId, invoiceId),
+        });
+
+        const totalPaid = allPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+        const invoiceTotal = parseFloat(invoice.total);
+
+        // Update invoice status and amount paid
+        let newStatus = invoice.status;
+        if (totalPaid >= invoiceTotal) {
+          newStatus = "paid";
+        } else if (totalPaid > 0) {
+          newStatus = "partially_paid";
+        }
+
+        await tx
+          .update(invoices)
+          .set({
+            amountPaid: totalPaid.toFixed(2),
+            status: newStatus,
+            updatedAt: new Date(),
+          })
+          .where(eq(invoices.id, invoiceId));
+
+        return payment;
+      });
+
+      res.status(201).json(result);
+    } catch (error: any) {
+      log(`Error recording payment: ${error.message}`, 'business-hub');
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Validation error", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to record payment" });
     }
   });
 

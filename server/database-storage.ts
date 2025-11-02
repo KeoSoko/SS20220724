@@ -1333,9 +1333,9 @@ export class DatabaseStorage implements IStorage {
   // Trial and subscription management methods
   async startFreeTrial(userId: number): Promise<void> {
     try {
-      // Set trial end date to 7 days from now
+      // Set trial end date to 30 days from now
       const trialEndsAt = new Date();
-      trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+      trialEndsAt.setDate(trialEndsAt.getDate() + 30);
       
       await db
         .update(users)
@@ -1345,7 +1345,7 @@ export class DatabaseStorage implements IStorage {
         })
         .where(eq(users.id, userId));
       
-      log(`Started 7-day free trial for user ${userId}, ends at: ${trialEndsAt}`, 'db');
+      log(`Started 30-day free trial for user ${userId}, ends at: ${trialEndsAt}`, 'db');
     } catch (error) {
       log(`Error starting free trial for user ${userId}: ${error}`, 'db');
       throw error;

@@ -722,7 +722,7 @@ export function setupAuth(app: Express) {
       });
 
       // Validate and apply promo code if provided
-      let trialDays = 7; // Default trial days
+      let trialDays = 30; // Default trial days
       if (promoCode && storage.validatePromoCode && storage.usePromoCode) {
         try {
           const validPromo = await storage.validatePromoCode(promoCode);

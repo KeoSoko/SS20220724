@@ -141,7 +141,7 @@ export class BillingService {
       // Calculate trial dates
       const trialStartDate = new Date();
       const trialEndDate = new Date();
-      trialEndDate.setDate(trialStartDate.getDate() + (trialPlan.trialDays || 7));
+      trialEndDate.setDate(trialStartDate.getDate() + (trialPlan.trialDays || 30));
 
       // Create subscription
       const subscriptionData: InsertUserSubscription = {

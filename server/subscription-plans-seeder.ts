@@ -3,7 +3,7 @@ import { log } from "./vite";
 
 /**
  * Seed subscription plans for Simple Slips
- * 7-day free trial followed by R49/month subscription
+ * 30-day free trial followed by R49/month subscription
  */
 export async function seedSubscriptionPlans() {
   try {
@@ -24,12 +24,12 @@ export async function seedSubscriptionPlans() {
     // Create Free Trial Plan
     const freeTrialPlan = await storage.createSubscriptionPlan({
       name: 'free_trial',
-      displayName: '7-Day Free Trial',
-      description: 'Try all premium features free for 7 days. Cancel anytime.',
+      displayName: '30-Day Free Trial',
+      description: 'Try all premium features free for 30 days. Cancel anytime.',
       price: 0, // Free
       currency: 'ZAR',
       billingPeriod: 'trial',
-      trialDays: 7,
+      trialDays: 30,
       googlePlayProductId: 'simple_slips_trial', // This would map to Google Play product
       features: [
         'Unlimited receipt scanning',

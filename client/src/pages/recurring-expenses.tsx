@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Calendar, DollarSign, Clock, TrendingUp, AlertTriangle, CheckCircle, ArrowLeft, Plus, Edit3 } from 'lucide-react';
+import { Calendar, Banknote, Clock, TrendingUp, AlertTriangle, CheckCircle, ArrowLeft, Plus, Edit3 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
 import { format, isAfter, isBefore } from 'date-fns';
@@ -258,7 +258,7 @@ export default function RecurringExpensesPage() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5 text-green-600" />
+                <Banknote className="h-5 w-5 text-green-600" />
                 <span className="text-2xl font-bold">{formatCurrency(totalMonthlyRecurring)}</span>
               </div>
             </CardContent>

@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Edit, Trash2, FileText, Eye, DollarSign } from "lucide-react";
+import { Plus, Edit, Trash2, FileText, Eye, Banknote } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { format, isPast } from "date-fns";
 import type { Invoice, Client, LineItem, InvoicePayment } from "@shared/schema";
@@ -326,7 +326,7 @@ export default function InvoicesPage() {
                                     onClick={() => handleRecordPayment(invoice)}
                                     data-testid={`button-record-payment-${invoice.id}`}
                                   >
-                                    <DollarSign className="h-4 w-4" />
+                                    <Banknote className="h-4 w-4" />
                                   </Button>
                                 )}
                                 <Button

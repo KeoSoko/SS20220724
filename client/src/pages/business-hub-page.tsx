@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, FileText, DollarSign, Plus, ArrowRight, Calculator } from "lucide-react";
+import { Users, FileText, Banknote, Plus, ArrowRight, Calculator } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import type { Client, Quotation, Invoice } from "@shared/schema";
@@ -85,7 +85,7 @@ export default function BusinessHubPage() {
           <Card data-testid="stat-unpaid-invoices">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <Banknote className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               {isLoading ? (

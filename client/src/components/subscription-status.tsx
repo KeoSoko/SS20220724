@@ -110,7 +110,7 @@ export function SubscriptionStatus({ subscription, onCancel, onUpgrade }: Subscr
           </h3>
           {subscription.plan && subscription.plan.price > 0 && (
             <p className="text-sm text-muted-foreground">
-              R99.00 per {subscription.plan.billingPeriod}
+              R49.00 per {subscription.plan.billingPeriod}
             </p>
           )}
         </div>

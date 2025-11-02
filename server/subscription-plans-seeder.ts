@@ -3,7 +3,7 @@ import { log } from "./vite";
 
 /**
  * Seed subscription plans for Simple Slips
- * 7-day free trial followed by R99/month subscription
+ * 7-day free trial followed by R49/month subscription
  */
 export async function seedSubscriptionPlans() {
   try {
@@ -48,8 +48,8 @@ export async function seedSubscriptionPlans() {
     const premiumMonthlyPlan = await storage.createSubscriptionPlan({
       name: 'premium_monthly',
       displayName: 'Premium Monthly',
-      description: 'Full access to all Simple Slips features for R99/month.',
-      price: 9900, // R99.00 in cents
+      description: 'Full access to all Simple Slips features for R49/month.',
+      price: 4900, // R49.00 in cents
       currency: 'ZAR',
       billingPeriod: 'monthly',
       trialDays: 0,

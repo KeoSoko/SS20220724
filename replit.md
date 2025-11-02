@@ -40,7 +40,7 @@ The system is built as a full-stack TypeScript application within a monorepo str
 - **Smart Search & Analytics**: AI-powered natural language search, spending trend analysis, real-time budget monitoring, and export options (PDF, CSV).
 - **AI Tax Assistant Chatbot**: An OpenAI GPT-4o powered chatbot provides contextual tax advice specific to South African regulations.
 - **Recurring Expense System**: Detects and manages recurring expenses through pattern recognition and predictive analysis.
-- **Subscription Management**: Complete system with 7-day free trials and monthly subscriptions (R99).
+- **Subscription Management**: Complete system with 7-day free trials and monthly subscriptions (R49).
 - **Custom Category Management**: Allows users to create and filter receipts by custom categories.
 
 ## External Dependencies

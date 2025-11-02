@@ -734,7 +734,7 @@ export function SubscriptionPage() {
             <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm text-gray-700 max-w-2xl mx-auto">
               <p><strong>Subscription:</strong> Simple Slips Premium</p>
               <p><strong>Duration:</strong> Monthly (auto-renewable)</p>
-              <p><strong>Price:</strong> R99.00 per month</p>
+              <p><strong>Price:</strong> R49.00 per month</p>
               <p><strong>Free Trial:</strong> 7 days included</p>
               <p className="pt-2 text-xs">
                 Subscription automatically renews unless auto-renew is turned off at least 24 hours before the end of the current period. 

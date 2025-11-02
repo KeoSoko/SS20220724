@@ -81,7 +81,7 @@ export function SubscriptionGuard({ children, feature, fallback }: SubscriptionG
           className="w-full"
         >
           <Crown className="w-4 h-4 mr-2" />
-          Upgrade to Premium - R99/month
+          Upgrade to Premium - R49/month
         </Button>
 
         {isTrialing && (

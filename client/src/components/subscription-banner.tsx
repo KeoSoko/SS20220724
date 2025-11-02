@@ -62,7 +62,7 @@ export function SubscriptionBanner() {
             <Crown className="w-6 h-6" />
             <div>
               <p className="font-medium">
-                {isTrialActive ? 'Upgrade to Premium' : 'Subscribe for R99/month'}
+                {isTrialActive ? 'Upgrade to Premium' : 'Subscribe for R49/month'}
               </p>
               <p className="text-sm text-orange-100">
                 {isTrialActive 

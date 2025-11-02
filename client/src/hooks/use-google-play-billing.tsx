@@ -146,8 +146,8 @@ export function useGooglePlayBilling(): UseGooglePlayBillingReturn {
         const mockProducts: GooglePlayProduct[] = productIds.map(id => ({
           productId: id,
           type: 'subs',
-          price: id.includes('trial') ? 'Free' : 'R99.00',
-          price_amount_micros: id.includes('trial') ? 0 : 99000000,
+          price: id.includes('trial') ? 'Free' : 'R49.00',
+          price_amount_micros: id.includes('trial') ? 0 : 49000000,
           price_currency_code: 'ZAR',
           title: id.includes('trial') ? '7-Day Free Trial' : 'Premium Monthly',
           description: id.includes('trial') 

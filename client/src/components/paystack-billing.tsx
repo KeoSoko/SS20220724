@@ -53,7 +53,7 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
         setIsProcessing(false);
         toast({
           title: "Subscription Activated",
-          description: "Your recurring subscription has been activated! You'll be charged R99 monthly.",
+          description: "Your recurring subscription has been activated! You'll be charged R49 monthly.",
         });
         onPaymentSuccess?.(response.reference);
       },
@@ -93,7 +93,7 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
           <div className="flex justify-between items-center">
             <span className="font-medium">{plan.displayName}</span>
             <span className="text-2xl font-bold">
-              R99.00
+              R49.00
               <span className="text-sm font-normal text-muted-foreground">/month</span>
             </span>
           </div>
@@ -116,7 +116,7 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
 
         <Alert>
           <AlertDescription className="text-sm">
-            <strong>Recurring Subscription:</strong> You'll be charged R99 automatically every month.
+            <strong>Recurring Subscription:</strong> You'll be charged R49 automatically every month.
             Your subscription will activate immediately after successful payment. You can cancel anytime from your account settings.
           </AlertDescription>
         </Alert>
@@ -135,7 +135,7 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
           ) : (
             <>
               <CreditCard className="h-4 w-4 mr-2" />
-              Pay R99.00 with Paystack
+              Pay R49.00 with Paystack
             </>
           )}
         </Button>

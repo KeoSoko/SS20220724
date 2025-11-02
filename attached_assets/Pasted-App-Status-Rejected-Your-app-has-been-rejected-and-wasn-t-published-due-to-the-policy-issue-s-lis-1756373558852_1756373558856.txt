@@ -1,0 +1,44 @@
+App Status: Rejected
+Your app has been rejected and wasn't published due to the policy issue(s) listed below. If you submitted an update, the previous version of your app is still available on Google Play.
+
+Take action
+	
+Issue found: Violation of Misleading Claims policy
+Your app contains content that doesn't comply with the Misleading Claims policy. We adopted this policy to promote trust and create a safe experience for users. That’s why apps that provide government information, whether or not they are government affiliated, must strictly adhere to our Misleading Claims policy.
+
+Your app doesn’t provide a clear source of government information or its description lacks an easy-to-see disclaimer stating that the app doesn’t represent a government entity.
+
+Issue details
+
+We found an issue in the following area(s):
+
+Full description (en-US): "(...) SA tax compliance: Flags deductible expenses and VAT requirements. (...)"
+In-app experience: Please see attached screenshot IN_APP_EXPERIENCE-2918.png
+To bring your app into compliance, follow these steps:
+
+If you have written documentation proving government affiliation or authorization to facilitate government services through your app:
+Submit an appeal. If you already submitted it, please wait for a response after the appeal case has been created.
+If you don't have government affiliation or authorization to facilitate government services through your app, follow these steps:
+Clarify and/or add to the information in your app.
+Identify a clear source of government information.
+Include in the app an easy-to-see disclaimer stating that the app doesn’t represent a government entity.
+Check your app's store listing page for compliance and add the same disclaimer there too, if needed.
+Double-check that your app complies with all other Developer Program policies.
+Submit the update to your app.
+Users need clear information about how your app handles their data. In your privacy policy, describe how your app accesses, collects, uses, and shares data and how it limits the use of data to the purposes disclosed.
+Make sure your privacy policy is available via a valid active URL. It can’t be a PDF or a doc link.
+Ensure that your policy is non-editable.
+Include links to your privacy policy on your app's store listing page and in your app.
+Add or update your privacy policy.
+About the Misleading Claims policy
+We don’t allow apps that contain false or misleading information or claims, including in the description, title, icon, and screenshots. This includes apps that falsely claim affiliation with a government entity or to provide or facilitate government services for which they are not properly authorized.
+
+If your app provides government-related information, you must provide the sources of the information in the app description and a clear disclaimer that you do not represent the government entity.
+
+If you have written documentation proving government affiliation or authorization to facilitate government services through your app, please submit an appeal through your Play Developer Console.
+
+Check out the Play Console Help Center and Personal and Sensitive User Data policy for more details.
+
+
+
+Visit Google Play’s Academy for App Success to get contextual learning on this Google Play policy.

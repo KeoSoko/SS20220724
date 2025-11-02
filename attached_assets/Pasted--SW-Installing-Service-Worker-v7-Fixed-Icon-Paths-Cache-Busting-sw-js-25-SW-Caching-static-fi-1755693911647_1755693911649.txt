@@ -1,0 +1,20 @@
+[SW] Installing Service Worker v7 - Fixed Icon Paths & Cache-Busting
+sw.js:25 [SW] Caching static files
+sw.js:38 [SW] Activating Service Worker
+react-dom.development.js:29895 Download the React DevTools for a better development experience: https://reactjs.org/link/react-devtools
+App.tsx:76 [App] App component is rendering
+auth-store.ts:22 Store getCurrentUser called, returning: null
+use-auth.tsx:207 Auth hook initializing with store user: null
+use-auth.tsx:143 Auth effect: stored token = none
+auth-store.ts:22 Store getCurrentUser called, returning: null
+use-auth.tsx:213 Auth hook subscribing to store changes
+auth-store.ts:53 New auth store subscription, total subscribers: 1
+use-auth.tsx:255 Auth state debug: Object
+monitoring.ts:125 [Monitoring] Error monitoring initialized
+auth?tab=login:211 [PWA] Service Worker registered successfully: ServiceWorkerRegistration
+use-mobile-features.ts:177 [PWA] Service Worker registered: ServiceWorkerRegistration
+monitoring.ts:74 [Performance Monitor] Object
+auth?tab=login:1  The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/192%20Icon%20redesigned_1754568272116.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.
+auth?tab=login:1  The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/512%20Icon%20redesigned_1754568278738.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.
+auth?tab=login:1  The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/192%20Icon%20redesigned_1754568272116.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.
+auth?tab=login:1  The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/512%20Icon%20redesigned_1754568278738.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.

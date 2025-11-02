@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Test</title>
+</head>
+<body>
+    <div id="test">Testing...</div>
+    <script>
+        console.log("JavaScript is working");
+        document.getElementById('test').innerHTML = "JavaScript works!";
+        
+        // Test if we can access the main app's JavaScript
+        fetch('/src/main.tsx')
+        .then(res => {
+            console.log('Main.tsx status:', res.status);
+            return res.text();
+        })
+        .then(text => {
+            console.log('Main.tsx loaded, length:', text.length);
+        })
+        .catch(err => {
+            console.error('Failed to load main.tsx:', err);
+        });
+    </script>
+</body>
+</html>

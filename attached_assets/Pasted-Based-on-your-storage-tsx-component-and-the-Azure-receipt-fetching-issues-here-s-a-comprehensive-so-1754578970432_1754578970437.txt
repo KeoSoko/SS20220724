@@ -1,0 +1,233 @@
+Based on your storage.tsx component and the Azure receipt fetching issues, here's a comprehensive solution to synchronize your storage system:
+
+🛠 Immediate Fixes for Azure Sync Issues
+1. Update Storage Logic in Backend
+Modify your API endpoints (/api/storage/refresh and /api/storage/metrics) to:
+
+typescript
+// Example backend route for checking Azure sync status
+router.post('/sync-azure', async (req, res) => {
+  try {
+    // 1. Get all receipts with null blob_url from DB
+    const unsyncedReceipts = await db.receipts.findMany({
+      where: { blob_url: null }
+    });
+
+    // 2. Check Azure for matching blobs (with both old and new formats)
+    const azureBlobs = await azureContainerClient.listBlobsFlat();
+    const blobNames = azureBlobs.map(blob => blob.name);
+
+    // 3. Attempt to match DB entries with Azure blobs
+    const updates = unsyncedReceipts.map(receipt => {
+      const oldFormatMatch = blobNames.find(name => 
+        name.includes(receipt.blob_name.split('_')[2]?.split('.')[0]) // Extract UUID
+      );
+      
+      return {
+        id: receipt.id,
+        newUrl: oldFormatMatch 
+          ? `https://slipsstor1.blob.core.windows.net/receipt-images/${oldFormatMatch}`
+          : null
+      };
+    });
+
+    // 4. Update database with found matches
+    await Promise.all(
+      updates.filter(u => u.newUrl).map(u => 
+        db.receipts.update({
+          where: { id: u.id },
+          data: { blob_url: u.newUrl }
+        })
+      )
+    );
+
+    res.json({
+      matchedCount: updates.filter(u => u.newUrl).length,
+      totalUnsynced: unsyncedReceipts.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Azure sync failed" });
+  }
+});
+2. Add Sync Button to Your React Component
+Add this to your StorageDashboard component:
+
+tsx
+// Add to your imports
+import { SyncIcon } from 'lucide-react';
+
+// Add this state
+const [isSyncing, setIsSyncing] = useState(false);
+
+// Add this function
+const handleAzureSync = async () => {
+  setIsSyncing(true);
+  try {
+    const result = await apiRequest('POST', '/api/storage/sync-azure');
+    toast({
+      title: `Azure sync complete`,
+      description: `Matched ${result.matchedCount} of ${result.totalUnsynced} missing receipts.`,
+    });
+    await refetch();
+  } catch (error) {
+    toast({
+      title: "Azure sync failed",
+      variant: "destructive",
+    });
+  } finally {
+    setIsSyncing(false);
+  }
+};
+
+// Add this button next to your refresh button
+<Button 
+  onClick={handleAzureSync} 
+  variant="outline" 
+  size="sm"
+  disabled={isLoading || isSyncing}
+>
+  <SyncIcon className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+  Sync Azure
+</Button>
+🔄 Improved Storage Metrics Endpoint
+Update your /api/storage/metrics to include Azure sync status:
+
+typescript
+router.get('/metrics', async (req, res) => {
+  const localStats = await getLocalStorageStats();
+  const azureStats = await getAzureStorageStats();
+  
+  const unsyncedCount = await db.receipts.count({
+    where: { 
+      blob_name: { not: null },
+      blob_url: null 
+    }
+  });
+
+  res.json({
+    ...localStats,
+    ...azureStats,
+    unsyncedReceipts: unsyncedCount,
+    // ... rest of your existing metrics
+  });
+});
+📊 New Storage Status Card
+Add this card to your dashboard grid:
+
+tsx
+<Card>
+  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+    <CardTitle className="text-sm font-medium">Azure Sync Status</CardTitle>
+    <SyncIcon className="h-4 w-4 text-muted-foreground" />
+  </CardHeader>
+  <CardContent>
+    <div className="text-2xl font-bold">
+      {metrics?.unsyncedReceipts || '---'}
+    </div>
+    <p className="text-xs text-muted-foreground">
+      {metrics?.unsyncedReceipts ? 'Unsynced receipts' : 'Fully synced'}
+    </p>
+  </CardContent>
+</Card>
+🛡 Prevent Future Sync Issues
+1. Enhanced Upload Flow
+typescript
+async function uploadReceipt(file: File) {
+  // 1. Generate consistent blob name
+  const blobName = `receipt_${Date.now()}_${uuidv4()}.jpg`;
+  
+  // 2. Upload to Azure first
+  const azureUrl = await azureUpload(file, blobName);
+  
+  // 3. Only save to DB if Azure upload succeeds
+  const receipt = await db.receipts.create({
+    data: {
+      blob_name: blobName,
+      blob_url: azureUrl,
+      // ... other fields
+    }
+  });
+
+  // 4. Optional local caching
+  if (shouldCacheLocally()) {
+    await localCache(file, blobName);
+  }
+
+  return receipt;
+}
+2. Add Storage Health Checks
+Create a new endpoint /api/storage/health:
+
+typescript
+router.get('/health', async (req, res) => {
+  const [localOk, azureOk, dbOk] = await Promise.all([
+    testLocalStorage(),
+    testAzureConnection(),
+    testDatabaseConnection()
+  ]);
+
+  res.json({
+    status: localOk && azureOk && dbOk ? 'healthy' : 'degraded',
+    components: {
+      localStorage: localOk,
+      azureStorage: azureOk,
+      database: dbOk
+    },
+    lastChecked: new Date().toISOString()
+  });
+});
+📝 Updated UI Warnings
+Enhance your dashboard alerts:
+
+tsx
+{metrics?.unsyncedReceipts > 0 && (
+  <div className="bg-orange-50 border border-orange-200 rounded-none p-4">
+    <div className="flex items-start gap-3">
+      <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
+      <div>
+        <h3 className="font-medium text-orange-800">Storage Desync Detected</h3>
+        <p className="text-sm text-orange-700 mt-1">
+          {metrics.unsyncedReceipts} receipts exist in database but not in Azure.
+          <Button 
+            variant="link" 
+            className="h-auto p-0 ml-2 text-orange-700"
+            onClick={handleAzureSync}
+          >
+            Sync now
+          </Button>
+        </p>
+      </div>
+    </div>
+  </div>
+)}
+✅ Verification Steps
+Test the new sync flow with:
+
+bash
+curl -X POST http://localhost:3000/api/storage/sync-azure
+Check health status:
+
+bash
+curl http://localhost:3000/api/storage/health
+Verify the dashboard shows correct sync status
+
+🔧 Troubleshooting Tips
+If sync issues persist:
+
+Check Azure logs for upload errors
+
+Verify CORS settings in Azure Storage
+
+Ensure your SAS tokens have proper permissions
+
+Monitor network tab during uploads
+
+This solution provides:
+
+Real-time sync status visibility
+
+One-click resolution for mismatches
+
+Prevention of future upload issues
+
+Comprehensive health monitoring

@@ -1,0 +1,30 @@
+Download the React DevTools for a better development experience: https://reactjs.org/link/react-devtools
+auth-store.ts:11 Auth store initialized with stored user: KeoraSoko
+App.tsx:76 [App] App component is rendering
+auth-store.ts:22 Store getCurrentUser called, returning: KeoraSoko
+use-auth.tsx:207 Auth hook initializing with store user: KeoraSoko
+protected-route.tsx:23 ProtectedRoute[/profile]: user=true, token=true, expired=false, isLoading=false
+use-auth.tsx:143 Auth effect: stored token = exists
+use-auth.tsx:165 Token belongs to: KeoraSoko
+use-auth.tsx:182 Username verification successful
+use-auth.tsx:213 Auth hook subscribing to store changes
+auth-store.ts:53 New auth store subscription, total subscribers: 1
+use-auth.tsx:249 User data loaded successfully: Object
+use-auth.tsx:255 Auth state debug: Object
+monitoring.ts:125 [Monitoring] Error monitoring initialized
+profile:211 [PWA] Service Worker registered successfully: ServiceWorkerRegistration
+use-mobile-features.ts:177 [PWA] Service Worker registered: ServiceWorkerRegistration
+use-auth.tsx:124 Setting auth token in queryClient: exists
+monitoring.ts:74 [Performance Monitor] Object
+client:755  WebSocket connection to 'wss://localhost:5173/?token=cDXdELfBcGoU' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+createConnection @ client:755
+client:765  [vite] failed to connect to websocket.
+your current setup:
+  (browser) 88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/ <--[HTTP]--> localhost:5173/ (server)
+  (browser) 88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev:/ <--[WebSocket (failing)]--> localhost:5173/ (server)
+Check out your Vite / network configuration and https://vite.dev/config/server-options.html#server-hmr .
+connect @ client:765
+profile:1  The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/192%20Icon%20redesigned_1754568272116.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.
+profile:1  The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/512%20Icon%20redesigned_1754568278738.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.
+profile:1  The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/192%20Icon%20redesigned_1754568272116.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.
+profile:1  The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/512%20Icon%20redesigned_1754568278738.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.

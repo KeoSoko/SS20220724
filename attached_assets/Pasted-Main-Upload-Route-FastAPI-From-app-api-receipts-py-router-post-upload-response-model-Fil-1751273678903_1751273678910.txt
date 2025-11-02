@@ -1,0 +1,190 @@
+Main Upload Route (FastAPI)
+From app/api/receipts.py:
+
+@router.post("/upload", response_model=FileUploadResponse)
+async def upload_receipt(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    # Get user from either cookie or token
+    current_user = await get_user_from_cookie_or_token(
+        access_token=request.cookies.get("access_token"),
+        token=None,
+        db=db
+    )
+    
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    # Check file type
+    allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf']
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"File type {file.content_type} not allowed. Must be one of: {', '.join(allowed_types)}"
+        )
+    
+    try:
+        # Create temp file to ensure complete file is uploaded before processing
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_file.write(await file.read())
+            temp_file_path = temp_file.name
+        
+        # Upload to Azure Blob Storage
+        blob_id, blob_url = await upload_to_blob_storage(
+            file_path=temp_file_path,
+            file_name=file.filename,
+            content_type=file.content_type
+        )
+        
+        # Return response with blob info
+        response = FileUploadResponse(
+            blob_id=blob_id,
+            blob_url=blob_url,
+            file_name=file.filename,
+            content_type=file.content_type,
+            size=os.path.getsize(temp_file_path)
+        )
+        
+        # Clean up temp file
+        os.unlink(temp_file_path)
+        
+        return response
+    
+    except Exception as e:
+        # Clean up temp file if exists
+        if 'temp_file_path' in locals():
+            os.unlink(temp_file_path)
+        raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
+Azure Blob Storage Upload Service
+From app/services/azure_blob.py:
+
+async def upload_to_blob_storage(file_path, file_name, content_type):
+    """
+    Upload a file to Azure Blob Storage and return blob ID and URL
+    
+    Args:
+        file_path: Path to the file to upload
+        file_name: Original filename
+        content_type: MIME type of the file
+    
+    Returns:
+        tuple: (blob_id, blob_url)
+    """
+    try:
+        # Generate unique ID for the blob
+        blob_id = str(uuid.uuid4())
+        
+        # Create file extension from content type if needed
+        file_extension = os.path.splitext(file_name)[1]
+        if not file_extension:
+            if content_type == 'image/jpeg':
+                file_extension = '.jpg'
+            elif content_type == 'image/png':
+                file_extension = '.png'
+            elif content_type == 'application/pdf':
+                file_extension = '.pdf'
+            else:
+                file_extension = ''
+        
+        # Create blob name with unique ID + original extension
+        blob_name = f"{blob_id}{file_extension}"
+        
+        # Create blob service client
+        blob_service_client = BlobServiceClient.from_connection_string(
+            settings.AZURE_STORAGE_CONNECTION_STRING
+        )
+        
+        # Get container client
+        container_client = blob_service_client.get_container_client(
+            settings.AZURE_BLOB_CONTAINER_NAME
+        )
+        
+        # Create container if it doesn't exist
+        if not container_client.exists():
+            container_client.create_container()
+        
+        # Upload file
+        from azure.storage.blob import ContentSettings
+        with open(file_path, "rb") as data:
+            blob_client = container_client.upload_blob(
+                name=blob_name,
+                data=data,
+                overwrite=True,
+                content_settings=ContentSettings(content_type=content_type)
+            )
+        
+        # Generate SAS token for URL with read permission that expires in 1 year
+        sas_token = generate_blob_sas(
+            account_name=blob_service_client.account_name,
+            container_name=settings.AZURE_BLOB_CONTAINER_NAME,
+            blob_name=blob_name,
+            account_key=blob_service_client.credential.account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.utcnow() + timedelta(days=365)
+        )
+        
+        # Generate full URL with SAS token
+        blob_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{settings.AZURE_BLOB_CONTAINER_NAME}/{blob_name}?{sas_token}"
+        
+        return blob_id, blob_url
+    
+    except Exception as e:
+        # Log error
+        print(f"Error uploading to Azure Blob Storage: {str(e)}")
+        raise
+Frontend Upload Code
+From your frontend JavaScript in app/static/js/dashboard.js, the upload is handled through a file input and form submission that calls the /receipts/upload endpoint.
+
+Test Upload Example
+You also have test upload code in test_upload_receipt.py that shows how to upload programmatically:
+
+def upload_receipt(token, receipt_file_path):
+    """
+    Upload a receipt image
+    """
+    print(f"\nUploading receipt from {receipt_file_path}...")
+    upload_url = urljoin(BASE_URL, "/receipts/upload")
+    
+    # Set up headers with token
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json"
+    }
+    
+    # Set up cookies with token
+    cookies = {
+        "access_token": token
+    }
+    
+    # Create file upload data
+    with open(receipt_file_path, "rb") as f:
+        files = {"file": (os.path.basename(receipt_file_path), f, "image/jpeg")}
+        
+        # Upload file
+        response = requests.post(
+            upload_url,
+            headers=headers,
+            cookies=cookies,
+            files=files
+        )
+    
+    if response.status_code != 200:
+        print(f"Upload failed: {response.status_code} - {response.text}")
+        sys.exit(1)
+    
+    upload_data = response.json()
+    blob_id = upload_data.get("blob_id")
+    blob_url = upload_data.get("blob_url")
+    
+    print(f"Upload successful: blob_id={blob_id}")
+    return blob_id, blob_url
+The upload process works by:
+
+Accepting files via FastAPI's UploadFile
+Validating file types (JPEG, PNG, PDF)
+Creating a temporary file
+Uploading to Azure Blob Storage with a unique ID
+Generating a SAS URL for access
+Returning the blob ID and URL for further processing

@@ -1,0 +1,628 @@
+> rest-express@1.0.0 dev
+9:37:41 AM [storage] Using in-memory storage implementation
+9:37:41 AM [storage] Using in-memory storage implementation
+9:37:41 AM [storage] Database URL detected, attempting to switch to database storage...
+9:37:41 AM [storage] Storage monitoring started - checking every 24 hours
+9:37:41 AM [db] Initializing database connection (attempt 1/5)...
+9:37:41 AM [storage] Successfully switched to database storage
+9:37:42 AM [db] Database connection successful: Thu Aug 07 2025 09:37:42 GMT+0000 (Coordinated Universal Time)
+9:37:42 AM [db] Schema validation successful: users table exists
+9:37:42 AM [azure] Azure Storage initialized successfully
+9:37:42 AM [express] serving on port 5000
+[SESSION] Current Session ID: mfAt90SQR08RCGDUX_EzNA4EhPs-honR
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: nMbCTsfsOigegHj-BV5O8yI3K-SBkt56
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: khslLMkXbr47gUlu9HIn-u0SpEsn02PB
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: iOuNNOUvdFPxYpuo0zKUFcmMlL4T5YBx
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: DSDZe64bUZVSflRbTK7MuzRQAXd9xmtC
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: y2DL0-MBbw4G6sDAxLZ2mAZPGslL-zi7
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: b1uxS8Kn9P2DB7bTV8_rtm0meiZlDwbe
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 60NOJRNF4LhlSdFHRKnWF1HoDAbxizj6
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: QKRv53zZfaNJSF5ngIYzTjWcyu3u1P4n
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Qss_pclUw_JpVnl-N7Nw4YYsgl4Ex6MS
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: nyJutw4eu7nu9WSGROLwVjHY5fLxLhl9
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: L03_ivilYCIoRUdLT99_nf1LZzpq1NRL
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: XC18fQNmWrzQmj_yBUbsEpyc6ztgTxOx
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: xj224cfv8PkJaaxNe_O6gfEVXae_BsE-
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: eibD0YiXotyJJnvsTCdfsVjI_ZMxXvWC
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 7gfbdv35Ap-g_kO2oosrG1i8Jltq6Sjt
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: l8YhacZNplzpUWVLAgTl3kD1wl_1VsD3
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 4HPNI_DpF7t9hmNV3lInOO9JtcExrPGD
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: WZd2Jf1vpNqV8Nyr1OSN_qsjYtsU2LJs
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 73CfbVPoMe6gKJIa1QAWOE7CsW6EyCh5
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: fIH2oZVC2pHB0Opkjp1o5D_d1tJlf75V
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: j2ysXseuk66a_1QMuEhLJb6VLz0h0PBT
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: oN15gK0j4PhOnBqg8TZxfuIBn32BbSEZ
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 9inHgnbjnLWv4DoMz-ubn2uAikLWSQwt
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: TcAXtekEFLbK8y35mhQ2J-Gzp-ju4feE
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: H_yKVX1V_NT6uYyM_RaibsQrZ5L2_KEL
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: qUJMmQgHFNX3jt1f9FqrkzRU521bGt21
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: hkYVCZThHrxwFNMd8YMqTNgHaSwObdxi
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: whlBa6WQ6YXaYxBYO2MWza5ClGVIDPhn
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: TSd6qndxmbvYXHJ9atyo_XRS1hfpjtKm
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: j69vMME0X5mw3Fw7RAbDG98AxgeI6fub
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: jBc3WW36EVZH83l14rmxvuPgJEH5ORoj
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: pEb6hwzPbtLvxUHBbeWSmVED5f8F2bNk
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: VCBEGekQ1uVqUFwfTvS4_ftwsJQdXc16
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: KcP0v66_EulngstyWOCdIdKhe1ofN9pL
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: PnyuxkrOgZBzIZRpblkKjaBjulaJa9mN
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: X7VboEQ1Qd9miSR9uLCsHX7WSoIoS7t5
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: xVR4v_AjbozieKg4XuxcHeRpDQqPIRdE
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 5S7evlHpnoN1Frlf1D8KdjCtGyZNRqDC
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: HMUuOcbFgcXAxA-2Ev2o_XKSiVSoj4Ob
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: i9hPv9w3kVTv9pL40IEEit4lgPSz8fKh
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: vvGUL-b1jgCKzp2-j-vxEwEWUuXAyvkr
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: AnLDPgNZymFljw0WCN-cPSbmu2tTOCZf
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: iRP69UUMkUJo2qCq4OOv70bWg-2BVweY
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Xkq0sua8O0IueQEAPzyzVTl4Ex09wzLO
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 0gfWnJgzcynR-b1kAELHQNwCYQoUHy9y
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 3snjHMyvz_EOycXqG5xAGGAeHvK7VLCP
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Xq7ARCW1hwGO3sYiXsK-N_9ofYQEb-Hq
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: pgdzcVTREpgjGjLJpYSraRbjDeRnvy9Q
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Min-hQq3SVhJ9cHe4Ddj7DHuTztZuxEG
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Hi0WT68dvGAUCYM3h-qodA2sy5BcYjMp
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: dlXwEXjiiPHX7Gq2XvivbyN7el7XqrpQ
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: FlqmVBAqpJRcZ0q9O1UX5mlQuaO14DzW
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 8HxOFa8mFYZr6AiiGOe7zGGN_F6WmTRE
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: XkKWFSEBASIXPgZIxPXiVZASzxKjVAUe
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: _bpfvZmO28d1MY32hy3Y2qRyEBQSofWP
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: _CR90EfIFhTfokyRZDmIXyA4xRcpMKIG
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: K4lw-CzKzQ9abs290NgRNdYcbEMUYylX
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+9:37:47 AM [storage] Storage metrics updated: 0.004GB used (0.03%), 7 files
+[SESSION] Current Session ID: cblY7Y9P-RDH7PsLeUCKOybc0IMSorZC
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: j3s72oe8aLCdTau9kdoyKi7qMkFIbEYR
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: vNxDOVDy9c3ZGGIhMOrtvQmOznrXseNf
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: OkivtTant6eLh2aRBQ3PQsEs-xCBMwai
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: onMGaEzpmvG46zFKqaiDYFiUmE-uenTB
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: cBs4mVHo5fJ31TGRQiwjWU45DFpeR3ek
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 36-OMzQQQtUI8yPQwf_Zp-NBwGo3w05e
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: uo7NctY5GmePS6Wj8H8dD6CxUNngTnNJ
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 0KFfi98lwAlaXphMO6OSqE5rkU4yXxsC
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: RR19CEGDXwLWl__IYHh0T9gfVADNdmSE
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: rz6gz5RR8d26SuxVrDO8615tyzShVr7p
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 4ve1VWS8mM4xnYzS5wuU9J47A8vQnRN6
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Hlo0Pdpqs9zisQBPFf26ZumQLF3gAz0u
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: UxzrIAS0vegvwB48mX-TPPa7AfofQ7zn
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: iDTu-nEBbvrMYZ8rhvSk2d7PPR6QyIxP
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: qakwiS59C26yFMIVnSSBlOAqEpbHg5RB
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: MH_B9-z5fn27-hsqfrjJHGyEYlWoT1D7
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: zdH0wlipf5UxlvFTW7kIi6kqyCP7-kKB
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: I2LBhQTVlmE4jzc8VG8yFzhvC0damdL8
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: U9ybzMaInL7hs7iTHn2zfVcgLDyftuvc
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: C3twQ8rQCib7mYz9L9TkHTrwLtdWoz1h
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: nhUujbnRTSx9W_tZUUhWukafqekU5PZ9
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 823-vblMh6ztajzauUHHNnOPWuM7a07y
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: WGjzp2yygID4ZFzz7b4Py9qCJp0CgaA-
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: LtWjOyXesD4nQKJjrmBsrX9T-L5vEyEA
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Pm1xSLPYjKKWBmnHXUMnCFzxZbbZcvzN
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: b31GTR383RmbjOhifhb797kDl24YPC9J
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: MBWMssVavkjsE9nnib0qHTi33dNioAeg
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: kTIUHWKtxJiou9ht3i36-0bKtFbzl8Zi
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 4vZCoObGtjbB5GYmFL9tHaKRDsElngHc
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 0JHK0bystdJhOmNtFmrmhwiKwoD8rmMe
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: I9DgPOjZ-1doSF-WHq-D9vDns3P-t-bR
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: kivEyUkKqnxk3asQuz9Mn48uXA1Rlu-f
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: aegJecayEyTaYBypfU6AiOifLwOLKCnt
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: A9pZIeR2wt1uQ1dgdwfb_Am4oQ-o5Sv1
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: tLMIJRLjuNuiLMseIa9Uz8_3HZLzrM0e
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 0GadpJXO-U71kckkDIHYUYYrRnwApze5
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: LzWy6f8ar67NZMJ2UvGX9K9URRJN5fIA
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 2X7HNnOWZ-2sWVasdEF-5c4z6Estb1Sl
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: ylmmXMBzwxRgJEEfeGMf7wnhFj2zq0I5
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: EOGlxXqYTY-ca0ulRK_DAtG3un4BDr_k
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: gRH0PTIaLUTUzXv-tb6ft0Pk8KMHNxja
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: dtfChX8Kco85pDzb2aZwm5-R_vAgxCOW
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: xbajCVnTqQmcCfUDnENJUc1H6iLxjPvl
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 7SeLTQQbOF63cn85sAYlOMjyrIQsR-l6
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: GOsP-xUsHqKJLaufM0Fxcft1jo_UgRiS
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: yqoBAM-xZAie_HXcJrtuVm7fCF0uVGXX
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Sv8mbNjvJMjel4MmchZaIs1vERQ3RLNg
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: waZEeQOzaCT5hTLNqzTpmFCv8jPyyvmO
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Hxonzc-20qY-iLGtVzQ5_Q2zyDbVuRJT
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: -PaHJm2qElAYE0De54tsDKTD9sV3vPwl
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: fjfho2gKzGAxeL6KXtEU37i-NhyBUEgP
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: W_KDrBH5H2TO-F9tswVbbbkoi43kR1HV
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 8gXeCSdhlKMo56QPSZQ5YK0lYpKVW-HI
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: S-T5brcwolWo1ts52rvLxlRQz16x5yv_
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: wfyuGxTEo4po2Pq9_YJwunEqCU8_AwN4
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: w_NElUn95wdBKhIBWyPQfU0ZKP4CLFux
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 2NG09K755f4bo1LalTzBTkOZvm_JuRjn
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: BRUGxxiX0Wbc0pPuqbudfU3mIZUZs25n
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: xcIvLC3YUUYHOqhbZfYFNbBVPPY_LY4Y
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: joQL2uyJgH1q5Omqm10g3JUvsHKBiLtr
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: I3B1Z_XPi8icrwN3W9brn7MyJ1U-stT3
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: ddePAr7XWISiuqONR_ptNN37hS5ABPjw
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Htc_SFETMd-9mpsEqRsIMGcdANnsQuJ_
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: QJbhtubZNX3X1lg8vmqr489yPTKQkKoh
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: 3_Qk3WkMLKuES9pukBjJKsuCYPgQ4P23
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Oj-1iWWGMnpDWUHB0D6seDToVlQd9AHB
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Oq3MsFKeKORLs7A7ygavIXZVIajSUbYA
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Kyhth-QXBYnmO6G6MX4HaqdVBwRWYMn6
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: QuChwzrPQxGa_5zof4wQWmswhnrsu5Ds
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: tXy2QkMlakykEaDMzLEDsRGP4TmVyiQc
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: O_9VlfKmaKkagPulXljCWXTtGB9f0uSi
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: KjgKWVe9ynXd0y1u1vi7ytHkgKLJw9_A
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: YaTu-LQQ5dFpm04uFIsIxlidZV63lGAq
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: pv4thYYbyyRWbLsAxM9DP0i1sn6Of821
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: ZnCT_GSSQnuB9ja2eDX_FU1HzJ8_RqZY
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: FW4MglHwNWBAhx75CggmYPOn37QFRrkn
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: lB5cl5QBI15A1bVOF5JaJoR-RhPpsFM1
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: WtkYwT8bOpzSpi0fCItUoLZ5rA_Mh3T3
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: chizh-_40EFNj3ZITjlcuQG55wXjAyLC
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: _Eu-Y5jXAOjQTgJTPY3SROgkCwk_VBHI
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: y0aOFgir4PfXjUNGX39wxIkj-v1Dmp6A
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: qgXR0eLvUDobO-30UKA9LDoT2dQa9CD3
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: eHmOmQWnaP84P3D1fVpbzMlarAvr6Hvg
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: Blr_oztPv05VRpKPzrrKejEGuplm1rbB
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: _APliT4i11PnNpiZE0FYTy5NOkGSFTh8
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: eCygqKQqJGV3DABklQpJLHyRRRtl1NWh
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: cRW6FPeZbrX21pOeJZpn1ziPm8BM2ow-
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: MhLhozM-GyhHl726OtWS84xv60j_uzBR
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: _nJvM_3P-JsEQMGhcC6ZleuzJ_2J_oUB
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: H_yKVX1V_NT6uYyM_RaibsQrZ5L2_KEL
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: WxopPO5jIQMsaMtkdQghYjSvEV05LyMP
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: H_yKVX1V_NT6uYyM_RaibsQrZ5L2_KEL
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[SESSION] Current Session ID: H_yKVX1V_NT6uYyM_RaibsQrZ5L2_KEL
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[PERFORMANCE] 2025-08-07T09:37:51.570Z {
+  metric: 'largest_contentful_paint',
+  value: 6408,
+  url: 'https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/auth',
+  userId: undefined,
+  context: undefined
+}
+9:37:51 AM [express] POST /api/log-performance 200 in 2ms :: {"received":true}

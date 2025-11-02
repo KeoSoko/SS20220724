@@ -1,0 +1,64 @@
+Incident Identifier: DAF24F05-7684-49EF-AFC4-4771D45BC153
+Hardware Model:      iPhone12,1
+Process:             SimpleSlips [844]
+Path:                /private/var/containers/Bundle/Application/32EE6C3F-89EB-48DB-AA5F-AE970B385512/SimpleSlips.app/SimpleSlips
+Identifier:          za.co.iossimpleslips
+Version:             1.2 (5)
+AppStoreTools:       16F7
+AppVariant:          1:iPhone12,1:16
+Beta:                YES
+Code Type:           ARM-64 (Native)
+Role:                unknown
+Parent Process:      launchd [1]
+Coalition:           za.co.iossimpleslips [725]
+
+Date/Time:           2025-09-22 13:29:25.6434 +0200
+Launch Time:         2025-09-22 13:29:25.6295 +0200
+OS Version:          iPhone OS 16.4 (20E247)
+Release Type:        User
+Baseband Version:    4.01.02
+Report Version:      104
+
+Exception Type:  EXC_CRASH (SIGABRT)
+Exception Codes: 0x0000000000000000, 0x0000000000000000
+Termination Reason: DYLD 1 Library missing
+Library not loaded: @rpath/FBLPromises.framework/FBLPromises
+Referenced from: <6E012495-C4CA-313E-B0E5-4CE16E303877> /Volumes/VOLUME/*/SimpleSlips.app/SimpleSlips
+Reason: tried: '/usr/lib/swift/FBLPromises.framework/FBLPromises' (no such file, not in dyld cache), '/private/preboot/Cryptexes/OS/usr/lib/swift/FBLPromises.framework/FBLPromises' (no such file), '/private/var/containers/Bundle/Application/32EE6C3F-89EB-48DB-AA5F-AE970B385512/SimpleSlips.app/Frameworks/FBLPromises.framework/FBLPromises' (no such file), '/private/var/containers/Bundle/Application/32EE6C3F-89EB-48DB-AA5F-AE970B385512/SimpleSlips.app/Frameworks/FBLPromises.framework/FBLPromises' (no such file), '/usr/lib/swift/FBLPromises.framework/FBLPromises' (no such file, not in dyld cache), '/private/preboot/Cryptexes/OS/usr/lib/swift/FBLPromises.framework/FBLPromises' (no such file), '/private/var/containers/Bundle/Application/32EE6C3F-89EB-48DB-AA5F-AE970B385512/SimpleSlips.app/
+(terminated at launch; ignore backtrace)
+
+Triggered by Thread:  0
+
+
+Kernel Triage:
+VM - (arg = 0x0) pmap_enter retried due to resource shortage
+VM - (arg = 0x0) pmap_enter retried due to resource shortage
+
+
+Thread 0 Crashed:
+0   dyld                          	0x00000001d791bf6c __abort_with_payload + 8
+1   dyld                          	0x00000001d7926a98 abort_with_payload_wrapper_internal + 104 (terminate_with_reason.c:102)
+2   dyld                          	0x00000001d7926acc abort_with_payload + 16 (terminate_with_reason.c:124)
+3   dyld                          	0x00000001d78c9004 dyld4::halt(char const*) + 328 (DyldProcessConfig.cpp:2758)
+4   dyld                          	0x00000001d78c730c dyld4::prepare(dyld4::APIs&, dyld3::MachOAnalyzer const*) + 4124 (dyldMain.cpp:0)
+5   dyld                          	0x00000001d78c4cdc start + 1948 (dyldMain.cpp:1160)
+
+
+Thread 0 crashed with ARM Thread State (64-bit):
+    x0: 0x0000000000000006   x1: 0x0000000000000001   x2: 0x000000016f1a2bf0   x3: 0x00000000000000a9
+    x4: 0x000000016f1a27f0   x5: 0x0000000000000000   x6: 0x0000000000000000   x7: 0x0000000000000600
+    x8: 0x0000000000000020   x9: 0x0000000000000009  x10: 0x0000000000000001  x11: 0x000000000000000a
+   x12: 0x0000000000000000  x13: 0x0000000000000038  x14: 0x0000000000000004  x15: 0x0000000000008000
+   x16: 0x0000000000000209  x17: 0x00000001d791946c  x18: 0x0000000000000000  x19: 0x0000000000000000
+   x20: 0x000000016f1a27f0  x21: 0x00000000000000a9  x22: 0x000000016f1a2bf0  x23: 0x0000000000000001
+   x24: 0x0000000000000006  x25: 0x0000000000000001  x26: 0x0000000000000000  x27: 0x000000016f1a35a0
+   x28: 0x0000000000000000   fp: 0x000000016f1a27c0   lr: 0x00000001d7926a98
+    sp: 0x000000016f1a2780   pc: 0x00000001d791bf6c        cpsr: 0x0
+   esr: 0x56000080  Address size fault
+
+
+Binary Images:
+        0x100c5c000 -         0x100c77fff SimpleSlips arm64  <6e012495c4ca313eb0e54ce16e303877> /private/var/containers/Bundle/Application/32EE6C3F-89EB-48DB-AA5F-AE970B385512/SimpleSlips.app/SimpleSlips
+        0x1d78af000 -         0x1d7934923 dyld arm64e  <41605dc7f41237d1b51bfee1a26701e9> /usr/lib/dyld
+
+EOF

@@ -1,0 +1,61 @@
+Review Environment
+
+Submission ID: 3cda7f90-99ac-45da-a077-ba7e9391805a
+Review date: September 08, 2025
+Version reviewed: 1.2
+
+
+Guideline 3.1.2 - Business - Payments - Subscriptions
+Issue Description
+
+The submission did not include all the required information for apps offering auto-renewable subscriptions.
+
+The app's metadata is missing the following required information:
+
+- A functional link to the Terms of Use (EULA). If you are using the standard Apple Terms of Use (EULA), include a link to the Terms of Use in the App Description. If you are using a custom EULA, add it in App Store Connect.
+
+
+Next Steps
+
+Update the metadata to include the information specified above.
+
+Resources
+
+Apps offering auto-renewable subscriptions must include all of the following required information in the binary:
+
+- Title of auto-renewing subscription (this may be the same as the in-app purchase product name)
+- Length of subscription
+- Price of subscription, and price per unit if appropriate
+- Functional links to the privacy policy and Terms of Use (EULA)
+
+The app metadata must also include functional links to the privacy policy in the Privacy Policy field in App Store Connect and the Terms of Use (EULA) in the App Description or EULA field in App Store Connect.
+
+Review Schedule 2 of the Apple Developer Program License Agreement to learn more.
+
+
+Guideline 2.1 - Performance - App Completeness
+
+We were unable to review the app because it crashed on launch. We have attached detailed crash logs to help troubleshoot this issue.
+
+Review device details: 
+
+- Device type: iPad Air (5th generation) 
+- OS version: iPadOS 18.6.2
+
+Next Steps
+
+To address the crash in the app, follow these steps:
+
+1. Fully symbolicate the crash report. See Adding Identifiable Symbol Names to a Crash Report for an explanation of the symbolication process.
+2. Match the crash report to a common pattern. Based on the pattern, take specific actions to further investigate the crash. See Identifying the Cause of Common Crashes.
+3. Test the app on a device to ensure that it now runs as expected.
+4. Once the crash is addressed, create and submit a new build for review.
+
+Resources
+
+For additional information on crash reports, see Diagnosing Issues Using Crash Reports and Device Logs.
+
+Support
+- Reply to this message in your preferred language if you need assistance. If you need additional support, use the Contact Us module.
+- Consult with fellow developers and Apple engineers on the Apple Developer Forums.
+- Provide feedback on this message and your review experience by completing a short survey.

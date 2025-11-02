@@ -1,0 +1,275 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  /* iOS Safari Specific Fixes */
+  html {
+    /* iOS Safari viewport fixes */
+    -webkit-text-size-adjust: none; /* Prevent iOS Safari from scaling text */
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    width: 100%;
+    height: 100%;
+    font-size: 16px; /* Set base font size for consistent scaling */
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    /* Ensure content doesn't overlap with system UI */
+    min-height: 100vh;
+    min-height: 100dvh; /* Dynamic viewport height for mobile */
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    
+    /* Support edge-to-edge on Android 15+ and iOS Safari */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    
+    /* iOS Safari specific fixes */
+    -webkit-overflow-scrolling: touch;
+    overflow-x: hidden;
+    position: relative;
+  }
+  
+  /* Main app container for edge-to-edge support */
+  #root {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Remove circular styling specifically for list items that show bullet points */
+  [cmdk-item], [data-cmdk-item] {
+    list-style: none !important;
+    list-style-type: none !important;
+  }
+  
+  /* Remove any circular bullet points from command groups */
+  [cmdk-group] [cmdk-item]::marker {
+    display: none !important;
+  }
+  
+  /* Override any chart dot indicators to be square */
+  .chart-indicator[data-indicator="dot"] {
+    border-radius: 2px !important;
+  }
+  
+  /* Modern Edge-to-Edge Safe Areas */
+  .safe-area {
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-left: env(safe-area-inset-left, 0);
+    padding-right: env(safe-area-inset-right, 0);
+  }
+  
+  /* Edge-to-edge container */
+  .edge-to-edge {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* Responsive Layout Support for Tablets/Foldables */
+  .responsive-container {
+    @apply w-full max-w-none;
+  }
+  
+  /* Landscape orientation support */
+  @media (orientation: landscape) {
+    .landscape-optimized {
+      @apply flex-row gap-6;
+    }
+    
+    .landscape-sidebar {
+      @apply w-80 flex-shrink-0;
+    }
+    
+    .landscape-content {
+      @apply flex-1 min-w-0;
+    }
+  }
+  
+  /* Tablet and large screen support */
+  @media (min-width: 768px) {
+    .tablet-layout {
+      @apply grid grid-cols-2 gap-6;
+    }
+    
+    .tablet-full {
+      @apply col-span-2;
+    }
+  }
+  
+  /* Large tablets and foldables */
+  @media (min-width: 1024px) {
+    .large-tablet-layout {
+      @apply grid grid-cols-3 gap-8;
+    }
+    
+    .large-tablet-span-2 {
+      @apply col-span-2;
+    }
+  }
+
+  /* Mobile layout fixes for navigation overlap */
+  @media (max-width: 768px) {
+    .mobile-safe-area {
+      @apply pb-20;
+      padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0));
+    }
+    
+    .mobile-content-padding {
+      @apply pb-24;
+      padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0));
+    }
+    
+    /* Ensure floating elements don't block content */
+    .floating-safe-spacing {
+      @apply mb-20;
+      margin-bottom: calc(5rem + env(safe-area-inset-bottom, 0));
+    }
+    
+    /* iOS Safari specific mobile fixes */
+    .ios-content-fix {
+      padding-top: max(1rem, env(safe-area-inset-top));
+      padding-bottom: max(1rem, env(safe-area-inset-bottom));
+      min-height: calc(100vh - max(1rem, env(safe-area-inset-top)) - max(1rem, env(safe-area-inset-bottom)));
+    }
+    
+    /* Prevent horizontal overflow on iOS */
+    .ios-container {
+      max-width: 100vw;
+      overflow-x: hidden;
+      box-sizing: border-box;
+    }
+    
+    /* Fix text size and spacing on iOS */
+    .ios-text-fix {
+      -webkit-text-size-adjust: none;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+  }
+}
+
+@layer components {
+  /* Improved button spacing */
+  .btn-group {
+    @apply flex gap-3 flex-wrap;
+  }
+  
+  .btn-group-sm {
+    @apply flex gap-2 flex-wrap;
+  }
+  
+  .btn-group-lg {
+    @apply flex gap-4 flex-wrap;
+  }
+  
+  /* Form element spacing */
+  .form-group {
+    @apply space-y-3;
+  }
+  
+  .form-row {
+    @apply flex gap-4 flex-wrap items-end;
+  }
+  
+  /* Action bar spacing */
+  .action-bar {
+    @apply flex gap-3 justify-between items-center flex-wrap;
+  }
+  
+  /* Card action spacing */
+  .card-actions {
+    @apply flex gap-2 justify-end mt-4;
+  }
+  
+  /* Navigation spacing */
+  .nav-items {
+    @apply flex gap-2;
+  }
+  
+  /* Better responsive spacing */
+  @media (max-width: 640px) {
+    .btn-group, .btn-group-sm, .btn-group-lg {
+      @apply gap-1.5;
+    }
+    
+    .form-row {
+      @apply gap-2 flex-col;
+    }
+    
+    .action-bar {
+      @apply gap-1.5 flex-col;
+    }
+    
+    /* Mobile button adjustments */
+    .mobile-button-container {
+      @apply px-2;
+    }
+    
+    .mobile-button-container button {
+      @apply text-sm px-3 min-w-0;
+    }
+  }
+  
+  /* iPhone specific adjustments */
+  @media (max-width: 390px) {
+    .btn-group, .btn-group-sm, .btn-group-lg {
+      @apply gap-1;
+    }
+    
+    .action-bar {
+      @apply gap-1;
+    }
+  }
+  
+  /* Android Tablet and Foldable Support */
+  @media (min-width: 768px) and (max-width: 1024px) {
+    .android-tablet-layout {
+      @apply grid grid-cols-2 gap-4;
+    }
+    
+    .android-tablet-full {
+      @apply col-span-2;
+    }
+  }
+  
+  /* Large Android devices (foldables unfolded) */
+  @media (min-width: 1024px) {
+    .android-foldable-layout {
+      @apply grid grid-cols-3 gap-6;
+    }
+    
+    .android-foldable-span-2 {
+      @apply col-span-2;
+    }
+  }
+  
+  /* Fix form layouts on wide screens */
+  @media (min-width: 768px) {
+    .form-responsive {
+      @apply max-w-2xl mx-auto;
+    }
+    
+    .form-grid {
+      @apply grid grid-cols-2 gap-4;
+    }
+    
+    .form-grid-full {
+      @apply col-span-2;
+    }
+  }
+}

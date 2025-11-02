@@ -1,0 +1,14 @@
+{
+  "variant": "professional",
+  "primary": "#0073AA",
+  "appearance": "light",
+  "radius": 12,
+  "colors": {
+    "primary": "#0073AA",
+    "success": "#10B981",
+    "warning": "#F59E0B", 
+    "danger": "#EF4444",
+    "paper": "#F8FAFC",
+    "accent": "#4F93D8"
+  }
+}

@@ -1,0 +1,101 @@
+Replit Project Prompt: Simple Slips MVP Critical Fixes
+Project: simpleslips.app
+Branch: critical-fixes
+
+1. Authentication Hardening
+Task: Implement session regeneration and secure cookie handling
+
+typescript
+// auth.ts
+app.post('/login', async (req, res) => {
+  req.session.regenerate(() => {
+    req.login(user, (err) => {
+      const token = generateJWT(user);
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        domain: '.simpleslips.app',
+        maxAge: 86400000 // 24h
+      });
+      res.json({ user });
+    });
+  });
+});
+2. Error Boundary Implementation
+Task: Create app-wide error handling
+
+jsx
+// components/CrashScreen.jsx
+export default function CrashScreen({ error }) {
+  return (
+    <div className="grid place-items-center h-screen">
+      <div className="text-center p-6 max-w-md">
+        <AlertTriangle className="h-12 w-12 mx-auto text-red-500" />
+        <h1 className="text-xl font-bold mt-4">Something went wrong</h1>
+        <pre className="mt-2 text-sm bg-gray-100 p-2 rounded overflow-auto">
+          {error.message}
+        </pre>
+        <button 
+          onClick={() => window.location.reload()}
+          className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
+        >
+          Reload App
+        </button>
+      </div>
+    </div>
+  );
+}
+3. Mobile Layout Hotfixes
+Task: Prevent viewport overflow
+
+css
+/* styles/emergency.css */
+@layer utilities {
+  .safe-viewport {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  .min-safe-h-screen {
+    min-height: calc(100dvh - env(safe-area-inset-bottom));
+  }
+}
+4. Deployment Checklist
+Terminal Commands:
+
+bash
+# 1. Verify production build
+npm run build && npx serve -s build
+
+# 2. Test security headers
+curl -I https://your-repl-url.repl.co | grep -iE "content-security-policy|x-frame-options"
+
+# 3. Validate redirects
+curl -L https://simpleslips.app -v | grep -i "location"
+5. Monitoring Setup
+Task: Implement basic error logging
+
+typescript
+// lib/monitoring.ts
+export function logError(error: Error) {
+  fetch('/api/log-error', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: error.message,
+      stack: error.stack,
+      url: window.location.href,
+      timestamp: new Date().toISOString()
+    })
+  }).catch(() => { /* Fail silently */ });
+}
+
+// _app.tsx
+useEffect(() => {
+  const unhandledRejectionHandler = (event) => {
+    logError(event.reason);
+  };
+  
+  window.addEventListener('unhandledrejection', unhandledRejectionHandler);
+  return () => window.removeEventListener('unhandledrejection', unhandledRejectionHandler);
+}, []);

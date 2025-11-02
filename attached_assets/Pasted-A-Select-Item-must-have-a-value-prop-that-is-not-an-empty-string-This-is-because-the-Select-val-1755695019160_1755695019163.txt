@@ -1,0 +1,14 @@
+A <Select.Item /> must have a value prop that is not an empty string. This is because the Select value can be set to an empty string to clear the selection and show the placeholder.
+
+Error: A <Select.Item /> must have a value prop that is not an empty string. This is because the Select value can be set to an empty string to clear the selection and show the placeholder.
+    at https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-select.js?v=f9867087:3043:13
+    at renderWithHooks (https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-NXESFFTV.js?v=f9867087:11596:26)
+    at updateForwardRef (https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-NXESFFTV.js?v=f9867087:14373:28)
+    at beginWork (https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-NXESFFTV.js?v=f9867087:15994:22)
+    at beginWork$1 (https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-NXESFFTV.js?v=f9867087:19806:22)
+    at performUnitOfWork (https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-NXESFFTV.js?v=f9867087:19251:20)
+    at workLoopSync (https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-NXESFFTV.js?v=f9867087:19190:13)
+    at renderRootSync (https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-NXESFFTV.js?v=f9867087:19169:15)
+    at recoverFromConcurrentError (https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-NXESFFTV.js?v=f9867087:18786:28)
+    at performSyncWorkOnRoot (https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-NXESFFTV.js?v=f9867087:18932:28)
+Try Again

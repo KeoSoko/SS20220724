@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.simpleslips.twa",
+      "sha256_cert_fingerprints": [
+        "67:F5:34:ED:8A:DE:9D:DC:58:50:9C:36:6B:59:D8:7A:16:C4:E4:B1:1C:7D:39:B4:F2:DD:BF:BB:3B:74:19:D1",
+        "67:F5:34:ED:8A:DE:9D:DC:58:50:9C:36:68:59:D8:7A:16:C4:E4:B1:1C:7D:39:B4:F2:0D:BF:BB:3B:74:19:D1"
+      ]
+    }
+  }
+]

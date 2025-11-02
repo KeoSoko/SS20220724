@@ -1,0 +1,116 @@
+Project Goal:
+Transform the existing expense tracker app into a production-grade mobile application with improved UX, performance, and reliability.
+
+Key Improvements Needed:
+
+Loading States & Skeleton UI
+
+markdown
+- Implement skeleton loading components for:
+  * Receipt list
+  * Analytics charts
+  * Image previews
+- Use react-content-loader or custom CSS animations
+Enhanced Error Handling
+
+markdown
+- Add error boundaries to all major routes
+- Create custom error screens with recovery options
+- Implement proper API error handling (4xx/5xx)
+Image Optimization
+
+markdown
+- Integrate next/image or react-native-fast-image
+- Implement blur-up placeholders
+- Add lazy loading for receipt images
+Offline Support
+
+markdown
+- Set up service worker with Workbox
+- Implement background sync for failed uploads
+- Add local-first data strategy with React Query
+Security Hardening
+
+markdown
+- Migrate from localStorage to httpOnly cookies
+- Implement CSRF protection
+- Add input sanitization with DOMPurify
+Accessibility Fixes
+
+markdown
+- WCAG 2.1 AA compliance
+- Screen reader testing with VoiceOver/TalkBack
+- Color contrast verification
+Technical Requirements:
+
+typescript
+// Required dependencies
+dependencies: {
+  "react-error-boundary": "^3.1.4",
+  "dompurify": "^3.0.5",
+  "next-image": "^12.3.0",
+  "workbox-background-sync": "^6.5.4",
+  "@tanstack/react-query": "^4.29.0"
+}
+Implementation Steps:
+
+First Iteration (Core UX)
+
+bash
+1. Create skeleton components
+2. Add error boundaries
+3. Set up image optimization
+Second Iteration (Advanced Features)
+
+bash
+1. Configure service worker
+2. Implement background sync
+3. Add security middleware
+Testing Requirements:
+
+markdown
+- [ ] Lighthouse score >90 on all pages
+- [ ] 100ms faster LCP (Largest Contentful Paint)
+- [ ] Works offline with cached receipts
+- [ ] Passes WCAG 2.1 AA audit
+Success Metrics:
+
+markdown
+| Metric          | Current | Target |
+|-----------------|---------|--------|
+| Load Time       | 2.8s    | <1.5s  |
+| Error Rate      | 12%     | <2%    |
+| Accessibility   | 65/100  | 95/100 |
+Additional Notes:
+
+Prioritize mobile-first implementations
+
+Document all new error codes
+
+Maintain backward compatibility
+
+Include performance monitoring hooks
+
+Starter Code Reference:
+
+jsx
+// Sample error boundary implementation
+import { ErrorBoundary } from 'react-error-boundary';
+
+function ErrorFallback({ error, resetErrorBoundary }) {
+  return (
+    <div role="alert">
+      <p>Something went wrong:</p>
+      <pre>{error.message}</pre>
+      <button onClick={resetErrorBoundary}>Try again</button>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
+      {/* Your app components */}
+    </ErrorBoundary>
+  );
+}

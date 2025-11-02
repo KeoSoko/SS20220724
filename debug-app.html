@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Simple Slips</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .error { color: red; background: #fee; padding: 10px; border: 1px solid red; margin: 10px 0; }
+        .success { color: green; background: #efe; padding: 10px; border: 1px solid green; margin: 10px 0; }
+        .info { color: blue; background: #eef; padding: 10px; border: 1px solid blue; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Simple Slips Debug</h1>
+    <div id="status">Checking application status...</div>
+    <div id="debug-info"></div>
+
+    <script>
+        const debugInfo = document.getElementById('debug-info');
+        const status = document.getElementById('status');
+
+        function addMessage(type, message) {
+            const div = document.createElement('div');
+            div.className = type;
+            div.textContent = message;
+            debugInfo.appendChild(div);
+        }
+
+        async function checkApp() {
+            try {
+                // Check if main page loads
+                addMessage('info', 'Checking main page...');
+                const response = await fetch('/');
+                if (response.ok) {
+                    addMessage('success', 'Main page loads successfully');
+                } else {
+                    addMessage('error', `Main page failed: ${response.status}`);
+                    return;
+                }
+
+                // Check API endpoints
+                addMessage('info', 'Testing API endpoints...');
+                
+                const authCheck = await fetch('/api/user');
+                addMessage(authCheck.ok ? 'success' : 'info', `Auth endpoint: ${authCheck.status}`);
+
+                const billingCheck = await fetch('/api/billing/plans');
+                addMessage(billingCheck.ok ? 'success' : 'info', `Billing endpoint: ${billingCheck.status}`);
+
+                status.textContent = 'Debug complete - check results below';
+                
+            } catch (error) {
+                addMessage('error', `Debug failed: ${error.message}`);
+                status.textContent = 'Debug failed';
+            }
+        }
+
+        // Capture all errors
+        window.addEventListener('error', (e) => {
+            addMessage('error', `JS Error: ${e.message} at ${e.filename}:${e.lineno}`);
+        });
+
+        window.addEventListener('unhandledrejection', (e) => {
+            addMessage('error', `Unhandled Promise: ${e.reason}`);
+        });
+
+        checkApp();
+    </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+[PWA] Service Worker registered: ServiceWorkerRegistration
+manifest.json:1 Manifest: scope_extensions entry ignored, required properties 'type' and 'origin' are missing.Understand this warning
+home:1 Banner not shown: beforeinstallpromptevent.preventDefault() called. The page must call beforeinstallpromptevent.prompt() to show the banner.
+monitoring.ts:74 [Performance Monitor] Object
+api/receipts:1  Failed to load resource: the server responded with a status of 401 (Unauthorized)Understand this error
+api/analytics/monthly:1  Failed to load resource: the server responded with a status of 401 (Unauthorized)Understand this error
+api/budgets:1  Failed to load resource: the server responded with a status of 401 (Unauthorized)Understand this error
+api/custom-categories:1  Failed to load resource: the server responded with a status of 401 (Unauthorized)Understand this error
+2home-page.tsx:58 [HomePage] Rendering HomePage component
+monitoring.ts:74 [Performance Monitor] Object
+home:1 The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/192%20Icon%20redesigned_1754568272116.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.Understand this warning
+home:1 The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/512%20Icon%20redesigned_1754568278738.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.Understand this warning
+home:1 The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/192%20Icon%20redesigned_1754568272116.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.Understand this warning
+home:1 The resource https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/attached_assets/512%20Icon%20redesigned_1754568278738.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.Understand this warning

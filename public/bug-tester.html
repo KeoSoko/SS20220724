@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Slips - Backend Bug Tester</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f7f9;
+            color: #333;
+        }
+        h1 {
+            color: #0073AA;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            font-family: monospace;
+        }
+        textarea {
+            height: 80px;
+            resize: vertical;
+        }
+        button {
+            background-color: #0073AA;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #005c8a;
+        }
+        #run-all-tests {
+            background-color: #2ecc71;
+        }
+        #run-all-tests:hover {
+            background-color: #27ae60;
+        }
+        #clear-results {
+            background-color: #e74c3c;
+        }
+        #clear-results:hover {
+            background-color: #c0392b;
+        }
+        .test-result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .loading {
+            color: #856404;
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+        }
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .hidden {
+            display: none;
+        }
+        .endpoint-list {
+            margin-top: 20px;
+        }
+        .endpoint-item {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8f9fa;
+            margin-bottom: 5px;
+            border-radius: 4px;
+        }
+        .endpoint-details {
+            flex: 1;
+        }
+        .endpoint-method {
+            font-weight: bold;
+            color: #0073AA;
+        }
+        .endpoint-path {
+            color: #666;
+            font-family: monospace;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .stat {
+            text-align: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            flex: 1;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            max-height: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Simple Slips Bug Tester</h1>
+        <p class="subtitle">Test your backend API endpoints for issues and performance</p>
+        
+        <div class="input-group">
+            <label for="base-url">Backend Base URL:</label>
+            <input type="text" id="base-url" placeholder="http://localhost:5000" value="http://localhost:5000">
+        </div>
+        
+        <div class="input-group">
+            <label for="auth-token">JWT Authentication Token (Optional):</label>
+            <textarea id="auth-token" placeholder="Paste your JWT token here for authenticated endpoints..."></textarea>
+        </div>
+        
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-number" id="total-tests">0</div>
+                <div class="stat-label">Total Tests</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number" id="passed-tests" style="color: #27ae60;">0</div>
+                <div class="stat-label">Passed</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number" id="failed-tests" style="color: #e74c3c;">0</div>
+                <div class="stat-label">Failed</div>
+            </div>
+        </div>
+        
+        <button id="run-all-tests">🚀 Run All Tests</button>
+        <button id="check-connection">🔗 Test Connection</button>
+        <button id="clear-results">🗑️ Clear Results</button>
+        
+        <div id="results">
+            <!-- Test results will appear here -->
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="endpoint-list">
+            <h2>🎯 Simple Slips API Test Endpoints</h2>
+            
+            <!-- Basic Connection Tests -->
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">GET</div>
+                    <div class="endpoint-path">/</div>
+                    <div>Basic connection test</div>
+                </div>
+                <button onclick="testEndpoint('/', 'GET')">Test</button>
+            </div>
+            
+            <!-- Authentication Tests -->
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">GET</div>
+                    <div class="endpoint-path">/api/subscription/status</div>
+                    <div>Subscription status (requires auth)</div>
+                </div>
+                <button onclick="testEndpoint('/api/subscription/status', 'GET', null, true)">Test</button>
+            </div>
+            
+            <!-- Receipt Management -->
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">GET</div>
+                    <div class="endpoint-path">/api/receipts</div>
+                    <div>Fetch user receipts (requires auth)</div>
+                </div>
+                <button onclick="testEndpoint('/api/receipts', 'GET', null, true)">Test</button>
+            </div>
+            
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">POST</div>
+                    <div class="endpoint-path">/api/receipts</div>
+                    <div>Create test receipt (requires auth)</div>
+                </div>
+                <button onclick="testCreateReceipt()">Test</button>
+            </div>
+            
+            <!-- Budget Management -->
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">GET</div>
+                    <div class="endpoint-path">/api/budgets</div>
+                    <div>Fetch user budgets (requires auth)</div>
+                </div>
+                <button onclick="testEndpoint('/api/budgets', 'GET', null, true)">Test</button>
+            </div>
+            
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">POST</div>
+                    <div class="endpoint-path">/api/budgets</div>
+                    <div>Create test budget (requires auth)</div>
+                </div>
+                <button onclick="testCreateBudget()">Test</button>
+            </div>
+            
+            <!-- Analytics -->
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">GET</div>
+                    <div class="endpoint-path">/api/analytics/monthly</div>
+                    <div>Monthly analytics (requires auth)</div>
+                </div>
+                <button onclick="testEndpoint('/api/analytics/monthly', 'GET', null, true)">Test</button>
+            </div>
+            
+            <!-- Categories -->
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">GET</div>
+                    <div class="endpoint-path">/api/custom-categories</div>
+                    <div>Custom categories (requires auth)</div>
+                </div>
+                <button onclick="testEndpoint('/api/custom-categories', 'GET', null, true)">Test</button>
+            </div>
+            
+            <!-- Tax Features -->
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">GET</div>
+                    <div class="endpoint-path">/api/tax/tips</div>
+                    <div>Tax tips (requires auth)</div>
+                </div>
+                <button onclick="testEndpoint('/api/tax/tips', 'GET', null, true)">Test</button>
+            </div>
+            
+            <!-- Error Handling Tests -->
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">GET</div>
+                    <div class="endpoint-path">/api/nonexistent</div>
+                    <div>Error handling test (should return 404)</div>
+                </div>
+                <button onclick="testEndpoint('/api/nonexistent', 'GET')">Test</button>
+            </div>
+            
+            <div class="endpoint-item">
+                <div class="endpoint-details">
+                    <div class="endpoint-method">GET</div>
+                    <div class="endpoint-path">/api/receipts</div>
+                    <div>Auth required test (should return 401 without token)</div>
+                </div>
+                <button onclick="testEndpoint('/api/receipts', 'GET', null, false)">Test</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const baseUrlInput = document.getElementById('base-url');
+        const authTokenInput = document.getElementById('auth-token');
+        const resultsDiv = document.getElementById('results');
+        const checkConnectionBtn = document.getElementById('check-connection');
+        const runAllTestsBtn = document.getElementById('run-all-tests');
+        const clearResultsBtn = document.getElementById('clear-results');
+        
+        let testStats = { total: 0, passed: 0, failed: 0 };
+        
+        checkConnectionBtn.addEventListener('click', () => {
+            testEndpoint('/', 'GET');
+        });
+        
+        runAllTestsBtn.addEventListener('click', () => {
+            runAllTests();
+        });
+        
+        clearResultsBtn.addEventListener('click', () => {
+            resultsDiv.innerHTML = '';
+            testStats = { total: 0, passed: 0, failed: 0 };
+            updateStats();
+        });
+        
+        function updateStats() {
+            document.getElementById('total-tests').textContent = testStats.total;
+            document.getElementById('passed-tests').textContent = testStats.passed;
+            document.getElementById('failed-tests').textContent = testStats.failed;
+        }
+        
+        function runAllTests() {
+            // Clear previous results
+            resultsDiv.innerHTML = '';
+            testStats = { total: 0, passed: 0, failed: 0 };
+            updateStats();
+            
+            // Run tests in sequence with delays
+            const tests = [
+                () => testEndpoint('/', 'GET'),
+                () => testEndpoint('/api/subscription/status', 'GET', null, true),
+                () => testEndpoint('/api/receipts', 'GET', null, true),
+                () => testEndpoint('/api/budgets', 'GET', null, true),
+                () => testEndpoint('/api/analytics/monthly', 'GET', null, true),
+                () => testEndpoint('/api/custom-categories', 'GET', null, true),
+                () => testEndpoint('/api/tax/tips', 'GET', null, true),
+                () => testEndpoint('/api/receipts', 'GET', null, false), // Should fail without auth
+                () => testEndpoint('/api/nonexistent', 'GET') // Should return 404
+            ];
+            
+            async function runTestsSequentially() {
+                for (const test of tests) {
+                    try {
+                        await test();
+                        await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms between tests
+                    } catch (error) {
+                        console.log('Test completed with expected error:', error.message);
+                    }
+                }
+            }
+            
+            runTestsSequentially();
+        }
+        
+        function testCreateReceipt() {
+            const testData = {
+                storeName: "Test Store",
+                date: new Date().toISOString().split('T')[0],
+                total: 25.99,
+                items: ["Test Item 1", "Test Item 2"],
+                category: "groceries",
+                notes: "Bug tester created receipt",
+                isTaxDeductible: false,
+                isRecurring: false,
+                imageData: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+            };
+            
+            testEndpoint('/api/receipts', 'POST', testData, true);
+        }
+        
+        function testCreateBudget() {
+            const testData = {
+                name: "Test Budget " + Date.now(),
+                category: "groceries",
+                monthlyLimit: 500,
+                alertThreshold: 80
+            };
+            
+            testEndpoint('/api/budgets', 'POST', testData, true);
+        }
+        
+        function testEndpoint(endpoint, method = 'GET', data = null, requiresAuth = false) {
+            const baseUrl = baseUrlInput.value;
+            const authToken = authTokenInput.value.trim();
+            const url = baseUrl + endpoint;
+            
+            // Increment total tests
+            testStats.total++;
+            updateStats();
+            
+            // Show loading state
+            const testId = 'test-' + Date.now();
+            const testResult = document.createElement('div');
+            testResult.id = testId;
+            testResult.className = 'test-result loading';
+            testResult.innerHTML = `🔄 Testing ${method} ${endpoint}...`;
+            resultsDiv.appendChild(testResult);
+            
+            // Scroll to results
+            testResult.scrollIntoView({ behavior: 'smooth' });
+            
+            // Prepare fetch options
+            const options = {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            };
+            
+            // Add auth header if token provided and required
+            if (requiresAuth && authToken) {
+                options.headers['Authorization'] = `Bearer ${authToken}`;
+            }
+            
+            if (data && (method === 'POST' || method === 'PUT')) {
+                options.body = JSON.stringify(data);
+            }
+            
+            // Make the request
+            return fetch(url, options)
+                .then(response => {
+                    return response.text().then(text => {
+                        let parsedData;
+                        try {
+                            parsedData = JSON.parse(text);
+                        } catch (e) {
+                            parsedData = { rawResponse: text };
+                        }
+                        
+                        return {
+                            status: response.status,
+                            statusText: response.statusText,
+                            data: parsedData,
+                            headers: Object.fromEntries(response.headers.entries())
+                        };
+                    });
+                })
+                .then(result => {
+                    // Determine success/failure
+                    const isSuccess = result.status >= 200 && result.status < 300;
+                    const isExpectedError = endpoint.includes('nonexistent') && result.status === 404;
+                    const isExpectedAuth = endpoint.includes('receipts') && !requiresAuth && result.status === 401;
+                    
+                    if (isSuccess || isExpectedError || isExpectedAuth) {
+                        testStats.passed++;
+                        testResult.className = 'test-result success';
+                    } else {
+                        testStats.failed++;
+                        testResult.className = 'test-result error';
+                    }
+                    
+                    updateStats();
+                    
+                    // Format response data
+                    const responseText = typeof result.data === 'object' ? 
+                        JSON.stringify(result.data, null, 2) : result.data;
+                    
+                    testResult.innerHTML = `
+                        <strong>${method} ${endpoint}</strong><br>
+                        <strong>Status:</strong> ${result.status} ${result.statusText}<br>
+                        ${requiresAuth && !authToken ? '<span style="color: orange;">⚠️ Auth required but no token provided</span><br>' : ''}
+                        <strong>Response:</strong>
+                        <pre>${responseText}</pre>
+                        ${Object.keys(result.headers).length > 0 ? `<strong>Headers:</strong><pre>${JSON.stringify(result.headers, null, 2)}</pre>` : ''}
+                    `;
+                    
+                    return result;
+                })
+                .catch(error => {
+                    // Update stats and UI with error
+                    testStats.failed++;
+                    updateStats();
+                    
+                    testResult.className = 'test-result error';
+                    testResult.innerHTML = `
+                        <strong>${method} ${endpoint}</strong><br>
+                        <strong>❌ Connection Error:</strong> ${error.message}<br>
+                        <em>This could indicate:</em>
+                        <ul>
+                            <li>Server is not running</li>
+                            <li>Incorrect base URL</li>
+                            <li>CORS issues</li>
+                            <li>Network connectivity problems</li>
+                        </ul>
+                    `;
+                    
+                    throw error;
+                });
+        }
+        
+        // Auto-populate token from localStorage if available
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedToken = localStorage.getItem('authToken');
+            if (savedToken) {
+                authTokenInput.value = savedToken;
+            }
+            
+            // Save token when user enters it
+            authTokenInput.addEventListener('input', () => {
+                if (authTokenInput.value.trim()) {
+                    localStorage.setItem('authToken', authTokenInput.value.trim());
+                }
+            });
+        });
+    </script>
+</body>
+</html>

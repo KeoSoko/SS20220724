@@ -1,0 +1,43 @@
+Auth store initialized with stored user: KeoraSoko
+index-Bdx45nh5.js:611 [App] App component is rendering
+index-Bdx45nh5.js:463 Store getCurrentUser called, returning: KeoraSoko
+index-Bdx45nh5.js:463 Auth hook initializing with store user: KeoraSoko
+index-Bdx45nh5.js:463 Auth effect: stored token = none
+index-Bdx45nh5.js:463 Store getCurrentUser called, returning: KeoraSoko
+index-Bdx45nh5.js:463 No token but user in store - clearing auth store
+index-Bdx45nh5.js:463 Auth store clearing all data
+index-Bdx45nh5.js:463 Auth hook subscribing to store changes
+index-Bdx45nh5.js:463 New auth store subscription, total subscribers: 1
+index-Bdx45nh5.js:463 User data loaded successfully: Object
+index-Bdx45nh5.js:463 Auth state debug: Object
+index-Bdx45nh5.js:468 [Monitoring] Error monitoring initialized
+VM11 auth:6 [PWA] Service Worker registered successfully: ServiceWorkerRegistration
+index-Bdx45nh5.js:468 ProtectedRoute[/home]: user=true, token=false, expired=false, isLoading=false
+index-Bdx45nh5.js:525 [HomePage] Rendering HomePage component
+index-Bdx45nh5.js:48 [QueryClient] Fetching URL: /api/receipts
+index-Bdx45nh5.js:48 [QueryClient] Auth token available: false
+index-Bdx45nh5.js:48 [QueryClient] Request headers: Array(0)
+index-Bdx45nh5.js:48 [QueryClient] Fetching URL: /api/analytics/monthly
+index-Bdx45nh5.js:48 [QueryClient] Auth token available: false
+index-Bdx45nh5.js:48 [QueryClient] Request headers: Array(0)
+index-Bdx45nh5.js:48 [QueryClient] Fetching URL: /api/budgets
+index-Bdx45nh5.js:48 [QueryClient] Auth token available: false
+index-Bdx45nh5.js:48 [QueryClient] Request headers: Array(0)
+index-Bdx45nh5.js:48 [QueryClient] Fetching URL: /api/custom-categories
+index-Bdx45nh5.js:48 [QueryClient] Auth token available: false
+index-Bdx45nh5.js:48 [QueryClient] Request headers: Array(0)
+index-Bdx45nh5.js:468 [PWA] Service Worker registered: ServiceWorkerRegistration
+manifest.json:1 Manifest: scope_extensions entry ignored, required properties 'type' and 'origin' are missing.Understand this warning
+home:1 Banner not shown: beforeinstallpromptevent.preventDefault() called. The page must call beforeinstallpromptevent.prompt() to show the banner.
+api/receipts:1  Failed to load resource: the server responded with a status of 401 ()Understand this error
+index-Bdx45nh5.js:525 [HomePage] Rendering HomePage component
+api/custom-categories:1  Failed to load resource: the server responded with a status of 401 ()Understand this error
+index-Bdx45nh5.js:525 [HomePage] Rendering HomePage component
+api/budgets:1  Failed to load resource: the server responded with a status of 401 ()Understand this error
+api/analytics/monthly:1  Failed to load resource: the server responded with a status of 401 ()Understand this error
+home:1 The resource https://simpleslips.app/attached_assets/192%20Icon%20redesigned_1754568272116.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.Understand this warning
+home:1 The resource https://simpleslips.app/attached_assets/512%20Icon%20redesigned_1754568278738.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.Understand this warning
+index-Bdx45nh5.js:525 [HomePage] Rendering HomePage component
+index-Bdx45nh5.js:525 [HomePage] Rendering HomePage component
+home:1 The resource https://simpleslips.app/attached_assets/192%20Icon%20redesigned_1754568272116.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.Understand this warning
+home:1 The resource https://simpleslips.app/attached_assets/512%20Icon%20redesigned_1754568278738.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.Understand this warning

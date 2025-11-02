@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear PWA Cache - Simple Slips</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+            text-align: center;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #0073AA;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px;
+            width: 100%;
+        }
+        button:hover {
+            background: #005a87;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .warning { background: #fff3cd; color: #856404; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 PWA Cache Reset</h1>
+        <p>Use this tool to clear Simple Slips PWA cache and see your new icon design.</p>
+        
+        <div id="status"></div>
+        
+        <button onclick="clearAllCaches()">Clear All Caches</button>
+        <button onclick="unregisterServiceWorker()">Reset Service Worker</button>
+        <button onclick="reloadPage()">Reload App</button>
+        <button onclick="goToApp()">Back to Simple Slips</button>
+    </div>
+
+    <script>
+        const statusDiv = document.getElementById('status');
+        
+        function showStatus(message, type = 'info') {
+            statusDiv.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+        
+        async function clearAllCaches() {
+            try {
+                showStatus('Clearing all caches...', 'info');
+                
+                const cacheNames = await caches.keys();
+                await Promise.all(
+                    cacheNames.map(cacheName => caches.delete(cacheName))
+                );
+                
+                // Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                showStatus(`✅ Cleared ${cacheNames.length} caches and storage`, 'success');
+            } catch (error) {
+                showStatus(`❌ Error clearing caches: ${error.message}`, 'warning');
+            }
+        }
+        
+        async function unregisterServiceWorker() {
+            try {
+                showStatus('Resetting service worker...', 'info');
+                
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(
+                    registrations.map(registration => registration.unregister())
+                );
+                
+                showStatus(`✅ Unregistered ${registrations.length} service workers`, 'success');
+            } catch (error) {
+                showStatus(`❌ Error with service worker: ${error.message}`, 'warning');
+            }
+        }
+        
+        function reloadPage() {
+            showStatus('Reloading with fresh cache...', 'info');
+            window.location.reload(true);
+        }
+        
+        function goToApp() {
+            window.location.href = '/';
+        }
+        
+        // Auto-check cache status and icon update
+        window.addEventListener('load', async () => {
+            const cacheNames = await caches.keys();
+            const swRegistrations = await navigator.serviceWorker.getRegistrations();
+            
+            showStatus(`Found ${cacheNames.length} caches and ${swRegistrations.length} service workers<br>🎯 <strong>Icon Update: v5.0.0 with proper 192x192 and 512x512 sizes</strong>`, 'info');
+            
+            // Check if old caches exist
+            const hasOldCache = cacheNames.some(name => 
+                name.includes('v3') || name.includes('v4') || 
+                name.includes('simple-slips-static-v3') || 
+                name.includes('simple-slips-static-v4')
+            );
+            
+            if (hasOldCache) {
+                showStatus('⚠️ Old caches detected! Click "Clear All Caches" to see new icon.', 'warning');
+            }
+        });
+    </script>
+</body>
+</html>

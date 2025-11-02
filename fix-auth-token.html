@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix Authentication Token</title>
+</head>
+<body>
+    <h1>Setting Authentication Token</h1>
+    <div id="status">Setting token...</div>
+    
+    <script>
+        // Get the token from the server and store it properly
+        async function fixAuthentication() {
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: 'KeoraSoko',
+                        password: 'Test123'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.token) {
+                    // Store token in localStorage
+                    localStorage.setItem('auth_token', data.token);
+                    
+                    // Store user in persistent auth store
+                    localStorage.setItem('persistent_auth_user', JSON.stringify(data.user));
+                    
+                    document.getElementById('status').innerHTML = `
+                        <p style="color: green;">✓ Authentication token set successfully!</p>
+                        <p>Token: ${data.token.substring(0, 20)}...</p>
+                        <p>User: ${data.user.username}</p>
+                        <p><a href="/">Go back to app</a></p>
+                    `;
+                    
+                    console.log('Authentication fixed:', {
+                        user: data.user.username,
+                        tokenLength: data.token.length
+                    });
+                    
+                    // Auto-redirect after 3 seconds
+                    setTimeout(() => {
+                        window.location.href = '/home';
+                    }, 3000);
+                } else {
+                    throw new Error('No token received');
+                }
+            } catch (error) {
+                document.getElementById('status').innerHTML = `
+                    <p style="color: red;">❌ Authentication failed: ${error.message}</p>
+                    <p><a href="/auth">Go to login page</a></p>
+                `;
+                console.error('Authentication error:', error);
+            }
+        }
+        
+        // Run immediately
+        fixAuthentication();
+    </script>
+</body>
+</html>

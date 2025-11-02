@@ -1,0 +1,107 @@
+{
+  "identifier" : "SIMPLE_SLIPS_STORE",
+  "nonRenewingSubscriptions" : [
+  ],
+  "products" : [
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "ZAF",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Manage Subscriptions Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Refund Request Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Offer Code Redeem Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "SIMPLE_SLIPS_PREMIUM",
+      "localizations" : [
+        {
+          "description" : "Simple Slips Premium subscription group for AI-powered receipt management",
+          "displayName" : "Simple Slips Premium",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Simple Slips Premium",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+          ],
+          "codeOffers" : [
+          ],
+          "displayPrice" : "99.00",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "SS_PREMIUM_MONTHLY",
+          "introductoryOffer" : {
+            "displayPrice" : "0.00",
+            "internalID" : "SS_TRIAL_7DAY",
+            "numberOfPeriods" : 1,
+            "paymentMode" : "freeTrial",
+            "subscriptionPeriod" : "P7D"
+          },
+          "localizations" : [
+            {
+              "description" : "Access all Simple Slips premium features including unlimited receipt scanning, AI categorization, tax reports, and cloud storage. Start with a 7-day free trial.",
+              "displayName" : "Simple Slips Premium",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "simple_slips_premium_monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Simple Slips Premium Monthly",
+          "subscriptionGroupID" : "SIMPLE_SLIPS_PREMIUM",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

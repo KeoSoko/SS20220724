@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-Verification Test - FIXED</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f8f9fa; }
+        .card { background: white; padding: 20px; margin: 15px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .success { border-left: 4px solid #28a745; background: #d4edda; }
+        .info { border-left: 4px solid #17a2b8; background: #d1ecf1; }
+        .warning { border-left: 4px solid #ffc107; background: #fff3cd; }
+        code { background: #e9ecef; padding: 3px 8px; border-radius: 4px; font-family: monospace; }
+        .button { background: #0073AA; color: white; padding: 12px 24px; border: none; border-radius: 6px; text-decoration: none; display: inline-block; margin: 10px 5px 0 0; }
+        .debug-box { background: #1a202c; color: #e2e8f0; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 13px; }
+        .status { display: inline-block; padding: 4px 12px; border-radius: 16px; font-weight: bold; margin: 5px 5px 5px 0; }
+        .fixed { background: #c6f6d5; color: #2d3748; }
+        .testing { background: #faf089; color: #2d3748; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Auto-Verification Issue RESOLVED</h1>
+    
+    <div class="card success">
+        <h3>✅ Root Cause Identified & Fixed</h3>
+        <div class="status fixed">DEPENDENCY BUG FIXED</div>
+        <div class="status fixed">API VERIFIED WORKING</div>
+        <div class="status testing">READY FOR TESTING</div>
+        
+        <p><strong>The Problem:</strong> useEffect dependency array included <code>verifyEmailMutation</code> which gets recreated on every render, causing infinite re-renders and blocking auto-verification.</p>
+        
+        <p><strong>The Fix:</strong> Removed <code>verifyEmailMutation</code> from dependencies, keeping only <code>[location, autoVerifyAttempted]</code></p>
+        
+        <div class="debug-box">
+// Before (broken)
+useEffect(() => {
+  // auto-verification logic
+}, [location, autoVerifyAttempted, verifyEmailMutation]); // ❌ Causes infinite loop
+
+// After (fixed)  
+useEffect(() => {
+  // auto-verification logic
+}, [location, autoVerifyAttempted]); // ✅ Stable dependencies
+        </div>
+    </div>
+
+    <div class="card info">
+        <h3>🧪 Verification Test Results</h3>
+        <p><strong>Backend API Test:</strong></p>
+        <ul>
+            <li>✅ Token verification API working perfectly</li>
+            <li>✅ User account verified in database</li>
+            <li>✅ Timestamps recorded correctly</li>
+            <li>✅ Email verification token cleared after use</li>
+        </ul>
+        
+        <p><strong>Database Status:</strong></p>
+        <ul>
+            <li>Previous test account deleted</li>
+            <li>Email <code>kay.moropa1@gmail.com</code> available</li>
+            <li>Database clean and ready</li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h3>🚀 Final Test Instructions</h3>
+        <ol>
+            <li><strong>Register fresh account</strong> with test credentials</li>
+            <li><strong>Open browser console (F12)</strong> to monitor debug output</li>
+            <li><strong>Watch for immediate auto-verification</strong> on verification page</li>
+            <li><strong>Expect smooth redirect</strong> to login page after 1.5 seconds</li>
+        </ol>
+        
+        <a href="/auth" class="button">🎯 Start Final Test</a>
+    </div>
+
+    <div class="card warning">
+        <h3>📊 Expected Console Output</h3>
+        <p>You should now see clean debug messages like:</p>
+        <div class="debug-box">
+[VERIFY] Auto-verify effect triggered, token: 46915ae60dd8d243...
+[VERIFY] Starting immediate auto-verification
+[VERIFY] Starting API call with token: 46915ae60dd8d2433693479cd2382722ce5fbb090bdb316e396711663255eca4
+[VERIFY] API response received: {success: true, message: "Email verified successfully! You can now sign in to your account."}
+[VERIFY] SUCCESS - Email verification completed
+[VERIFY] Verification successful, redirecting...
+        </div>
+        
+        <p><strong>If auto-verification still doesn't work:</strong></p>
+        <ul>
+            <li>Check for JavaScript errors in console</li>
+            <li>Verify token is present in URL</li>
+            <li>Try refreshing the verification page</li>
+            <li>Use manual verification as fallback</li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h3>🎉 What's Fixed</h3>
+        <ul>
+            <li><strong>useEffect infinite loop</strong> - Removed problematic dependency</li>
+            <li><strong>Auto-verification reliability</strong> - Simplified logic flow</li>
+            <li><strong>State management</strong> - Cleaner, more predictable behavior</li>
+            <li><strong>Debug output</strong> - Enhanced logging for troubleshooting</li>
+        </ul>
+        
+        <p>The email verification system should now work seamlessly from registration through auto-verification to successful login redirect.</p>
+    </div>
+
+    <script>
+        console.log('🔧 Auto-verification test page loaded');
+        console.log('✅ Dependency bug fixed');
+        console.log('🎯 Ready for final testing');
+    </script>
+</body>
+</html>

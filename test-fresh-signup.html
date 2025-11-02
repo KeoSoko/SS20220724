@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fresh Signup Test - Simple Slips</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .step { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 8px; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; }
+        code { background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-size: 14px; }
+        pre { background: #e9ecef; padding: 10px; border-radius: 5px; overflow-x: auto; }
+        button { padding: 10px 20px; background: #0073AA; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin: 5px 0; }
+        .form-group { margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Fresh Signup Flow Test</h1>
+    
+    <div class="step success">
+        <h3>✅ Step 1: Database Cleanup Complete</h3>
+        <p>Previous test account (KayMoropa) has been successfully deleted from the database.</p>
+        <p>Email <code>kay.moropa1@gmail.com</code> is now available for fresh testing.</p>
+    </div>
+
+    <div class="step">
+        <h3>📋 Step 2: Test Registration</h3>
+        <p><strong>Test Credentials:</strong></p>
+        <ul>
+            <li>Username: <code>TestUser2025</code></li>
+            <li>Email: <code>kay.moropa1@gmail.com</code></li>
+            <li>Password: <code>TestPass123!</code></li>
+        </ul>
+        <p><strong>Registration URL:</strong></p>
+        <a href="/auth" target="_blank" style="background: #0073AA; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px;">
+            🚀 Go to Registration Page
+        </a>
+    </div>
+
+    <div class="step">
+        <h3>🔍 Step 3: Monitor Debug Output</h3>
+        <p>After registration, the system will:</p>
+        <ol>
+            <li>Create user account in database</li>
+            <li>Generate fresh verification token</li>
+            <li>Send verification email</li>
+            <li>Show success message</li>
+            <li>Redirect to verification page</li>
+        </ol>
+        <p><strong>Debug monitoring is now active with enhanced logging:</strong></p>
+        <ul>
+            <li>Token extraction and validation</li>
+            <li>API call tracking with timestamps</li>
+            <li>Response analysis</li>
+            <li>Redirect behavior monitoring</li>
+            <li>Fallback redirect mechanisms</li>
+        </ul>
+    </div>
+
+    <div class="step warning">
+        <h3>⚠️ Important Notes</h3>
+        <ul>
+            <li>Open browser developer console (F12) to see debug output</li>
+            <li>The system now has dual-redirect mechanism (primary + fallback)</li>
+            <li>Enhanced error handling for expired/used tokens</li>
+            <li>Performance monitoring shows ~27s load time - optimization needed</li>
+        </ul>
+    </div>
+
+    <div class="step">
+        <h3>🎯 Expected Flow</h3>
+        <pre>
+1. Register new account (/auth)
+   → Creates user with fresh verification token
+   → Sends email (check SendGrid logs)
+   → Redirects to /verify-email?token=NEW_TOKEN
+
+2. Auto-verification (/verify-email?token=NEW_TOKEN)
+   → Extracts token from URL
+   → Calls /api/verify-email
+   → Success: Shows success message + redirects to /auth
+   → Error: Shows manual verification form
+
+3. Post-verification (/auth?verified=true)
+   → Shows "Email verified" success message
+   → User can now sign in normally
+        </pre>
+    </div>
+
+    <div class="step">
+        <h3>📊 Diagnostic Data to Collect</h3>
+        <p>After completing the test, please share:</p>
+        <ul>
+            <li>Browser console output (copy all [VERIFY] logs)</li>
+            <li>Network tab showing API responses</li>
+            <li>Final URL after verification attempt</li>
+            <li>Any error messages or unexpected behavior</li>
+        </ul>
+    </div>
+
+    <script>
+        // Auto-refresh every 30 seconds to show current time
+        setInterval(() => {
+            document.title = `Fresh Signup Test - ${new Date().toLocaleTimeString()}`;
+        }, 30000);
+        
+        console.log('🔍 Fresh signup test page loaded');
+        console.log('📧 Testing email: kay.moropa1@gmail.com');
+        console.log('🕐 Test started at:', new Date().toISOString());
+    </script>
+</body>
+</html>

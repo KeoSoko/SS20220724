@@ -1,0 +1,17 @@
+Misleading Claims policy: Violation of Misleading Claims policy
+Status
+App rejected
+App not available on Google Play
+Rejected
+Sep 5, 2025, 10:51 AM
+Your app contains content that doesn't comply with the Misleading Claims policy. We adopted this policy to promote trust and create a safe experience for users. That’s why apps that provide government information, whether or not they are government affiliated, must strictly adhere to our Misleading Claims policy.
+Missing Source Link for Government Information
+Your app provides government information but lacks one or more clear and accessible URL/link(s) to the original source(s) (for example, .gov domains).
+
+Where this issue was found
+This issue may also be found in other locations. Check all areas of your app when fixing this issue.
+
+Location
+Evidence
+Full description (en-US)
+Tired of shoeboxes full of receipts? Transform your financial management with Simple Slips - the smart receipt tracking app designed specifically for South African users. Our AI-powered platform makes expense tracking effortless, perfect for all of you freelancers, small business owners, and tax professionals! 🔥 Key Features: 📱 Smart Receipt Scanning : > Instantly capture receipts with your camera > AI extracts all details automatically - store name, date & amount > Works with any South African retailer receipt format 💰 Tax-Ready Organization > Tax deductible identification > Tax information based on public guidelines (not affiliated with SARS) > Generate tax reports instantly > Export data for accountants (PDF/CSV) 🤖 AI-Powered Intelligence > Smart categorization learns your spending patterns > Natural language search: "Show me restaurant expenses in July" > Duplicate detection prevents double entries > Budget tracking with intelligent alerts 📊 Comprehensive Analytics > Monthly spending trends and insights > Category breakdowns with visual charts > Compare spending across different periods > Budget vs actual spending analysis 🔒 Enterprise-Grade Security > Bank-level encryption for all data > Secure cloud backup and sync > GDPR compliant data handling > Complete data control - delete anytime Perfect For: ✓ Small business owners tracking expenses ✓ Freelancers managing tax deductions ✓ Families budgeting household spending ✓ Students monitoring university expenses ✓ Anyone wanting better financial control Why Choose Simple Slips: ✓ Built for South African tax guidelines and retailers ✓ Professional tax reports in minutes ✓ 99.9% OCR accuracy rate ✓ Syncs across all your devices Important Note: Simple Slips is not affiliated with SARS or any government entity. Tax information provided is for general guidance only. Getting Started: 1. Download and create your free account 2. Scan your first receipt in seconds 3. Watch AI organize everything automatically 4. Export professional reports when needed Join thousands of South Africans already saving time and money with Simple Slips. Download now and get your financial life organized in minutes, not hours. Start your 7-day free trial today - no credit card required!

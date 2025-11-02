@@ -1,0 +1,91 @@
+# Simple Slips - AI-Powered Receipt Management System
+
+## Overview
+Simple Slips is an AI-powered receipt management system for the South African market. It enables users to efficiently scan, categorize, and manage receipts. The project is in its MVP launch phase with a production-ready infrastructure, comprehensive Google Play Store assets, and a full feature set including custom PDF reports, account management, and a subscription billing system. The business vision is to provide a seamless, AI-driven solution for personal and small business expense tracking, simplifying financial management and tax preparation.
+
+## User Preferences
+Preferred communication style: Simple, everyday language.
+
+## System Architecture
+The system is built as a full-stack TypeScript application within a monorepo structure, separating client, server, and shared code.
+
+### UI/UX Decisions
+- **Frontend Technology**: React with TypeScript and Vite.
+- **Styling**: Tailwind CSS with shadcn/ui for consistent design components.
+- **Design Philosophy**: Responsive, mobile-first design with a professional blue color scheme (#0073AA). Features a consistent component library, subtle rounded corners (2px), and enhanced visual hierarchy. All circular UI elements have been replaced with square/rectangular alternatives for a consistent geometric design.
+- **Accessibility**: Includes ARIA labels and keyboard navigation.
+- **Mobile Optimization**: Progressive Web App (PWA) optimized for app store deployment, featuring native-like camera integration, offline support, and a 3:4 aspect ratio for receipt image displays.
+- **Login UX**: Accepts both username and email for login.
+
+### Technical Implementations
+- **Backend Technology**: Express.js with TypeScript (ESM modules).
+- **Database**: PostgreSQL with Drizzle ORM, utilizing Neon Database for serverless PostgreSQL.
+- **Authentication**: JWT tokens with Passport.js local strategy, including email verification. Session management is handled by PostgreSQL.
+- **Admin System**: Role-based access control with `isAdmin` field in users table. AdminRoute component restricts access to admin-only features like email tracking dashboard.
+- **Security**: Implements rate limiting and Zod schemas for input validation.
+- **Billing System**: Uses Paystack for recurring subscriptions, allowing for better revenue retention and cross-platform compatibility, bypassing app store commissions.
+- **Account Management**: Includes robust account deletion functionality with password verification, complete data cleanup, and GDPR-compliant security.
+- **Image Handling**: Session storage preserves receipt images and form data during navigation for a seamless user experience. Original receipts are deleted upon splitting.
+- **Promo Code System**: Supports promotional codes for extended trial periods during user signup.
+- **Tax Deductible System**: Functionality for tracking and displaying tax-deductible amounts.
+- **Email System**: Comprehensive email tracking system (delivered, bounced, opened, clicked) with SendGrid webhooks.
+
+### Feature Specifications
+- **AI-Powered Receipt Processing**: Utilizes Azure Form Recognizer for OCR and OpenAI GPT-4o for categorization and smart search.
+  - **Enhanced Image Preprocessing**: Receipt images are automatically enhanced before OCR using Sharp library (auto-rotate, sharpen, contrast adjustment, noise reduction) for improved accuracy.
+  - **Confidence Scoring**: Visual indicators (high/medium/low) on receipt cards show OCR confidence levels to help users identify receipts that may need review.
+  - **Smart Learning System**: Database tables track user corrections (user_corrections) and merchant patterns (merchant_patterns) to improve future categorization accuracy based on user preferences.
+  - **Needs Review Filter**: Quick filter button to show only receipts with confidence scores below 80% for easy verification.
+- **Database Schema**: Designed to manage users, receipts, tags, budgets, and custom categories, with support for receipt sharing.
+- **Smart Search & Analytics**: AI-powered natural language search, spending trend analysis, real-time budget monitoring, and export options (PDF, CSV).
+- **AI Tax Assistant Chatbot**: An OpenAI GPT-4o powered chatbot provides contextual tax advice specific to South African regulations.
+- **Recurring Expense System**: Detects and manages recurring expenses through pattern recognition and predictive analysis.
+- **Subscription Management**: Complete system with 7-day free trials and monthly subscriptions (R99).
+- **Custom Category Management**: Allows users to create and filter receipts by custom categories.
+
+## External Dependencies
+
+### Cloud Services
+- **Azure Form Recognizer**: Primary OCR service for receipt text extraction.
+- **Azure Blob Storage**: Cloud storage for receipt images.
+- **OpenAI API**: Powers AI categorization, smart search, and the AI Tax Assistant chatbot.
+- **SendGrid**: Used for email notifications (verification, password resets) and email event tracking.
+- **Neon Database**: Provides serverless PostgreSQL database instance.
+- **Paystack**: Payment gateway for recurring subscription billing.
+
+### Key NPM Packages
+- **Frontend**: React, Tanstack Query, Wouter (routing), Radix UI.
+- **Backend**: Express, Drizzle ORM, Passport.js, JWT, Sharp (image preprocessing).
+- **Development**: Vite, TypeScript, Tailwind CSS, ESBuild.
+
+## Admin System
+
+Simple Slips includes a role-based admin system for managing admin-only features and monitoring.
+
+### How It Works
+- **Database Field**: `is_admin` boolean field in users table (default: false)
+- **Frontend Protection**: AdminRoute component checks user.isAdmin before allowing access
+- **Backend Protection**: API routes can check req.user.isAdmin for authorization
+- **Non-admin Redirect**: Non-admin users trying to access admin pages are redirected to home
+
+### Admin-Only Features
+- **Email Tracking Dashboard** (`/admin/email-tracking`): Monitor email deliverability, bounces, and engagement
+
+### Managing Admin Users
+
+**Current Admin**: KeoraSoko (keo@nine28.co.za)
+
+**To make another user an admin:**
+```sql
+UPDATE users SET is_admin = true WHERE username = 'username_here';
+```
+
+**To remove admin access:**
+```sql
+UPDATE users SET is_admin = false WHERE username = 'username_here';
+```
+
+**To list all admins:**
+```sql
+SELECT id, username, email, is_admin FROM users WHERE is_admin = true;
+```

@@ -1,0 +1,200 @@
+{
+  "name": "Simple Slips - Receipt Manager",
+  "short_name": "Simple Slips",
+  "description": "Smart receipt management and expense tracking app with AI-powered categorization, tax compliance tools, and analytics for South African businesses and individuals. Scan receipts, track expenses, manage budgets, and get tax insights.",
+  "start_url": "/?source=pwa",
+  "id": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#FFFFFF",
+  "theme_color": "#0073AA",
+  "capture_links": "existing_client_navigate",
+  "orientation": "any",
+  "scope": "/",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "finance", "productivity"],
+  "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7",
+  "scope_extensions": [
+    {
+      "origin": "https://simpleslips.app"
+    }
+  ],
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
+  "screenshots": [
+    {
+      "src": "/attached_assets/app-screenshot-2_1755362221669.jpg",
+      "sizes": "390x844",
+      "type": "image/jpeg",
+      "platform": "narrow",
+      "label": "AI-powered dashboard with smart expense insights and search"
+    },
+    {
+      "src": "/attached_assets/app-screenshot-1_1755362221669.jpg", 
+      "sizes": "390x844",
+      "type": "image/jpeg",
+      "platform": "narrow",
+      "label": "Receipt management with filtering and categorization"
+    },
+    {
+      "src": "/attached_assets/app-screenshot-3_1755362221669.jpg",
+      "sizes": "390x844", 
+      "type": "image/jpeg",
+      "platform": "narrow",
+      "label": "Enhanced receipt scanner with real-time OCR processing"
+    },
+    {
+      "src": "/attached_assets/app-screenshot-5_1755362221670.jpg",
+      "sizes": "390x844", 
+      "type": "image/jpeg",
+      "platform": "narrow",
+      "label": "Comprehensive expense reports and financial analytics"
+    },
+    {
+      "src": "/attached_assets/app-screenshot-7_1755362221670.jpg",
+      "sizes": "390x844", 
+      "type": "image/jpeg",
+      "platform": "narrow",
+      "label": "Tax dashboard with deduction tracking for South Africa"
+    },
+    {
+      "src": "/attached_assets/app-screenshot-2_1755362221669.jpg",
+      "sizes": "1280x800",
+      "type": "image/jpeg",
+      "platform": "wide",
+      "label": "Desktop dashboard with comprehensive expense analytics"
+    },
+    {
+      "src": "/attached_assets/app-screenshot-1_1755362221669.jpg",
+      "sizes": "1280x800", 
+      "type": "image/jpeg",
+      "platform": "wide",
+      "label": "Desktop receipt management interface with advanced filtering"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Upload Receipt",
+      "short_name": "Upload",
+      "description": "Quickly scan and upload a new receipt",
+      "url": "/upload"
+    },
+    {
+      "name": "View Analytics", 
+      "short_name": "Analytics",
+      "description": "Check spending analytics and insights",
+      "url": "/analytics"
+    }
+  ],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/apple-touch-icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon-167x167.png",
+      "sizes": "167x167",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon-180x180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "prefer_related_applications": false,
+  "related_applications": [
+    {
+      "platform": "play",
+      "url": "https://play.google.com/store/apps/details?id=app.simpleslips.twa",
+      "id": "app.simpleslips.twa"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "/upload",
+      "accept": {
+        "image/*": [".jpg", ".jpeg", ".png", ".pdf"]
+      }
+    }
+  ],
+  "handle_links": "preferred",
+  "protocol_handlers": [
+    {
+      "protocol": "web+receipt",
+      "url": "/upload?receipt=%s"
+    }
+  ],
+  "share_target": {
+    "action": "/upload",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "receipt",
+          "accept": ["image/*", "application/pdf"]
+        }
+      ]
+    }
+  },
+  "widgets": [
+    {
+      "name": "Quick Receipt Scanner",
+      "short_name": "Scanner",
+      "description": "Quick access to receipt scanning",
+      "tag": "receipt-scanner",
+      "template": "receipt-scanner",
+      "ms_ac_template": "receipt-scanner",
+      "data": "/api/widget-data",
+      "type": "application/json",
+      "screenshots": [
+        {
+          "src": "/attached_assets/image_1753288409229.png",
+          "sizes": "300x200",
+          "label": "Receipt scanner widget"
+        }
+      ],
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "72x72",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

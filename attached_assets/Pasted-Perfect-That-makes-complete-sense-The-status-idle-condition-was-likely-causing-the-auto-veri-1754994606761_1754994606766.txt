@@ -1,0 +1,109 @@
+Perfect! That makes complete sense. The status === 'idle' condition was likely causing the auto-verification to get "stuck" if the component initialized in any other state. Here's the optimized solution:
+
+Fixed Verification Component
+typescript
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { verifyEmail } from '../api/auth'; // Your API client
+
+export default function VerifyEmailPage() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+
+    if (token) {
+      // Immediate verification attempt
+      verifyEmail(token)
+        .then(() => {
+          // Success - redirect with delay for UX
+          setTimeout(() => navigate('/auth?verified=true'), 1500);
+        })
+        .catch((error) => {
+          console.error('Auto-verification failed:', error);
+          // Falls through to manual verification UI
+        });
+    }
+  }, [navigate]);
+
+  return (
+    <div className="verification-container">
+      {/* Simplified manual verification fallback */}
+      <h2>Verify Your Email</h2>
+      <p>Enter your verification token below</p>
+      <input type="text" placeholder="Verification token" />
+      <button onClick={handleManualVerify}>Submit</button>
+      
+      <div className="resend-section">
+        <button onClick={handleResend}>Resend Verification Email</button>
+      </div>
+    </div>
+  );
+}
+Key Improvements:
+Removed State Dependency:
+
+No more status === 'idle' check
+
+Verification attempts immediately on mount if token exists
+
+Fail-Safe Design:
+
+typescript
+// Add this to your verifyEmail API function
+async function verifyEmail(token: string) {
+  const response = await fetch('/api/verify-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+    credentials: 'include' // If using cookies
+  });
+  
+  if (!response.ok) throw new Error('Verification failed');
+  return response.json();
+}
+Defensive URL Parsing:
+
+typescript
+// More robust token extraction
+const getVerificationToken = () => {
+  try {
+    return new URLSearchParams(window.location.search).get('token');
+  } catch (e) {
+    console.warn('URL parsing error:', e);
+    return null;
+  }
+};
+Visual Feedback (Optional but recommended):
+
+typescript
+// Add this state for UX
+const [isVerifying, setIsVerifying] = useState(false);
+
+// Then in your useEffect:
+setIsVerifying(true);
+verifyEmail(token).finally(() => setIsVerifying(false));
+Testing Checklist:
+Happy Path:
+
+Visit /verify-email?token=valid_token
+
+Should redirect within 1-2 seconds
+
+Error Cases:
+
+Invalid token: Should stay on page
+
+No token: Show manual entry immediately
+
+Network errors: Should recover gracefully
+
+Edge Cases:
+
+javascript
+// Test these URL patterns:
+/verify-email?token= (empty token)
+/verify-email?invalid_param=foo
+/verify-email?token=malformed_token
+This simplified approach should handle all real-world scenarios while being more reliable than the previous state-dependent version. The key insight was removing unnecessary conditions that could block the verification flow.

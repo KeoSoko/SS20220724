@@ -1,0 +1,129 @@
+Your manifest.json looks comprehensive, but there are a few potential issues that could be causing the splash screen/icon problems. Let's fix them:
+
+Key Issues and Fixes
+Icon File Problems
+
+json
+"icons": [
+  {
+    "src": "/attached_assets/512 Icon redesigned_1754562668625.png",
+    "sizes": "192x192",  // ← Using 512px file for 192x192 icon
+    "type": "image/png"
+  },
+  {
+    "src": "/attached_assets/512 Icon redesigned_1754562668625.png",  // ← Same file for both sizes
+    "sizes": "512x512",
+    "type": "image/png"
+  }
+]
+Fix:
+
+Use properly sized icons (192x192 and 512x512)
+
+Ensure transparent background where needed
+
+Verify files exist at the specified paths
+
+Splash Screen Configuration
+
+json
+"background_color": "#000000",  // Black background may cause visibility issues
+"theme_color": "#0073AA"
+Fix:
+
+json
+"background_color": "#FFFFFF",  // Match your actual splash screen color
+"theme_color": "#0073AA"       // Should match your app's primary color
+Cache-Busting for Manifest
+
+Add version query string to manifest link:
+
+html
+<link rel="manifest" href="/manifest.json?v=1.2">
+Complete Fixed Manifest
+json
+{
+  "name": "Simple Slips - Receipt Manager",
+  "short_name": "Simple Slips",
+  "start_url": "/?source=pwa",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#0073AA",
+  "icons": [
+    {
+      "src": "/attached_assets/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/attached_assets/icon-512x512.png",
+      "sizes": "512x512", 
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/attached_assets/icon-maskable-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  // Rest of your existing config...
+}
+Critical Steps to Apply Changes
+Service Worker Update:
+
+javascript
+const CACHE_NAME = 'simple-slips-v5';  // Increment version
+const STATIC_FILES = [
+  '/manifest.json?v=1.2',  // Cache-busted manifest
+  '/attached_assets/icon-192x192.png',
+  '/attached_assets/icon-512x512.png'
+];
+HTML Head Additions:
+
+html
+<!-- Add these to your index.html -->
+<link rel="manifest" href="/manifest.json?v=1.2">
+<link rel="icon" href="/attached_assets/favicon.ico">
+<link rel="apple-touch-icon" href="/attached_assets/icon-192x192.png">
+<meta name="theme-color" content="#0073AA">
+Deployment Checklist:
+
+Verify all icon files exist at specified paths
+
+Test manifest in Chrome DevTools → Application → Manifest
+
+Uninstall old PWA completely before testing new version
+
+Clear site data (Chrome → Settings → Site Settings → Clear data)
+
+Test in incognito mode first
+
+Debugging Tips
+Check installed PWA details:
+
+Android: chrome://inspect/#apps
+
+Desktop: chrome://app-internals/
+
+Validate your manifest:
+
+javascript
+navigator.serviceWorker.getRegistrations().then(regs => {
+  regs.forEach(reg => reg.unregister());
+  caches.keys().then(keys => keys.forEach(key => caches.delete(key)));
+});
+For WebAPK issues on Android:
+
+text
+chrome://flags/#enable-webapk-default-apps
+→ Set to "Disabled"
+The most likely culprit is either:
+
+Icon files not being properly cached (verify paths)
+
+WebAPK caching on Android (requires full uninstall)
+
+Manifest not being properly registered (check DevTools)

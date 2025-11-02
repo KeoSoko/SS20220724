@@ -1,0 +1,76 @@
+
+9:49:03 AM [express] POST /api/log-performance 200 in 3ms :: {"received":true}
+[JWT] JWT middleware check for path /api/login: authHeader=false
+[SESSION] Current Session ID: thF39nohnyHazTP_SUdJhmurcbVUtiir
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[AUTH] ======== LOGIN ATTEMPT START ========
+9:49:41 AM [auth] Login attempt for username: testuser
+--- REQUEST FINGERPRINT ---
+IP: 127.0.0.1
+Headers: {
+  "contentType": "application/json",
+  "userAgent": "curl/8.14.1",
+  "cookie": "Not set",
+  "authorization": "Not set",
+  "xDebugInfo": "Not set"
+}
+Body: {"username":"testuser","password":true,"passwordLength":9,"rememberMe":false}
+Cookies: 0 cookies
+Session ID: thF39nohnyHazTP_SUdJhmurcbVUtiir
+Auth User: undefined (ID: undefined )
+JWT User: undefined (ID: undefined )
+Authenticated: false
+Timestamp: 2025-08-07T09:49:41.674Z
+[AUTH] Performing nuclear session reset
+[AUTH] Successfully logged out any existing session
+[AUTH] Session regenerated with new ID: f3nb4uVx8VrZTw-pYzIJoWPdmTpUBNmZ
+[DB] Looking up user by username: "testuser"
+[DB] Found username: "testuser", requested: "testuser", exactMatch: true
+9:49:41 AM [auth] Account locked for user testuser, expires in 14 minutes
+9:49:41 AM [express] POST /api/login 401 in 115ms :: {"error":"Account locked","message":"Too many f…
+9:49:47 AM [vite] (client) hmr update /src/pages/auth-page.tsx, /src/index.css?v=wt-V6nAC-Pb7LfJKVes0V
+[JWT] JWT middleware check for path /api/login: authHeader=false
+[SESSION] Current Session ID: 8nuUYyN_dBtT1M_-1_dZY4OCx2jq80wh
+[SESSION] Authenticated User: undefined (ID: undefined )
+[SESSION] JWT User: undefined (ID: undefined )
+[SESSION] isAuthenticated: false
+[AUTH] ======== LOGIN ATTEMPT START ========
+9:50:47 AM [auth] Login attempt for username: testuser
+--- REQUEST FINGERPRINT ---
+IP: 10.83.7.60
+Headers: {
+  "contentType": "application/json",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0",
+  "cookie": "Set",
+  "authorization": "Not set",
+  "xDebugInfo": "Not set"
+}
+Body: {"username":"testuser","password":true,"passwordLength":8,"rememberMe":false}
+Cookies: 0 cookies
+Session ID: 8nuUYyN_dBtT1M_-1_dZY4OCx2jq80wh
+Auth User: undefined (ID: undefined )
+JWT User: undefined (ID: undefined )
+Authenticated: false
+Timestamp: 2025-08-07T09:50:47.989Z
+[AUTH] Performing nuclear session reset
+[AUTH] Successfully logged out any existing session
+[AUTH] Session regenerated with new ID: dNi4ZMFdPFokuMqrVkN4OtENcE5L1cJi
+[DB] Looking up user by username: "testuser"
+[DB] Found username: "testuser", requested: "testuser", exactMatch: true
+9:50:48 AM [auth] Account locked for user testuser, expires in 13 minutes
+9:50:48 AM [express] POST /api/login 401 in 269ms :: {"error":"Account locked","message":"Too many f…
+
+
+
+
+
+
+
+
+
+
+
+
+

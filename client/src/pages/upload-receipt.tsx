@@ -1,0 +1,1342 @@
+import { useState, useEffect } from "react";
+import { useLocation, Link } from "wouter";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { useOfflineSync } from "@/hooks/use-offline-sync";
+import { AlertCircle, Camera, CheckCircle2, Loader2, Upload, FileImage, Plus, Settings } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useAuth } from "@/hooks/use-auth";
+import { EXPENSE_CATEGORIES, ExpenseCategory } from "@shared/schema";
+
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { BackButton } from "@/components/back-button";
+import { EnhancedCamera } from "@/components/enhanced-camera";
+import { CameraPermissionPrompt } from "@/components/camera-permission-prompt";
+import { UploadErrorBoundary } from "@/components/ui/error-boundaries";
+import { optimizeImage, validateImageFile, formatFileSize } from "@/utils/image-optimization";
+import { ProgressiveImage } from "@/components/ui/progressive-image";
+import imageCompression from "browser-image-compression";
+import { 
+  EnhancedButton,
+  SpacingContainer,
+  EnhancedEmptyState
+} from "@/components/ui/enhanced-components";
+import { UnifiedSmartSearch } from "@/components/ui/unified-smart-search";
+import { motion } from "framer-motion";
+import { RecurringExpenseDetector } from "@/components/recurring-expense-detector";
+
+// Format currency for South African Rands
+const formatCurrency = (amount: string | number) => {
+  const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+  return 'R ' + numAmount.toFixed(2);
+};
+
+export default function UploadReceipt() {
+  const [_, setLocation] = useLocation();
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const isMobile = useIsMobile();
+  const { isOnline, addPendingUpload } = useOfflineSync();
+  
+  // Scanning states
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<string>("");
+  const [progressValue, setProgressValue] = useState(0);
+  
+  // Form data states
+  const [imageData, setImageData] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [storeName, setStoreName] = useState("");
+  const [date, setDate] = useState("");
+  const [total, setTotal] = useState("");
+  const [category, setCategory] = useState<ExpenseCategory>("other");
+  const [notes, setNotes] = useState("");
+  const [items, setItems] = useState<Array<{name: string, price: string}>>([]);
+  const [confidenceScore, setConfidenceScore] = useState<string | null>(null);
+  const [cameraMode, setCameraMode] = useState(false);
+  const [showCameraPermission, setShowCameraPermission] = useState(false);
+  const [newReceiptId, setNewReceiptId] = useState<number | null>(null);
+  
+  // Additional receipt properties for better UX
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [isTaxDeductible, setIsTaxDeductible] = useState(false);
+
+  // Session storage key for preserving form state
+  const FORM_STATE_KEY = 'upload_receipt_form_state';
+
+  // Save form state to session storage
+  const saveFormState = () => {
+    const formState = {
+      imageData,
+      previewUrl,
+      storeName,
+      date,
+      total,
+      category,
+      notes,
+      items,
+      confidenceScore,
+      isRecurring,
+      isTaxDeductible
+    };
+    sessionStorage.setItem(FORM_STATE_KEY, JSON.stringify(formState));
+  };
+
+  // Restore form state from session storage
+  const restoreFormState = () => {
+    try {
+      const savedState = sessionStorage.getItem(FORM_STATE_KEY);
+      if (savedState) {
+        const formState = JSON.parse(savedState);
+        setImageData(formState.imageData || null);
+        setPreviewUrl(formState.previewUrl || null);
+        setStoreName(formState.storeName || "");
+        setDate(formState.date || "");
+        setTotal(formState.total || "");
+        setCategory(formState.category || "other");
+        setNotes(formState.notes || "");
+        setItems(formState.items || []);
+        setConfidenceScore(formState.confidenceScore || null);
+        setIsRecurring(formState.isRecurring || false);
+        setIsTaxDeductible(formState.isTaxDeductible || false);
+        
+        // Clear the saved state after restoring
+        sessionStorage.removeItem(FORM_STATE_KEY);
+        
+        toast({
+          title: "Form state restored",
+          description: "Your receipt data has been preserved from before.",
+        });
+      }
+    } catch (error) {
+      console.error('Failed to restore form state:', error);
+    }
+  };
+
+  // Restore form state on component mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      restoreFormState();
+    }
+  }, []);
+
+  // Query for custom categories
+  const { data: customCategories = [] } = useQuery({
+    queryKey: ["/api/custom-categories"],
+    enabled: !!user, // Only fetch when user is authenticated
+  });
+
+  // OCR scanning mutation
+  const scanMutation = useMutation({
+    mutationFn: async (imageData: string) => {
+      // Check if offline first - skip scanning entirely
+      if (!isOnline) {
+        setScanProgress("📱 You're offline - please fill in receipt details manually");
+        setProgressValue(0);
+        setIsScanning(false);
+        
+        toast({
+          title: "📱 Offline mode",
+          description: "You're offline - please fill in receipt details manually. The receipt will be saved when you're back online.",
+          variant: "default",
+          duration: 6000,
+        });
+        
+        // Return early without trying to scan
+        return { offline: true };
+      }
+      
+      // Start with progressive updates
+      setScanProgress("🔍 Scanning your receipt...");
+      setProgressValue(25);
+      
+      // Create a timeout that updates progress gradually while we wait for Azure
+      const startTime = Date.now();
+      const progressInterval = setInterval(() => {
+        const elapsedTime = Date.now() - startTime;
+        // Calculate a progressive increment (max 45% more progress over 30 seconds)
+        if (elapsedTime < 30000) {
+          const additionalProgress = Math.min(45, Math.floor(elapsedTime / 30000 * 45));
+          setProgressValue(25 + additionalProgress);
+          
+          // Update the message periodically to show activity
+          if (elapsedTime > 20000) {
+            setScanProgress("📄 Almost done reading your receipt...");
+          } else if (elapsedTime > 15000) {
+            setScanProgress("💡 Extracting purchase details...");
+          } else if (elapsedTime > 10000) {
+            setScanProgress("🤖 AI is analyzing your receipt...");
+          } else if (elapsedTime > 5000) {
+            setScanProgress("🔍 Processing receipt image...");
+          }
+        }
+      }, 1000);
+      
+      try {
+        // Add timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Scanning timed out - please enter details manually'));
+          }, 30000); // 30 second timeout
+        });
+        
+        // Race between API call and timeout
+        const apiPromise = apiRequest("POST", "/api/receipts/scan", { imageData });
+        const res = await Promise.race([apiPromise, timeoutPromise]) as Response;
+        
+        // Check if the response is not OK (handles various error status codes)
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          
+          // Use the server's error message if available, otherwise create a generic one
+          const errorMessage = errorData.message || errorData.error || "Connection to OCR failed. Please enter receipt details manually.";
+          
+          // Clean up interval and throw with server's error message
+          clearInterval(progressInterval);
+          throw new Error(errorMessage);
+        }
+        
+        const data = await res.json();
+        
+        // Clear the interval and set progress to 70%
+        clearInterval(progressInterval);
+        setProgressValue(70);
+        setScanProgress("✅ Receipt successfully scanned!");
+        
+        return data;
+      } catch (error) {
+        // Clean up interval if there's an error
+        clearInterval(progressInterval);
+        throw error;
+      }
+    },
+    onSuccess: (data) => {
+      // Increment progress to show we're processing the results
+      setProgressValue(75);
+      setScanProgress("📋 Organizing your receipt data...");
+      
+      // Populate the form with the OCR results
+      setStoreName(data.storeName || "");
+      
+      // Handle date format from OCR properly
+      try {
+        if (data.date) {
+          setProgressValue(80);
+          setScanProgress("📅 Processing receipt date...");
+          // SA date format comes as DD/MM/YY but input[type="date"] needs YYYY-MM-DD
+          // Check if the date is in DD/MM/YY or DD/MM/YYYY format
+          const dateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/;
+          const match = data.date.match(dateRegex);
+          
+          if (match) {
+            // Extract components from DD/MM/YY format
+            const day = match[1].padStart(2, '0');
+            const month = match[2].padStart(2, '0');
+            let year = match[3];
+            
+            // Handle 2-digit year
+            if (year.length === 2) {
+              // If year is 2 digits, assume 20xx for modern dates
+              year = '20' + year;
+            }
+            
+            // Convert to YYYY-MM-DD format for the input field
+            const formattedDate = `${year}-${month}-${day}`;
+            setDate(formattedDate);
+          } else {
+            // Try general parsing if not in the DD/MM/YY format
+            const parsedDate = new Date(data.date);
+            if (!isNaN(parsedDate.getTime())) {
+              // Format date as YYYY-MM-DD for the date input
+              const formattedDate = parsedDate.toISOString().split('T')[0];
+              setDate(formattedDate);
+            } else {
+              // If we can't parse it at all, default to today
+              setDate(new Date().toISOString().split('T')[0]);
+            }
+          }
+        } else {
+          // Default to today if no date was provided
+          setDate(new Date().toISOString().split('T')[0]);
+        }
+      } catch (error) {
+        // Fallback to today's date if there's any error
+        console.error("Error parsing date:", error);
+        setDate(new Date().toISOString().split('T')[0]);
+      }
+      
+      setProgressValue(85);
+      setScanProgress("Setting receipt details...");
+      
+      setTotal(data.total || "0.00");
+      
+      // Ensure items is an array
+      const items = Array.isArray(data.items) ? data.items : [];
+      setItems(items);
+      
+      setConfidenceScore(data.confidenceScore || null);
+      
+      setProgressValue(90);
+      setScanProgress("🏷️ Using AI-suggested category...");
+      
+      // Use AI-suggested category from the scan response
+      if (data.category && data.category !== 'other') {
+        setCategory(data.category as ExpenseCategory);
+      } else {
+        // Only use fallback categorization if AI didn't provide a category
+        const lowerStoreName = data.storeName.toLowerCase();
+        const itemNames = items.map((item: {name: string, price: string}) => item.name.toLowerCase()).join(' ');
+        const combined = `${lowerStoreName} ${itemNames}`;
+        
+        // Category keyword mapping as fallback
+        const categoryRules: Record<string, string[]> = {
+          dining: ['restaurant', 'cafe', 'bar', 'bistro', 'eatery', 'dining', 'food court', 'pizzeria'],
+          groceries: ['market', 'grocery', 'supermarket', 'food', 'fresh', 'produce', 'bakery'],
+          transportation: ['gas', 'uber', 'lyft', 'taxi', 'transport', 'fuel', 'petrol', 'station'],
+          entertainment: ['cinema', 'movie', 'theater', 'game', 'park', 'entertainment'],
+          shopping: ['mall', 'store', 'retail', 'shop', 'boutique', 'clothing', 'fashion'],
+          healthcare: ['pharmacy', 'medical', 'doctor', 'clinic', 'hospital', 'health'],
+          utilities: ['electric', 'water', 'utility', 'power', 'energy', 'internet', 'phone'],
+          office_supplies: ['office', 'stationary', 'supplies', 'print', 'paper']
+        };
+        
+        // Find matching category as fallback
+        let matchedCategory = 'other';
+        let highestMatchCount = 0;
+        
+        for (const [category, keywords] of Object.entries(categoryRules)) {
+          const matchCount = keywords.filter((keyword: string) => combined.includes(keyword)).length;
+          if (matchCount > highestMatchCount) {
+            highestMatchCount = matchCount;
+            matchedCategory = category;
+          }
+        }
+        
+        setCategory(matchedCategory as ExpenseCategory);
+      }
+      
+      // Complete the process
+      setProgressValue(95);
+      
+      setTimeout(() => {
+        setProgressValue(100);
+        setScanProgress("🎉 Receipt ready for review!");
+        setIsScanning(false);
+      }, 500);
+    },
+    onError: (error: Error) => {
+      setIsScanning(false);
+      setScanProgress("");
+      setProgressValue(0);
+      
+      console.error("OCR scanning error:", error);
+      
+      // Check if this is a subscription/trial expiration error FIRST
+      if (
+        error.message.includes('Active subscription required') ||
+        error.message.includes('trial has ended') ||
+        error.message.includes('Please subscribe to continue') ||
+        (error.message.includes('403') && error.message.includes('subscription'))
+      ) {
+        toast({
+          title: "🔒 Trial has ended",
+          description: "Your free trial has expired. Subscribe to continue scanning receipts.",
+          variant: "destructive",
+          action: (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setLocation('/subscription')}
+              className="bg-white text-gray-900 hover:bg-gray-50 hover:text-gray-900 border-gray-300"
+            >
+              Upgrade Now
+            </Button>
+          ),
+          duration: 8000, // Show longer for important message
+        });
+        
+        // Don't allow manual entry for subscription errors - redirect to subscription page
+        setTimeout(() => {
+          setLocation('/subscription');
+        }, 3000);
+        
+        return;
+      }
+      
+      // Handle specific Azure OCR connection errors
+      if (error.message.includes("invalid subscription key") || 
+          error.message.includes("Access denied") ||
+          error.message.includes("API endpoint") ||
+          error.message.includes("service unavailable") ||
+          error.message.includes("Connection failed") ||
+          error.message.includes("Network Error") ||
+          error.message.includes("Failed to fetch")) {
+        
+        console.error("Azure OCR connection failed:", error.message);
+        
+        // If offline, show appropriate message
+        if (!isOnline) {
+          toast({
+            title: "📱 Scanning offline",
+            description: "You're offline - please fill in receipt details manually. The receipt will be saved when you're back online.",
+            variant: "default",
+            duration: 6000,
+          });
+        } else {
+          // Show the specific UX message you requested
+          toast({
+            title: "Connection to OCR failed",
+            description: "Connection to OCR failed. Please enter receipt details manually.",
+            variant: "destructive",
+            duration: 6000, // Show longer for important message
+          });
+        }
+        
+        // Keep the form in editing mode so user can enter details manually
+        // Don't redirect, let them fill out the form
+        return;
+      }
+      
+      // Handle timeout errors
+      if (error.message.includes("timed out") || error.message.includes("timeout")) {
+        toast({
+          title: "Scanning took too long",
+          description: "Receipt processing timed out. Please enter receipt details manually.",
+          variant: "destructive",
+          duration: 6000,
+        });
+        return;
+      }
+      
+      // Handle image quality issues
+      if (error.message.includes("No receipt data found") || error.message.includes("Receipt data not detected")) {
+        toast({
+          title: "Receipt not detected",
+          description: "Could not detect receipt data in your image. Please enter receipt details manually.",
+          variant: "destructive",
+          duration: 6000,
+        });
+        return;
+      }
+      
+      // Generic fallback error
+      toast({
+        title: "Scanning failed",
+        description: "Unable to scan receipt automatically. Please enter receipt details manually.",
+        variant: "destructive",
+        duration: 6000,
+      });
+    },
+  });
+
+  // Upload receipt mutation
+  const uploadMutation = useMutation({
+    mutationFn: async () => {
+      if (!imageData) {
+        throw new Error("No image data available");
+      }
+      
+      // Always save offline first to prevent hanging
+      console.log("[Upload] Save attempt - isOnline:", isOnline, "navigator.onLine:", navigator.onLine);
+      
+      // Prepare receipt data
+      const receiptData = {
+        storeName,
+        date,
+        total,
+        items: Array.isArray(items) ? items : [],
+        category,
+        notes: notes || null,
+        confidenceScore: confidenceScore || null,
+        imageData,
+        isRecurring,
+        isTaxDeductible,
+      };
+      
+      // If offline, use the offline sync system
+      if (!isOnline) {
+        // Use the proper offline sync method
+        addPendingUpload(receiptData, '/api/receipts');
+        
+        toast({
+          title: "📱 Receipt saved offline",
+          description: "Your receipt is saved and will sync when you're back online.",
+          variant: "default",
+          duration: 4000,
+        });
+        
+        // Navigate back to home page
+        setTimeout(() => {
+          setLocation('/home');
+        }, 1500);
+        
+        return { offline: true };
+      }
+      
+      // If online, try to sync immediately with timeout
+      try {
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Save timeout'));
+          }, 10000); // 10 second timeout for saving
+        });
+        
+        // Race between API call and timeout
+        const apiPromise = apiRequest("POST", "/api/receipts", {
+          storeName,
+          date,
+          total,
+          items: Array.isArray(items) ? items : [],
+          category,
+          notes: notes || null,
+          confidenceScore: confidenceScore || null,
+          imageData,
+          isRecurring,
+          isTaxDeductible,
+        });
+        
+        const res = await Promise.race([apiPromise, timeoutPromise]) as Response;
+        
+        // If successful, remove from pending uploads
+        const currentPending = JSON.parse(localStorage.getItem('pendingUploads') || '[]');
+        const updatedPending = currentPending.slice(0, -1); // Remove the one we just added
+        localStorage.setItem('pendingUploads', JSON.stringify(updatedPending));
+        
+        return res;
+      } catch (error) {
+        // If API call fails, just show success message for offline save
+        console.log("[Upload] API call failed, keeping in offline storage:", error);
+        
+        toast({
+          title: "📱 Receipt saved offline", 
+          description: "Your receipt is saved and will sync when you're back online.",
+          variant: "default",
+          duration: 4000,
+        });
+        
+        // Navigate back to home page
+        setTimeout(() => {
+          setLocation('/home');
+        }, 1500);
+        
+        return { offline: true };
+      }
+      
+      // Start with 0% progress for online save
+      setScanProgress("💾 Preparing to save your receipt...");
+      setProgressValue(0);
+      
+      // Ensure items is always an array before sending to server
+      const itemsArray = Array.isArray(items) ? items : [];
+      
+      // Upload progress simulation - gradually increase from 0 to 50%
+      let progress = 0;
+      const progressInterval = setInterval(() => {
+        // Increment by small amounts
+        progress += 5;
+        if (progress <= 45) {
+          setProgressValue(progress);
+          
+          // Update progress message
+          if (progress > 35) {
+            setScanProgress("☁️ Saving to your secure storage...");
+          } else if (progress > 20) {
+            setScanProgress("📝 Recording receipt details...");
+          } else if (progress > 10) {
+            setScanProgress("📤 Uploading receipt image...");
+          }
+        }
+      }, 300);
+      
+      try {
+        // Upload receipt data to server
+        const res = await apiRequest("POST", "/api/receipts", {
+          storeName,
+          date,
+          total,
+          items: itemsArray,
+          category,
+          notes: notes || null,
+          confidenceScore: confidenceScore || null,
+          imageData,
+          isRecurring,
+          isTaxDeductible,
+        });
+        
+        // Upload complete
+        clearInterval(progressInterval);
+        setProgressValue(50);
+        setScanProgress("✅ Upload complete, finalizing receipt...");
+        
+        return await res.json();
+      } catch (error) {
+        clearInterval(progressInterval);
+        throw error;
+      }
+    },
+    onSuccess: (data) => {
+      // Check if this is an offline response from service worker
+      if (data && data.offline === true) {
+        // Handle offline response - queue for sync
+        addPendingUpload({
+          storeName,
+          date,
+          total,
+          items: Array.isArray(items) ? items : [],
+          category,
+          notes: notes || null,
+          confidenceScore: confidenceScore || null,
+          imageData,
+          isRecurring,
+          isTaxDeductible,
+        }, '/api/receipts');
+        
+        setProgressValue(100);
+        setScanProgress("📱 Receipt saved offline!");
+        
+        toast({
+          title: "📱 Receipt saved offline",
+          description: "Your receipt will be uploaded automatically when you're back online.",
+          duration: 6000,
+        });
+        
+        // Still redirect to home - receipt is "saved" offline
+        setTimeout(() => {
+          setLocation("/home");
+        }, 2000);
+        
+        return;
+      }
+      
+      // Normal online success handling
+      // Invalidate receipts query to refresh the list
+      queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
+      
+      // If this receipt was marked as tax deductible, invalidate tax dashboard
+      if (isTaxDeductible) {
+        queryClient.invalidateQueries({ queryKey: ["/api/tax"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/tax/dashboard"] });
+      }
+      
+      // Store the receipt ID for recurring expense analysis
+      setNewReceiptId(data.id);
+      
+      // Check for duplicate detection
+      if (data.duplicateDetection?.isDuplicate) {
+        // Show duplicate warning
+        toast({
+          title: "⚠️ Possible Duplicate Receipt",
+          description: `This receipt might be a duplicate (${Math.round(data.duplicateDetection.similarity * 100)}% similar). ${data.duplicateDetection.reasoning}`,
+          variant: "destructive",
+          duration: 8000, // Show longer for important warning
+        });
+      }
+      
+      // Show completion progress
+      setProgressValue(75);
+      setScanProgress("🎊 Receipt saved successfully!");
+      
+      // Slowly increase to 100% to show completion
+      setTimeout(() => {
+        setProgressValue(90);
+        setScanProgress("🏁 Almost done...");
+        
+        setTimeout(() => {
+          setProgressValue(100);
+          setScanProgress("✨ All done! Receipt saved!");
+          
+          const toastTitle = data.duplicateDetection?.isDuplicate ? 
+            "⚠️ Receipt saved (possible duplicate)" : 
+            "🎉 Receipt uploaded successfully";
+          
+          toast({
+            title: toastTitle,
+            description: "Your receipt has been processed and saved to your account",
+          });
+          
+          // Redirect after a short delay to show the success state
+          setTimeout(() => {
+            setLocation("/home");
+          }, 1000);
+        }, 300);
+      }, 300);
+    },
+    onError: (error: any) => {
+      setProgressValue(0);
+      setScanProgress("");
+      
+      // Check if this is an offline error from service worker or network failure
+      const isOfflineError = !isOnline || 
+        error.message.includes('Failed to fetch') || 
+        error.message.includes('Network Error') ||
+        error.offline === true ||
+        (error.status === 503 && error.responseData?.offline);
+      
+      if (isOfflineError) {
+        // Queue for offline sync
+        addPendingUpload({
+          storeName,
+          date,
+          total,
+          items: Array.isArray(items) ? items : [],
+          category,
+          notes: notes || null,
+          confidenceScore: confidenceScore || null,
+          imageData,
+          isRecurring,
+          isTaxDeductible,
+        }, '/api/receipts');
+        
+        toast({
+          title: "📱 Receipt saved offline",
+          description: "Your receipt will be uploaded automatically when you're back online.",
+          duration: 6000,
+        });
+        
+        // Still redirect to home - receipt is "saved" offline
+        setTimeout(() => {
+          setLocation("/home");
+        }, 2000);
+        
+        return;
+      }
+      
+      // Check if this is a subscription/trial expiration error
+      if (error.status === 403 && (
+        error.message.includes('Active subscription required') ||
+        error.message.includes('trial has ended') ||
+        error.responseData?.error === 'Active subscription required'
+      )) {
+        toast({
+          title: "🔒 Trial has ended",
+          description: "Your free trial has expired. Subscribe to continue uploading receipts.",
+          variant: "destructive",
+          action: (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setLocation('/subscription')}
+              className="bg-white text-gray-900 hover:bg-gray-50 hover:text-gray-900 border-gray-300"
+            >
+              Upgrade Now
+            </Button>
+          ),
+          duration: 8000, // Show longer for important message
+        });
+        
+        // Don't save offline for subscription errors - redirect to subscription page
+        setTimeout(() => {
+          setLocation('/subscription');
+        }, 3000);
+        
+        return;
+      }
+      
+      // Generic error handling for other issues
+      toast({
+        title: "Failed to upload receipt",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Enhanced file handling with image optimization
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Advanced file validation
+    const validation = validateImageFile(file);
+    if (!validation.isValid) {
+      toast({
+        title: "Invalid file",
+        description: validation.error,
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      setIsScanning(true);
+      setScanProgress("Preparing image for processing...");
+      setProgressValue(0);
+      
+      // Optimize image for better processing
+      setScanProgress("Optimizing image quality...");
+      setProgressValue(5);
+      
+      const optimizedResult = await optimizeImage(file, 'receipt');
+      
+      setScanProgress(`Image optimized - ${optimizedResult.compressionRatio}% size reduction`);
+      setProgressValue(15);
+      
+      // Set optimized image data
+      setImageData(optimizedResult.dataUrl);
+      setPreviewUrl(optimizedResult.dataUrl);
+      
+      // Display optimization stats
+      toast({
+        title: "Image optimized",
+        description: `Size reduced from ${formatFileSize(optimizedResult.originalSize)} to ${formatFileSize(optimizedResult.compressedSize)}`,
+      });
+      
+      // Check if offline before starting scan
+      if (!isOnline) {
+        setIsScanning(false);
+        setScanProgress("");
+        setProgressValue(0);
+        
+        toast({
+          title: "📱 You're offline",
+          description: "Please fill in receipt details manually. The receipt will be saved when you're back online.",
+          variant: "default",
+          duration: 6000,
+        });
+        return;
+      }
+      
+      setScanProgress("Starting AI analysis...");
+      setProgressValue(20);
+      
+      // Scan the optimized receipt
+      await scanMutation.mutateAsync(optimizedResult.dataUrl);
+    } catch (error) {
+      setIsScanning(false);
+      setScanProgress("");
+      setProgressValue(0);
+      
+      // Check if this is a subscription/trial expiration error
+      const errorMessage = error instanceof Error ? error.message : "Failed to process image";
+      if (
+        errorMessage.includes('Active subscription required') ||
+        errorMessage.includes('trial has ended') ||
+        errorMessage.includes('Please subscribe to continue')
+      ) {
+        toast({
+          title: "🔒 Trial has ended",
+          description: "Your free trial has expired. Subscribe to continue scanning receipts.",
+          variant: "destructive",
+          action: (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setLocation('/subscription')}
+              className="bg-white text-gray-900 hover:bg-gray-50 hover:text-gray-900 border-gray-300"
+            >
+              Upgrade Now
+            </Button>
+          ),
+          duration: 8000,
+        });
+        
+        setTimeout(() => {
+          setLocation('/subscription');
+        }, 3000);
+        
+        return;
+      }
+      
+      toast({
+        title: "Processing failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle camera capture (mobile only) - check permissions first
+  const handleCameraCapture = async () => {
+    console.log("[Upload] Camera capture button clicked");
+    
+    try {
+      // Check if camera is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error("[Upload] Camera API not supported");
+        toast({
+          title: "Camera not available",
+          description: "Camera access is not supported on this device or browser.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log("[Upload] Testing camera permissions...");
+      
+      // Try to access camera directly
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      
+      console.log("[Upload] Camera permission granted, starting camera mode");
+      
+      // If we get here, permission was granted - stop the stream and start camera mode
+      stream.getTracks().forEach(track => track.stop());
+      setCameraMode(true);
+      
+    } catch (error) {
+      console.error("[Upload] Camera permission error:", error);
+      console.error("[Upload] Error details:", {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+      
+      // Permission denied or other error - show permission dialog
+      setShowCameraPermission(true);
+    }
+  };
+
+  // Handle camera permission granted
+  const handleCameraPermissionGranted = () => {
+    setShowCameraPermission(false);
+    setCameraMode(true);
+  };
+
+  // Handle camera permission denied
+  const handleCameraPermissionDenied = () => {
+    setShowCameraPermission(false);
+    // Keep in file upload mode
+  };
+
+  // Handle camera data from EnhancedCamera component
+  const handleCameraData = async (capturedImageData: string) => {
+    console.log("[Upload] Camera data received, length:", capturedImageData.length);
+    setCameraMode(false);
+    setImageData(capturedImageData);
+    setPreviewUrl(capturedImageData);
+    
+    // Check if offline before starting scan
+    if (!isOnline) {
+      toast({
+        title: "📱 You're offline",
+        description: "Please fill in receipt details manually. The receipt will be saved when you're back online.",
+        variant: "default",
+        duration: 6000,
+      });
+      return;
+    }
+    
+    // Start scanning process
+    setIsScanning(true);
+    setScanProgress("🚀 Starting AI analysis...");
+    setProgressValue(20);
+    
+    try {
+      console.log("[Upload] Starting OCR scan...");
+      // Scan the receipt with Azure OCR
+      await scanMutation.mutateAsync(capturedImageData);
+      console.log("[Upload] OCR scan completed successfully");
+    } catch (error) {
+      console.error("[Upload] OCR scan failed:", error);
+      setIsScanning(false);
+      setScanProgress("");
+      setProgressValue(0);
+      
+      // Check if this is a subscription/trial expiration error
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+      if (
+        errorMessage.includes('Active subscription required') ||
+        errorMessage.includes('trial has ended') ||
+        errorMessage.includes('Please subscribe to continue')
+      ) {
+        toast({
+          title: "🔒 Trial has ended",
+          description: "Your free trial has expired. Subscribe to continue scanning receipts.",
+          variant: "destructive",
+          action: (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setLocation('/subscription')}
+              className="bg-white text-gray-900 hover:bg-gray-50 hover:text-gray-900 border-gray-300"
+            >
+              Upgrade Now
+            </Button>
+          ),
+          duration: 8000,
+        });
+        
+        setTimeout(() => {
+          setLocation('/subscription');
+        }, 3000);
+        
+        return;
+      }
+      
+      toast({
+        title: "Error processing image",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle form submission
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Check if form is valid before attempting to save
+    if (!storeName || !date || !total) {
+      toast({
+        title: "Missing information",
+        description: "Please fill in store name, date, and total amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    uploadMutation.mutate();
+  };
+
+  // Camera permission prompt
+  if (showCameraPermission) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <CameraPermissionPrompt
+          onPermissionGranted={handleCameraPermissionGranted}
+          onPermissionDenied={handleCameraPermissionDenied}
+        />
+      </div>
+    );
+  }
+
+  // Enhanced camera component
+  if (cameraMode) {
+    return (
+      <EnhancedCamera
+        onImageCapture={handleCameraData}
+        onCancel={() => setCameraMode(false)}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen android-safe-area responsive-container p-4 pb-24 md:pb-8 md:p-8 lg:landscape-optimized">
+      <div className="max-w-md mx-auto lg:max-w-4xl lg:landscape-content">
+        <div className="flex items-center mb-4">
+          <BackButton fallbackPath="/home" />
+          <h1 className="text-3xl font-bold ml-2">Upload Receipt</h1>
+        </div>
+        <p className="text-gray-500 mb-4">
+          Upload a receipt image to scan and categorize your expenses
+        </p>
+        
+        {/* Offline status indicator */}
+        {!isOnline && (
+          <div className="mb-6 p-3 bg-orange-50 border border-orange-200 rounded-md">
+            <div className="flex items-center gap-2 text-orange-700">
+              <AlertCircle className="h-4 w-4" />
+              <span className="text-sm font-medium">You're offline</span>
+            </div>
+            <p className="text-xs text-orange-600 mt-1">
+              You can still capture receipts. They'll be uploaded when you're back online.
+            </p>
+          </div>
+        )}
+
+        {!imageData ? (
+          // Upload/capture interface
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="receipt">Receipt Image</Label>
+                  <Input
+                    id="receipt"
+                    name="receipt"
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp,image/*"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  
+                  <SpacingContainer size="md">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <EnhancedButton 
+                          onClick={() => {
+                            const fileInput = document.getElementById("receipt") as HTMLInputElement;
+                            if (fileInput) {
+                              fileInput.click();
+                            }
+                          }}
+                          className="h-32 w-full bg-secondary hover:bg-secondary/90 border-2 border-dashed border-gray-300 hover:border-primary/50 transition-all duration-200"
+                          variant="default"
+                          style={{ minHeight: '128px', minWidth: '100%' }}
+                        >
+                          <div className="flex flex-col items-center space-y-2">
+                            <FileImage className="h-10 w-10 mb-2 text-primary" />
+                            <span className="font-medium">Upload Image</span>
+                            <span className="text-xs text-gray-500">Choose from photos</span>
+                          </div>
+                        </EnhancedButton>
+                      </motion.div>
+                      
+                      {isMobile && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.3, delay: 0.1 }}
+                        >
+                          <EnhancedButton 
+                            onClick={handleCameraCapture}
+                            className="h-32 w-full bg-secondary hover:bg-secondary/90 border-2 border-dashed border-gray-300 hover:border-primary/50"
+                            variant="default"
+                            style={{ minHeight: '128px', minWidth: '100%' }}
+                          >
+                            <div className="flex flex-col items-center space-y-2">
+                              <Camera className="h-10 w-10 mb-2 text-primary" />
+                              <span className="font-medium">Take Picture</span>
+                              <span className="text-xs text-gray-500">Use your camera</span>
+                            </div>
+                          </EnhancedButton>
+                        </motion.div>
+                      )}
+                    </div>
+                  </SpacingContainer>
+                  
+                  <p className="text-xs text-gray-500 mt-2">
+                    Maximum file size: 40MB. Supported formats: JPG, PNG, BMP
+                  </p>
+                </div>
+
+
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          // Receipt editing interface after upload
+          <Card>
+            <CardContent className="pt-6">
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Progress bar during processing */}
+                {(isScanning || uploadMutation.isPending) && (
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">
+                        {scanProgress}
+                      </span>
+                      <span className="text-sm font-medium">{progressValue}%</span>
+                    </div>
+                    <Progress value={progressValue} className="h-2" />
+                  </div>
+                )}
+                
+                {/* Enhanced Preview image with progressive loading */}
+                {previewUrl && (
+                  <div className="relative mb-4 border rounded-none overflow-hidden">
+                    <ProgressiveImage
+                      src={previewUrl} 
+                      alt="Receipt preview" 
+                      className="aspect-[3/4] w-full object-cover"
+                    />
+                    {confidenceScore && (
+                      <div className="absolute bottom-2 right-2">
+                        <Badge variant={parseFloat(confidenceScore) > 0.7 ? "outline" : "destructive"}>
+                          {parseFloat(confidenceScore) > 0.7 ? (
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                          ) : (
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                          )}
+                          Confidence: {Math.round(parseFloat(confidenceScore) * 100)}%
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Receipt details */}
+                <div className="space-y-4">
+                  {/* Store Name */}
+                  <div className="space-y-2">
+                    <Label htmlFor="storeName">Store Name</Label>
+                    <Input
+                      id="storeName"
+                      value={storeName}
+                      onChange={(e) => setStoreName(e.target.value)}
+                      placeholder="Enter store name"
+                      required
+                      disabled={isScanning}
+                    />
+                  </div>
+                  
+                  {/* Date & Total - 2 column layout */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="date">Date</Label>
+                      <Input
+                        id="date"
+                        type="date"
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        required
+                        disabled={isScanning}
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="total">Total Amount</Label>
+                      <Input
+                        id="total"
+                        value={total}
+                        onChange={(e) => setTotal(e.target.value)}
+                        placeholder="0.00"
+                        required
+                        disabled={isScanning}
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Category - Dropdown */}
+                  <div className="space-y-4">
+                    <Label className="text-base font-semibold">Category</Label>
+                    
+                    <div className="space-y-3">
+                      <Select 
+                        value={category} 
+                        onValueChange={(value) => setCategory(value as ExpenseCategory)} 
+                        disabled={isScanning}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {EXPENSE_CATEGORIES.map((cat) => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat.charAt(0).toUpperCase() + cat.slice(1).replace('_', ' ')}
+                            </SelectItem>
+                          ))}
+                          {Array.isArray(customCategories) && customCategories.length > 0 && (
+                            <>
+                              {customCategories.map((customCat: any) => (
+                                <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
+                                  {customCat.displayName}
+                                </SelectItem>
+                              ))}
+                            </>
+                          )}
+                          <div className="border-t border-gray-200 mt-2 pt-2">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="w-full justify-start text-sm text-gray-600 hover:text-gray-900"
+                              type="button"
+                              onClick={() => {
+                                saveFormState();
+                                setLocation("/categories");
+                              }}
+                            >
+                              <Plus className="w-4 h-4 mr-2" />
+                              Manage Custom Categories
+                            </Button>
+                          </div>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
+                  {/* Notes */}
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">Notes (Optional)</Label>
+                    <Textarea
+                      id="notes"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="Add any notes about this receipt"
+                      disabled={isScanning}
+                    />
+                  </div>
+                  
+                  {/* Receipt Properties - Recurring and Tax Deductible */}
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-3">
+                      <Checkbox
+                        id="isRecurring"
+                        checked={isRecurring}
+                        onCheckedChange={(checked) => setIsRecurring(!!checked)}
+                        disabled={isScanning}
+                      />
+                      <Label htmlFor="isRecurring" className="text-sm font-normal cursor-pointer">
+                        This is a recurring expense
+                      </Label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                      <Checkbox
+                        id="isTaxDeductible"
+                        checked={isTaxDeductible}
+                        onCheckedChange={(checked) => setIsTaxDeductible(!!checked)}
+                        disabled={isScanning}
+                      />
+                      <Label htmlFor="isTaxDeductible" className="text-sm font-normal cursor-pointer">
+                        This expense is tax deductible
+                      </Label>
+                    </div>
+                  </div>
+
+                </div>
+              </form>
+            </CardContent>
+            
+            <CardFooter className="flex gap-4 justify-end pt-6">
+              <EnhancedButton 
+                variant="default" 
+                onClick={() => {
+                  setImageData(null);
+                  setPreviewUrl(null);
+                  setStoreName("");
+                  setDate("");
+                  setTotal("");
+                  setCategory("other");
+                  setNotes("");
+                  setItems([]);
+                  setConfidenceScore(null);
+                }}
+                disabled={isScanning || uploadMutation.isPending}
+                className="min-w-[100px]"
+              >
+                Cancel
+              </EnhancedButton>
+              
+              <EnhancedButton 
+                variant="primary"
+                isPrimary={true}
+                onClick={handleSubmit}
+                disabled={isScanning || uploadMutation.isPending || !storeName || !date || !total}
+                className="min-w-[140px]"
+              >
+                {uploadMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    Save Receipt
+                  </>
+                )}
+              </EnhancedButton>
+            </CardFooter>
+          </Card>
+        )}
+      </div>
+      
+      {/* Recurring Expense Detector */}
+      {newReceiptId && (
+        <RecurringExpenseDetector receiptId={newReceiptId} />
+      )}
+    </div>
+  );
+}

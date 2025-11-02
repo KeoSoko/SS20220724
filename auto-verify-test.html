@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auto-Verification Test</title>
+</head>
+<body>
+    <h1>Auto-Verification Test</h1>
+    <p>Click the link below to test auto-verification:</p>
+    <a href="https://88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/verify-email?token=9b47f223e7ef73dbda0b67830d72d460db787b0afeec8574905309891be31f4e" target="_blank">
+        Test Verification Link (fixedverify2025)
+    </a>
+    
+    <h2>Expected Behavior:</h2>
+    <ol>
+        <li>Page loads and shows "Verifying Your Email" with spinner</li>
+        <li>Console shows debug logs starting with [VERIFY]</li>
+        <li>API call to /api/verify-email is made</li>
+        <li>Success screen appears with green checkmark</li>
+        <li>After 2 seconds, redirects to /auth with success message</li>
+    </ol>
+    
+    <h2>Debug:</h2>
+    <p>Open Chrome DevTools → Console to see [VERIFY] debug logs</p>
+    <p>Open Chrome DevTools → Network to see API calls</p>
+</body>
+</html>

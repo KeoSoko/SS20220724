@@ -1,0 +1,189 @@
+Here's a step-by-step solution to fix your JSX structure and TypeScript errors:
+
+1. JSX Structure Fixes (home-page.tsx)
+Problem Areas & Solutions:
+
+A. Tabs Component (Lines 569-570)
+jsx
+// Before (likely malformed)
+<Tabs>
+  <TabsContent value="analytics">
+  {/* content */}
+
+// After (properly closed)
+<Tabs defaultValue="analytics">
+  <TabsContent value="analytics">
+    {/* content */}
+  </TabsContent>
+  <TabsContent value="receipts">
+    {/* content */}
+  </TabsContent>
+</Tabs>
+B. Missing Closing Div (Lines 701-705)
+jsx
+// Before
+<div className="grid gap-4">
+  {filteredReceipts.map((receipt) => (
+    <Card key={receipt.id}>
+      {/* content */}
+
+// After
+<div className="grid gap-4">
+  {filteredReceipts.map((receipt) => (
+    <Card key={receipt.id}>
+      {/* content */}
+    </Card>
+  ))}
+</div>
+C. Malformed Elements (Lines 734-735)
+jsx
+// Before
+<Button variant="outline" size="sm" asChild>
+  <Link href="/tax-pros">
+
+// After (either)
+<Button variant="outline" size="sm" asChild>
+  <Link href="/tax-pros">
+    Talk to a Tax Pro
+  </Link>
+</Button>
+
+// OR if Link needs to wrap Button
+<Link href="/tax-pros" passHref legacyBehavior>
+  <Button variant="outline" size="sm">
+    Talk to a Tax Pro
+  </Button>
+</Link>
+2. TypeScript Fixes (smart-search.tsx)
+Solution for Missing Properties:
+
+typescript
+interface AnalyticsData {
+  averageSpending?: number;
+  spendingTrend?: 'up' | 'down' | 'stable';
+  topStores?: string[];
+  recommendations?: string[];
+}
+
+// Default empty state
+const DEFAULT_ANALYTICS: AnalyticsData = {
+  averageSpending: 0,
+  spendingTrend: 'stable',
+  topStores: [],
+  recommendations: []
+};
+
+// Usage
+const { averageSpending = 0 } = data || DEFAULT_ANALYTICS;
+Component Return Type Fix:
+
+typescript
+const SmartSearch: React.FC<SmartSearchProps> = ({ query }): JSX.Element => {
+  // ... logic
+  return <div>{/* content */}</div>;
+};
+3. Analytics Page Null Checks
+Safe Data Handling:
+
+typescript
+// Before (unsafe)
+const spending = data.monthly.total;
+
+// After (safe)
+const spending = data?.monthly?.total ?? 0;
+SVG Property Fixes:
+
+jsx
+// Before (conflicting props)
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" stroke="currentColor">
+
+// After (consistent props)
+<svg 
+  width={100} 
+  height={100} 
+  viewBox="0 0 100 100"
+  fill="none" 
+  stroke="currentColor"
+  xmlns="http://www.w3.org/2000/svg"
+>
+4. Comprehensive Validation Script
+Add this to your package.json:
+
+json
+"scripts": {
+  "validate": "eslint 'src/**/*.{ts,tsx}' --fix && tsc --noEmit"
+}
+Then run:
+
+bash
+npm run validate
+5. Structural Error Debugging Technique
+Temporarily add this component to identify unclosed tags:
+
+jsx
+// components/StructureValidator.tsx
+import React from 'react';
+
+export const validateJSX = (nodes: React.ReactNode): boolean => {
+  try {
+    React.Children.toArray(nodes);
+    return true;
+  } catch (e) {
+    console.error('JSX Structure Error:', e);
+    return false;
+  }
+};
+
+// Usage in problematic files:
+import { validateJSX } from './StructureValidator';
+
+const HomePage = () => {
+  const content = (
+    // Your JSX here
+  );
+  
+  React.useEffect(() => {
+    validateJSX(content);
+  }, []);
+
+  return content;
+};
+6. Recommended Editor Setup
+Install ESLint and Prettier plugins
+
+Add this VSCode settings.json config:
+
+json
+{
+  "editor.formatOnSave": true,
+  "eslint.validate": ["typescript", "typescriptreact"],
+  "typescript.tsdk": "node_modules/typescript/lib"
+}
+Implementation Checklist
+Fix all unclosed tags in home-page.tsx
+
+Add proper TypeScript interfaces
+
+Implement null checks for analytics data
+
+Run validation script
+
+Verify SVG props consistency
+
+Test component rendering
+
+Common Pitfalls to Avoid
+Fragments: Ensure all fragments are properly closed
+
+jsx
+<>{content}</> // Not <>{content}
+Conditional Rendering: Always provide alternatives
+
+jsx
+{items?.length ? items.map() : <EmptyState />}
+Props Consistency: Match TS interfaces to implementation
+
+typescript
+interface CardProps {
+  title: string; // Not optional in interface but missing in usage
+}

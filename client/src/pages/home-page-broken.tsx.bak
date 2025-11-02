@@ -1,0 +1,737 @@
+import { useState } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ExpenseCategory, Receipt, EXPENSE_CATEGORIES } from "@shared/schema";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { 
+  EnhancedButton,
+  EnhancedReceiptCard,
+  EnhancedEmptyState,
+  SpacingContainer
+} from "@/components/ui/enhanced-components";
+import { FloatingActionButton } from "@/components/ui/floating-action-button";
+import { PredictiveSearch } from "@/components/ui/predictive-search";
+import { Swipeable, useReceiptSwipeActions } from "@/components/ui/swipeable";
+import { motion } from "framer-motion";
+
+import { format } from "date-fns";
+import { Link, useLocation } from "wouter";
+import { 
+  Calendar, 
+  Download,
+  FileText, 
+  Filter, 
+  Loader2, 
+  Plus, 
+  Receipt as ReceiptIcon,
+  ShoppingBag,
+  Tags,
+  Trash2,
+  Utensils,
+  CheckSquare,
+  Square,
+  Camera,
+  Search,
+  LogOut,
+  Brain,
+  BarChart3,
+  Users,
+  Wallet
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { PageLayout } from "@/components/page-layout";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useToast } from "@/hooks/use-toast";
+import { EmptyState, ReceiptIllustration } from "@/components/empty-state";
+import { ReceiptListSkeleton, AnalyticsSkeleton } from "@/components/loading-skeleton";
+import { MobileBottomNav } from "@/components/mobile-bottom-nav";
+
+// Category icon and color mapping with semantic meaning
+const getCategoryIcon = (category: string) => {
+  switch(category) {
+    case 'food':
+    case 'dining':
+      return <Utensils className="h-4 w-4" />;
+    case 'shopping':
+      return <ShoppingBag className="h-4 w-4" />;
+    default:
+      return <ReceiptIcon className="h-4 w-4" />;
+  }
+};
+
+const getCategoryColor = (category: string) => {
+  switch(category) {
+    case 'food':
+    case 'dining':
+      return 'bg-orange-100 text-orange-800 border-orange-200';
+    case 'shopping':
+      return 'bg-blue-100 text-blue-800 border-blue-200';
+    case 'transport':
+      return 'bg-green-100 text-green-800 border-green-200';
+    case 'health':
+      return 'bg-red-100 text-red-800 border-red-200';
+    case 'entertainment':
+      return 'bg-purple-100 text-purple-800 border-purple-200';
+    case 'business':
+      return 'bg-gray-100 text-gray-800 border-gray-200';
+    case 'education':
+      return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+    case 'personal':
+      return 'bg-pink-100 text-pink-800 border-pink-200';
+    case 'utilities':
+      return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    default:
+      return 'bg-slate-100 text-slate-800 border-slate-200';
+  }
+};
+
+function HomePage() {
+  const { user, logout } = useAuth();
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("analytics");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedReceipts, setSelectedReceipts] = useState<Set<number>>(new Set());
+  const isMobile = useIsMobile();
+  const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
+
+  // Fetch receipts
+  const { data: receipts = [], isLoading } = useQuery<Receipt[]>({
+    queryKey: ["/api/receipts"],
+    enabled: !!user
+  });
+
+  // Fetch analytics data
+  const { data: categoryData = [], isLoading: categoryLoading } = useQuery<any[]>({
+    queryKey: ["/api/analytics/categories"],
+    enabled: !!user
+  });
+
+  const { data: monthlyData = [], isLoading: monthlyLoading } = useQuery<any[]>({
+    queryKey: ["/api/analytics/monthly"],
+    enabled: !!user
+  });
+
+  // Filter receipts
+  const filteredReceipts = receipts.filter((receipt: any) => {
+    const matchesCategory = categoryFilter === "all" || receipt.category === categoryFilter;
+    const matchesSearch = searchQuery === "" || 
+      receipt.storeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      receipt.notes?.toLowerCase().includes(searchQuery.toLowerCase());
+
+    return matchesCategory && matchesSearch;
+  });
+
+  // Bulk operations
+  const selectAllReceipts = () => {
+    setSelectedReceipts(new Set(filteredReceipts.map((r: Receipt) => r.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedReceipts(new Set());
+  };
+
+  const toggleReceiptSelection = (receiptId: number) => {
+    const newSelection = new Set(selectedReceipts);
+    if (newSelection.has(receiptId)) {
+      newSelection.delete(receiptId);
+    } else {
+      newSelection.add(receiptId);
+    }
+    setSelectedReceipts(newSelection);
+  };
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (receiptId: number) => {
+      await fetch(`/api/receipts/${receiptId}`, { method: 'DELETE' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
+      toast({
+        title: "Receipt deleted",
+        description: "Receipt has been deleted successfully."
+      });
+    }
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (receiptIds: number[]) => {
+      const deletePromises = receiptIds.map(id => 
+        fetch(`/api/receipts/${id}`, { method: 'DELETE' })
+      );
+      await Promise.all(deletePromises);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
+      setSelectedReceipts(new Set());
+      toast({
+        title: "Receipts deleted",
+        description: "Selected receipts have been deleted successfully."
+      });
+    }
+  });
+
+  // Export selected receipts
+  const exportSelectedReceipts = () => {
+    const selectedReceiptData = receipts.filter((r: any) => selectedReceipts.has(r.id));
+    const csvContent = "data:text/csv;charset=utf-8," +
+      "Store,Amount,Date,Category,Notes\n" +
+      selectedReceiptData.map((r: any) => 
+        `"${r.storeName}","${r.total}","${format(new Date(r.date), 'yyyy-MM-dd')}","${r.category}","${r.notes || ''}"`
+      ).join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "selected_receipts.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+    return "Good Evening";
+  };
+
+  const headerActions = (
+    <Link href="/upload">
+      <Button 
+        size="lg"
+        className="bg-[#0073AA] hover:bg-[#005d87] text-white font-semibold shadow-lg transform transition-transform hover:scale-105"
+        aria-label="Scan a new receipt"
+      >
+        <Camera className="h-5 w-5 mr-2" />
+        Scan Receipt
+      </Button>
+    </Link>
+  );
+
+  // Custom header with logo
+  const customTitle = (
+    <div className="flex items-center gap-4">
+      <img 
+        src="/attached_assets/SIMPLE-slips.svg" 
+        alt="SIMPLE SLIPS" 
+        className="h-8 md:h-10"
+      />
+      <div>
+        <h1 className={`font-bold text-gray-900 ${isMobile ? 'text-xl' : 'text-2xl'}`}>
+          {getGreeting()}, {user?.username}!
+        </h1>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className={`${isMobile ? 'p-4 pb-24' : 'p-4 md:p-8 pb-8'}`}>
+        <div className="max-w-6xl mx-auto">
+          {/* Header with Logo and Navigation */}
+          <div className={`flex flex-col gap-4 ${isMobile ? 'mb-6' : 'mb-8'}`}>
+            {/* Top Bar */}
+            <div className="flex items-center justify-between">
+              {/* Logo Brand Mark */}
+              <div className="flex items-center gap-3">
+                <img 
+                  src="/attached_assets/SIMPLE-slips.svg" 
+                  alt="SIMPLE SLIPS" 
+                  className="h-8 md:h-10"
+                />
+                {!isMobile && (
+                  <div className="border-l border-gray-300 pl-3">
+                    <span className="text-sm text-gray-600">Dashboard</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Navigation & Actions */}
+              {!isMobile ? (
+                <div className="flex items-center gap-3">
+                  <Link href="/smart">
+                    <Button variant="outline">
+                      <Brain className="h-4 w-4 mr-2" />
+                      Smart AI
+                    </Button>
+                  </Link>
+                  <Link href="/analytics">
+                    <Button variant="outline">
+                      <BarChart3 className="h-4 w-4 mr-2" />
+                      Reports
+                    </Button>
+                  </Link>
+                  <Link href="/tax-pros">
+                    <Button variant="outline">
+                      <Users className="h-4 w-4 mr-2" />
+                      Tax Pros
+                    </Button>
+                  </Link>
+                  <Link href="/profile">
+                    <Button variant="outline">
+                      <FileText className="h-4 w-4 mr-2" />
+                      Profile
+                    </Button>
+                  </Link>
+
+                  {headerActions}
+
+                  <Button 
+                    variant="outline" 
+                    onClick={() => logout()}
+                  >
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Logout
+                  </Button>
+                </div>
+              ) : (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => logout()}
+                  aria-label="Logout"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+
+            {/* Welcome Section - Centered */}
+            <div className="text-center">
+              <h1 className="font-bold text-gray-900 text-[23px]">
+                {getGreeting()}, {user?.fullName || user?.username}!
+              </h1>
+              <p className="text-gray-600 mt-1 text-[15px]">
+                Let's show your wallet who's boss—Pro style.
+              </p>
+              
+              {/* Predictive Search */}
+              <div className="mt-6 max-w-md mx-auto">
+                <PredictiveSearch 
+                  placeholder="Search 'food under R100'..."
+                  className="w-full"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Main Content */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            {/* Bulk Operations Toolbar */}
+            {bulkMode && (
+              <div className="p-6 bg-blue-50 border-b border-blue-200">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="text-sm font-medium text-blue-900">
+                      {selectedReceipts.size} of {filteredReceipts.length} selected
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={selectAllReceipts}>
+                        Select All
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={clearSelection}>
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                  {selectedReceipts.size > 0 && (
+                    <div className="flex gap-2">
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={exportSelectedReceipts}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Export CSV
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="destructive"
+                        onClick={() => bulkDeleteMutation.mutate(Array.from(selectedReceipts))}
+                        disabled={bulkDeleteMutation.isPending}
+                      >
+                        {bulkDeleteMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 mr-2" />
+                        )}
+                        Delete Selected
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Main content */}
+            <div className="p-6">
+              <Tabs defaultValue="analytics" value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className="mb-6">
+                  <TabsTrigger value="analytics" className="flex items-center gap-2">
+                    <ReceiptIcon className="w-4 h-4" />
+                    Analytics
+                  </TabsTrigger>
+                  <TabsTrigger value="receipts" className="flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Receipts ({filteredReceipts.length})
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* Analytics Tab */}
+                <TabsContent value="analytics" className="space-y-6">
+                  {isLoading || monthlyLoading || categoryLoading ? (
+                    <AnalyticsSkeleton />
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {/* Total Receipts Card */}
+                      <Card>
+                        <CardContent className="p-6">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-gray-600">Total Receipts</p>
+                              <p className="text-2xl font-bold">{receipts.length}</p>
+                            </div>
+                            <FileText className="h-8 w-8 text-blue-600" aria-hidden="true" />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Total Amount Card */}
+                      <Card>
+                        <CardContent className="p-6">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-gray-600">Total Amount</p>
+                              <p className="text-2xl font-bold">
+                                R{receipts.reduce((sum: number, r: any) => sum + parseFloat(r.total || 0), 0).toFixed(2)}
+                              </p>
+                            </div>
+                            <ShoppingBag className="h-8 w-8 text-green-600" aria-hidden="true" />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* This Month Card */}
+                      <Card>
+                        <CardContent className="p-6">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-gray-600">This Month</p>
+                              <p className="text-2xl font-bold">
+                                R{monthlyData.length > 0 && monthlyData[0]?.total ? monthlyData[0].total.toFixed(2) : '0.00'}
+                              </p>
+                            </div>
+                            <ShoppingBag className="h-8 w-8 text-purple-600" aria-hidden="true" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Enhanced Analytics Section */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Category Spending Pie Chart */}
+                  <Card>
+                    <CardContent className="p-6">
+                      <h3 className="text-lg font-semibold mb-4">Category Distribution</h3>
+                      <div className="space-y-4">
+                        {/* Compact visual representation */}
+                        <div className="grid grid-cols-1 gap-3">
+                          {categoryData.slice(0, 4).map((item: any, index: number) => {
+                            const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500'];
+                            const total = categoryData.reduce((sum: number, cat: any) => sum + cat.total, 0);
+                            const percentage = total > 0 ? ((item.total / total) * 100).toFixed(1) : '0';
+
+                            return (
+                              <div key={item.category} className="flex items-center space-x-3">
+                                <div className={`w-4 h-4 rounded-md flex-shrink-0 ${colors[index % colors.length]}`}></div>
+                                <div className="flex-1">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-sm font-medium capitalize">{item.category}</span>
+                                    <span className="text-xs text-gray-500">{percentage}%</span>
+                                  </div>
+                                  <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                                    <div 
+                                      className={`h-2 rounded-full ${colors[index % colors.length]}`}
+                                      style={{ width: `${percentage}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-xs text-gray-600">R{item.total.toFixed(2)}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {categoryData.length > 4 && (
+                          <div className="text-center pt-2">
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href="/analytics?tab=categories">
+                                View All Categories
+                              </Link>
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Monthly Goal Progress */}
+                  <Card>
+                    <CardContent className="p-6">
+                      <h3 className="text-lg font-semibold mb-4">Monthly Goals</h3>
+                      <div className="space-y-4">
+                        {/* Current month spending vs typical */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium">Monthly Spending</span>
+                            <span className="text-sm text-gray-500">
+                              R{monthlyData.length > 0 ? monthlyData[0]?.total?.toFixed(2) || '0.00' : '0.00'} / R2,000
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-3">
+                            <div 
+                              className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-300"
+                              style={{ 
+                                width: `${Math.min(((monthlyData.length > 0 ? monthlyData[0]?.total || 0 : 0) / 2000) * 100, 100)}%` 
+                              }}
+                            ></div>
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            {monthlyData.length > 0 && monthlyData[0]?.total 
+                              ? `${(((monthlyData[0].total / 2000) * 100)).toFixed(1)}% of monthly budget`
+                              : '0% of monthly budget'
+                            }
+                          </div>
+                        </div>
+
+                        {/* Receipt scanning goal */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium">Receipt Organization</span>
+                            <span className="text-sm text-gray-500">
+                              {receipts.length} / 50 receipts
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-3">
+                            <div 
+                              className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all duration-300"
+                              style={{ width: `${Math.min((receipts.length / 50) * 100, 100)}%` }}
+                            ></div>
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            {((receipts.length / 50) * 100).toFixed(1)}% of monthly goal
+                          </div>
+                        </div>
+
+                        {/* Tax-ready receipts goal */}
+                        <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium">Tax Preparation</span>
+                        <span className="text-sm text-gray-500">
+                          {categoryData.filter((cat: any) => ['business', 'medical', 'office'].includes(cat.category)).length} categories
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div 
+                          className="bg-gradient-to-r from-purple-500 to-purple-600 h-3 rounded-full transition-all duration-300"
+                          style={{ 
+                            width: `${Math.min((categoryData.filter((cat: any) => ['business', 'medical', 'office'].includes(cat.category)).length / 3) * 100, 100)}%` 
+                          }}
+                        ></div>
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        Track business & medical expenses
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t">
+                      <Button variant="outline" size="sm" asChild className="w-full">
+                        <Link href="/tax-pros">
+                          Talk to a Tax Pro
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Receipts Tab */}
+          <TabsContent value="receipts" className="space-y-6">
+            {/* Filters and Actions */}
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <Label htmlFor="search">Search receipts</Label>
+                <Input
+                  id="search"
+                  placeholder="Search by store name or description..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <div className="md:w-48">
+                <Label htmlFor="category">Category</Label>
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All categories</SelectItem>
+                    {EXPENSE_CATEGORIES.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category.charAt(0).toUpperCase() + category.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:w-32">
+                <Label>&nbsp;</Label>
+                <Button 
+                  variant={bulkMode ? "default" : "outline"} 
+                  onClick={() => setBulkMode(!bulkMode)}
+                  className="w-full"
+                >
+                  {bulkMode ? <CheckSquare className="h-4 w-4 mr-2" /> : <Square className="h-4 w-4 mr-2" />}
+                  {bulkMode ? "Exit Select" : "Select"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Receipts List */}
+            {isLoading ? (
+              <ReceiptListSkeleton />
+            ) : filteredReceipts.length === 0 ? (
+              <EmptyState
+                icon={<ReceiptIllustration />}
+                title="No receipts found"
+                description={
+                  searchQuery || categoryFilter !== "all" 
+                    ? "Try adjusting your filters or search terms."
+                    : "Get started by scanning your first receipt and let our AI categorize it automatically."
+                }
+                action={
+                  <Link href="/upload">
+                    <EnhancedButton 
+                      variant="primary"
+                      size="lg" 
+                      className="shadow-lg shadow-primary/30 hover:shadow-primary/40"
+                      aria-label="Scan your first receipt"
+                    >
+                      <Camera className="h-5 w-5 mr-2" />
+                      Scan Your First Receipt
+                    </EnhancedButton>
+                  </Link>
+                }
+              />
+            ) : (
+              <SpacingContainer size="md">
+                {filteredReceipts.map((receipt: any) => {
+                  const swipeActions = useReceiptSwipeActions(
+                    receipt.id,
+                    (id) => {
+                      // Edit receipt
+                      setLocation(`/receipt/${id}/edit`);
+                    },
+                    (id) => {
+                      // Delete receipt with confirmation
+                      if (confirm('Are you sure you want to delete this receipt?')) {
+                        deleteMutation.mutate(id);
+                      }
+                    },
+                    (id) => {
+                      // Add tags
+                      setLocation(`/receipt/${id}/tags`);
+                    }
+                  );
+
+                  return (
+                    <motion.div 
+                      key={receipt.id} 
+                      className="relative"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: filteredReceipts.indexOf(receipt) * 0.1 }}
+                    >
+                      {bulkMode && (
+                        <div className="absolute top-3 left-3 z-10">
+                          <Checkbox
+                            checked={selectedReceipts.has(receipt.id)}
+                            onCheckedChange={() => toggleReceiptSelection(receipt.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                      )}
+                      
+                      <Swipeable
+                        leftActions={swipeActions.leftActions}
+                        rightActions={swipeActions.rightActions}
+                        disabled={bulkMode}
+                      >
+                        <EnhancedReceiptCard
+                          receipt={{
+                            id: receipt.id,
+                            storeName: receipt.storeName,
+                            total: receipt.total,
+                            date: receipt.date,
+                            category: receipt.category
+                          }}
+                          onClick={() => window.location.href = `/receipt/${receipt.id}`}
+                          className={bulkMode && selectedReceipts.has(receipt.id) ? 'bg-blue-50 border-blue-200' : ''}
+                        />
+                      </Swipeable>
+                    </motion.div>
+                  );
+                })}
+              </SpacingContainer>
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+      
+    {/* Enhanced Mobile Scan Receipt Button */}
+    {isMobile && (
+      <motion.div 
+        className="fixed bottom-[72px] left-0 right-0 z-10 px-4 py-3 bg-white border-t border-gray-200"
+        initial={{ y: 100 }}
+        animate={{ y: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      >
+        <Link href="/upload" className="block w-full">
+          <EnhancedButton 
+            variant="primary"
+            size="lg"
+            className="w-full shadow-lg shadow-primary/30 hover:shadow-primary/40 rounded-xl font-semibold"
+            aria-label="Scan a new receipt"
+            style={{ minHeight: '48px' }}
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Scan Receipt
+          </EnhancedButton>
+        </Link>
+      </motion.div>
+    )}
+    
+    {/* Floating Action Button */}
+    <FloatingActionButton />
+
+    {/* Mobile Navigation */}
+    {isMobile && <MobileBottomNav />}
+  </div>
+  );
+}
+
+export default HomePage;

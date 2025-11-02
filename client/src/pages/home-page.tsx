@@ -468,16 +468,17 @@ function HomePage() {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between mt-3 text-sm text-gray-600 gap-2">
-                <div className="flex items-center gap-4">
-                  <Link href="/smart" className="flex items-center gap-1 hover:text-blue-600 transition-colors">
-                    <BarChart3 className="h-4 w-4" />
-                    AI Insights
-                  </Link>
+              <div className="mt-3 text-sm text-gray-600">
+                <div className="text-xs text-gray-700 font-medium mb-1">
+                  Search receipts by store, category, amount, or date
                 </div>
                 <div className="text-xs text-gray-500 flex items-center gap-1">
-                  <Brain className="h-3 w-3 flex-shrink-0" />
-                  <span>Search receipts by store, category, amount, or date</span>
+                  <span>Try:</span>
+                  <span className="text-blue-600">"Coffee"</span>
+                  <span>or</span>
+                  <span className="text-blue-600">"Woolworths"</span>
+                  <span>or</span>
+                  <span className="text-blue-600">"over R100"</span>
                 </div>
               </div>
             </div>

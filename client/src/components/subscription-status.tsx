@@ -65,7 +65,7 @@ export function SubscriptionStatus({ subscription, onCancel, onUpgrade }: Subscr
 
     const now = new Date();
     const trialEnd = new Date(subscription.trialEndDate);
-    const trialStart = new Date(trialEnd.getTime() - (7 * 24 * 60 * 60 * 1000)); // 7 days before end
+    const trialStart = new Date(trialEnd.getTime() - (30 * 24 * 60 * 60 * 1000)); // 30 days before end
     
     const totalTime = trialEnd.getTime() - trialStart.getTime();
     const remainingTime = Math.max(0, trialEnd.getTime() - now.getTime());

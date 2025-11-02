@@ -587,7 +587,7 @@ export function SubscriptionPage() {
             <Alert>
               <Calendar className="h-4 w-4" />
               <AlertDescription>
-                Start your 7-day free trial to access all premium features including unlimited receipt processing,
+                Start your 30-day free trial to access all premium features including unlimited receipt processing,
                 advanced analytics, and AI-powered tax insights.
               </AlertDescription>
             </Alert>
@@ -735,7 +735,7 @@ export function SubscriptionPage() {
               <p><strong>Subscription:</strong> Simple Slips Premium</p>
               <p><strong>Duration:</strong> Monthly (auto-renewable)</p>
               <p><strong>Price:</strong> R49.00 per month</p>
-              <p><strong>Free Trial:</strong> 7 days included</p>
+              <p><strong>Free Trial:</strong> 30 days included</p>
               <p className="pt-2 text-xs">
                 Subscription automatically renews unless auto-renew is turned off at least 24 hours before the end of the current period. 
                 Payment will be charged to your App Store account at confirmation of purchase. 

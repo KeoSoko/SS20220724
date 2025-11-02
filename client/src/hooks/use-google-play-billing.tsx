@@ -149,9 +149,9 @@ export function useGooglePlayBilling(): UseGooglePlayBillingReturn {
           price: id.includes('trial') ? 'Free' : 'R49.00',
           price_amount_micros: id.includes('trial') ? 0 : 49000000,
           price_currency_code: 'ZAR',
-          title: id.includes('trial') ? '7-Day Free Trial' : 'Premium Monthly',
+          title: id.includes('trial') ? '30-Day Free Trial' : 'Premium Monthly',
           description: id.includes('trial') 
-            ? 'Try all features free for 7 days' 
+            ? 'Try all features free for 30 days' 
             : 'Full access to all premium features'
         }));
         setProducts(mockProducts);

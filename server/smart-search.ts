@@ -43,27 +43,48 @@ export class SmartSearchService {
       // Apply filters first
       let filteredReceipts = this.applyFilters(allReceipts, filters);
       
-      // If there's a search query, use text search (AI search will be implemented later)
+      // If there's a search query, use AI-powered semantic search with text search fallback
       if (query.trim()) {
         console.log(`[SmartSearch] Searching for: "${query}" in ${filteredReceipts.length} receipts`);
         
-        // Use basic text search for now (more reliable)
-        filteredReceipts = this.performBasicTextSearch(filteredReceipts, query);
+        // Try AI-powered semantic search first
+        try {
+          // Map receipts to format expected by AI search (convert null to undefined)
+          const receiptsForAI = filteredReceipts.map(r => ({
+            id: r.id,
+            storeName: r.storeName,
+            items: r.items,
+            total: r.total,
+            category: r.category,
+            notes: r.notes || undefined
+          }));
+          
+          const aiResults = await aiCategorizationService.smartSearch(query, receiptsForAI);
+          if (aiResults.length > 0) {
+            console.log(`[SmartSearch] AI search found ${aiResults.length} semantically relevant receipts`);
+            const relevanceMap = new Map(aiResults.map(r => [r.receiptId, r.relevance]));
+            const aiFilteredReceipts = filteredReceipts
+              .filter(r => relevanceMap.has(r.id))
+              .sort((a, b) => (relevanceMap.get(b.id) || 0) - (relevanceMap.get(a.id) || 0));
+            
+            // If AI filtering resulted in empty results (hallucinated IDs), fallback to text search
+            if (aiFilteredReceipts.length > 0) {
+              filteredReceipts = aiFilteredReceipts;
+            } else {
+              console.log('[SmartSearch] AI search returned invalid IDs, falling back to text search');
+              filteredReceipts = this.performBasicTextSearch(filteredReceipts, query);
+            }
+          } else {
+            // Fallback to basic text search if AI returns no results
+            console.log('[SmartSearch] AI search returned no results, falling back to text search');
+            filteredReceipts = this.performBasicTextSearch(filteredReceipts, query);
+          }
+        } catch (error) {
+          console.log('[SmartSearch] AI search unavailable, using text search fallback');
+          filteredReceipts = this.performBasicTextSearch(filteredReceipts, query);
+        }
         
         console.log(`[SmartSearch] Found ${filteredReceipts.length} matching receipts`);
-        
-        // Future: Enable AI search when API is available
-        // try {
-        //   const aiResults = await aiCategorizationService.smartSearch(query, filteredReceipts);
-        //   if (aiResults.length > 0) {
-        //     const relevanceMap = new Map(aiResults.map(r => [r.receiptId, r.relevance]));
-        //     filteredReceipts = filteredReceipts
-        //       .filter(r => relevanceMap.has(r.id))
-        //       .sort((a, b) => (relevanceMap.get(b.id) || 0) - (relevanceMap.get(a.id) || 0));
-        //   }
-        // } catch (error) {
-        //   console.log('[SmartSearch] AI search unavailable, using text search');
-        // }
       }
       
       // Generate facets for filtering UI

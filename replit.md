@@ -12,6 +12,11 @@ Preferred communication style: Simple, everyday language.
 - Replaced "Tax Pros" navigation with "Business Hub" for better feature alignment
 - Tax Dashboard now accessible from Business Hub section
 
+### Search Enhancements
+- Enabled AI-powered semantic search using GPT-4o for intelligent natural language queries
+- Implemented dual-mode search: AI semantic search (primary) with 60% threshold text search (fallback)
+- Improved search relevance to filter out irrelevant results while maintaining flexibility
+
 ## System Architecture
 The system is built as a full-stack TypeScript application within a monorepo structure, separating client, server, and shared code.
 
@@ -60,7 +65,10 @@ The system is built as a full-stack TypeScript application within a monorepo str
   - **Convert Quote to Invoice**: One-click conversion from accepted quotations to invoices
   - **Business Profile**: Configure company branding, VAT registration, banking details for professional documents
   - **Dashboard Analytics**: Track unpaid invoices, client counts, and business performance at a glance
-- **Smart Search & Analytics**: AI-powered natural language search with 60% match threshold (requires at least 60% of search terms to match, allowing flexible searches like "pick n pay" while filtering irrelevant results), spending trend analysis, real-time budget monitoring, and export options (PDF, CSV).
+- **Smart Search & Analytics**: Dual-mode intelligent search system combining AI-powered semantic search with text-based fallback:
+  - **Primary**: GPT-4o semantic search understands natural language queries (e.g., "coffee" matches Starbucks, "grocery shopping" finds all grocery stores) and ranks results by relevance
+  - **Fallback**: 60% match threshold text search activates if AI search fails or returns no results (requires at least 60% of search terms to match, allowing flexible searches like "pick n pay" while filtering irrelevant results)
+  - Also includes spending trend analysis, real-time budget monitoring, and export options (PDF, CSV)
 - **AI Tax Assistant Chatbot**: An OpenAI GPT-4o powered chatbot provides contextual tax advice specific to South African regulations.
 - **Recurring Expense System**: Detects and manages recurring expenses through pattern recognition and predictive analysis.
 - **Subscription Management**: Complete system with 30-day free trials and monthly subscriptions (R49).

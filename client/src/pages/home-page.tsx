@@ -42,7 +42,8 @@ import {
   BarChart3,
   Users,
   Wallet,
-  AlertTriangle
+  AlertTriangle,
+  Briefcase
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -385,13 +386,13 @@ function HomePage() {
                 <Link href="/analytics">
                   <Button variant="ghost" className="flex items-center gap-2">
                     <BarChart3 className="h-4 w-4" />
-                    Reports
+                    Insights
                   </Button>
                 </Link>
-                <Link href="/tax-pros">
+                <Link href="/business-hub">
                   <Button variant="ghost" className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Tax Pros
+                    <Briefcase className="h-4 w-4" />
+                    Business
                   </Button>
                 </Link>
                 <Link href="/profile">

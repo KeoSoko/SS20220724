@@ -537,7 +537,7 @@ function HomePage() {
             <Tabs defaultValue="analytics" value={activeTab} onValueChange={setActiveTab}>
               <TabsList className="mb-6">
                 <TabsTrigger value="analytics" className="flex items-center gap-2">
-                  <ReceiptIcon className="w-4 h-4" />
+                  <BarChart3 className="w-4 h-4" />
                   Analytics
                 </TabsTrigger>
                 <TabsTrigger value="receipts" className="flex items-center gap-2">

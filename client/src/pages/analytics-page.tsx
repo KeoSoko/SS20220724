@@ -119,7 +119,7 @@ export default function AnalyticsPage() {
   // Enhanced loading state with skeleton components
   if (isCategoryLoading || isMonthlyLoading || isReceiptsLoading) {
     return (
-      <PageLayout title="Expense Reports" subtitle="Analyzing your financial data...">
+      <PageLayout title="Expense Insights" subtitle="Analyzing your financial data...">
         <div className="space-y-6">
           <div className={`grid gap-6 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
             {[1, 2, 3].map(i => (
@@ -139,7 +139,7 @@ export default function AnalyticsPage() {
   // Error handling with recovery options
   if (categoryError || monthlyError || receiptsError) {
     return (
-      <PageLayout title="Expense Reports" subtitle="Unable to load analytics">
+      <PageLayout title="Expense Insights" subtitle="Unable to load analytics">
         <QueryErrorFallback 
           error={(categoryError || monthlyError || receiptsError) as Error} 
           refetch={() => {
@@ -160,7 +160,7 @@ export default function AnalyticsPage() {
 
   return (
     <PageLayout 
-      title="Expense Reports"
+      title="Expense Insights"
       subtitle="Track and analyze your financial patterns and spending habits"
       showBackButton={true}
       headerActions={headerActions}

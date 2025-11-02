@@ -14,7 +14,7 @@ const navItems = [
     icon: Brain 
   },
   { 
-    name: "Reports", 
+    name: "Insights", 
     path: "/analytics", 
     icon: TrendingUp 
   },

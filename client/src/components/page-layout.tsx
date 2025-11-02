@@ -75,7 +75,7 @@ export function PageLayout({
                 <Link href="/analytics">
                   <Button variant="outline">
                     <BarChart3 className="h-4 w-4 mr-2" />
-                    Reports
+                    Insights
                   </Button>
                 </Link>
                 <Link href="/business-hub">

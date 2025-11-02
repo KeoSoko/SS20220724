@@ -29,7 +29,7 @@ const formatCurrency = (amount: number) => {
 };
 
 const formatCategory = (category: string) => {
-  return category.charAt(0).toUpperCase() + category.slice(1).replace('_', ' ');
+  return category.charAt(0).toUpperCase() + category.slice(1).replaceAll('_', ' ');
 };
 
 export default function AnalyticsPage() {

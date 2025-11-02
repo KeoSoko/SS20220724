@@ -256,6 +256,7 @@ export class SmartSearchService {
 
   private performBasicTextSearch(receipts: Receipt[], query: string): Receipt[] {
     const searchTerms = query.toLowerCase().split(' ').filter(term => term.length > 0);
+    const MATCH_THRESHOLD = 0.6; // Require 60% of terms to match (allows 2/3 for common searches)
     
     return receipts.filter(receipt => {
       const searchableText = [
@@ -267,14 +268,16 @@ export class SmartSearchService {
         ...receipt.items.map(item => item.name)
       ].join(' ').toLowerCase();
       
-      // More flexible search: if any search term matches, include the receipt
-      const exactMatch = searchTerms.every(term => searchableText.includes(term));
-      const partialMatch = searchTerms.some(term => searchableText.includes(term));
+      // Calculate how many search terms match
+      const matchedTerms = searchTerms.filter(term => searchableText.includes(term));
+      const matchPercentage = matchedTerms.length / searchTerms.length;
       
-      console.log(`[Search] Receipt "${receipt.storeName}" searchable: "${searchableText.substring(0, 50)}..." terms: [${searchTerms.join(', ')}] exactMatch: ${exactMatch}, partialMatch: ${partialMatch}`);
+      // Require at least 70% of search terms to match
+      const meetsThreshold = matchPercentage >= MATCH_THRESHOLD;
       
-      // Use partial match for more flexible search results
-      return partialMatch;
+      console.log(`[Search] Receipt "${receipt.storeName}" searchable: "${searchableText.substring(0, 50)}..." terms: [${searchTerms.join(', ')}] matched: ${matchedTerms.length}/${searchTerms.length} (${Math.round(matchPercentage * 100)}%) threshold: ${meetsThreshold}`);
+      
+      return meetsThreshold;
     });
   }
 

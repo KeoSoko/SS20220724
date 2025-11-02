@@ -60,7 +60,7 @@ The system is built as a full-stack TypeScript application within a monorepo str
   - **Convert Quote to Invoice**: One-click conversion from accepted quotations to invoices
   - **Business Profile**: Configure company branding, VAT registration, banking details for professional documents
   - **Dashboard Analytics**: Track unpaid invoices, client counts, and business performance at a glance
-- **Smart Search & Analytics**: AI-powered natural language search, spending trend analysis, real-time budget monitoring, and export options (PDF, CSV).
+- **Smart Search & Analytics**: AI-powered natural language search with 60% match threshold (requires at least 60% of search terms to match, allowing flexible searches like "pick n pay" while filtering irrelevant results), spending trend analysis, real-time budget monitoring, and export options (PDF, CSV).
 - **AI Tax Assistant Chatbot**: An OpenAI GPT-4o powered chatbot provides contextual tax advice specific to South African regulations.
 - **Recurring Expense System**: Detects and manages recurring expenses through pattern recognition and predictive analysis.
 - **Subscription Management**: Complete system with 30-day free trials and monthly subscriptions (R49).

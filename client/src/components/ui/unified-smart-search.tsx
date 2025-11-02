@@ -225,14 +225,7 @@ export function UnifiedSmartSearch({
 
   // Context-aware placeholder
   const getContextPlaceholder = () => {
-    switch (source) {
-      case 'home': return "Try 'coffee this month' or 'expenses over R500'...";
-      case 'scan': return "Search similar receipts while scanning...";
-      case 'receipts': return "Search by store name, amount, or date...";
-      case 'analytics': return "Analyze spending patterns or trends...";
-      case 'budgets': return "Find budget-related expenses...";
-      default: return placeholder;
-    }
+    return "";
   };
 
   // Auto-focus on mount if specified

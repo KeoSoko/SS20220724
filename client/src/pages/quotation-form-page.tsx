@@ -124,14 +124,16 @@ export default function QuotationFormPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: QuotationFormData & { status: string }) => {
+      console.log('[QuotationForm] Creating with subtotal:', subtotal, 'vatAmount:', vatAmount, 'total:', total);
       const quotationData = {
         ...data,
         date: new Date(data.date),
         expiryDate: new Date(data.expiryDate),
-        subtotal: subtotal.toString(),
-        vatAmount: vatAmount.toString(),
-        total: total.toString(),
+        subtotal: (subtotal || 0).toString(),
+        vatAmount: (vatAmount || 0).toString(),
+        total: (total || 0).toString(),
       };
+      console.log('[QuotationForm] Sending data:', quotationData);
       return await apiRequest("POST", "/api/quotations", quotationData);
     },
     onSuccess: () => {

@@ -1101,12 +1101,18 @@ export const insertQuotationSchema = createInsertSchema(quotations).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  date: z.union([z.date(), z.string()]).transform((val) => typeof val === 'string' ? new Date(val) : val),
+  expiryDate: z.union([z.date(), z.string()]).transform((val) => typeof val === 'string' ? new Date(val) : val),
 });
 
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  date: z.union([z.date(), z.string()]).transform((val) => typeof val === 'string' ? new Date(val) : val),
+  dueDate: z.union([z.date(), z.string()]).transform((val) => typeof val === 'string' ? new Date(val) : val),
 });
 
 export const insertLineItemSchema = createInsertSchema(lineItems).omit({

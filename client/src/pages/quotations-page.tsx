@@ -141,7 +141,11 @@ export default function QuotationsPage() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to send quotation');
+        const errorObj: Error & { requiresVerification?: boolean } = new Error(error.error || 'Failed to send quotation');
+        if (error.requiresVerification) {
+          (errorObj as any).requiresVerification = true;
+        }
+        throw errorObj;
       }
 
       return response.json();
@@ -154,12 +158,30 @@ export default function QuotationsPage() {
       queryClient.invalidateQueries({ queryKey: ['/api/quotations'] });
       setIsDetailDialogOpen(false);
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to send quotation",
-        variant: "destructive",
-      });
+    onError: (error: Error & { requiresVerification?: boolean }) => {
+      if (error.message?.includes("Business email not verified") || error.requiresVerification) {
+        toast({
+          title: "Email Not Verified",
+          description: "Please verify your business email in Business Profile before sending.",
+          duration: 10000,
+          action: (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setLocation("/business-profile")}
+              className="bg-white text-gray-900 hover:bg-gray-50 hover:text-gray-900 border-gray-300"
+            >
+              Verify Email
+            </Button>
+          ),
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to send quotation",
+          variant: "destructive",
+        });
+      }
     },
   });
 

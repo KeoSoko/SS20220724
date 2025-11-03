@@ -3538,23 +3538,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
+      
+      // Debug logging - raw request
+      log(`[DEBUG] Raw request body: ${JSON.stringify(req.body)}`, 'business-hub');
+      
       const { lineItems: items, ...quotationData } = req.body;
 
-      // Debug logging
-      log(`[DEBUG] Received quotation data: ${JSON.stringify({
-        ...quotationData,
-        lineItemsCount: items?.length || 0
-      })}`, 'business-hub');
+      // Debug logging - after destructuring
+      log(`[DEBUG] After destructuring - quotationData: ${JSON.stringify(quotationData)}`, 'business-hub');
+      log(`[DEBUG] lineItems count: ${items?.length || 0}`, 'business-hub');
 
       // Generate quotation number
       const quotationNumber = await generateQuotationNumber();
-
-      // Validate quotation data
-      const validatedQuotation = insertQuotationSchema.parse({
+      
+      // Debug logging - before validation
+      const dataToValidate = {
         ...quotationData,
         userId,
         quotationNumber,
-      });
+      };
+      log(`[DEBUG] Data to validate: ${JSON.stringify(dataToValidate)}`, 'business-hub');
+
+      // Validate quotation data
+      const validatedQuotation = insertQuotationSchema.parse(dataToValidate);
 
       // Start transaction
       const result = await db.transaction(async (tx) => {

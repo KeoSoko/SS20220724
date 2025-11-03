@@ -799,6 +799,45 @@ ${aiMessage}
       return false;
     }
   }
+
+  /**
+   * Test email configuration by sending a test email
+   * This verifies the email is verified in SendGrid and can send emails
+   */
+  async testEmailConfiguration(email: string): Promise<boolean> {
+    if (!process.env.SENDGRID_API_KEY) {
+      throw new Error("SendGrid API key not configured");
+    }
+
+    try {
+      const emailData = {
+        to: email,
+        from: {
+          email: email,
+          name: 'Simple Slips Test'
+        },
+        subject: 'Email Verification Test - Simple Slips',
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+            <h2>Email Verification Successful!</h2>
+            <p>This is a test email to verify your sender email is configured correctly.</p>
+            <p>Your email <strong>${email}</strong> is now verified and ready to send quotations and invoices to your clients.</p>
+            <p style="margin-top: 20px; font-size: 14px; color: #666;">
+              You can safely delete this email.
+            </p>
+          </div>
+        `,
+      };
+
+      await mailService.send(emailData);
+      console.log(`[EMAIL] Test email sent successfully to ${email}`);
+      return true;
+
+    } catch (error: any) {
+      console.error(`[EMAIL] Test email failed for ${email}:`, error.message);
+      throw new Error(`Email verification failed: ${error.message}. Please ensure this email is verified in SendGrid.`);
+    }
+  }
 }
 
 export const emailService = new EmailService();

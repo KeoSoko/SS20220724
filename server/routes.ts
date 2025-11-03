@@ -20,6 +20,7 @@ import {
   EXPENSE_SUBCATEGORIES, 
   receipts,
   businessProfiles,
+  businessEmailIdentities,
   clients,
   quotations,
   invoices,
@@ -3406,6 +3407,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error removing logo: ${error.message}`, 'business-hub');
       res.status(500).json({ error: "Failed to remove logo" });
+    }
+  });
+
+  // ===== BUSINESS EMAIL VERIFICATION ROUTES =====
+
+  // Get business email verification status
+  app.get("/api/business-email/status", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      
+      const emailIdentity = await db.query.businessEmailIdentities.findFirst({
+        where: eq(businessEmailIdentities.userId, userId),
+      });
+
+      if (!emailIdentity) {
+        return res.json({ 
+          hasIdentity: false,
+          isVerified: false,
+          email: null 
+        });
+      }
+
+      res.json({
+        hasIdentity: true,
+        isVerified: emailIdentity.isVerified,
+        email: emailIdentity.email,
+        verifiedAt: emailIdentity.verifiedAt,
+        lastError: emailIdentity.lastVerificationError,
+      });
+    } catch (error: any) {
+      log(`Error fetching email verification status: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to fetch email verification status" });
+    }
+  });
+
+  // Initiate or update business email verification
+  app.post("/api/business-email/initiate-verification", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const { email } = req.body;
+
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: "Valid email address is required" });
+      }
+
+      // Check if email identity already exists
+      const existingIdentity = await db.query.businessEmailIdentities.findFirst({
+        where: eq(businessEmailIdentities.userId, userId),
+      });
+
+      let identity;
+      if (existingIdentity) {
+        // Update existing identity
+        const [updated] = await db
+          .update(businessEmailIdentities)
+          .set({ 
+            email,
+            isVerified: false,
+            verificationRequestedAt: new Date(),
+            lastVerificationError: null,
+            updatedAt: new Date() 
+          })
+          .where(eq(businessEmailIdentities.userId, userId))
+          .returning();
+        identity = updated;
+      } else {
+        // Create new identity
+        const [created] = await db
+          .insert(businessEmailIdentities)
+          .values({
+            userId,
+            email,
+            isVerified: false,
+            verificationRequestedAt: new Date(),
+          })
+          .returning();
+        identity = created;
+      }
+
+      log(`Email verification initiated for user ${userId}: ${email}`, 'business-hub');
+      res.json({
+        success: true,
+        email: identity.email,
+        message: "Please verify this email in SendGrid before sending invoices/quotations",
+      });
+    } catch (error: any) {
+      log(`Error initiating email verification: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to initiate email verification" });
+    }
+  });
+
+  // Mark email as verified (after user has verified in SendGrid)
+  app.post("/api/business-email/mark-verified", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+
+      const identity = await db.query.businessEmailIdentities.findFirst({
+        where: eq(businessEmailIdentities.userId, userId),
+      });
+
+      if (!identity) {
+        return res.status(404).json({ error: "Email identity not found. Please configure your business email first." });
+      }
+
+      if (identity.isVerified) {
+        return res.json({ 
+          success: true,
+          message: "Email is already verified",
+          isVerified: true 
+        });
+      }
+
+      // Test send email to verify it actually works
+      try {
+        await emailService.testEmailConfiguration(identity.email);
+        
+        // Mark as verified
+        const [updated] = await db
+          .update(businessEmailIdentities)
+          .set({ 
+            isVerified: true,
+            verifiedAt: new Date(),
+            lastVerificationError: null,
+            updatedAt: new Date() 
+          })
+          .where(eq(businessEmailIdentities.userId, userId))
+          .returning();
+
+        log(`Email verified for user ${userId}: ${identity.email}`, 'business-hub');
+        res.json({ 
+          success: true,
+          isVerified: true,
+          message: "Email verified successfully! You can now send quotations and invoices." 
+        });
+      } catch (testError: any) {
+        // Email verification failed
+        await db
+          .update(businessEmailIdentities)
+          .set({ 
+            lastVerificationError: testError.message || "Failed to send test email",
+            updatedAt: new Date() 
+          })
+          .where(eq(businessEmailIdentities.userId, userId));
+
+        log(`Email verification test failed for user ${userId}: ${testError.message}`, 'business-hub');
+        res.status(400).json({ 
+          success: false,
+          error: "Email verification failed. Please make sure the email is verified in SendGrid.",
+          details: testError.message 
+        });
+      }
+    } catch (error: any) {
+      log(`Error marking email as verified: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to verify email" });
     }
   });
 

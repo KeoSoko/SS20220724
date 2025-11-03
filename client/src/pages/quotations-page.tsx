@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Edit, Trash2, FileText, Eye, Download } from "lucide-react";
+import { Plus, Edit, Trash2, FileText, Eye, Download, Mail } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import type { Quotation, Client, LineItem } from "@shared/schema";
@@ -123,6 +123,49 @@ export default function QuotationsPage() {
   const handleConvertToInvoice = (id: number) => {
     if (confirm("Are you sure you want to convert this quotation to an invoice?")) {
       convertToInvoiceMutation.mutate(id);
+    }
+  };
+
+  const sendQuotationMutation = useMutation({
+    mutationFn: async (quotationId: number) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch(`/api/quotations/${quotationId}/send`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send quotation');
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Quotation sent successfully to client",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/quotations'] });
+      setIsDetailDialogOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send quotation",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSendQuotation = (quotationId: number) => {
+    if (confirm("Send this quotation to the client via email?")) {
+      sendQuotationMutation.mutate(quotationId);
     }
   };
 
@@ -433,6 +476,15 @@ export default function QuotationsPage() {
                 )}
 
                 <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleSendQuotation(selectedQuotation.id)}
+                    disabled={sendQuotationMutation.isPending}
+                    data-testid="button-send-quotation"
+                  >
+                    <Mail className="h-4 w-4 mr-2" />
+                    {sendQuotationMutation.isPending ? "Sending..." : "Send to Client"}
+                  </Button>
                   <Button
                     variant="outline"
                     onClick={() => handleDownloadPDF(selectedQuotation.id)}

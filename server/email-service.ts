@@ -1,5 +1,5 @@
 import { MailService } from '@sendgrid/mail';
-import type { Receipt, ReceiptShare, EmailReceipt } from '../shared/schema.js';
+import type { Receipt, ReceiptShare, EmailReceipt, Quotation, Invoice, Client, BusinessProfile, LineItem } from '../shared/schema.js';
 
 if (!process.env.SENDGRID_API_KEY) {
   console.warn("SENDGRID_API_KEY not found - email features will be disabled");
@@ -500,6 +500,285 @@ Create a backup: ${this.appUrl}/settings
     } catch (error) {
       console.error('Failed to process email receipt:', error);
       return null;
+    }
+  }
+
+  /**
+   * Send quotation to client via email with PDF attachment
+   */
+  async sendQuotation(
+    quotation: Quotation,
+    client: Client,
+    businessProfile: BusinessProfile | null,
+    lineItems: LineItem[],
+    pdfBuffer: Buffer
+  ): Promise<boolean> {
+    if (!process.env.SENDGRID_API_KEY) {
+      console.error("Cannot send quotation - SENDGRID_API_KEY not configured");
+      return false;
+    }
+
+    if (!client.email) {
+      console.error("Cannot send quotation - client has no email address");
+      return false;
+    }
+
+    try {
+      const businessName = businessProfile?.companyName || 'Your Business';
+      const subject = `Quotation ${quotation.quotationNumber} from ${businessName}`;
+      
+      // Format expiry date
+      const expiryDate = new Date(quotation.expiryDate).toLocaleDateString('en-ZA', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      const emailBody = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            ${businessProfile?.logoUrl ? `<img src="${businessProfile.logoUrl}" alt="${businessName}" style="max-width: 200px; margin-bottom: 20px;">` : ''}
+            <h1 style="color: #0073AA; margin: 0;">${businessName}</h1>
+          </div>
+          
+          <h2 style="color: #333;">Hello ${client.name},</h2>
+          <p style="color: #666; font-size: 16px; line-height: 1.6;">
+            Thank you for your interest! Please find attached quotation <strong>${quotation.quotationNumber}</strong> for your review.
+          </p>
+          
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin: 30px 0;">
+            <h3 style="color: #333; margin-top: 0;">Quotation Summary</h3>
+            <table style="width: 100%; color: #666;">
+              <tr>
+                <td style="padding: 8px 0;"><strong>Quotation Number:</strong></td>
+                <td style="text-align: right;">${quotation.quotationNumber}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0;"><strong>Date:</strong></td>
+                <td style="text-align: right;">${new Date(quotation.date).toLocaleDateString('en-ZA')}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0;"><strong>Valid Until:</strong></td>
+                <td style="text-align: right;">${expiryDate}</td>
+              </tr>
+              <tr style="border-top: 2px solid #dee2e6;">
+                <td style="padding: 12px 0;"><strong style="font-size: 18px;">Total Amount:</strong></td>
+                <td style="text-align: right;"><strong style="font-size: 18px; color: #0073AA;">R ${parseFloat(quotation.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
+              </tr>
+            </table>
+          </div>
+
+          <p style="color: #666; font-size: 14px; line-height: 1.6;">
+            Please review the attached PDF for full details. If you have any questions or would like to proceed, 
+            please don't hesitate to reach out.
+          </p>
+
+          ${businessProfile?.email || businessProfile?.phone ? `
+          <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
+            <p style="color: #999; font-size: 14px; margin: 5px 0;">
+              ${businessProfile.email ? `Email: ${businessProfile.email}<br>` : ''}
+              ${businessProfile.phone ? `Phone: ${businessProfile.phone}<br>` : ''}
+              ${businessProfile.website ? `Website: ${businessProfile.website}` : ''}
+            </p>
+          </div>
+          ` : ''}
+        </div>
+      `;
+
+      await mailService.send({
+        to: client.email,
+        from: {
+          email: businessProfile?.email || this.fromEmail,
+          name: businessName
+        },
+        replyTo: businessProfile?.email ? {
+          email: businessProfile.email,
+          name: businessName
+        } : undefined,
+        subject: subject,
+        html: emailBody,
+        attachments: [
+          {
+            content: pdfBuffer.toString('base64'),
+            filename: `Quotation-${quotation.quotationNumber}.pdf`,
+            type: 'application/pdf',
+            disposition: 'attachment'
+          }
+        ]
+      });
+
+      console.log(`[EMAIL] Quotation ${quotation.quotationNumber} sent to ${client.email}`);
+      return true;
+
+    } catch (error) {
+      console.error('Failed to send quotation email:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Send invoice to client via email with PDF attachment
+   */
+  async sendInvoice(
+    invoice: Invoice,
+    client: Client,
+    businessProfile: BusinessProfile | null,
+    lineItems: LineItem[],
+    pdfBuffer: Buffer
+  ): Promise<boolean> {
+    if (!process.env.SENDGRID_API_KEY) {
+      console.error("Cannot send invoice - SENDGRID_API_KEY not configured");
+      return false;
+    }
+
+    if (!client.email) {
+      console.error("Cannot send invoice - client has no email address");
+      return false;
+    }
+
+    try {
+      const businessName = businessProfile?.companyName || 'Your Business';
+      const subject = `Invoice ${invoice.invoiceNumber} from ${businessName} - Payment Due`;
+      
+      // Format due date
+      const dueDate = new Date(invoice.dueDate).toLocaleDateString('en-ZA', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      const balance = (parseFloat(invoice.total) - parseFloat(invoice.amountPaid)).toFixed(2);
+      const isPaid = parseFloat(balance) <= 0;
+
+      const emailBody = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            ${businessProfile?.logoUrl ? `<img src="${businessProfile.logoUrl}" alt="${businessName}" style="max-width: 200px; margin-bottom: 20px;">` : ''}
+            <h1 style="color: #0073AA; margin: 0;">${businessName}</h1>
+          </div>
+          
+          <h2 style="color: #333;">Hello ${client.name},</h2>
+          <p style="color: #666; font-size: 16px; line-height: 1.6;">
+            ${isPaid ? 
+              `Thank you for your payment! This email confirms that invoice <strong>${invoice.invoiceNumber}</strong> has been paid in full.` :
+              `Please find attached invoice <strong>${invoice.invoiceNumber}</strong> for the services provided.`
+            }
+          </p>
+          
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin: 30px 0;">
+            <h3 style="color: #333; margin-top: 0;">Invoice Summary</h3>
+            <table style="width: 100%; color: #666;">
+              <tr>
+                <td style="padding: 8px 0;"><strong>Invoice Number:</strong></td>
+                <td style="text-align: right;">${invoice.invoiceNumber}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0;"><strong>Invoice Date:</strong></td>
+                <td style="text-align: right;">${new Date(invoice.date).toLocaleDateString('en-ZA')}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0;"><strong>Due Date:</strong></td>
+                <td style="text-align: right;">${dueDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0;"><strong>Total Amount:</strong></td>
+                <td style="text-align: right;">R ${parseFloat(invoice.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+              </tr>
+              ${parseFloat(invoice.amountPaid) > 0 ? `
+              <tr>
+                <td style="padding: 8px 0;"><strong>Amount Paid:</strong></td>
+                <td style="text-align: right; color: #28a745;">R ${parseFloat(invoice.amountPaid).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+              </tr>
+              ` : ''}
+              <tr style="border-top: 2px solid #dee2e6;">
+                <td style="padding: 12px 0;"><strong style="font-size: 18px;">${isPaid ? 'Status:' : 'Balance Due:'}</strong></td>
+                <td style="text-align: right;"><strong style="font-size: 18px; color: ${isPaid ? '#28a745' : '#dc3545'};">${isPaid ? 'PAID' : 'R ' + parseFloat(balance).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
+              </tr>
+            </table>
+          </div>
+
+          ${!isPaid && businessProfile?.bankName ? `
+          <div style="background: #e7f3ff; padding: 20px; border-radius: 6px; margin: 30px 0;">
+            <h3 style="color: #333; margin-top: 0;">Payment Details</h3>
+            <table style="width: 100%; color: #666; font-size: 14px;">
+              ${businessProfile.bankName ? `
+              <tr>
+                <td style="padding: 4px 0;"><strong>Bank:</strong></td>
+                <td>${businessProfile.bankName}</td>
+              </tr>
+              ` : ''}
+              ${businessProfile.accountHolder ? `
+              <tr>
+                <td style="padding: 4px 0;"><strong>Account Holder:</strong></td>
+                <td>${businessProfile.accountHolder}</td>
+              </tr>
+              ` : ''}
+              ${businessProfile.accountNumber ? `
+              <tr>
+                <td style="padding: 4px 0;"><strong>Account Number:</strong></td>
+                <td>${businessProfile.accountNumber}</td>
+              </tr>
+              ` : ''}
+              ${businessProfile.branchCode ? `
+              <tr>
+                <td style="padding: 4px 0;"><strong>Branch Code:</strong></td>
+                <td>${businessProfile.branchCode}</td>
+              </tr>
+              ` : ''}
+            </table>
+            <p style="color: #666; font-size: 12px; margin-top: 10px; margin-bottom: 0;">
+              Please use invoice number ${invoice.invoiceNumber} as payment reference.
+            </p>
+          </div>
+          ` : ''}
+
+          <p style="color: #666; font-size: 14px; line-height: 1.6;">
+            ${isPaid ? 
+              'Please find the attached receipt for your records. Thank you for your business!' :
+              'Please review the attached PDF for full details. If you have any questions, please don\'t hesitate to reach out.'
+            }
+          </p>
+
+          ${businessProfile?.email || businessProfile?.phone ? `
+          <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
+            <p style="color: #999; font-size: 14px; margin: 5px 0;">
+              ${businessProfile.email ? `Email: ${businessProfile.email}<br>` : ''}
+              ${businessProfile.phone ? `Phone: ${businessProfile.phone}<br>` : ''}
+              ${businessProfile.website ? `Website: ${businessProfile.website}` : ''}
+            </p>
+          </div>
+          ` : ''}
+        </div>
+      `;
+
+      await mailService.send({
+        to: client.email,
+        from: {
+          email: businessProfile?.email || this.fromEmail,
+          name: businessName
+        },
+        replyTo: businessProfile?.email ? {
+          email: businessProfile.email,
+          name: businessName
+        } : undefined,
+        subject: subject,
+        html: emailBody,
+        attachments: [
+          {
+            content: pdfBuffer.toString('base64'),
+            filename: `Invoice-${invoice.invoiceNumber}.pdf`,
+            type: 'application/pdf',
+            disposition: 'attachment'
+          }
+        ]
+      });
+
+      console.log(`[EMAIL] Invoice ${invoice.invoiceNumber} sent to ${client.email}`);
+      return true;
+
+    } catch (error) {
+      console.error('Failed to send invoice email:', error);
+      return false;
     }
   }
 }

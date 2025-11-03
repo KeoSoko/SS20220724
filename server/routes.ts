@@ -3933,6 +3933,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Send quotation via email
+  app.post("/api/quotations/:id/send", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const quotationId = parseInt(req.params.id, 10);
+
+      if (isNaN(quotationId)) {
+        return res.status(400).json({ error: "Invalid quotation ID" });
+      }
+
+      // Get quotation
+      const quotation = await db.query.quotations.findFirst({
+        where: and(
+          eq(quotations.id, quotationId),
+          eq(quotations.userId, userId)
+        ),
+      });
+
+      if (!quotation) {
+        return res.status(404).json({ error: "Quotation not found" });
+      }
+
+      // Get line items
+      const items = await db.query.lineItems.findMany({
+        where: eq(lineItems.quotationId, quotationId),
+        orderBy: [asc(lineItems.sortOrder)],
+      });
+
+      // Get client
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, quotation.clientId),
+      });
+
+      if (!client) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      if (!client.email) {
+        return res.status(400).json({ error: "Client does not have an email address. Please add an email to the client profile." });
+      }
+
+      // Get business profile
+      const businessProfile = await db.query.businessProfiles.findFirst({
+        where: eq(businessProfiles.userId, userId),
+      });
+
+      if (!businessProfile) {
+        return res.status(404).json({ error: "Business profile not found. Please set up your business profile first." });
+      }
+
+      // Generate PDF
+      const pdfBuffer = await exportService.exportQuotationToPDF(quotation, client, items, businessProfile);
+
+      // Send email
+      const emailSent = await emailService.sendQuotation(quotation, client, businessProfile, items, pdfBuffer);
+
+      if (!emailSent) {
+        return res.status(500).json({ error: "Failed to send email" });
+      }
+
+      // Update quotation status and sentAt timestamp
+      await db
+        .update(quotations)
+        .set({ 
+          sentAt: new Date(),
+          status: quotation.status === 'draft' ? 'sent' : quotation.status,
+          updatedAt: new Date()
+        })
+        .where(eq(quotations.id, quotationId));
+
+      log(`Quotation ${quotation.quotationNumber} sent to ${client.email}`, 'business-hub');
+      res.json({ success: true, message: "Quotation sent successfully" });
+    } catch (error: any) {
+      log(`Error sending quotation: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to send quotation" });
+    }
+  });
+
   // ===== INVOICE ROUTES =====
 
   // Get invoice stats
@@ -4269,6 +4349,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error exporting invoice to PDF: ${error.message}`, 'business-hub');
       res.status(500).json({ error: "Failed to export invoice to PDF" });
+    }
+  });
+
+  // Send invoice via email
+  app.post("/api/invoices/:id/send", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      // Get invoice
+      const invoice = await db.query.invoices.findFirst({
+        where: and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.userId, userId)
+        ),
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      // Get line items
+      const items = await db.query.lineItems.findMany({
+        where: eq(lineItems.invoiceId, invoiceId),
+        orderBy: [asc(lineItems.sortOrder)],
+      });
+
+      // Get payments
+      const payments = await db.query.invoicePayments.findMany({
+        where: eq(invoicePayments.invoiceId, invoiceId),
+        orderBy: [asc(invoicePayments.paymentDate)],
+      });
+
+      // Get client
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, invoice.clientId),
+      });
+
+      if (!client) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      if (!client.email) {
+        return res.status(400).json({ error: "Client does not have an email address. Please add an email to the client profile." });
+      }
+
+      // Get business profile
+      const businessProfile = await db.query.businessProfiles.findFirst({
+        where: eq(businessProfiles.userId, userId),
+      });
+
+      if (!businessProfile) {
+        return res.status(404).json({ error: "Business profile not found. Please set up your business profile first." });
+      }
+
+      // Generate PDF
+      const pdfBuffer = await exportService.exportInvoiceToPDF(invoice, client, items, payments, businessProfile);
+
+      // Send email
+      const emailSent = await emailService.sendInvoice(invoice, client, businessProfile, items, pdfBuffer);
+
+      if (!emailSent) {
+        return res.status(500).json({ error: "Failed to send email" });
+      }
+
+      // Update invoice sentAt timestamp
+      await db
+        .update(invoices)
+        .set({ 
+          sentAt: new Date(),
+          updatedAt: new Date()
+        })
+        .where(eq(invoices.id, invoiceId));
+
+      log(`Invoice ${invoice.invoiceNumber} sent to ${client.email}`, 'business-hub');
+      res.json({ success: true, message: "Invoice sent successfully" });
+    } catch (error: any) {
+      log(`Error sending invoice: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to send invoice" });
     }
   });
 

@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Edit, Trash2, FileText, Eye, Banknote, Download } from "lucide-react";
+import { Plus, Edit, Trash2, FileText, Eye, Banknote, Download, Mail } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { format, isPast } from "date-fns";
 import type { Invoice, Client, LineItem, InvoicePayment } from "@shared/schema";
@@ -174,6 +174,49 @@ export default function InvoicesPage() {
   const submitPayment = (data: PaymentFormData) => {
     if (selectedInvoice) {
       recordPaymentMutation.mutate({ ...data, invoiceId: selectedInvoice.id });
+    }
+  };
+
+  const sendInvoiceMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch(`/api/invoices/${invoiceId}/send`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send invoice');
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Invoice sent successfully to client",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/invoices'] });
+      setIsDetailDialogOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send invoice",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSendInvoice = (invoiceId: number) => {
+    if (confirm("Send this invoice to the client via email?")) {
+      sendInvoiceMutation.mutate(invoiceId);
     }
   };
 
@@ -511,7 +554,16 @@ export default function InvoicesPage() {
                   </div>
                 )}
 
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleSendInvoice(selectedInvoice.id)}
+                    disabled={sendInvoiceMutation.isPending}
+                    data-testid="button-send-invoice"
+                  >
+                    <Mail className="h-4 w-4 mr-2" />
+                    {sendInvoiceMutation.isPending ? "Sending..." : "Send to Client"}
+                  </Button>
                   <Button
                     variant="outline"
                     onClick={() => handleDownloadPDF(selectedInvoice.id)}

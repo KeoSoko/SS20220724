@@ -1035,6 +1035,7 @@ export const quotations = pgTable("quotations", {
   notes: text("notes"),
   terms: text("terms"),
   convertedToInvoiceId: integer("converted_to_invoice_id"),
+  sentAt: timestamp("sent_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1055,6 +1056,7 @@ export const invoices = pgTable("invoices", {
   amountPaid: text("amount_paid").notNull().default("0"),
   notes: text("notes"),
   terms: text("terms"),
+  sentAt: timestamp("sent_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

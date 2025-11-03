@@ -3538,37 +3538,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      
-      // Debug logging - raw request
-      log(`[DEBUG] Raw request body: ${JSON.stringify(req.body)}`, 'business-hub');
-      
       const { lineItems: items, ...quotationData } = req.body;
-
-      // Debug logging - after destructuring
-      log(`[DEBUG] After destructuring - quotationData: ${JSON.stringify(quotationData)}`, 'business-hub');
-      log(`[DEBUG] lineItems count: ${items?.length || 0}`, 'business-hub');
 
       // Generate quotation number
       const quotationNumber = await generateQuotationNumber();
-      
-      // Debug logging - before validation
-      const dataToValidate = {
+
+      // Validate quotation data
+      const validatedQuotation = insertQuotationSchema.parse({
         ...quotationData,
         userId,
         quotationNumber,
-      };
-      log(`[DEBUG] Data to validate: ${JSON.stringify(dataToValidate)}`, 'business-hub');
-
-      // Validate quotation data
-      let validatedQuotation;
-      try {
-        validatedQuotation = insertQuotationSchema.parse(dataToValidate);
-        log(`[DEBUG] Validation successful: ${JSON.stringify(validatedQuotation)}`, 'business-hub');
-      } catch (validationError: any) {
-        log(`[DEBUG] Validation failed with error: ${JSON.stringify(validationError.errors || validationError)}`, 'business-hub');
-        log(`[DEBUG] Original data had these keys: ${Object.keys(dataToValidate).join(', ')}`, 'business-hub');
-        throw validationError;
-      }
+      });
 
       // Start transaction
       const result = await db.transaction(async (tx) => {
@@ -3580,17 +3560,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Insert line items if provided
         if (items && Array.isArray(items) && items.length > 0) {
-          log(`[DEBUG] Validating ${items.length} line items`, 'business-hub');
           const validatedItems = items.map((item: any, index: number) => {
+            // Calculate line item total
+            const qty = parseFloat(item.quantity) || 0;
+            const price = parseFloat(item.unitPrice) || 0;
+            const lineTotal = (qty * price).toString();
+            
             const itemData = {
               ...item,
               quotationId: newQuotation.id,
               sortOrder: item.sortOrder ?? index,
+              total: lineTotal,
             };
-            log(`[DEBUG] Line item ${index} data: ${JSON.stringify(itemData)}`, 'business-hub');
             return insertLineItemSchema.parse(itemData);
           });
-          log(`[DEBUG] All line items validated successfully`, 'business-hub');
 
           await tx.insert(lineItems).values(validatedItems);
         }
@@ -3648,13 +3631,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Insert new line items
           if (items.length > 0) {
-            const validatedItems = items.map((item: any, index: number) =>
-              insertLineItemSchema.parse({
+            const validatedItems = items.map((item: any, index: number) => {
+              // Calculate line item total
+              const qty = parseFloat(item.quantity) || 0;
+              const price = parseFloat(item.unitPrice) || 0;
+              const lineTotal = (qty * price).toString();
+              
+              return insertLineItemSchema.parse({
                 ...item,
                 quotationId: quotationId,
                 sortOrder: item.sortOrder ?? index,
-              })
-            );
+                total: lineTotal,
+              });
+            });
 
             await tx.insert(lineItems).values(validatedItems);
           }
@@ -3938,13 +3927,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Insert line items if provided
         if (items && Array.isArray(items) && items.length > 0) {
-          const validatedItems = items.map((item: any, index: number) =>
-            insertLineItemSchema.parse({
+          const validatedItems = items.map((item: any, index: number) => {
+            // Calculate line item total
+            const qty = parseFloat(item.quantity) || 0;
+            const price = parseFloat(item.unitPrice) || 0;
+            const lineTotal = (qty * price).toString();
+            
+            return insertLineItemSchema.parse({
               ...item,
               invoiceId: newInvoice.id,
               sortOrder: item.sortOrder ?? index,
-            })
-          );
+              total: lineTotal,
+            });
+          });
 
           await tx.insert(lineItems).values(validatedItems);
         }
@@ -4002,13 +3997,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Insert new line items
           if (items.length > 0) {
-            const validatedItems = items.map((item: any, index: number) =>
-              insertLineItemSchema.parse({
+            const validatedItems = items.map((item: any, index: number) => {
+              // Calculate line item total
+              const qty = parseFloat(item.quantity) || 0;
+              const price = parseFloat(item.unitPrice) || 0;
+              const lineTotal = (qty * price).toString();
+              
+              return insertLineItemSchema.parse({
                 ...item,
                 invoiceId: invoiceId,
                 sortOrder: item.sortOrder ?? index,
-              })
-            );
+                total: lineTotal,
+              });
+            });
 
             await tx.insert(lineItems).values(validatedItems);
           }

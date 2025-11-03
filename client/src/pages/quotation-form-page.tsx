@@ -124,14 +124,24 @@ export default function QuotationFormPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: QuotationFormData & { status: string }) => {
-      console.log('[QuotationForm] Creating with subtotal:', subtotal, 'vatAmount:', vatAmount, 'total:', total);
+      // Calculate totals fresh from the current form data
+      const formSubtotal = data.lineItems.reduce((sum, item) => {
+        const qty = parseFloat(item.quantity) || 0;
+        const price = parseFloat(item.unitPrice) || 0;
+        return sum + (qty * price);
+      }, 0);
+      
+      const formVatAmount = isVatRegistered ? formSubtotal * 0.15 : 0;
+      const formTotal = formSubtotal + formVatAmount;
+      
+      console.log('[QuotationForm] Creating with subtotal:', formSubtotal, 'vatAmount:', formVatAmount, 'total:', formTotal);
       const quotationData = {
         ...data,
         date: new Date(data.date),
         expiryDate: new Date(data.expiryDate),
-        subtotal: (subtotal || 0).toString(),
-        vatAmount: (vatAmount || 0).toString(),
-        total: (total || 0).toString(),
+        subtotal: formSubtotal.toString(),
+        vatAmount: formVatAmount.toString(),
+        total: formTotal.toString(),
       };
       console.log('[QuotationForm] Sending data:', quotationData);
       return await apiRequest("POST", "/api/quotations", quotationData);
@@ -155,13 +165,23 @@ export default function QuotationFormPage() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: QuotationFormData & { status: string }) => {
+      // Calculate totals fresh from the current form data
+      const formSubtotal = data.lineItems.reduce((sum, item) => {
+        const qty = parseFloat(item.quantity) || 0;
+        const price = parseFloat(item.unitPrice) || 0;
+        return sum + (qty * price);
+      }, 0);
+      
+      const formVatAmount = isVatRegistered ? formSubtotal * 0.15 : 0;
+      const formTotal = formSubtotal + formVatAmount;
+      
       const quotationData = {
         ...data,
         date: new Date(data.date),
         expiryDate: new Date(data.expiryDate),
-        subtotal: subtotal.toString(),
-        vatAmount: vatAmount.toString(),
-        total: total.toString(),
+        subtotal: formSubtotal.toString(),
+        vatAmount: formVatAmount.toString(),
+        total: formTotal.toString(),
       };
       return await apiRequest("PATCH", `/api/quotations/${quotationId}`, quotationData);
     },

@@ -37,6 +37,7 @@ import PaymentHistory from "@/pages/payment-history";
 import { SubscriptionBanner } from "@/components/subscription-banner";
 import EmailTrackingPage from "@/pages/email-tracking-page";
 import BusinessHubPage from "@/pages/business-hub-page";
+import BusinessProfilePage from "@/pages/business-profile-page";
 import ClientsPage from "@/pages/clients-page";
 import QuotationsPage from "@/pages/quotations-page";
 import QuotationFormPage from "@/pages/quotation-form-page";
@@ -70,6 +71,7 @@ function Router() {
       <ProtectedRoute path="/payment-history" component={PaymentHistory} />
       <AdminRoute path="/admin/email-tracking" component={EmailTrackingPage} />
       <ProtectedRoute path="/business-hub" component={BusinessHubPage} />
+      <ProtectedRoute path="/business-profile" component={BusinessProfilePage} />
       <ProtectedRoute path="/clients" component={ClientsPage} />
       <ProtectedRoute path="/quotations" component={QuotationsPage} />
       <ProtectedRoute path="/quotations/new" component={QuotationFormPage} />

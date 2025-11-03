@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, FileText, Banknote, Plus, ArrowRight, Calculator } from "lucide-react";
+import { Users, FileText, Banknote, Plus, ArrowRight, Calculator, Settings } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import type { Client, Quotation, Invoice } from "@shared/schema";
@@ -184,6 +184,12 @@ export default function BusinessHubPage() {
                 <Button variant="outline" data-testid="button-tax-dashboard">
                   <Calculator className="h-4 w-4 mr-2" />
                   Tax Dashboard
+                </Button>
+              </Link>
+              <Link href="/business-profile">
+                <Button variant="outline" data-testid="button-business-profile">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Business Profile
                 </Button>
               </Link>
             </div>

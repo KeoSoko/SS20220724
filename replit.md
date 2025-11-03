@@ -12,6 +12,16 @@ Preferred communication style: Simple, everyday language.
 - Replaced "Tax Pros" navigation with "Business Hub" for better feature alignment
 - Tax Dashboard now accessible from Business Hub section
 
+### AI-Powered Email & Smart Reminders (MVP Phase 2-3)
+- **AI Email Assistant**: GPT-4o powered email drafting for quotations and invoices with contextual, professional messaging
+- **Smart Subject Lines**: Auto-generated subject lines based on document type, amount, and due dates
+- **Email Delivery**: One-click "Send to Client" buttons with PDF attachments via SendGrid
+- **Smart Reminder System**: Automated payment reminder detection with progressive cadencing (3/7/7/14 days)
+- **Urgency Escalation**: Four-level priority system (low/medium/high/critical) based on days overdue
+- **Payment Predictions**: AI analysis of client payment patterns to forecast cash flow
+- **Dashboard Widgets**: Real-time overdue invoice tracking with quick-send reminder buttons
+- **Graceful Fallbacks**: System continues working even if OpenAI API is unavailable
+
 ### Search Enhancements
 - Enabled AI-powered semantic search using GPT-4o for intelligent natural language queries
 - Implemented dual-mode search: AI semantic search (primary) with 60% threshold text search (fallback)

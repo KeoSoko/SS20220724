@@ -1000,6 +1000,20 @@ export const businessProfiles = pgTable("business_profiles", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Business email identities for SendGrid sender verification
+export const businessEmailIdentities = pgTable("business_email_identities", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  isVerified: boolean("is_verified").default(false).notNull(),
+  sendgridSenderId: text("sendgrid_sender_id"),
+  verifiedAt: timestamp("verified_at"),
+  lastVerificationError: text("last_verification_error"),
+  verificationRequestedAt: timestamp("verification_requested_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Clients table
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
@@ -1096,6 +1110,12 @@ export const insertBusinessProfileSchema = createInsertSchema(businessProfiles).
   updatedAt: true,
 });
 
+export const insertBusinessEmailIdentitySchema = createInsertSchema(businessEmailIdentities).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertClientSchema = createInsertSchema(clients).omit({
   id: true,
   createdAt: true,
@@ -1133,6 +1153,9 @@ export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).om
 // Types for business hub
 export type BusinessProfile = typeof businessProfiles.$inferSelect;
 export type InsertBusinessProfile = z.infer<typeof insertBusinessProfileSchema>;
+
+export type BusinessEmailIdentity = typeof businessEmailIdentities.$inferSelect;
+export type InsertBusinessEmailIdentity = z.infer<typeof insertBusinessEmailIdentitySchema>;
 
 export type Client = typeof clients.$inferSelect;
 export type InsertClient = z.infer<typeof insertClientSchema>;

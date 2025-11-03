@@ -1,5 +1,6 @@
 import { MailService } from '@sendgrid/mail';
 import type { Receipt, ReceiptShare, EmailReceipt, Quotation, Invoice, Client, BusinessProfile, LineItem } from '../shared/schema.js';
+import { aiEmailAssistant } from './ai-email-assistant.js';
 
 if (!process.env.SENDGRID_API_KEY) {
   console.warn("SENDGRID_API_KEY not found - email features will be disabled");
@@ -525,7 +526,22 @@ Create a backup: ${this.appUrl}/settings
 
     try {
       const businessName = businessProfile?.companyName || 'Your Business';
-      const subject = `Quotation ${quotation.quotationNumber} from ${businessName}`;
+      
+      // Generate AI-powered email content
+      const emailContext = {
+        documentType: 'quotation' as const,
+        documentNumber: quotation.quotationNumber,
+        clientName: client.name,
+        total: `R ${parseFloat(quotation.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        businessName,
+        expiryDate: new Date(quotation.expiryDate),
+        isNewClient: false, // Could enhance with client history check
+      };
+
+      const [subject, aiMessage] = await Promise.all([
+        aiEmailAssistant.generateSubjectLine(emailContext),
+        aiEmailAssistant.draftEmailMessage(emailContext),
+      ]);
       
       // Format expiry date
       const expiryDate = new Date(quotation.expiryDate).toLocaleDateString('en-ZA', {
@@ -534,6 +550,7 @@ Create a backup: ${this.appUrl}/settings
         day: 'numeric'
       });
 
+      // Build professional HTML email with AI-generated message
       const emailBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="text-align: center; margin-bottom: 30px;">
@@ -541,10 +558,9 @@ Create a backup: ${this.appUrl}/settings
             <h1 style="color: #0073AA; margin: 0;">${businessName}</h1>
           </div>
           
-          <h2 style="color: #333;">Hello ${client.name},</h2>
-          <p style="color: #666; font-size: 16px; line-height: 1.6;">
-            Thank you for your interest! Please find attached quotation <strong>${quotation.quotationNumber}</strong> for your review.
-          </p>
+          <div style="color: #333; font-size: 16px; line-height: 1.6; white-space: pre-wrap; margin-bottom: 30px;">
+${aiMessage}
+          </div>
           
           <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin: 30px 0;">
             <h3 style="color: #333; margin-top: 0;">Quotation Summary</h3>
@@ -567,11 +583,6 @@ Create a backup: ${this.appUrl}/settings
               </tr>
             </table>
           </div>
-
-          <p style="color: #666; font-size: 14px; line-height: 1.6;">
-            Please review the attached PDF for full details. If you have any questions or would like to proceed, 
-            please don't hesitate to reach out.
-          </p>
 
           ${businessProfile?.email || businessProfile?.phone ? `
           <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
@@ -638,7 +649,27 @@ Create a backup: ${this.appUrl}/settings
 
     try {
       const businessName = businessProfile?.companyName || 'Your Business';
-      const subject = `Invoice ${invoice.invoiceNumber} from ${businessName} - Payment Due`;
+      
+      const balance = (parseFloat(invoice.total) - parseFloat(invoice.amountPaid)).toFixed(2);
+      const isPaid = parseFloat(balance) <= 0;
+
+      // Generate AI-powered email content
+      const emailContext = {
+        documentType: 'invoice' as const,
+        documentNumber: invoice.invoiceNumber,
+        clientName: client.name,
+        total: `R ${parseFloat(invoice.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        businessName,
+        dueDate: new Date(invoice.dueDate),
+        amountPaid: `R ${parseFloat(invoice.amountPaid).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        amountOutstanding: `R ${parseFloat(balance).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        isNewClient: false, // Could enhance with client history check
+      };
+
+      const [subject, aiMessage] = await Promise.all([
+        aiEmailAssistant.generateSubjectLine(emailContext),
+        aiEmailAssistant.draftEmailMessage(emailContext),
+      ]);
       
       // Format due date
       const dueDate = new Date(invoice.dueDate).toLocaleDateString('en-ZA', {
@@ -647,9 +678,7 @@ Create a backup: ${this.appUrl}/settings
         day: 'numeric'
       });
 
-      const balance = (parseFloat(invoice.total) - parseFloat(invoice.amountPaid)).toFixed(2);
-      const isPaid = parseFloat(balance) <= 0;
-
+      // Build professional HTML email with AI-generated message
       const emailBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="text-align: center; margin-bottom: 30px;">
@@ -657,13 +686,9 @@ Create a backup: ${this.appUrl}/settings
             <h1 style="color: #0073AA; margin: 0;">${businessName}</h1>
           </div>
           
-          <h2 style="color: #333;">Hello ${client.name},</h2>
-          <p style="color: #666; font-size: 16px; line-height: 1.6;">
-            ${isPaid ? 
-              `Thank you for your payment! This email confirms that invoice <strong>${invoice.invoiceNumber}</strong> has been paid in full.` :
-              `Please find attached invoice <strong>${invoice.invoiceNumber}</strong> for the services provided.`
-            }
-          </p>
+          <div style="color: #333; font-size: 16px; line-height: 1.6; white-space: pre-wrap; margin-bottom: 30px;">
+${aiMessage}
+          </div>
           
           <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin: 30px 0;">
             <h3 style="color: #333; margin-top: 0;">Invoice Summary</h3>
@@ -731,13 +756,6 @@ Create a backup: ${this.appUrl}/settings
             </p>
           </div>
           ` : ''}
-
-          <p style="color: #666; font-size: 14px; line-height: 1.6;">
-            ${isPaid ? 
-              'Please find the attached receipt for your records. Thank you for your business!' :
-              'Please review the attached PDF for full details. If you have any questions, please don\'t hesitate to reach out.'
-            }
-          </p>
 
           ${businessProfile?.email || businessProfile?.phone ? `
           <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">

@@ -1,0 +1,192 @@
+import { OpenAI } from 'openai';
+import { log } from './vite';
+import type { Client, BusinessProfile, Quotation, Invoice, InvoicePayment } from '@shared/schema';
+import { format } from 'date-fns';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+export interface EmailContext {
+  documentType: 'quotation' | 'invoice';
+  documentNumber: string;
+  clientName: string;
+  total: string;
+  businessName: string;
+  dueDate?: Date;
+  expiryDate?: Date;
+  isOverdue?: boolean;
+  daysOverdue?: number;
+  amountPaid?: string;
+  amountOutstanding?: string;
+  previousSentCount?: number;
+  isNewClient?: boolean;
+}
+
+export class AIEmailAssistant {
+  async draftEmailMessage(context: EmailContext): Promise<string> {
+    try {
+      const prompt = this.buildPrompt(context);
+      
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: "You are a professional business communication assistant for Simple Slips, helping South African solopreneurs and freelancers draft professional, warm, and effective emails for quotations and invoices. Generate email message bodies only (no subject lines). Use South African English. Be professional yet friendly. Keep emails concise (2-3 short paragraphs max)."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 300,
+      });
+
+      const message = completion.choices[0]?.message?.content || this.getFallbackMessage(context);
+      log(`AI drafted email for ${context.documentType} ${context.documentNumber}`, 'ai-email');
+      return message.trim();
+    } catch (error: any) {
+      log(`Error drafting AI email: ${error.message}`, 'ai-email');
+      return this.getFallbackMessage(context);
+    }
+  }
+
+  async generateSubjectLine(context: EmailContext): Promise<string> {
+    try {
+      const prompt = this.buildSubjectPrompt(context);
+      
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: "You are a professional email subject line writer. Generate concise, clear, professional subject lines for business documents. Maximum 60 characters. Include key information: document type, number, business name, and urgency if applicable."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.5,
+        max_tokens: 20,
+      });
+
+      const subject = completion.choices[0]?.message?.content || this.getFallbackSubject(context);
+      return subject.trim().replace(/^["']|["']$/g, ''); // Remove quotes if present
+    } catch (error: any) {
+      log(`Error generating subject line: ${error.message}`, 'ai-email');
+      return this.getFallbackSubject(context);
+    }
+  }
+
+  private buildPrompt(context: EmailContext): string {
+    const parts: string[] = [];
+    
+    if (context.documentType === 'quotation') {
+      parts.push(`Draft a professional email to send quotation ${context.documentNumber} to ${context.clientName}.`);
+      parts.push(`Business: ${context.businessName}`);
+      parts.push(`Total amount: ${context.total}`);
+      
+      if (context.expiryDate) {
+        parts.push(`Valid until: ${format(context.expiryDate, 'dd MMM yyyy')}`);
+      }
+      
+      if (context.isNewClient) {
+        parts.push(`This is a new client - include a warm introduction.`);
+      }
+      
+      parts.push(`Mention that the quotation is attached as a PDF. Ask them to review it and let you know if they have questions. Express enthusiasm about potentially working together.`);
+      
+    } else if (context.documentType === 'invoice') {
+      if (context.isOverdue && context.daysOverdue) {
+        // Overdue reminder
+        const tone = this.getReminderTone(context.previousSentCount || 0, context.daysOverdue);
+        parts.push(`Draft a ${tone} payment reminder for overdue invoice ${context.documentNumber}.`);
+        parts.push(`Client: ${context.clientName}`);
+        parts.push(`Amount outstanding: ${context.amountOutstanding || context.total}`);
+        parts.push(`Days overdue: ${context.daysOverdue}`);
+        
+        if (context.amountPaid && context.amountPaid !== 'R0.00') {
+          parts.push(`Amount already paid: ${context.amountPaid}`);
+          parts.push(`Acknowledge the partial payment graciously.`);
+        }
+        
+        if (context.previousSentCount && context.previousSentCount > 2) {
+          parts.push(`This is the ${context.previousSentCount + 1}th reminder. Be firmer but still professional.`);
+        }
+        
+      } else {
+        // New invoice
+        parts.push(`Draft a professional email to send invoice ${context.documentNumber} to ${context.clientName}.`);
+        parts.push(`Business: ${context.businessName}`);
+        parts.push(`Total amount: ${context.total}`);
+        
+        if (context.dueDate) {
+          parts.push(`Due date: ${format(context.dueDate, 'dd MMM yyyy')}`);
+        }
+        
+        if (context.isNewClient) {
+          parts.push(`This is a new client - thank them for their business.`);
+        }
+      }
+      
+      parts.push(`Mention that the invoice is attached as a PDF. Include payment instructions.`);
+    }
+    
+    return parts.join('\n');
+  }
+
+  private buildSubjectPrompt(context: EmailContext): string {
+    if (context.isOverdue && context.daysOverdue) {
+      return `Payment reminder subject line for invoice ${context.documentNumber} from ${context.businessName}, ${context.daysOverdue} days overdue, amount ${context.amountOutstanding || context.total}`;
+    }
+    
+    if (context.documentType === 'quotation') {
+      return `Quotation subject line: ${context.documentNumber} from ${context.businessName}, amount ${context.total}`;
+    }
+    
+    if (context.dueDate) {
+      return `Invoice subject line: ${context.documentNumber} from ${context.businessName}, due ${format(context.dueDate, 'dd MMM yyyy')}, amount ${context.total}`;
+    }
+    
+    return `${context.documentType} subject line: ${context.documentNumber} from ${context.businessName}, amount ${context.total}`;
+  }
+
+  private getReminderTone(previousSentCount: number, daysOverdue: number): string {
+    if (daysOverdue > 30 || previousSentCount > 2) {
+      return 'firm but professional';
+    } else if (daysOverdue > 14 || previousSentCount > 1) {
+      return 'polite but direct';
+    } else {
+      return 'friendly and gentle';
+    }
+  }
+
+  private getFallbackMessage(context: EmailContext): string {
+    if (context.documentType === 'quotation') {
+      return `Hi ${context.clientName.split(' ')[0]},\n\nThank you for your interest in working with us. Please find attached quotation ${context.documentNumber} for ${context.total}.\n\nThe quotation is valid until ${context.expiryDate ? format(context.expiryDate, 'dd MMMM yyyy') : 'the end of the month'}. Please review the details and let me know if you have any questions.\n\nLooking forward to working with you!\n\nKind regards`;
+    } else {
+      if (context.isOverdue) {
+        return `Hi ${context.clientName.split(' ')[0]},\n\nI hope this email finds you well. This is a friendly reminder that invoice ${context.documentNumber} for ${context.amountOutstanding || context.total} is now ${context.daysOverdue} days overdue.\n\nPlease arrange payment at your earliest convenience. If you've already processed this payment, please disregard this reminder.\n\nBest regards`;
+      }
+      
+      return `Hi ${context.clientName.split(' ')[0]},\n\nPlease find attached invoice ${context.documentNumber} for ${context.total}. Payment is due by ${context.dueDate ? format(context.dueDate, 'dd MMMM yyyy') : 'the end of the month'}.\n\nThank you for your business!\n\nKind regards`;
+    }
+  }
+
+  private getFallbackSubject(context: EmailContext): string {
+    if (context.isOverdue) {
+      return `Payment Reminder: Invoice ${context.documentNumber} - ${context.amountOutstanding || context.total}`;
+    }
+    
+    if (context.documentType === 'quotation') {
+      return `Quotation ${context.documentNumber} from ${context.businessName}`;
+    }
+    
+    return `Invoice ${context.documentNumber} from ${context.businessName}${context.dueDate ? ` - Due ${format(context.dueDate, 'dd MMM')}` : ''}`;
+  }
+}
+
+export const aiEmailAssistant = new AIEmailAssistant();

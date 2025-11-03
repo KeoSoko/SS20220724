@@ -45,6 +45,7 @@ import { taxService } from "./tax-service";
 import { taxAIAssistant } from "./tax-ai-assistant";
 import { recurringExpenseService } from "./recurring-expense-service";
 import { billingService } from "./billing-service";
+import { smartReminderService } from "./smart-reminder-service";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
 import { log } from "./vite";
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
@@ -4510,6 +4511,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Validation error", details: error.errors });
       }
       res.status(500).json({ error: "Failed to record payment" });
+    }
+  });
+
+  // ===== Smart Reminder Routes =====
+
+  // Get dashboard statistics for Business Hub
+  app.get("/api/business-hub/dashboard-stats", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const stats = await smartReminderService.getDashboardStats(userId);
+      res.json(stats);
+    } catch (error: any) {
+      log(`Error getting dashboard stats: ${error.message}`, 'smart-reminder');
+      res.status(500).json({ error: "Failed to get dashboard statistics" });
+    }
+  });
+
+  // Get all overdue invoices
+  app.get("/api/business-hub/overdue-invoices", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const overdueInvoices = await smartReminderService.getOverdueInvoices(userId);
+      res.json(overdueInvoices);
+    } catch (error: any) {
+      log(`Error getting overdue invoices: ${error.message}`, 'smart-reminder');
+      res.status(500).json({ error: "Failed to get overdue invoices" });
+    }
+  });
+
+  // Get invoices needing reminders with AI suggestions
+  app.get("/api/business-hub/reminders", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const reminders = await smartReminderService.getInvoicesNeedingReminders(userId);
+      res.json(reminders);
+    } catch (error: any) {
+      log(`Error getting reminders: ${error.message}`, 'smart-reminder');
+      res.status(500).json({ error: "Failed to get reminders" });
+    }
+  });
+
+  // Send payment reminder for an invoice
+  app.post("/api/invoices/:id/send-reminder", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      // Get invoice
+      const invoice = await db.query.invoices.findFirst({
+        where: and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.userId, userId)
+        ),
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      // Get line items
+      const items = await db.query.lineItems.findMany({
+        where: eq(lineItems.invoiceId, invoiceId),
+        orderBy: [asc(lineItems.sortOrder)],
+      });
+
+      // Get payments
+      const payments = await db.query.invoicePayments.findMany({
+        where: eq(invoicePayments.invoiceId, invoiceId),
+        orderBy: [asc(invoicePayments.paymentDate)],
+      });
+
+      // Get client
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, invoice.clientId),
+      });
+
+      if (!client) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      if (!client.email) {
+        return res.status(400).json({ error: "Client does not have an email address" });
+      }
+
+      // Get business profile
+      const businessProfile = await db.query.businessProfiles.findFirst({
+        where: eq(businessProfiles.userId, userId),
+      });
+
+      if (!businessProfile) {
+        return res.status(404).json({ error: "Business profile not found" });
+      }
+
+      // Generate PDF
+      const pdfBuffer = await exportService.exportInvoiceToPDF(invoice, client, items, payments, businessProfile);
+
+      // Send reminder email using AI-generated content
+      const emailSent = await emailService.sendInvoice(invoice, client, businessProfile, items, pdfBuffer);
+
+      if (!emailSent) {
+        return res.status(500).json({ error: "Failed to send email" });
+      }
+
+      // Mark reminder as sent
+      await smartReminderService.markReminderSent(invoiceId);
+
+      log(`Reminder sent for invoice ${invoice.invoiceNumber} to ${client.email}`, 'smart-reminder');
+      res.json({ success: true, message: "Reminder sent successfully" });
+    } catch (error: any) {
+      log(`Error sending reminder: ${error.message}`, 'smart-reminder');
+      res.status(500).json({ error: "Failed to send reminder" });
+    }
+  });
+
+  // Get payment prediction for an invoice
+  app.get("/api/invoices/:id/payment-prediction", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      // Verify invoice exists and belongs to user
+      const invoice = await db.query.invoices.findFirst({
+        where: and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.userId, userId)
+        ),
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      const prediction = await smartReminderService.predictPaymentDate(invoiceId);
+      
+      if (!prediction) {
+        return res.status(404).json({ error: "Unable to generate payment prediction" });
+      }
+
+      res.json(prediction);
+    } catch (error: any) {
+      log(`Error getting payment prediction: ${error.message}`, 'smart-reminder');
+      res.status(500).json({ error: "Failed to get payment prediction" });
     }
   });
 

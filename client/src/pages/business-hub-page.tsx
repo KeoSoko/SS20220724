@@ -1,13 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { PageLayout } from "@/components/page-layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, FileText, Banknote, Plus, ArrowRight, Calculator, Settings } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Users, FileText, Banknote, Plus, ArrowRight, Calculator, Settings, Bell, Clock, TrendingUp, Mail } from "lucide-react";
 import { Link } from "wouter";
-import { format } from "date-fns";
+import { format, differenceInDays } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
 import type { Client, Quotation, Invoice } from "@shared/schema";
 
 interface InvoiceStats {
@@ -15,6 +18,26 @@ interface InvoiceStats {
   overdueCount: number;
   totalPaid?: number;
   thisMonthRevenue?: number;
+}
+
+interface ReminderSuggestion {
+  invoice: Invoice;
+  client: Client;
+  daysOverdue: number;
+  suggestedAction: 'send_reminder' | 'send_final_notice' | 'escalate' | 'wait';
+  nextReminderDate: string;
+  urgency: 'low' | 'medium' | 'high' | 'critical';
+  aiMessage?: string;
+  aiSubject?: string;
+}
+
+interface DashboardStats {
+  totalOverdueCount: number;
+  totalOverdueAmount: number;
+  remindersNeededCount: number;
+  criticalCount: number;
+  highCount: number;
+  reminders: ReminderSuggestion[];
 }
 
 const formatCurrency = (amount: string | number) => {
@@ -39,6 +62,8 @@ const getStatusBadgeColor = (status: string) => {
 };
 
 export default function BusinessHubPage() {
+  const { toast } = useToast();
+
   const { data: clients = [], isLoading: loadingClients } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
   });
@@ -53,6 +78,47 @@ export default function BusinessHubPage() {
 
   const { data: invoiceStats } = useQuery<InvoiceStats>({
     queryKey: ["/api/invoices/stats"],
+  });
+
+  const { data: dashboardStats, isLoading: loadingDashboardStats } = useQuery<DashboardStats>({
+    queryKey: ["/api/business-hub/dashboard-stats"],
+  });
+
+  const sendReminderMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch(`/api/invoices/${invoiceId}/send-reminder`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send reminder');
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Payment reminder sent successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/business-hub/dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/invoices'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send reminder",
+        variant: "destructive",
+      });
+    },
   });
 
   const recentQuotations = quotations.slice(0, 5);
@@ -195,6 +261,135 @@ export default function BusinessHubPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Smart Reminders Section */}
+        {dashboardStats && dashboardStats.remindersNeededCount > 0 && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Bell className="h-5 w-5" />
+                  Smart Reminders
+                </CardTitle>
+                <CardDescription>AI-powered payment reminders ready to send</CardDescription>
+              </div>
+              <Badge variant="secondary">
+                {dashboardStats.remindersNeededCount} {dashboardStats.remindersNeededCount === 1 ? 'reminder' : 'reminders'}
+              </Badge>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {dashboardStats.criticalCount > 0 && (
+                  <Alert variant="destructive">
+                    <AlertDescription>
+                      <strong>{dashboardStats.criticalCount}</strong> critical overdue {dashboardStats.criticalCount === 1 ? 'invoice' : 'invoices'} need immediate attention
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="space-y-3">
+                  {dashboardStats.reminders.slice(0, 5).map((reminder) => {
+                    const balance = (parseFloat(reminder.invoice.total) - parseFloat(reminder.invoice.amountPaid)).toFixed(2);
+                    const urgencyColor = {
+                      low: "bg-blue-100 text-blue-800",
+                      medium: "bg-yellow-100 text-yellow-800",
+                      high: "bg-orange-100 text-orange-800",
+                      critical: "bg-red-100 text-red-800"
+                    }[reminder.urgency];
+
+                    return (
+                      <div key={reminder.invoice.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <p className="font-medium">{reminder.client.name}</p>
+                            <Badge className={urgencyColor}>
+                              {reminder.urgency}
+                            </Badge>
+                            <Badge variant="outline">
+                              {reminder.daysOverdue} days overdue
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            Invoice {reminder.invoice.invoiceNumber} • {formatCurrency(balance)} outstanding
+                          </p>
+                          {reminder.aiSubject && (
+                            <p className="text-xs text-muted-foreground mt-1 italic">
+                              "{reminder.aiSubject}"
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (confirm(`Send payment reminder to ${reminder.client.name}?`)) {
+                              sendReminderMutation.mutate(reminder.invoice.id);
+                            }
+                          }}
+                          disabled={sendReminderMutation.isPending}
+                          data-testid={`button-send-reminder-${reminder.invoice.id}`}
+                        >
+                          <Mail className="h-4 w-4 mr-2" />
+                          Send Reminder
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {dashboardStats.remindersNeededCount > 5 && (
+                  <div className="text-center pt-2">
+                    <Link href="/invoices">
+                      <Button variant="outline" size="sm">
+                        View all {dashboardStats.remindersNeededCount} reminders
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Overdue Invoices Summary */}
+        {dashboardStats && dashboardStats.totalOverdueCount > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Overdue Invoices</CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">{dashboardStats.totalOverdueCount}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Total amount: {formatCurrency(dashboardStats.totalOverdueAmount)}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Critical Priority</CardTitle>
+                <Bell className="h-4 w-4 text-red-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">{dashboardStats.criticalCount}</div>
+                <p className="text-xs text-muted-foreground mt-1">Requires immediate action</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">High Priority</CardTitle>
+                <Bell className="h-4 w-4 text-orange-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-600">{dashboardStats.highCount}</div>
+                <p className="text-xs text-muted-foreground mt-1">Send reminders soon</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Recent Invoices */}
         <Card>

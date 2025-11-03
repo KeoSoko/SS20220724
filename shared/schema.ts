@@ -1057,6 +1057,9 @@ export const invoices = pgTable("invoices", {
   notes: text("notes"),
   terms: text("terms"),
   sentAt: timestamp("sent_at"),
+  lastReminderSent: timestamp("last_reminder_sent"),
+  reminderCount: integer("reminder_count").notNull().default(0),
+  nextReminderDate: timestamp("next_reminder_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

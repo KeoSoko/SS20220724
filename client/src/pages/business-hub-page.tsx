@@ -84,6 +84,47 @@ export default function BusinessHubPage() {
       showBackButton={true}
     >
       <div className="p-6 space-y-6">
+        {/* Quick Actions */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/clients">
+                <Button data-testid="button-new-client">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Client
+                </Button>
+              </Link>
+              <Link href="/quotations/new">
+                <Button data-testid="button-new-quotation">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Quotation
+                </Button>
+              </Link>
+              <Link href="/invoices/new">
+                <Button data-testid="button-new-invoice">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Invoice
+                </Button>
+              </Link>
+              <Link href="/tax-dashboard">
+                <Button variant="outline" data-testid="button-tax-dashboard">
+                  <Calculator className="h-4 w-4 mr-2" />
+                  Tax Dashboard
+                </Button>
+              </Link>
+              <Link href="/business-profile">
+                <Button variant="outline" data-testid="button-business-profile">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Business Profile
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Sales Report Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card data-testid="stat-total-clients">
@@ -154,47 +195,6 @@ export default function BusinessHubPage() {
             </CardContent>
           </Card>
         </div>
-
-        {/* Quick Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/clients">
-                <Button data-testid="button-new-client">
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Client
-                </Button>
-              </Link>
-              <Link href="/quotations/new">
-                <Button data-testid="button-new-quotation">
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Quotation
-                </Button>
-              </Link>
-              <Link href="/invoices/new">
-                <Button data-testid="button-new-invoice">
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Invoice
-                </Button>
-              </Link>
-              <Link href="/tax-dashboard">
-                <Button variant="outline" data-testid="button-tax-dashboard">
-                  <Calculator className="h-4 w-4 mr-2" />
-                  Tax Dashboard
-                </Button>
-              </Link>
-              <Link href="/business-profile">
-                <Button variant="outline" data-testid="button-business-profile">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Business Profile
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Recent Invoices */}
         <Card>

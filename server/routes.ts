@@ -3580,13 +3580,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Insert line items if provided
         if (items && Array.isArray(items) && items.length > 0) {
-          const validatedItems = items.map((item: any, index: number) =>
-            insertLineItemSchema.parse({
+          log(`[DEBUG] Validating ${items.length} line items`, 'business-hub');
+          const validatedItems = items.map((item: any, index: number) => {
+            const itemData = {
               ...item,
               quotationId: newQuotation.id,
               sortOrder: item.sortOrder ?? index,
-            })
-          );
+            };
+            log(`[DEBUG] Line item ${index} data: ${JSON.stringify(itemData)}`, 'business-hub');
+            return insertLineItemSchema.parse(itemData);
+          });
+          log(`[DEBUG] All line items validated successfully`, 'business-hub');
 
           await tx.insert(lineItems).values(validatedItems);
         }

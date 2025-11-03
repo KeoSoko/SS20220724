@@ -3560,7 +3560,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       log(`[DEBUG] Data to validate: ${JSON.stringify(dataToValidate)}`, 'business-hub');
 
       // Validate quotation data
-      const validatedQuotation = insertQuotationSchema.parse(dataToValidate);
+      let validatedQuotation;
+      try {
+        validatedQuotation = insertQuotationSchema.parse(dataToValidate);
+        log(`[DEBUG] Validation successful: ${JSON.stringify(validatedQuotation)}`, 'business-hub');
+      } catch (validationError: any) {
+        log(`[DEBUG] Validation failed with error: ${JSON.stringify(validationError.errors || validationError)}`, 'business-hub');
+        log(`[DEBUG] Original data had these keys: ${Object.keys(dataToValidate).join(', ')}`, 'business-hub');
+        throw validationError;
+      }
 
       // Start transaction
       const result = await db.transaction(async (tx) => {

@@ -70,7 +70,7 @@ export default function QuotationFormPage() {
     resolver: zodResolver(quotationFormSchema),
     defaultValues: {
       clientId: 0,
-      quotationNumber: `QUO-${Date.now()}`,
+      quotationNumber: "Auto-generated",
       date: format(new Date(), "yyyy-MM-dd"),
       expiryDate: format(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), "yyyy-MM-dd"),
       notes: "",
@@ -237,9 +237,14 @@ export default function QuotationFormPage() {
                     name="quotationNumber"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Quotation Number *</FormLabel>
+                        <FormLabel>Quotation Number</FormLabel>
                         <FormControl>
-                          <Input {...field} data-testid="input-quotation-number" />
+                          <Input 
+                            {...field} 
+                            data-testid="input-quotation-number"
+                            disabled={!isEditing}
+                            placeholder={isEditing ? "" : "Auto-generated (e.g., QUO-20251102-001)"}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

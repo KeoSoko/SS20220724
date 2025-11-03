@@ -3199,7 +3199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const count = todayQuotations[0]?.count || 0;
     const sequence = String(count + 1).padStart(3, '0');
     
-    return `QUOT-${dateStr}-${sequence}`;
+    return `QUO-${dateStr}-${sequence}`;
   };
 
   // Helper function to generate unique invoice number

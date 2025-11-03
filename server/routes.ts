@@ -4147,6 +4147,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Business profile not found. Please set up your business profile first." });
       }
 
+      // Check if business email is configured and verified
+      const emailIdentity = await db.query.businessEmailIdentities.findFirst({
+        where: eq(businessEmailIdentities.userId, userId),
+      });
+
+      if (!emailIdentity || !emailIdentity.isVerified) {
+        return res.status(400).json({ 
+          error: "Business email not verified",
+          message: "You must verify your business email in SendGrid before sending quotations. Go to Business Profile to set up and verify your sending email.",
+          requiresVerification: true
+        });
+      }
+
       // Generate PDF
       const pdfBuffer = await exportService.exportQuotationToPDF(quotation, client, items, businessProfile);
 
@@ -4570,6 +4583,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!businessProfile) {
         return res.status(404).json({ error: "Business profile not found. Please set up your business profile first." });
+      }
+
+      // Check if business email is configured and verified
+      const emailIdentity = await db.query.businessEmailIdentities.findFirst({
+        where: eq(businessEmailIdentities.userId, userId),
+      });
+
+      if (!emailIdentity || !emailIdentity.isVerified) {
+        return res.status(400).json({ 
+          error: "Business email not verified",
+          message: "You must verify your business email in SendGrid before sending invoices. Go to Business Profile to set up and verify your sending email.",
+          requiresVerification: true
+        });
       }
 
       // Generate PDF

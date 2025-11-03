@@ -12,7 +12,7 @@ if (process.env.SENDGRID_API_KEY) {
 }
 
 export class EmailService {
-  private fromEmail = 'support@simpleslips.co.za';
+  private fromEmail = 'keo@nine28.co.za';
   private appUrl = process.env.APP_URL || 'https://simpleslips.app';
 
   /**
@@ -34,7 +34,7 @@ export class EmailService {
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'support@simpleslips.co.za',
+          email: 'keo@nine28.co.za',
           name: 'Simple Slips Support Team'
         },
         templateId: 'd-f13c8e5c302e4405904fa5366443f766',
@@ -90,7 +90,7 @@ export class EmailService {
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'support@simpleslips.co.za',
+          email: 'keo@nine28.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: 'Your Simple Slips account is ready!',
@@ -174,7 +174,7 @@ Need help? Visit our Tax Professionals section to connect with certified account
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'support@simpleslips.co.za',
+          email: 'keo@nine28.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: 'Reset your Simple Slips password',
@@ -257,7 +257,7 @@ Security Notice: This link expires in 1 hour. If you didn't request this reset, 
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'support@simpleslips.co.za',
+          email: 'keo@nine28.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: `${sharedByUsername} shared a receipt with you`,
@@ -340,7 +340,7 @@ ${share.expiresAt ? `This link expires on ${share.expiresAt.toLocaleDateString()
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'support@simpleslips.co.za',
+          email: 'keo@nine28.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: `Budget Alert: ${budgetName} ${alertType}`,
@@ -415,7 +415,7 @@ Manage your budgets: ${this.appUrl}/budgets
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'support@simpleslips.co.za',
+          email: 'keo@nine28.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: 'Time to backup your receipts',

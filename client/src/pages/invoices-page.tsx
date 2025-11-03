@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Edit, Trash2, FileText, Eye, Banknote } from "lucide-react";
+import { Plus, Edit, Trash2, FileText, Eye, Banknote, Download } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { format, isPast } from "date-fns";
 import type { Invoice, Client, LineItem, InvoicePayment } from "@shared/schema";
@@ -174,6 +174,51 @@ export default function InvoicesPage() {
   const submitPayment = (data: PaymentFormData) => {
     if (selectedInvoice) {
       recordPaymentMutation.mutate({ ...data, invoiceId: selectedInvoice.id });
+    }
+  };
+
+  const handleDownloadPDF = async (invoiceId: number) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        toast({
+          title: "Error",
+          description: "Please log in to download PDF",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const response = await fetch(`/api/invoices/${invoiceId}/pdf`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice-${selectedInvoice?.invoiceNumber || invoiceId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Success",
+        description: "PDF downloaded successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to download PDF",
+        variant: "destructive",
+      });
     }
   };
 
@@ -465,6 +510,17 @@ export default function InvoicesPage() {
                     </Table>
                   </div>
                 )}
+
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleDownloadPDF(selectedInvoice.id)}
+                    data-testid="button-download-pdf"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>

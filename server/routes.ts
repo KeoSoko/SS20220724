@@ -3326,6 +3326,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Upload business profile logo
+  app.post("/api/business-profile/logo", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const { logoData } = req.body;
+
+      if (!logoData) {
+        return res.status(400).json({ error: "Logo image data is required" });
+      }
+
+      // Validate base64 image format
+      if (!logoData.startsWith('data:image/')) {
+        return res.status(400).json({ error: "Invalid image format" });
+      }
+
+      // Upload to Azure with logo-specific naming
+      const mimeTypeMatch = logoData.match(/^data:([^;]+);base64,/);
+      const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/jpeg';
+      let fileExtension = 'jpg';
+      
+      if (mimeType === 'image/png') {
+        fileExtension = 'png';
+      } else if (mimeType === 'image/webp') {
+        fileExtension = 'webp';
+      }
+
+      const fileName = `logo_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${fileExtension}`;
+      const azureResult = await azureStorage.uploadFile(logoData, fileName);
+
+      // Update business profile with logo URL
+      const [updated] = await db
+        .update(businessProfiles)
+        .set({ 
+          logoUrl: azureResult.blobUrl,
+          updatedAt: new Date() 
+        })
+        .where(eq(businessProfiles.userId, userId))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ error: "Business profile not found. Please create a profile first." });
+      }
+
+      log(`Logo uploaded for user ${userId}: ${fileName}`, 'business-hub');
+      res.json({ logoUrl: azureResult.blobUrl });
+    } catch (error: any) {
+      log(`Error uploading logo: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: error.message || "Failed to upload logo" });
+    }
+  });
+
+  // Remove business profile logo
+  app.delete("/api/business-profile/logo", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+
+      // Remove logo URL from profile
+      const [updated] = await db
+        .update(businessProfiles)
+        .set({ 
+          logoUrl: null,
+          updatedAt: new Date() 
+        })
+        .where(eq(businessProfiles.userId, userId))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ error: "Business profile not found" });
+      }
+
+      log(`Logo removed for user ${userId}`, 'business-hub');
+      res.json({ message: "Logo removed successfully" });
+    } catch (error: any) {
+      log(`Error removing logo: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to remove logo" });
+    }
+  });
+
   // ===== CLIENT ROUTES =====
 
   // Get all clients for current user
@@ -3790,6 +3872,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Export quotation to PDF
+  app.get("/api/quotations/:id/pdf", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const quotationId = parseInt(req.params.id, 10);
+
+      if (isNaN(quotationId)) {
+        return res.status(400).json({ error: "Invalid quotation ID" });
+      }
+
+      // Get quotation with line items
+      const quotation = await db.query.quotations.findFirst({
+        where: and(
+          eq(quotations.id, quotationId),
+          eq(quotations.userId, userId)
+        ),
+      });
+
+      if (!quotation) {
+        return res.status(404).json({ error: "Quotation not found" });
+      }
+
+      // Get line items
+      const items = await db.query.lineItems.findMany({
+        where: eq(lineItems.quotationId, quotationId),
+        orderBy: [asc(lineItems.sortOrder)],
+      });
+
+      // Get client
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, quotation.clientId),
+      });
+
+      if (!client) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      // Get business profile
+      const businessProfile = await db.query.businessProfiles.findFirst({
+        where: eq(businessProfiles.userId, userId),
+      });
+
+      if (!businessProfile) {
+        return res.status(404).json({ error: "Business profile not found. Please set up your business profile first." });
+      }
+
+      // Generate PDF
+      const pdfBuffer = await exportService.exportQuotationToPDF(quotation, client, items, businessProfile);
+
+      // Set response headers
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="quotation-${quotation.quotationNumber}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      log(`Error exporting quotation to PDF: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to export quotation to PDF" });
+    }
+  });
+
   // ===== INVOICE ROUTES =====
 
   // Get invoice stats
@@ -4059,6 +4202,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error deleting invoice: ${error.message}`, 'business-hub');
       res.status(500).json({ error: "Failed to delete invoice" });
+    }
+  });
+
+  // Export invoice to PDF
+  app.get("/api/invoices/:id/pdf", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      // Get invoice
+      const invoice = await db.query.invoices.findFirst({
+        where: and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.userId, userId)
+        ),
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      // Get line items
+      const items = await db.query.lineItems.findMany({
+        where: eq(lineItems.invoiceId, invoiceId),
+        orderBy: [asc(lineItems.sortOrder)],
+      });
+
+      // Get payments
+      const payments = await db.query.invoicePayments.findMany({
+        where: eq(invoicePayments.invoiceId, invoiceId),
+        orderBy: [asc(invoicePayments.paymentDate)],
+      });
+
+      // Get client
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, invoice.clientId),
+      });
+
+      if (!client) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      // Get business profile
+      const businessProfile = await db.query.businessProfiles.findFirst({
+        where: eq(businessProfiles.userId, userId),
+      });
+
+      if (!businessProfile) {
+        return res.status(404).json({ error: "Business profile not found. Please set up your business profile first." });
+      }
+
+      // Generate PDF
+      const pdfBuffer = await exportService.exportInvoiceToPDF(invoice, client, items, payments, businessProfile);
+
+      // Set response headers
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.invoiceNumber}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      log(`Error exporting invoice to PDF: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to export invoice to PDF" });
     }
   });
 

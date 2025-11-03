@@ -482,6 +482,364 @@ export class ExportService {
     }
   }
 
+  /**
+   * Export quotation to PDF
+   */
+  async exportQuotationToPDF(quotation: any, client: any, lineItems: any[], businessProfile: any): Promise<Buffer> {
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.width;
+      let yPos = 20;
+
+      // Add business logo if available
+      if (businessProfile.logoUrl) {
+        try {
+          // Fetch and convert logo to base64
+          const response = await fetch(businessProfile.logoUrl);
+          const arrayBuffer = await response.arrayBuffer();
+          const base64 = Buffer.from(arrayBuffer).toString('base64');
+          const mimeType = response.headers.get('content-type') || 'image/png';
+          const logoData = `data:${mimeType};base64,${base64}`;
+          doc.addImage(logoData, 'PNG', 15, yPos, 40, 40);
+        } catch (error) {
+          console.error('Failed to load business logo:', error);
+        }
+      }
+
+      // Business details (right aligned)
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      const businessText = [
+        businessProfile.companyName,
+        businessProfile.address || '',
+        businessProfile.city ? `${businessProfile.city}, ${businessProfile.province || ''} ${businessProfile.postalCode || ''}` : '',
+        businessProfile.phone || '',
+        businessProfile.email || '',
+        businessProfile.website || '',
+        businessProfile.isVatRegistered ? `VAT: ${businessProfile.vatNumber}` : ''
+      ].filter(Boolean);
+
+      businessText.forEach((line, index) => {
+        doc.text(line, pageWidth - 15, yPos + (index * 5), { align: 'right' });
+      });
+
+      yPos += 50;
+
+      // Quotation title
+      doc.setFontSize(24);
+      doc.setTextColor(0, 115, 170); // Simple Slips blue
+      doc.text('QUOTATION', 15, yPos);
+      yPos += 15;
+
+      // Quotation details
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      doc.text(`Quotation #: ${quotation.quotationNumber}`, 15, yPos);
+      doc.text(`Date: ${new Date(quotation.date).toLocaleDateString('en-ZA')}`, pageWidth - 15, yPos, { align: 'right' });
+      yPos += 7;
+      doc.text(`Expiry Date: ${new Date(quotation.expiryDate).toLocaleDateString('en-ZA')}`, pageWidth - 15, yPos, { align: 'right' });
+      yPos += 15;
+
+      // Client details
+      doc.setFontSize(12);
+      doc.setTextColor(0, 115, 170);
+      doc.text('Bill To:', 15, yPos);
+      yPos += 7;
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      
+      const clientText = [
+        client.name,
+        client.companyName || '',
+        client.address || '',
+        client.city ? `${client.city}, ${client.province || ''} ${client.postalCode || ''}` : '',
+        client.email || '',
+        client.phone || '',
+        client.vatNumber ? `VAT: ${client.vatNumber}` : ''
+      ].filter(Boolean);
+
+      clientText.forEach((line, index) => {
+        doc.text(line, 15, yPos + (index * 5));
+      });
+
+      yPos += (clientText.length * 5) + 10;
+
+      // Line items table
+      const tableData = lineItems.map(item => [
+        item.description,
+        item.quantity.toString(),
+        `R ${parseFloat(item.unitPrice).toFixed(2)}`,
+        `R ${parseFloat(item.total).toFixed(2)}`
+      ]);
+
+      autoTable(doc, {
+        head: [['Description', 'Quantity', 'Unit Price', 'Total']],
+        body: tableData,
+        startY: yPos,
+        theme: 'striped',
+        headStyles: { fillColor: [0, 115, 170] },
+        styles: { fontSize: 10 },
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 10;
+
+      // Calculate totals
+      const subtotal = lineItems.reduce((sum, item) => sum + parseFloat(item.total), 0);
+      const vatRate = businessProfile.isVatRegistered ? 0.15 : 0;
+      const vatAmount = subtotal * vatRate;
+      const total = subtotal + vatAmount;
+
+      // Totals section (right aligned)
+      const totalsX = pageWidth - 70;
+      doc.setFontSize(10);
+      doc.text('Subtotal:', totalsX, yPos);
+      doc.text(`R ${subtotal.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+      yPos += 7;
+
+      if (businessProfile.isVatRegistered) {
+        doc.text('VAT (15%):', totalsX, yPos);
+        doc.text(`R ${vatAmount.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+        yPos += 7;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('Total:', totalsX, yPos);
+      doc.text(`R ${total.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+      yPos += 15;
+
+      // Terms and conditions
+      if (quotation.terms) {
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(10);
+        doc.text('Terms & Conditions:', 15, yPos);
+        yPos += 5;
+        doc.setFontSize(9);
+        doc.setTextColor(80, 80, 80);
+        const splitTerms = doc.splitTextToSize(quotation.terms, pageWidth - 30);
+        doc.text(splitTerms, 15, yPos);
+      }
+
+      return Buffer.from(doc.output('arraybuffer'));
+    } catch (error) {
+      console.error('Failed to export quotation to PDF:', error);
+      throw new Error('Quotation export failed');
+    }
+  }
+
+  /**
+   * Export invoice to PDF
+   */
+  async exportInvoiceToPDF(invoice: any, client: any, lineItems: any[], payments: any[], businessProfile: any): Promise<Buffer> {
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.width;
+      let yPos = 20;
+
+      // Add business logo if available
+      if (businessProfile.logoUrl) {
+        try {
+          const response = await fetch(businessProfile.logoUrl);
+          const arrayBuffer = await response.arrayBuffer();
+          const base64 = Buffer.from(arrayBuffer).toString('base64');
+          const mimeType = response.headers.get('content-type') || 'image/png';
+          const logoData = `data:${mimeType};base64,${base64}`;
+          doc.addImage(logoData, 'PNG', 15, yPos, 40, 40);
+        } catch (error) {
+          console.error('Failed to load business logo:', error);
+        }
+      }
+
+      // Business details (right aligned)
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      const businessText = [
+        businessProfile.companyName,
+        businessProfile.address || '',
+        businessProfile.city ? `${businessProfile.city}, ${businessProfile.province || ''} ${businessProfile.postalCode || ''}` : '',
+        businessProfile.phone || '',
+        businessProfile.email || '',
+        businessProfile.website || '',
+        businessProfile.isVatRegistered ? `VAT: ${businessProfile.vatNumber}` : ''
+      ].filter(Boolean);
+
+      businessText.forEach((line, index) => {
+        doc.text(line, pageWidth - 15, yPos + (index * 5), { align: 'right' });
+      });
+
+      yPos += 50;
+
+      // Invoice title
+      doc.setFontSize(24);
+      doc.setTextColor(0, 115, 170);
+      doc.text('INVOICE', 15, yPos);
+      yPos += 15;
+
+      // Invoice details
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      doc.text(`Invoice #: ${invoice.invoiceNumber}`, 15, yPos);
+      doc.text(`Date: ${new Date(invoice.date).toLocaleDateString('en-ZA')}`, pageWidth - 15, yPos, { align: 'right' });
+      yPos += 7;
+      doc.text(`Due Date: ${new Date(invoice.dueDate).toLocaleDateString('en-ZA')}`, pageWidth - 15, yPos, { align: 'right' });
+      yPos += 15;
+
+      // Client details
+      doc.setFontSize(12);
+      doc.setTextColor(0, 115, 170);
+      doc.text('Bill To:', 15, yPos);
+      yPos += 7;
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      
+      const clientText = [
+        client.name,
+        client.companyName || '',
+        client.address || '',
+        client.city ? `${client.city}, ${client.province || ''} ${client.postalCode || ''}` : '',
+        client.email || '',
+        client.phone || '',
+        client.vatNumber ? `VAT: ${client.vatNumber}` : ''
+      ].filter(Boolean);
+
+      clientText.forEach((line, index) => {
+        doc.text(line, 15, yPos + (index * 5));
+      });
+
+      yPos += (clientText.length * 5) + 10;
+
+      // Line items table
+      const tableData = lineItems.map(item => [
+        item.description,
+        item.quantity.toString(),
+        `R ${parseFloat(item.unitPrice).toFixed(2)}`,
+        `R ${parseFloat(item.total).toFixed(2)}`
+      ]);
+
+      autoTable(doc, {
+        head: [['Description', 'Quantity', 'Unit Price', 'Total']],
+        body: tableData,
+        startY: yPos,
+        theme: 'striped',
+        headStyles: { fillColor: [0, 115, 170] },
+        styles: { fontSize: 10 },
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 10;
+
+      // Calculate totals
+      const subtotal = lineItems.reduce((sum, item) => sum + parseFloat(item.total), 0);
+      const vatRate = businessProfile.isVatRegistered ? 0.15 : 0;
+      const vatAmount = subtotal * vatRate;
+      const total = subtotal + vatAmount;
+      const amountPaid = parseFloat(invoice.amountPaid);
+      const balance = total - amountPaid;
+
+      // Totals section (right aligned)
+      const totalsX = pageWidth - 70;
+      doc.setFontSize(10);
+      doc.text('Subtotal:', totalsX, yPos);
+      doc.text(`R ${subtotal.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+      yPos += 7;
+
+      if (businessProfile.isVatRegistered) {
+        doc.text('VAT (15%):', totalsX, yPos);
+        doc.text(`R ${vatAmount.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+        yPos += 7;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('Total:', totalsX, yPos);
+      doc.text(`R ${total.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+      yPos += 7;
+
+      if (amountPaid > 0) {
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(10);
+        doc.text('Amount Paid:', totalsX, yPos);
+        doc.text(`R ${amountPaid.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+        yPos += 7;
+
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(balance > 0 ? 200 : 0, balance > 0 ? 0 : 128, 0);
+        doc.text('Balance Due:', totalsX, yPos);
+        doc.text(`R ${balance.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+        yPos += 10;
+        doc.setTextColor(60, 60, 60);
+      }
+
+      // Payment details
+      if (payments && payments.length > 0) {
+        yPos += 5;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(12);
+        doc.setTextColor(0, 115, 170);
+        doc.text('Payment History:', 15, yPos);
+        yPos += 7;
+
+        const paymentData = payments.map(payment => [
+          new Date(payment.paymentDate).toLocaleDateString('en-ZA'),
+          payment.paymentMethod || '-',
+          payment.reference || '-',
+          `R ${parseFloat(payment.amount).toFixed(2)}`
+        ]);
+
+        autoTable(doc, {
+          head: [['Date', 'Method', 'Reference', 'Amount']],
+          body: paymentData,
+          startY: yPos,
+          theme: 'plain',
+          styles: { fontSize: 9 },
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 10;
+      }
+
+      // Banking details
+      if (businessProfile.bankName) {
+        yPos += 5;
+        doc.setFontSize(12);
+        doc.setTextColor(0, 115, 170);
+        doc.text('Banking Details:', 15, yPos);
+        yPos += 7;
+        doc.setFontSize(10);
+        doc.setTextColor(60, 60, 60);
+        
+        const bankingDetails = [
+          `Bank: ${businessProfile.bankName}`,
+          `Account Holder: ${businessProfile.accountHolder || ''}`,
+          `Account Number: ${businessProfile.accountNumber || ''}`,
+          `Branch Code: ${businessProfile.branchCode || ''}`,
+        ].filter(line => !line.endsWith(': '));
+
+        bankingDetails.forEach((line, index) => {
+          doc.text(line, 15, yPos + (index * 5));
+        });
+        yPos += (bankingDetails.length * 5) + 5;
+      }
+
+      // Terms and conditions
+      if (invoice.terms) {
+        yPos += 5;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(10);
+        doc.text('Terms & Conditions:', 15, yPos);
+        yPos += 5;
+        doc.setFontSize(9);
+        doc.setTextColor(80, 80, 80);
+        const splitTerms = doc.splitTextToSize(invoice.terms, pageWidth - 30);
+        doc.text(splitTerms, 15, yPos);
+      }
+
+      return Buffer.from(doc.output('arraybuffer'));
+    } catch (error) {
+      console.error('Failed to export invoice to PDF:', error);
+      throw new Error('Invoice export failed');
+    }
+  }
+
   // Helper methods
   private getCategoryBreakdown(receipts: Receipt[]): Record<string, number> {
     const breakdown: Record<string, number> = {};

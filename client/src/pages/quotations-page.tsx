@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Edit, Trash2, FileText, Eye } from "lucide-react";
+import { Plus, Edit, Trash2, FileText, Eye, Download } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import type { Quotation, Client, LineItem } from "@shared/schema";
@@ -123,6 +123,51 @@ export default function QuotationsPage() {
   const handleConvertToInvoice = (id: number) => {
     if (confirm("Are you sure you want to convert this quotation to an invoice?")) {
       convertToInvoiceMutation.mutate(id);
+    }
+  };
+
+  const handleDownloadPDF = async (quotationId: number) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        toast({
+          title: "Error",
+          description: "Please log in to download PDF",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const response = await fetch(`/api/quotations/${quotationId}/pdf`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `quotation-${selectedQuotation?.quotationNumber || quotationId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Success",
+        description: "PDF downloaded successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to download PDF",
+        variant: "destructive",
+      });
     }
   };
 
@@ -387,16 +432,24 @@ export default function QuotationsPage() {
                   </div>
                 )}
 
-                {selectedQuotation.status === "accepted" && (
-                  <div className="flex justify-end">
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleDownloadPDF(selectedQuotation.id)}
+                    data-testid="button-download-pdf"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </Button>
+                  {selectedQuotation.status === "accepted" && (
                     <Button
                       onClick={() => handleConvertToInvoice(selectedQuotation.id)}
                       data-testid="button-convert-to-invoice"
                     >
                       Convert to Invoice
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
           </DialogContent>

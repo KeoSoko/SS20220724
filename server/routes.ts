@@ -3540,6 +3540,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       const { lineItems: items, ...quotationData } = req.body;
 
+      // Debug logging
+      log(`[DEBUG] Received quotation data: ${JSON.stringify({
+        ...quotationData,
+        lineItemsCount: items?.length || 0
+      })}`, 'business-hub');
+
       // Generate quotation number
       const quotationNumber = await generateQuotationNumber();
 

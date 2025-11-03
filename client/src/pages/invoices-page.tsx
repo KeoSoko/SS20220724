@@ -66,12 +66,10 @@ export default function InvoicesPage() {
     queryKey: ["/api/clients"],
   });
 
-  const { data: lineItems = [] } = useQuery<LineItem[]>({
-    queryKey: ["/api/line-items"],
-  });
-
-  const { data: payments = [] } = useQuery<InvoicePayment[]>({
-    queryKey: ["/api/invoice-payments"],
+  // Fetch full invoice details with line items and payments when an invoice is selected
+  const { data: invoiceDetails } = useQuery<Invoice & { lineItems: LineItem[], payments: InvoicePayment[] }>({
+    queryKey: ["/api/invoices", selectedInvoice?.id],
+    enabled: !!selectedInvoice?.id,
   });
 
   const paymentForm = useForm<PaymentFormData>({
@@ -179,13 +177,8 @@ export default function InvoicesPage() {
     }
   };
 
-  const invoiceLineItems = selectedInvoice
-    ? lineItems.filter((item) => item.invoiceId === selectedInvoice.id)
-    : [];
-
-  const invoicePayments = selectedInvoice
-    ? payments.filter((payment) => payment.invoiceId === selectedInvoice.id)
-    : [];
+  const invoiceLineItems = invoiceDetails?.lineItems || [];
+  const invoicePayments = invoiceDetails?.payments || [];
 
   const selectedClient = selectedInvoice
     ? clients.find((c) => c.id === selectedInvoice.clientId)

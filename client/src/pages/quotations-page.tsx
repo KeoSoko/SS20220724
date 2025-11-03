@@ -49,8 +49,10 @@ export default function QuotationsPage() {
     queryKey: ["/api/clients"],
   });
 
-  const { data: lineItems = [] } = useQuery<LineItem[]>({
-    queryKey: ["/api/line-items"],
+  // Fetch full quotation details with line items when a quotation is selected
+  const { data: quotationDetails } = useQuery<Quotation & { lineItems: LineItem[] }>({
+    queryKey: ["/api/quotations", selectedQuotation?.id],
+    enabled: !!selectedQuotation?.id,
   });
 
   const deleteMutation = useMutation({
@@ -124,9 +126,7 @@ export default function QuotationsPage() {
     }
   };
 
-  const quotationLineItems = selectedQuotation
-    ? lineItems.filter((item) => item.quotationId === selectedQuotation.id)
-    : [];
+  const quotationLineItems = quotationDetails?.lineItems || [];
 
   const selectedClient = selectedQuotation
     ? clients.find((c) => c.id === selectedQuotation.clientId)

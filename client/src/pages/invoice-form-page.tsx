@@ -148,13 +148,23 @@ export default function InvoiceFormPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: InvoiceFormData & { quotationId?: number }) => {
+      // Calculate totals fresh from the current form data
+      const formSubtotal = data.lineItems.reduce((sum, item) => {
+        const qty = parseFloat(item.quantity) || 0;
+        const price = parseFloat(item.unitPrice) || 0;
+        return sum + (qty * price);
+      }, 0);
+      
+      const formVatAmount = isVatRegistered ? formSubtotal * 0.15 : 0;
+      const formTotal = formSubtotal + formVatAmount;
+      
       const invoiceData = {
         ...data,
         date: new Date(data.date),
         dueDate: new Date(data.dueDate),
-        subtotal: subtotal.toString(),
-        vatAmount: vatAmount.toString(),
-        total: total.toString(),
+        subtotal: formSubtotal.toString(),
+        vatAmount: formVatAmount.toString(),
+        total: formTotal.toString(),
         amountPaid: "0",
         status: "unpaid",
       };
@@ -182,13 +192,23 @@ export default function InvoiceFormPage() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: InvoiceFormData) => {
+      // Calculate totals fresh from the current form data
+      const formSubtotal = data.lineItems.reduce((sum, item) => {
+        const qty = parseFloat(item.quantity) || 0;
+        const price = parseFloat(item.unitPrice) || 0;
+        return sum + (qty * price);
+      }, 0);
+      
+      const formVatAmount = isVatRegistered ? formSubtotal * 0.15 : 0;
+      const formTotal = formSubtotal + formVatAmount;
+      
       const invoiceData = {
         ...data,
         date: new Date(data.date),
         dueDate: new Date(data.dueDate),
-        subtotal: subtotal.toString(),
-        vatAmount: vatAmount.toString(),
-        total: total.toString(),
+        subtotal: formSubtotal.toString(),
+        vatAmount: formVatAmount.toString(),
+        total: formTotal.toString(),
       };
       return await apiRequest("PATCH", `/api/invoices/${invoiceId}`, invoiceData);
     },

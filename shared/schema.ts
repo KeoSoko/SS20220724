@@ -1148,6 +1148,8 @@ export const insertLineItemSchema = createInsertSchema(lineItems).omit({
 export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({
   id: true,
   createdAt: true,
+}).extend({
+  paymentDate: z.union([z.date(), z.string()]).transform((val) => typeof val === 'string' ? new Date(val) : val),
 });
 
 // Types for business hub

@@ -340,90 +340,93 @@ export default function QuotationsPage() {
             ) : (
               <Card>
                 <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Quote #</TableHead>
-                        <TableHead>Client</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Expiry</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredQuotations.map((quotation) => {
-                        const client = clients.find((c) => c.id === quotation.clientId);
-                        return (
-                          <TableRow
-                            key={quotation.id}
-                            className="cursor-pointer hover:bg-gray-50"
-                            onClick={() => handleViewDetails(quotation)}
-                            data-testid={`quotation-row-${quotation.id}`}
-                          >
-                            <TableCell className="font-medium">
-                              {quotation.quotationNumber}
-                            </TableCell>
-                            <TableCell>{client?.name || "Unknown"}</TableCell>
-                            <TableCell>
-                              {format(new Date(quotation.date), "MMM dd, yyyy")}
-                            </TableCell>
-                            <TableCell>
-                              {format(new Date(quotation.expiryDate), "MMM dd, yyyy")}
-                            </TableCell>
-                            <TableCell>{formatCurrency(quotation.total)}</TableCell>
-                            <TableCell>
-                              <Badge className={getStatusBadgeColor(quotation.status)}>
-                                {quotation.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div
-                                className="flex justify-end gap-2"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleViewDetails(quotation)}
-                                  data-testid={`button-view-${quotation.id}`}
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="whitespace-nowrap">Quote #</TableHead>
+                          <TableHead className="whitespace-nowrap">Client</TableHead>
+                          <TableHead className="hidden lg:table-cell whitespace-nowrap">Date</TableHead>
+                          <TableHead className="whitespace-nowrap">Expiry</TableHead>
+                          <TableHead className="whitespace-nowrap">Amount</TableHead>
+                          <TableHead className="whitespace-nowrap">Status</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredQuotations.map((quotation) => {
+                          const client = clients.find((c) => c.id === quotation.clientId);
+                          return (
+                            <TableRow
+                              key={quotation.id}
+                              className="cursor-pointer hover:bg-gray-50"
+                              onClick={() => handleViewDetails(quotation)}
+                              data-testid={`quotation-row-${quotation.id}`}
+                            >
+                              <TableCell className="font-medium whitespace-nowrap">
+                                {quotation.quotationNumber}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">{client?.name || "Unknown"}</TableCell>
+                              <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                                {format(new Date(quotation.date), "MMM dd, yyyy")}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {format(new Date(quotation.expiryDate), "MMM dd, yyyy")}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">{formatCurrency(quotation.total)}</TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                <Badge className={getStatusBadgeColor(quotation.status)}>
+                                  {quotation.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                <div
+                                  className="flex justify-end gap-1 md:gap-2"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setLocation(`/quotations/${quotation.id}/edit`)}
-                                  data-testid={`button-edit-${quotation.id}`}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                {quotation.status === "accepted" && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleConvertToInvoice(quotation.id)}
-                                    data-testid={`button-convert-${quotation.id}`}
+                                    onClick={() => handleViewDetails(quotation)}
+                                    data-testid={`button-view-${quotation.id}`}
                                   >
-                                    Convert
+                                    <Eye className="h-4 w-4" />
                                   </Button>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDelete(quotation.id)}
-                                  data-testid={`button-delete-${quotation.id}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setLocation(`/quotations/${quotation.id}/edit`)}
+                                    data-testid={`button-edit-${quotation.id}`}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  {quotation.status === "accepted" && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleConvertToInvoice(quotation.id)}
+                                      data-testid={`button-convert-${quotation.id}`}
+                                      className="hidden md:inline-flex"
+                                    >
+                                      Convert
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDelete(quotation.id)}
+                                    data-testid={`button-delete-${quotation.id}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </CardContent>
               </Card>
             )}

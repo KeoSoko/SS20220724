@@ -413,40 +413,42 @@ export default function BusinessHubPage() {
                 No invoices yet. Create your first invoice to get started.
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Invoice #</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentInvoices.map((invoice) => {
-                    const client = clients.find((c) => c.id === invoice.clientId);
-                    return (
-                      <TableRow 
-                        key={invoice.id} 
-                        data-testid={`invoice-row-${invoice.id}`}
-                        className="cursor-pointer hover:bg-gray-50"
-                        onClick={() => window.location.href = '/invoices'}
-                      >
-                        <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
-                        <TableCell>{client?.name || "Unknown"}</TableCell>
-                        <TableCell>{formatCurrency(invoice.total)}</TableCell>
-                        <TableCell>{format(new Date(invoice.dueDate), "MMM dd, yyyy")}</TableCell>
-                        <TableCell>
-                          <Badge className={getStatusBadgeColor(invoice.status)}>
-                            {invoice.status.replace("_", " ")}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="whitespace-nowrap">Invoice #</TableHead>
+                      <TableHead className="whitespace-nowrap">Client</TableHead>
+                      <TableHead className="whitespace-nowrap">Amount</TableHead>
+                      <TableHead className="whitespace-nowrap">Due Date</TableHead>
+                      <TableHead className="whitespace-nowrap">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentInvoices.map((invoice) => {
+                      const client = clients.find((c) => c.id === invoice.clientId);
+                      return (
+                        <TableRow 
+                          key={invoice.id} 
+                          data-testid={`invoice-row-${invoice.id}`}
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => window.location.href = '/invoices'}
+                        >
+                          <TableCell className="font-medium whitespace-nowrap">{invoice.invoiceNumber}</TableCell>
+                          <TableCell className="whitespace-nowrap">{client?.name || "Unknown"}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatCurrency(invoice.total)}</TableCell>
+                          <TableCell className="whitespace-nowrap">{format(new Date(invoice.dueDate), "MMM dd, yyyy")}</TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            <Badge className={getStatusBadgeColor(invoice.status)}>
+                              {invoice.status.replace("_", " ")}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -473,40 +475,42 @@ export default function BusinessHubPage() {
                 No quotations yet. Create your first quotation to get started.
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Quote #</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Expiry</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentQuotations.map((quotation) => {
-                    const client = clients.find((c) => c.id === quotation.clientId);
-                    return (
-                      <TableRow 
-                        key={quotation.id} 
-                        data-testid={`quotation-row-${quotation.id}`}
-                        className="cursor-pointer hover:bg-gray-50"
-                        onClick={() => window.location.href = '/quotations'}
-                      >
-                        <TableCell className="font-medium">{quotation.quotationNumber}</TableCell>
-                        <TableCell>{client?.name || "Unknown"}</TableCell>
-                        <TableCell>{formatCurrency(quotation.total)}</TableCell>
-                        <TableCell>{format(new Date(quotation.expiryDate), "MMM dd, yyyy")}</TableCell>
-                        <TableCell>
-                          <Badge className={getStatusBadgeColor(quotation.status)}>
-                            {quotation.status}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="whitespace-nowrap">Quote #</TableHead>
+                      <TableHead className="whitespace-nowrap">Client</TableHead>
+                      <TableHead className="whitespace-nowrap">Amount</TableHead>
+                      <TableHead className="whitespace-nowrap">Expiry</TableHead>
+                      <TableHead className="whitespace-nowrap">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentQuotations.map((quotation) => {
+                      const client = clients.find((c) => c.id === quotation.clientId);
+                      return (
+                        <TableRow 
+                          key={quotation.id} 
+                          data-testid={`quotation-row-${quotation.id}`}
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => window.location.href = '/quotations'}
+                        >
+                          <TableCell className="font-medium whitespace-nowrap">{quotation.quotationNumber}</TableCell>
+                          <TableCell className="whitespace-nowrap">{client?.name || "Unknown"}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatCurrency(quotation.total)}</TableCell>
+                          <TableCell className="whitespace-nowrap">{format(new Date(quotation.expiryDate), "MMM dd, yyyy")}</TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            <Badge className={getStatusBadgeColor(quotation.status)}>
+                              {quotation.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>

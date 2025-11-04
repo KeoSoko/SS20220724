@@ -399,98 +399,100 @@ export default function InvoicesPage() {
             ) : (
               <Card>
                 <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Invoice #</TableHead>
-                        <TableHead>Client</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Due Date</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Paid</TableHead>
-                        <TableHead>Balance</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredInvoices.map((invoice) => {
-                        const client = clients.find((c) => c.id === invoice.clientId);
-                        const status = getInvoiceStatus(invoice);
-                        const balance = parseFloat(invoice.total) - parseFloat(invoice.amountPaid);
-                        return (
-                          <TableRow
-                            key={invoice.id}
-                            className={`cursor-pointer hover:bg-gray-50 ${
-                              status === "overdue" ? "bg-red-50" : ""
-                            }`}
-                            onClick={() => handleViewDetails(invoice)}
-                            data-testid={`invoice-row-${invoice.id}`}
-                          >
-                            <TableCell className="font-medium">
-                              {invoice.invoiceNumber}
-                            </TableCell>
-                            <TableCell>{client?.name || "Unknown"}</TableCell>
-                            <TableCell>
-                              {format(new Date(invoice.date), "MMM dd, yyyy")}
-                            </TableCell>
-                            <TableCell>
-                              {format(new Date(invoice.dueDate), "MMM dd, yyyy")}
-                            </TableCell>
-                            <TableCell>{formatCurrency(invoice.total)}</TableCell>
-                            <TableCell>{formatCurrency(invoice.amountPaid)}</TableCell>
-                            <TableCell>{formatCurrency(balance)}</TableCell>
-                            <TableCell>
-                              <Badge className={getStatusBadgeColor(status)}>
-                                {status.replace("_", " ")}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div
-                                className="flex justify-end gap-2"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleViewDetails(invoice)}
-                                  data-testid={`button-view-${invoice.id}`}
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="whitespace-nowrap">Invoice #</TableHead>
+                          <TableHead className="whitespace-nowrap">Client</TableHead>
+                          <TableHead className="hidden lg:table-cell whitespace-nowrap">Date</TableHead>
+                          <TableHead className="whitespace-nowrap">Due Date</TableHead>
+                          <TableHead className="whitespace-nowrap">Amount</TableHead>
+                          <TableHead className="hidden md:table-cell whitespace-nowrap">Paid</TableHead>
+                          <TableHead className="hidden md:table-cell whitespace-nowrap">Balance</TableHead>
+                          <TableHead className="whitespace-nowrap">Status</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredInvoices.map((invoice) => {
+                          const client = clients.find((c) => c.id === invoice.clientId);
+                          const status = getInvoiceStatus(invoice);
+                          const balance = parseFloat(invoice.total) - parseFloat(invoice.amountPaid);
+                          return (
+                            <TableRow
+                              key={invoice.id}
+                              className={`cursor-pointer hover:bg-gray-50 ${
+                                status === "overdue" ? "bg-red-50" : ""
+                              }`}
+                              onClick={() => handleViewDetails(invoice)}
+                              data-testid={`invoice-row-${invoice.id}`}
+                            >
+                              <TableCell className="font-medium whitespace-nowrap">
+                                {invoice.invoiceNumber}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">{client?.name || "Unknown"}</TableCell>
+                              <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                                {format(new Date(invoice.date), "MMM dd, yyyy")}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {format(new Date(invoice.dueDate), "MMM dd, yyyy")}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">{formatCurrency(invoice.total)}</TableCell>
+                              <TableCell className="hidden md:table-cell whitespace-nowrap">{formatCurrency(invoice.amountPaid)}</TableCell>
+                              <TableCell className="hidden md:table-cell whitespace-nowrap">{formatCurrency(balance)}</TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                <Badge className={getStatusBadgeColor(status)}>
+                                  {status.replace("_", " ")}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                <div
+                                  className="flex justify-end gap-1 md:gap-2"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setLocation(`/invoices/${invoice.id}/edit`)}
-                                  data-testid={`button-edit-${invoice.id}`}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                {status !== "paid" && status !== "cancelled" && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleRecordPayment(invoice)}
-                                    data-testid={`button-record-payment-${invoice.id}`}
+                                    onClick={() => handleViewDetails(invoice)}
+                                    data-testid={`button-view-${invoice.id}`}
                                   >
-                                    <Banknote className="h-4 w-4" />
+                                    <Eye className="h-4 w-4" />
                                   </Button>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDelete(invoice.id)}
-                                  data-testid={`button-delete-${invoice.id}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setLocation(`/invoices/${invoice.id}/edit`)}
+                                    data-testid={`button-edit-${invoice.id}`}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  {status !== "paid" && status !== "cancelled" && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleRecordPayment(invoice)}
+                                      data-testid={`button-record-payment-${invoice.id}`}
+                                    >
+                                      <Banknote className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDelete(invoice.id)}
+                                    data-testid={`button-delete-${invoice.id}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </CardContent>
               </Card>
             )}

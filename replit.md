@@ -12,6 +12,11 @@ Preferred communication style: Simple, everyday language.
 - Replaced "Tax Pros" navigation with "Business Hub" for better feature alignment
 - Tax Dashboard now accessible from Business Hub section
 
+### Business Hub Bug Fixes (November 4, 2025)
+- **Line Items Display**: Fixed query key issue preventing line items from showing on quotation and invoice detail pages
+- **Manual Status Changes**: Added dropdown status selector with business rules for quotations and invoices (previously locked after creation)
+- **Edit Form Data Persistence**: Fixed edit forms to properly pre-populate with existing data instead of wiping clean
+
 ### AI-Powered Email & Smart Reminders (MVP Phase 2-3)
 - **AI Email Assistant**: GPT-4o powered email drafting for quotations and invoices with contextual, professional messaging
 - **Smart Subject Lines**: Auto-generated subject lines based on document type, amount, and due dates

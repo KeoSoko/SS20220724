@@ -107,11 +107,14 @@ export default function InvoicesPage() {
 
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: PaymentFormData & { invoiceId: number }) => {
-      return await apiRequest("POST", `/api/invoice-payments`, data);
+      const { invoiceId, ...paymentData } = data;
+      return await apiRequest("POST", `/api/invoices/${invoiceId}/payments`, paymentData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/invoice-payments"] });
+      if (selectedInvoice?.id) {
+        queryClient.invalidateQueries({ queryKey: [`/api/invoices/${selectedInvoice.id}`] });
+      }
       setIsPaymentDialogOpen(false);
       paymentForm.reset();
       toast({

@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Edit, Trash2, FileText, Eye, Download, Mail } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Quotation, Client, LineItem } from "@shared/schema";
 
 const formatCurrency = (amount: string | number) => {
@@ -51,7 +52,7 @@ export default function QuotationsPage() {
 
   // Fetch full quotation details with line items when a quotation is selected
   const { data: quotationDetails } = useQuery<Quotation & { lineItems: LineItem[] }>({
-    queryKey: ["/api/quotations", selectedQuotation?.id],
+    queryKey: [`/api/quotations/${selectedQuotation?.id}`],
     enabled: !!selectedQuotation?.id,
   });
 
@@ -188,6 +189,44 @@ export default function QuotationsPage() {
   const handleSendQuotation = (quotationId: number) => {
     if (confirm("Send this quotation to the client via email?")) {
       sendQuotationMutation.mutate(quotationId);
+    }
+  };
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      return await apiRequest("PATCH", `/api/quotations/${id}`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/quotations"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/quotations/${selectedQuotation?.id}`] });
+      toast({
+        title: "Success",
+        description: "Quotation status updated successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const getAvailableStatuses = (currentStatus: string) => {
+    const statusRules: Record<string, string[]> = {
+      draft: ['draft', 'sent', 'accepted', 'declined', 'expired'],
+      sent: ['draft', 'sent', 'accepted', 'declined', 'expired'],
+      accepted: ['accepted', 'declined'],
+      declined: ['draft', 'declined'],
+      expired: ['draft', 'expired'],
+    };
+    return statusRules[currentStatus] || [currentStatus];
+  };
+
+  const handleStatusChange = (newStatus: string) => {
+    if (selectedQuotation && newStatus !== selectedQuotation.status) {
+      updateStatusMutation.mutate({ id: selectedQuotation.id, status: newStatus });
     }
   };
 
@@ -403,10 +442,27 @@ export default function QuotationsPage() {
                     <p className="mt-1">{selectedQuotation.quotationNumber}</p>
                   </div>
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500">Status</h3>
-                    <Badge className={`mt-1 ${getStatusBadgeColor(selectedQuotation.status)}`}>
-                      {selectedQuotation.status}
-                    </Badge>
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">Status</h3>
+                    <Select
+                      value={selectedQuotation.status}
+                      onValueChange={handleStatusChange}
+                      disabled={updateStatusMutation.isPending}
+                    >
+                      <SelectTrigger data-testid="select-quotation-status" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getAvailableStatuses(selectedQuotation.status).map((status) => (
+                          <SelectItem key={status} value={status}>
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-block px-2 py-1 rounded text-xs ${getStatusBadgeColor(status)}`}>
+                                {status}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Date</h3>

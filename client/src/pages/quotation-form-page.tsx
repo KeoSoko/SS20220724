@@ -56,13 +56,8 @@ export default function QuotationFormPage() {
     queryKey: ["/api/business-profile"],
   });
 
-  const { data: existingQuotation } = useQuery<Quotation>({
+  const { data: existingQuotation } = useQuery<Quotation & { lineItems: LineItem[] }>({
     queryKey: [`/api/quotations/${quotationId}`],
-    enabled: !!quotationId,
-  });
-
-  const { data: existingLineItems = [] } = useQuery<LineItem[]>({
-    queryKey: ["/api/line-items"],
     enabled: !!quotationId,
   });
 
@@ -86,10 +81,8 @@ export default function QuotationFormPage() {
 
   // Load existing quotation data
   useEffect(() => {
-    if (existingQuotation && existingLineItems.length > 0) {
-      const quotationLineItems = existingLineItems.filter(
-        (item) => item.quotationId === existingQuotation.id
-      );
+    if (existingQuotation) {
+      const quotationLineItems = existingQuotation.lineItems || [];
       form.reset({
         clientId: existingQuotation.clientId,
         quotationNumber: existingQuotation.quotationNumber,
@@ -97,14 +90,16 @@ export default function QuotationFormPage() {
         expiryDate: format(new Date(existingQuotation.expiryDate), "yyyy-MM-dd"),
         notes: existingQuotation.notes || "",
         terms: existingQuotation.terms || "",
-        lineItems: quotationLineItems.map((item) => ({
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        })),
+        lineItems: quotationLineItems.length > 0 
+          ? quotationLineItems.map((item) => ({
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+            }))
+          : [{ description: "", quantity: "1", unitPrice: "0" }],
       });
     }
-  }, [existingQuotation, existingLineItems, form]);
+  }, [existingQuotation, form]);
 
   const lineItems = form.watch("lineItems");
 
@@ -183,7 +178,7 @@ export default function QuotationFormPage() {
         vatAmount: formVatAmount.toString(),
         total: formTotal.toString(),
       };
-      return await apiRequest("PATCH", `/api/quotations/${quotationId}`, quotationData);
+      return await apiRequest("PUT", `/api/quotations/${quotationId}`, quotationData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/quotations"] });

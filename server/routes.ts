@@ -3919,6 +3919,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // PATCH quotation status
+  app.patch("/api/quotations/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const quotationId = parseInt(req.params.id, 10);
+
+      if (isNaN(quotationId)) {
+        return res.status(400).json({ error: "Invalid quotation ID" });
+      }
+
+      const { status } = req.body;
+
+      if (!status) {
+        return res.status(400).json({ error: "Status is required" });
+      }
+
+      // Validate status value
+      const validStatuses = ['draft', 'sent', 'accepted', 'declined', 'expired'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ error: "Invalid status value" });
+      }
+
+      // Update quotation status
+      const [updated] = await db
+        .update(quotations)
+        .set({ status, updatedAt: new Date() })
+        .where(and(
+          eq(quotations.id, quotationId),
+          eq(quotations.userId, userId)
+        ))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ error: "Quotation not found" });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      log(`Error updating quotation status: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to update quotation status" });
+    }
+  });
+
   // Delete quotation
   app.delete("/api/quotations/:id", async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);

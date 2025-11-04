@@ -4484,6 +4484,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // PATCH invoice status
+  app.patch("/api/invoices/:id", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      const { status } = req.body;
+
+      if (!status) {
+        return res.status(400).json({ error: "Status is required" });
+      }
+
+      // Validate status value
+      const validStatuses = ['draft', 'unpaid', 'partially_paid', 'paid', 'overdue', 'cancelled'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ error: "Invalid status value" });
+      }
+
+      // Update invoice status
+      const [updated] = await db
+        .update(invoices)
+        .set({ status, updatedAt: new Date() })
+        .where(and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.userId, userId)
+        ))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      log(`Error updating invoice status: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to update invoice status" });
+    }
+  });
+
   // Delete invoice
   app.delete("/api/invoices/:id", async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);

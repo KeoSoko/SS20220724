@@ -59,18 +59,14 @@ export default function InvoiceFormPage() {
     queryKey: ["/api/business-profile"],
   });
 
-  const { data: existingInvoice } = useQuery<Invoice>({
+  const { data: existingInvoice } = useQuery<Invoice & { lineItems: LineItem[] }>({
     queryKey: [`/api/invoices/${invoiceId}`],
     enabled: !!invoiceId,
   });
 
-  const { data: sourceQuotation } = useQuery<Quotation>({
+  const { data: sourceQuotation } = useQuery<Quotation & { lineItems: LineItem[] }>({
     queryKey: [`/api/quotations/${quotationId}`],
     enabled: !!quotationId,
-  });
-
-  const { data: allLineItems = [] } = useQuery<LineItem[]>({
-    queryKey: ["/api/line-items"],
   });
 
   const form = useForm<InvoiceFormData>({
@@ -93,10 +89,8 @@ export default function InvoiceFormPage() {
 
   // Load existing invoice data or quotation data
   useEffect(() => {
-    if (existingInvoice && allLineItems.length > 0) {
-      const invoiceLineItems = allLineItems.filter(
-        (item) => item.invoiceId === existingInvoice.id
-      );
+    if (existingInvoice) {
+      const invoiceLineItems = existingInvoice.lineItems || [];
       form.reset({
         clientId: existingInvoice.clientId,
         invoiceNumber: existingInvoice.invoiceNumber,
@@ -104,16 +98,16 @@ export default function InvoiceFormPage() {
         dueDate: format(new Date(existingInvoice.dueDate), "yyyy-MM-dd"),
         notes: existingInvoice.notes || "",
         terms: existingInvoice.terms || "",
-        lineItems: invoiceLineItems.map((item) => ({
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        })),
+        lineItems: invoiceLineItems.length > 0 
+          ? invoiceLineItems.map((item) => ({
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+            }))
+          : [{ description: "", quantity: "1", unitPrice: "0" }],
       });
-    } else if (sourceQuotation && allLineItems.length > 0) {
-      const quotationLineItems = allLineItems.filter(
-        (item) => item.quotationId === sourceQuotation.id
-      );
+    } else if (sourceQuotation) {
+      const quotationLineItems = sourceQuotation.lineItems || [];
       form.reset({
         clientId: sourceQuotation.clientId,
         invoiceNumber: `INV-${Date.now()}`,
@@ -121,14 +115,16 @@ export default function InvoiceFormPage() {
         dueDate: format(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), "yyyy-MM-dd"),
         notes: sourceQuotation.notes || "",
         terms: sourceQuotation.terms || "",
-        lineItems: quotationLineItems.map((item) => ({
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        })),
+        lineItems: quotationLineItems.length > 0 
+          ? quotationLineItems.map((item) => ({
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+            }))
+          : [{ description: "", quantity: "1", unitPrice: "0" }],
       });
     }
-  }, [existingInvoice, sourceQuotation, allLineItems, form]);
+  }, [existingInvoice, sourceQuotation, form]);
 
   const lineItems = form.watch("lineItems");
 

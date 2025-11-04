@@ -68,7 +68,7 @@ export default function InvoicesPage() {
 
   // Fetch full invoice details with line items and payments when an invoice is selected
   const { data: invoiceDetails } = useQuery<Invoice & { lineItems: LineItem[], payments: InvoicePayment[] }>({
-    queryKey: ["/api/invoices", selectedInvoice?.id],
+    queryKey: [`/api/invoices/${selectedInvoice?.id}`],
     enabled: !!selectedInvoice?.id,
   });
 
@@ -239,6 +239,45 @@ export default function InvoicesPage() {
   const handleSendInvoice = (invoiceId: number) => {
     if (confirm("Send this invoice to the client via email?")) {
       sendInvoiceMutation.mutate(invoiceId);
+    }
+  };
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      return await apiRequest("PATCH", `/api/invoices/${id}`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoices/${selectedInvoice?.id}`] });
+      toast({
+        title: "Success",
+        description: "Invoice status updated successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const getAvailableStatuses = (currentStatus: string) => {
+    const statusRules: Record<string, string[]> = {
+      draft: ['draft', 'unpaid', 'partially_paid', 'paid', 'overdue', 'cancelled'],
+      unpaid: ['draft', 'unpaid', 'partially_paid', 'paid', 'overdue', 'cancelled'],
+      partially_paid: ['unpaid', 'partially_paid', 'paid', 'overdue', 'cancelled'],
+      paid: ['unpaid', 'paid', 'cancelled'],
+      overdue: ['draft', 'unpaid', 'partially_paid', 'paid', 'overdue', 'cancelled'],
+      cancelled: ['draft', 'cancelled'],
+    };
+    return statusRules[currentStatus] || [currentStatus];
+  };
+
+  const handleStatusChange = (newStatus: string) => {
+    if (selectedInvoice && newStatus !== selectedInvoice.status) {
+      updateStatusMutation.mutate({ id: selectedInvoice.id, status: newStatus });
     }
   };
 
@@ -467,10 +506,27 @@ export default function InvoicesPage() {
                     <p className="mt-1">{selectedInvoice.invoiceNumber}</p>
                   </div>
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500">Status</h3>
-                    <Badge className={`mt-1 ${getStatusBadgeColor(getInvoiceStatus(selectedInvoice))}`}>
-                      {getInvoiceStatus(selectedInvoice).replace("_", " ")}
-                    </Badge>
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">Status</h3>
+                    <Select
+                      value={selectedInvoice.status}
+                      onValueChange={handleStatusChange}
+                      disabled={updateStatusMutation.isPending}
+                    >
+                      <SelectTrigger data-testid="select-invoice-status" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getAvailableStatuses(selectedInvoice.status).map((status) => (
+                          <SelectItem key={status} value={status}>
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-block px-2 py-1 rounded text-xs ${getStatusBadgeColor(status)}`}>
+                                {status.replace("_", " ")}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Date</h3>

@@ -205,8 +205,10 @@ export default function InvoiceFormPage() {
         subtotal: formSubtotal.toString(),
         vatAmount: formVatAmount.toString(),
         total: formTotal.toString(),
+        status: existingInvoice?.status || "draft",
+        amountPaid: existingInvoice?.amountPaid || "0",
       };
-      return await apiRequest("PATCH", `/api/invoices/${invoiceId}`, invoiceData);
+      return await apiRequest("PUT", `/api/invoices/${invoiceId}`, invoiceData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });

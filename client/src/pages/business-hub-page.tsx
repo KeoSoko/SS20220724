@@ -427,7 +427,12 @@ export default function BusinessHubPage() {
                   {recentInvoices.map((invoice) => {
                     const client = clients.find((c) => c.id === invoice.clientId);
                     return (
-                      <TableRow key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
+                      <TableRow 
+                        key={invoice.id} 
+                        data-testid={`invoice-row-${invoice.id}`}
+                        className="cursor-pointer hover:bg-gray-50"
+                        onClick={() => window.location.href = '/invoices'}
+                      >
                         <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
                         <TableCell>{client?.name || "Unknown"}</TableCell>
                         <TableCell>{formatCurrency(invoice.total)}</TableCell>
@@ -482,7 +487,12 @@ export default function BusinessHubPage() {
                   {recentQuotations.map((quotation) => {
                     const client = clients.find((c) => c.id === quotation.clientId);
                     return (
-                      <TableRow key={quotation.id} data-testid={`quotation-row-${quotation.id}`}>
+                      <TableRow 
+                        key={quotation.id} 
+                        data-testid={`quotation-row-${quotation.id}`}
+                        className="cursor-pointer hover:bg-gray-50"
+                        onClick={() => window.location.href = '/quotations'}
+                      >
                         <TableCell className="font-medium">{quotation.quotationNumber}</TableCell>
                         <TableCell>{client?.name || "Unknown"}</TableCell>
                         <TableCell>{formatCurrency(quotation.total)}</TableCell>

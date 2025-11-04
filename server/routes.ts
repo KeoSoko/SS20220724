@@ -3237,6 +3237,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       
+      // Get user's login email
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { email: true },
+      });
+      
       const profile = await db.query.businessProfiles.findFirst({
         where: eq(businessProfiles.userId, userId),
       });
@@ -3245,7 +3251,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Business profile not found" });
       }
 
-      res.json(profile);
+      // Return profile with user's login email
+      res.json({
+        ...profile,
+        loginEmail: user?.email,
+      });
     } catch (error: any) {
       log(`Error fetching business profile: ${error.message}`, 'business-hub');
       res.status(500).json({ error: "Failed to fetch business profile" });

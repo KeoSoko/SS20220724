@@ -110,11 +110,11 @@ export default function InvoicesPage() {
       const { invoiceId, ...paymentData } = data;
       return await apiRequest("POST", `/api/invoices/${invoiceId}/payments`, paymentData);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      if (selectedInvoice?.id) {
-        queryClient.invalidateQueries({ queryKey: [`/api/invoices/${selectedInvoice.id}`] });
-      }
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      await queryClient.invalidateQueries({ queryKey: [`/api/invoices/${variables.invoiceId}`] });
+      // Refetch the updated invoice immediately
+      await queryClient.refetchQueries({ queryKey: [`/api/invoices/${variables.invoiceId}`] });
       setIsPaymentDialogOpen(false);
       paymentForm.reset();
       toast({
@@ -249,9 +249,11 @@ export default function InvoicesPage() {
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
       return await apiRequest("PATCH", `/api/invoices/${id}`, { status });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/invoices/${selectedInvoice?.id}`] });
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      await queryClient.invalidateQueries({ queryKey: [`/api/invoices/${variables.id}`] });
+      // Refetch the updated invoice immediately
+      await queryClient.refetchQueries({ queryKey: [`/api/invoices/${variables.id}`] });
       toast({
         title: "Success",
         description: "Invoice status updated successfully",

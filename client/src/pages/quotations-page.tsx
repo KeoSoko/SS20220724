@@ -196,9 +196,11 @@ export default function QuotationsPage() {
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
       return await apiRequest("PATCH", `/api/quotations/${id}`, { status });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/quotations"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/quotations/${selectedQuotation?.id}`] });
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/quotations"] });
+      await queryClient.invalidateQueries({ queryKey: [`/api/quotations/${variables.id}`] });
+      // Refetch the updated quotation immediately
+      await queryClient.refetchQueries({ queryKey: [`/api/quotations/${variables.id}`] });
       toast({
         title: "Success",
         description: "Quotation status updated successfully",

@@ -165,11 +165,11 @@ export default function BusinessProfilePage() {
         swiftCode: businessProfile.swiftCode || "",
       });
       
-      // If we auto-populated with login email, save it immediately and test verification
+      // If we auto-populated with login email, just update the form
+      // Don't save yet - wait for user to fill required fields and click save
+      // But do initiate verification check so it's ready when they save
       if (!businessProfile.email && (businessProfile as any).loginEmail && emailToUse) {
-        saveMutation.mutate({ ...form.getValues(), email: emailToUse });
-        
-        // Also initiate verification check (will auto-verify if already set up in SendGrid)
+        // Trigger verification check in background
         setTimeout(() => {
           initiateVerificationMutation.mutate(emailToUse);
           
@@ -177,7 +177,7 @@ export default function BusinessProfilePage() {
           setTimeout(() => {
             markVerifiedMutation.mutate();
           }, 1500);
-        }, 1000);
+        }, 500);
       }
     }
   }, [businessProfile, form]);

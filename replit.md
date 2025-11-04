@@ -16,6 +16,7 @@ Preferred communication style: Simple, everyday language.
 - **AI Email Assistant**: GPT-4o powered email drafting for quotations and invoices with contextual, professional messaging
 - **Smart Subject Lines**: Auto-generated subject lines based on document type, amount, and due dates
 - **Email Delivery**: One-click "Send to Client" buttons with PDF attachments via SendGrid
+- **Email Verification System**: Auto-population of business email with user's login email, automatic verification testing against SendGrid, seamless zero-friction onboarding for users who want to send from their login email
 - **Smart Reminder System**: Automated payment reminder detection with progressive cadencing (3/7/7/14 days)
 - **Urgency Escalation**: Four-level priority system (low/medium/high/critical) based on days overdue
 - **Payment Predictions**: AI analysis of client payment patterns to forecast cash flow

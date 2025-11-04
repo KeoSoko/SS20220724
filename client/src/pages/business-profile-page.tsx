@@ -141,13 +141,16 @@ export default function BusinessProfilePage() {
   // Load existing profile data when query resolves
   useEffect(() => {
     if (businessProfile) {
+      // Auto-populate email with login email if business email is empty
+      const emailToUse = businessProfile.email || (businessProfile as any).loginEmail || "";
+      
       form.reset({
         companyName: businessProfile.companyName || "",
         tradingName: businessProfile.tradingName || "",
         registrationNumber: businessProfile.registrationNumber || "",
         vatNumber: businessProfile.vatNumber || "",
         isVatRegistered: businessProfile.isVatRegistered || false,
-        email: businessProfile.email || "",
+        email: emailToUse,
         phone: businessProfile.phone || "",
         website: businessProfile.website || "",
         address: businessProfile.address || "",
@@ -161,6 +164,11 @@ export default function BusinessProfilePage() {
         branchCode: businessProfile.branchCode || "",
         swiftCode: businessProfile.swiftCode || "",
       });
+      
+      // If we auto-populated with login email, save it immediately
+      if (!businessProfile.email && (businessProfile as any).loginEmail && emailToUse) {
+        saveMutation.mutate({ ...form.getValues(), email: emailToUse });
+      }
     }
   }, [businessProfile, form]);
 

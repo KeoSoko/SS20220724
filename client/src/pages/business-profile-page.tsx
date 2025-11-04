@@ -165,9 +165,19 @@ export default function BusinessProfilePage() {
         swiftCode: businessProfile.swiftCode || "",
       });
       
-      // If we auto-populated with login email, save it immediately
+      // If we auto-populated with login email, save it immediately and test verification
       if (!businessProfile.email && (businessProfile as any).loginEmail && emailToUse) {
         saveMutation.mutate({ ...form.getValues(), email: emailToUse });
+        
+        // Also initiate verification check (will auto-verify if already set up in SendGrid)
+        setTimeout(() => {
+          initiateVerificationMutation.mutate(emailToUse);
+          
+          // After initiating, test if it's already verified
+          setTimeout(() => {
+            markVerifiedMutation.mutate();
+          }, 1500);
+        }, 1000);
       }
     }
   }, [businessProfile, form]);

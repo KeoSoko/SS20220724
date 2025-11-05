@@ -17,6 +17,7 @@ export interface EmailContext {
   expiryDate?: Date;
   isOverdue?: boolean;
   daysOverdue?: number;
+  daysUntilDue?: number;
   amountPaid?: string;
   amountOutstanding?: string;
   previousSentCount?: number;
@@ -117,6 +118,20 @@ export class AIEmailAssistant {
           parts.push(`This is the ${context.previousSentCount + 1}th reminder. Be firmer but still professional.`);
         }
         
+      } else if (context.daysUntilDue !== undefined) {
+        // Pre-due reminder (friendly heads-up)
+        if (context.daysUntilDue === 0) {
+          parts.push(`Draft a friendly reminder that invoice ${context.documentNumber} is due TODAY.`);
+          parts.push(`Keep the tone polite but clear about the due date.`);
+        } else {
+          parts.push(`Draft a friendly, warm reminder that invoice ${context.documentNumber} is due in ${context.daysUntilDue} days.`);
+          parts.push(`This is a courtesy heads-up, not a payment demand. Keep the tone light and helpful.`);
+        }
+        parts.push(`Client: ${context.clientName}`);
+        parts.push(`Total amount: ${context.total}`);
+        parts.push(`Due date: ${format(context.dueDate!, 'dd MMM yyyy')}`);
+        parts.push(`Thank them for their business and mention they can reach out with any questions.`);
+        
       } else {
         // New invoice
         parts.push(`Draft a professional email to send invoice ${context.documentNumber} to ${context.clientName}.`);
@@ -141,6 +156,14 @@ export class AIEmailAssistant {
   private buildSubjectPrompt(context: EmailContext): string {
     if (context.isOverdue && context.daysOverdue) {
       return `Payment reminder subject line for invoice ${context.documentNumber} from ${context.businessName}, ${context.daysOverdue} days overdue, amount ${context.amountOutstanding || context.total}`;
+    }
+    
+    if (context.daysUntilDue !== undefined) {
+      if (context.daysUntilDue === 0) {
+        return `Friendly reminder subject line: invoice ${context.documentNumber} from ${context.businessName} is due TODAY, amount ${context.total}`;
+      } else {
+        return `Friendly heads-up subject line: invoice ${context.documentNumber} from ${context.businessName} due in ${context.daysUntilDue} days, amount ${context.total}`;
+      }
     }
     
     if (context.documentType === 'quotation') {
@@ -172,6 +195,14 @@ export class AIEmailAssistant {
         return `Hi ${context.clientName.split(' ')[0]},\n\nI hope this email finds you well. This is a friendly reminder that invoice ${context.documentNumber} for ${context.amountOutstanding || context.total} is now ${context.daysOverdue} days overdue.\n\nPlease arrange payment at your earliest convenience. If you've already processed this payment, please disregard this reminder.\n\nBest regards`;
       }
       
+      if (context.daysUntilDue !== undefined) {
+        if (context.daysUntilDue === 0) {
+          return `Hi ${context.clientName.split(' ')[0]},\n\nJust a friendly reminder that invoice ${context.documentNumber} for ${context.total} is due today.\n\nPlease find the invoice attached for your reference. If you have any questions or need payment arrangements, please don't hesitate to reach out.\n\nThank you for your business!\n\nKind regards`;
+        } else {
+          return `Hi ${context.clientName.split(' ')[0]},\n\nI hope you're doing well! This is a friendly heads-up that invoice ${context.documentNumber} for ${context.total} is due in ${context.daysUntilDue} days (${context.dueDate ? format(context.dueDate, 'dd MMMM yyyy') : ''}).\n\nPlease find the invoice attached for your reference. If you have any questions, feel free to reach out.\n\nThank you for your business!\n\nWarm regards`;
+        }
+      }
+      
       return `Hi ${context.clientName.split(' ')[0]},\n\nPlease find attached invoice ${context.documentNumber} for ${context.total}. Payment is due by ${context.dueDate ? format(context.dueDate, 'dd MMMM yyyy') : 'the end of the month'}.\n\nThank you for your business!\n\nKind regards`;
     }
   }
@@ -179,6 +210,14 @@ export class AIEmailAssistant {
   private getFallbackSubject(context: EmailContext): string {
     if (context.isOverdue) {
       return `Payment Reminder: Invoice ${context.documentNumber} - ${context.amountOutstanding || context.total}`;
+    }
+    
+    if (context.daysUntilDue !== undefined) {
+      if (context.daysUntilDue === 0) {
+        return `Reminder: Invoice ${context.documentNumber} Due Today - ${context.total}`;
+      } else {
+        return `Friendly Reminder: Invoice ${context.documentNumber} Due in ${context.daysUntilDue} Days`;
+      }
     }
     
     if (context.documentType === 'quotation') {

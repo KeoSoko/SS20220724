@@ -24,11 +24,13 @@ interface ReminderSuggestion {
   invoice: Invoice;
   client: Client;
   daysOverdue: number;
+  daysUntilDue?: number;
   suggestedAction: 'send_reminder' | 'send_final_notice' | 'escalate' | 'wait';
   nextReminderDate: string;
   urgency: 'low' | 'medium' | 'high' | 'critical';
   aiMessage?: string;
   aiSubject?: string;
+  reminderType?: 'pre_due' | 'overdue';
 }
 
 interface DashboardStats {
@@ -84,6 +86,10 @@ export default function BusinessHubPage() {
     queryKey: ["/api/business-hub/dashboard-stats"],
   });
 
+  const { data: preDueReminders = [], isLoading: loadingPreDueReminders } = useQuery<ReminderSuggestion[]>({
+    queryKey: ["/api/business-hub/pre-due-reminders"],
+  });
+
   const sendReminderMutation = useMutation({
     mutationFn: async (invoiceId: number) => {
       const token = localStorage.getItem('auth_token');
@@ -116,6 +122,43 @@ export default function BusinessHubPage() {
       toast({
         title: "Error",
         description: error.message || "Failed to send reminder",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const sendPreDueReminderMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch(`/api/invoices/${invoiceId}/send-pre-due-reminder`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send pre-due reminder');
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Pre-due reminder sent successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/business-hub/pre-due-reminders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/invoices'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send pre-due reminder",
         variant: "destructive",
       });
     },
@@ -263,6 +306,80 @@ export default function BusinessHubPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Pre-Due Reminders Section */}
+        {preDueReminders.length > 0 && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-blue-600" />
+                  Upcoming Payment Reminders
+                </CardTitle>
+                <CardDescription>Friendly reminders for invoices approaching due dates</CardDescription>
+              </div>
+              <Badge className="bg-blue-100 text-blue-800">
+                {preDueReminders.length} {preDueReminders.length === 1 ? 'reminder' : 'reminders'}
+              </Badge>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {preDueReminders.slice(0, 5).map((reminder) => {
+                  const daysText = reminder.daysUntilDue === 0 
+                    ? "due today" 
+                    : `due in ${reminder.daysUntilDue} days`;
+
+                  return (
+                    <div key={reminder.invoice.id} className="flex items-center justify-between p-4 border border-blue-200 rounded-lg bg-blue-50/30 hover:bg-blue-50/50">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <p className="font-medium">{reminder.client.name}</p>
+                          <Badge className="bg-blue-100 text-blue-800">
+                            {daysText}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Invoice {reminder.invoice.invoiceNumber} • {formatCurrency(reminder.invoice.total)}
+                        </p>
+                        {reminder.aiSubject && (
+                          <p className="text-xs text-muted-foreground mt-1 italic">
+                            "{reminder.aiSubject}"
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
+                        onClick={() => {
+                          if (confirm(`Send friendly reminder to ${reminder.client.name}?`)) {
+                            sendPreDueReminderMutation.mutate(reminder.invoice.id);
+                          }
+                        }}
+                        disabled={sendPreDueReminderMutation.isPending}
+                        data-testid={`button-send-pre-due-reminder-${reminder.invoice.id}`}
+                      >
+                        <Mail className="h-4 w-4 mr-2" />
+                        Send Reminder
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {preDueReminders.length > 5 && (
+                <div className="text-center pt-2">
+                  <Link href="/invoices">
+                    <Button variant="outline" size="sm">
+                      View all {preDueReminders.length} upcoming reminders
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </Button>
+                  </Link>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Smart Reminders Section */}
         {dashboardStats && dashboardStats.remindersNeededCount > 0 && (

@@ -4961,6 +4961,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get pre-due reminders (invoices approaching due date)
+  app.get("/api/business-hub/pre-due-reminders", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const preDueReminders = await smartReminderService.getPreDueReminders(userId);
+      res.json(preDueReminders);
+    } catch (error: any) {
+      log(`Error getting pre-due reminders: ${error.message}`, 'smart-reminder');
+      res.status(500).json({ error: "Failed to get pre-due reminders" });
+    }
+  });
+
+  // Send pre-due reminder for an invoice
+  app.post("/api/invoices/:id/send-pre-due-reminder", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      // Verify invoice exists and belongs to user
+      const invoice = await db.query.invoices.findFirst({
+        where: and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.userId, userId)
+        ),
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      // Get client
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, invoice.clientId),
+      });
+
+      if (!client || !client.email) {
+        return res.status(400).json({ error: "Client email not found" });
+      }
+
+      // Get business profile
+      const businessProfile = await db.query.businessProfiles.findFirst({
+        where: eq(businessProfiles.userId, userId),
+      });
+
+      if (!businessProfile) {
+        return res.status(400).json({ error: "Business profile not configured" });
+      }
+
+      // Get line items
+      const items = await db.query.lineItems.findMany({
+        where: eq(lineItems.invoiceId, invoiceId),
+        orderBy: [asc(lineItems.sortOrder)],
+      });
+
+      // Get payments
+      const payments = await db.query.invoicePayments.findMany({
+        where: eq(invoicePayments.invoiceId, invoiceId),
+        orderBy: [asc(invoicePayments.paymentDate)],
+      });
+
+      // Generate PDF
+      const pdfBuffer = await exportService.exportInvoiceToPDF(invoice, client, items, payments, businessProfile);
+
+      // Send pre-due reminder email using AI-generated content
+      const emailSent = await emailService.sendInvoice(invoice, client, businessProfile, items, pdfBuffer);
+
+      if (!emailSent) {
+        return res.status(500).json({ error: "Failed to send email" });
+      }
+
+      // Mark pre-due reminder as sent
+      await smartReminderService.markPreDueReminderSent(invoiceId);
+
+      log(`Pre-due reminder sent for invoice ${invoice.invoiceNumber} to ${client.email}`, 'smart-reminder');
+      res.json({ success: true, message: "Pre-due reminder sent successfully" });
+    } catch (error: any) {
+      log(`Error sending pre-due reminder: ${error.message}`, 'smart-reminder');
+      res.status(500).json({ error: "Failed to send pre-due reminder" });
+    }
+  });
+
   // 404 handler for undefined API routes - must be last
   app.use('/api/*', (req, res) => {
     res.status(404).json({ error: "API endpoint not found" });

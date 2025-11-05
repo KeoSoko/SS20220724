@@ -15,6 +15,8 @@ export interface ReminderSuggestion {
   urgency: 'low' | 'medium' | 'high' | 'critical';
   aiMessage?: string;
   aiSubject?: string;
+  reminderType?: 'pre_due' | 'overdue';
+  daysUntilDue?: number;
 }
 
 export interface PaymentPrediction {
@@ -47,7 +49,32 @@ export class SmartReminderService {
   }
 
   /**
-   * Get invoices that need reminders sent
+   * Get invoices approaching due date (for pre-due reminders)
+   */
+  async getPreDueInvoices(userId: number): Promise<Invoice[]> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Start of day
+    const sevenDaysFromNow = addDays(today, 7);
+    const endOfToday = new Date(today);
+    endOfToday.setHours(23, 59, 59, 999); // End of today
+    
+    const preDueInvoices = await db.query.invoices.findMany({
+      where: and(
+        eq(invoices.userId, userId),
+        sql`DATE(${invoices.dueDate}) >= DATE(${today})`,
+        sql`DATE(${invoices.dueDate}) <= DATE(${sevenDaysFromNow})`,
+        or(
+          eq(invoices.status, 'unpaid'),
+          eq(invoices.status, 'partially_paid')
+        )
+      ),
+    });
+
+    return preDueInvoices;
+  }
+
+  /**
+   * Get invoices that need reminders sent (overdue)
    */
   async getInvoicesNeedingReminders(userId: number): Promise<ReminderSuggestion[]> {
     const overdueInvoices = await this.getOverdueInvoices(userId);
@@ -82,7 +109,41 @@ export class SmartReminderService {
   }
 
   /**
-   * Determine if a reminder should be sent based on smart timing
+   * Get invoices needing pre-due reminders (7 days before or on due date)
+   */
+  async getPreDueReminders(userId: number): Promise<ReminderSuggestion[]> {
+    const preDueInvoices = await this.getPreDueInvoices(userId);
+    const suggestions: ReminderSuggestion[] = [];
+
+    for (const invoice of preDueInvoices) {
+      // Skip if already paid or cancelled
+      if (invoice.status === 'paid' || invoice.status === 'cancelled') {
+        continue;
+      }
+
+      // Get client
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, invoice.clientId),
+      });
+
+      if (!client || !client.email) {
+        continue; // Skip if no client or no email
+      }
+
+      const daysUntilDue = differenceInDays(invoice.dueDate, new Date());
+      
+      // Only send pre-due reminder if not already sent for this invoice
+      if (this.shouldSendPreDueReminder(invoice, daysUntilDue)) {
+        const suggestion = await this.generatePreDueReminderSuggestion(invoice, client, daysUntilDue);
+        suggestions.push(suggestion);
+      }
+    }
+
+    return suggestions;
+  }
+
+  /**
+   * Determine if a reminder should be sent based on smart timing (overdue)
    */
   private shouldSendReminder(invoice: Invoice, daysOverdue: number, reminderCount: number): boolean {
     // Don't send reminder if already sent today
@@ -125,6 +186,37 @@ export class SmartReminderService {
       if (daysSinceLastReminder >= 14) {
         return true;
       }
+    }
+
+    return false;
+  }
+
+  /**
+   * Determine if a pre-due reminder should be sent
+   * Reminders are independent - each checks if it was already sent in its window
+   */
+  private shouldSendPreDueReminder(invoice: Invoice, daysUntilDue: number): boolean {
+    // Don't send if reminder was sent in last 24 hours (prevent duplicates)
+    if (invoice.lastPreDueReminderSent) {
+      const hoursSinceLastReminder = differenceInDays(new Date(), invoice.lastPreDueReminderSent) * 24;
+      if (hoursSinceLastReminder < 24) {
+        return false;
+      }
+    }
+
+    const remindersSent = invoice.preDueRemindersSent || 0;
+
+    // First reminder: 6-7 days before due (window accounts for time-of-day differences)
+    // Send if we're in the window AND haven't sent ANY reminders yet
+    if (daysUntilDue >= 6 && daysUntilDue <= 7) {
+      return remindersSent === 0;
+    }
+
+    // Second reminder: on due date (0 days until due)
+    // Send if we're on the due date AND have sent less than 2 reminders
+    // This allows the due-date reminder even if the 7-day reminder was missed
+    if (daysUntilDue === 0) {
+      return remindersSent < 2;
     }
 
     return false;
@@ -200,11 +292,58 @@ export class SmartReminderService {
       urgency,
       aiMessage,
       aiSubject,
+      reminderType: 'overdue',
     };
   }
 
   /**
-   * Mark reminder as sent and update invoice
+   * Generate a pre-due reminder suggestion with AI-powered messaging
+   */
+  private async generatePreDueReminderSuggestion(
+    invoice: Invoice,
+    client: Client,
+    daysUntilDue: number
+  ): Promise<ReminderSuggestion> {
+    // Generate AI message and subject for pre-due reminder
+    const emailContext = {
+      documentType: 'invoice' as const,
+      documentNumber: invoice.invoiceNumber,
+      clientName: client.name,
+      total: `R ${parseFloat(invoice.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+      businessName: 'Simple Slips User', // Will be replaced with actual business name when sending
+      dueDate: invoice.dueDate,
+      isOverdue: false,
+      daysUntilDue,
+    };
+
+    let aiMessage: string | undefined;
+    let aiSubject: string | undefined;
+
+    try {
+      [aiSubject, aiMessage] = await Promise.all([
+        aiEmailAssistant.generateSubjectLine(emailContext),
+        aiEmailAssistant.draftEmailMessage(emailContext),
+      ]);
+    } catch (error: any) {
+      log(`Error generating AI pre-due reminder message: ${error.message}`, 'smart-reminder');
+    }
+
+    return {
+      invoice,
+      client,
+      daysOverdue: 0, // Not overdue yet
+      daysUntilDue,
+      suggestedAction: 'send_reminder',
+      nextReminderDate: invoice.dueDate, // Next reminder would be on due date
+      urgency: 'low',
+      aiMessage,
+      aiSubject,
+      reminderType: 'pre_due',
+    };
+  }
+
+  /**
+   * Mark overdue reminder as sent and update invoice
    */
   async markReminderSent(invoiceId: number): Promise<void> {
     const invoice = await db.query.invoices.findFirst({
@@ -229,7 +368,33 @@ export class SmartReminderService {
       })
       .where(eq(invoices.id, invoiceId));
 
-    log(`Reminder sent for invoice ${invoice.invoiceNumber}, count: ${reminderCount}`, 'smart-reminder');
+    log(`Overdue reminder sent for invoice ${invoice.invoiceNumber}, count: ${reminderCount}`, 'smart-reminder');
+  }
+
+  /**
+   * Mark pre-due reminder as sent and update invoice
+   */
+  async markPreDueReminderSent(invoiceId: number): Promise<void> {
+    const invoice = await db.query.invoices.findFirst({
+      where: eq(invoices.id, invoiceId),
+    });
+
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+
+    const remindersSent = (invoice.preDueRemindersSent || 0) + 1;
+
+    await db
+      .update(invoices)
+      .set({
+        lastPreDueReminderSent: new Date(),
+        preDueRemindersSent: remindersSent,
+        updatedAt: new Date(),
+      })
+      .where(eq(invoices.id, invoiceId));
+
+    log(`Pre-due reminder #${remindersSent} sent for invoice ${invoice.invoiceNumber}`, 'smart-reminder');
   }
 
   /**

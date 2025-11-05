@@ -800,9 +800,9 @@ function HomePage() {
                           </Link>
                         </Button>
                         <Button variant="outline" className="h-auto p-4 flex flex-col gap-2" asChild>
-                          <Link href="/smart">
-                            <Brain className="w-5 h-5" />
-                            <span className="text-[12px]">Smart AI</span>
+                          <Link href="/quotations">
+                            <FileText className="w-5 h-5" />
+                            <span className="text-[12px]">Quotations</span>
                           </Link>
                         </Button>
                         <Button variant="outline" className="h-auto p-4 flex flex-col gap-2" asChild>

@@ -193,20 +193,22 @@ export default function BusinessHubPage() {
 
         {/* Sales Report Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card data-testid="stat-total-clients">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Clients</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : (
-                <div className="text-2xl font-bold">{clients.length}</div>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">Active clients</p>
-            </CardContent>
-          </Card>
+          <Link href="/clients" className="no-underline">
+            <Card data-testid="stat-total-clients" className="cursor-pointer hover:bg-gray-50 transition-colors">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Clients</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <Skeleton className="h-8 w-16" />
+                ) : (
+                  <div className="text-2xl font-bold">{clients.length}</div>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">Active clients</p>
+              </CardContent>
+            </Card>
+          </Link>
 
           <Card data-testid="stat-total-sales">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

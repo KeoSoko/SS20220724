@@ -180,7 +180,8 @@ export default function BusinessProfilePage() {
         }, 500);
       }
     }
-  }, [businessProfile, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessProfile]);
 
   // Auto-trigger email verification when email changes
   useEffect(() => {

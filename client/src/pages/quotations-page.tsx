@@ -336,11 +336,11 @@ export default function QuotationsPage() {
         subtitle="Manage your quotations"
         showBackButton={true}
       >
-      <div className="p-6 space-y-6">
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">All Quotations</h2>
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <h2 className="text-xl md:text-2xl font-bold">All Quotations</h2>
           <Link href="/quotations/new">
-            <Button data-testid="button-new-quotation">
+            <Button data-testid="button-new-quotation" className="w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               New Quotation
             </Button>
@@ -348,14 +348,16 @@ export default function QuotationsPage() {
         </div>
 
         <Tabs value={activeFilter} onValueChange={setActiveFilter}>
-          <TabsList>
-            <TabsTrigger value="all" data-testid="filter-all">All</TabsTrigger>
-            <TabsTrigger value="draft" data-testid="filter-draft">Draft</TabsTrigger>
-            <TabsTrigger value="sent" data-testid="filter-sent">Sent</TabsTrigger>
-            <TabsTrigger value="accepted" data-testid="filter-accepted">Accepted</TabsTrigger>
-            <TabsTrigger value="declined" data-testid="filter-declined">Declined</TabsTrigger>
-            <TabsTrigger value="expired" data-testid="filter-expired">Expired</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+            <TabsList className="inline-flex min-w-full sm:min-w-0">
+              <TabsTrigger value="all" data-testid="filter-all">All</TabsTrigger>
+              <TabsTrigger value="draft" data-testid="filter-draft">Draft</TabsTrigger>
+              <TabsTrigger value="sent" data-testid="filter-sent">Sent</TabsTrigger>
+              <TabsTrigger value="accepted" data-testid="filter-accepted">Accepted</TabsTrigger>
+              <TabsTrigger value="declined" data-testid="filter-declined">Declined</TabsTrigger>
+              <TabsTrigger value="expired" data-testid="filter-expired">Expired</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value={activeFilter} className="mt-6">
             {isLoading ? (

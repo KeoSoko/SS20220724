@@ -389,11 +389,11 @@ export default function InvoicesPage() {
         subtitle="Manage your invoices and payments"
         showBackButton={true}
       >
-      <div className="p-6 space-y-6">
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">All Invoices</h2>
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <h2 className="text-xl md:text-2xl font-bold">All Invoices</h2>
           <Link href="/invoices/new">
-            <Button data-testid="button-new-invoice">
+            <Button data-testid="button-new-invoice" className="w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               New Invoice
             </Button>
@@ -401,14 +401,16 @@ export default function InvoicesPage() {
         </div>
 
         <Tabs value={activeFilter} onValueChange={setActiveFilter}>
-          <TabsList>
-            <TabsTrigger value="all" data-testid="filter-all">All</TabsTrigger>
-            <TabsTrigger value="unpaid" data-testid="filter-unpaid">Unpaid</TabsTrigger>
-            <TabsTrigger value="partially_paid" data-testid="filter-partially-paid">Partially Paid</TabsTrigger>
-            <TabsTrigger value="paid" data-testid="filter-paid">Paid</TabsTrigger>
-            <TabsTrigger value="overdue" data-testid="filter-overdue">Overdue</TabsTrigger>
-            <TabsTrigger value="cancelled" data-testid="filter-cancelled">Cancelled</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+            <TabsList className="inline-flex min-w-full sm:min-w-0">
+              <TabsTrigger value="all" data-testid="filter-all">All</TabsTrigger>
+              <TabsTrigger value="unpaid" data-testid="filter-unpaid">Unpaid</TabsTrigger>
+              <TabsTrigger value="partially_paid" data-testid="filter-partially-paid">Part. Paid</TabsTrigger>
+              <TabsTrigger value="paid" data-testid="filter-paid">Paid</TabsTrigger>
+              <TabsTrigger value="overdue" data-testid="filter-overdue">Overdue</TabsTrigger>
+              <TabsTrigger value="cancelled" data-testid="filter-cancelled">Cancelled</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value={activeFilter} className="mt-6">
             {isLoading ? (

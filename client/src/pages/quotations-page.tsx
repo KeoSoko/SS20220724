@@ -41,6 +41,15 @@ export default function QuotationsPage() {
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingQuotationId, setDeletingQuotationId] = useState<number | null>(null);
+  const [isEmailPreviewDialogOpen, setIsEmailPreviewDialogOpen] = useState(false);
+  const [emailPreviewData, setEmailPreviewData] = useState<{
+    subject: string;
+    body: string;
+    to: string;
+    from: string;
+    replyTo: string | null;
+    attachmentName: string;
+  } | null>(null);
 
   const { data: quotations = [], isLoading } = useQuery<Quotation[]>({
     queryKey: ["/api/quotations"],
@@ -190,6 +199,42 @@ export default function QuotationsPage() {
     if (confirm("Send this quotation to the client via email?")) {
       sendQuotationMutation.mutate(quotationId);
     }
+  };
+
+  const previewEmailMutation = useMutation({
+    mutationFn: async (quotationId: number) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch(`/api/quotations/${quotationId}/preview-email`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to preview email');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setEmailPreviewData(data);
+      setIsEmailPreviewDialogOpen(true);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to preview email",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handlePreviewEmail = (quotationId: number) => {
+    previewEmailMutation.mutate(quotationId);
   };
 
   const updateStatusMutation = useMutation({
@@ -441,7 +486,7 @@ export default function QuotationsPage() {
             </DialogHeader>
             {selectedQuotation && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Quotation #</h3>
                     <p className="mt-1">{selectedQuotation.quotationNumber}</p>
@@ -503,6 +548,7 @@ export default function QuotationsPage() {
 
                 <div>
                   <h3 className="text-sm font-medium text-gray-500 mb-2">Line Items</h3>
+                  <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -523,6 +569,7 @@ export default function QuotationsPage() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 </div>
 
                 <div className="border-t pt-4">
@@ -558,7 +605,16 @@ export default function QuotationsPage() {
                   </div>
                 )}
 
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-end gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePreviewEmail(selectedQuotation.id)}
+                    disabled={previewEmailMutation.isPending}
+                    data-testid="button-preview-email"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    {previewEmailMutation.isPending ? "Loading..." : "Preview Email"}
+                  </Button>
                   <Button
                     variant="outline"
                     onClick={() => handleSendQuotation(selectedQuotation.id)}
@@ -611,6 +667,70 @@ export default function QuotationsPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Email Preview Dialog */}
+        <Dialog open={isEmailPreviewDialogOpen} onOpenChange={setIsEmailPreviewDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-email-preview">
+            <DialogHeader>
+              <DialogTitle>Email Preview</DialogTitle>
+              <DialogDescription>
+                Preview the AI-generated email before sending to your client
+              </DialogDescription>
+            </DialogHeader>
+            {emailPreviewData && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-500">From:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.from}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Reply-To:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.replyTo || 'Not set'}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">To:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.to}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Subject:</label>
+                  <p className="text-sm mt-1 font-semibold">{emailPreviewData.subject}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Message:</label>
+                  <div className="text-sm mt-1 p-4 bg-gray-50 rounded border whitespace-pre-wrap">
+                    {emailPreviewData.body}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Attachment:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.attachmentName}</p>
+                </div>
+              </div>
+            )}
+            <DialogFooter className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsEmailPreviewDialogOpen(false)}
+                data-testid="button-close-preview"
+              >
+                Close
+              </Button>
+              <Button
+                onClick={() => {
+                  if (selectedQuotation) {
+                    setIsEmailPreviewDialogOpen(false);
+                    handleSendQuotation(selectedQuotation.id);
+                  }
+                }}
+                disabled={sendQuotationMutation.isPending}
+                data-testid="button-send-from-preview"
+              >
+                <Mail className="h-4 w-4 mr-2" />
+                {sendQuotationMutation.isPending ? "Sending..." : "Send Email"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PageLayout>
   );

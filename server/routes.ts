@@ -45,6 +45,7 @@ import { exportService } from "./export-service";
 import { emailService } from "./email-service";
 import { taxService } from "./tax-service";
 import { taxAIAssistant } from "./tax-ai-assistant";
+import { aiEmailAssistant } from "./ai-email-assistant";
 import { recurringExpenseService } from "./recurring-expense-service";
 import { billingService } from "./billing-service";
 import { smartReminderService } from "./smart-reminder-service";
@@ -4151,6 +4152,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Preview quotation email
+  app.get("/api/quotations/:id/preview-email", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const quotationId = parseInt(req.params.id, 10);
+
+      if (isNaN(quotationId)) {
+        return res.status(400).json({ error: "Invalid quotation ID" });
+      }
+
+      // Get quotation
+      const quotation = await db.query.quotations.findFirst({
+        where: and(
+          eq(quotations.id, quotationId),
+          eq(quotations.userId, userId)
+        ),
+      });
+
+      if (!quotation) {
+        return res.status(404).json({ error: "Quotation not found" });
+      }
+
+      // Get client
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, quotation.clientId),
+      });
+
+      if (!client) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      if (!client.email) {
+        return res.status(400).json({ error: "Client does not have an email address" });
+      }
+
+      // Get business profile
+      const businessProfile = await db.query.businessProfiles.findFirst({
+        where: eq(businessProfiles.userId, userId),
+      });
+
+      if (!businessProfile) {
+        return res.status(404).json({ error: "Business profile not found" });
+      }
+
+      const businessName = businessProfile?.companyName || 'Your Business';
+
+      // Generate AI-powered email content
+      const emailContext = {
+        documentType: 'quotation' as const,
+        documentNumber: quotation.quotationNumber,
+        clientName: client.name,
+        total: `R ${parseFloat(quotation.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        businessName,
+        expiryDate: new Date(quotation.expiryDate),
+        isNewClient: false,
+      };
+
+      const [subject, body] = await Promise.all([
+        aiEmailAssistant.generateSubjectLine(emailContext),
+        aiEmailAssistant.draftEmailMessage(emailContext),
+      ]);
+
+      res.json({
+        subject,
+        body,
+        to: client.email,
+        from: 'Simple Slips <notifications@simpleslips.co.za>',
+        replyTo: businessProfile.email || null,
+        attachmentName: `Quotation-${quotation.quotationNumber}.pdf`,
+      });
+    } catch (error: any) {
+      log(`Error previewing quotation email: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to preview email" });
+    }
+  });
+
   // Send quotation via email
   app.post("/api/quotations/:id/send", async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
@@ -4625,6 +4704,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error exporting invoice to PDF: ${error.message}`, 'business-hub');
       res.status(500).json({ error: "Failed to export invoice to PDF" });
+    }
+  });
+
+  // Preview invoice email
+  app.get("/api/invoices/:id/preview-email", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const invoiceId = parseInt(req.params.id, 10);
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      // Get invoice
+      const invoice = await db.query.invoices.findFirst({
+        where: and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.userId, userId)
+        ),
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      // Get client
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, invoice.clientId),
+      });
+
+      if (!client) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+
+      if (!client.email) {
+        return res.status(400).json({ error: "Client does not have an email address" });
+      }
+
+      // Get business profile
+      const businessProfile = await db.query.businessProfiles.findFirst({
+        where: eq(businessProfiles.userId, userId),
+      });
+
+      if (!businessProfile) {
+        return res.status(404).json({ error: "Business profile not found" });
+      }
+
+      const businessName = businessProfile?.companyName || 'Your Business';
+      const balance = (parseFloat(invoice.total) - parseFloat(invoice.amountPaid)).toFixed(2);
+
+      // Generate AI-powered email content
+      const emailContext = {
+        documentType: 'invoice' as const,
+        documentNumber: invoice.invoiceNumber,
+        clientName: client.name,
+        total: `R ${parseFloat(invoice.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        businessName,
+        dueDate: new Date(invoice.dueDate),
+        amountPaid: `R ${parseFloat(invoice.amountPaid).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        amountOutstanding: `R ${parseFloat(balance).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+        isNewClient: false,
+      };
+
+      const [subject, body] = await Promise.all([
+        aiEmailAssistant.generateSubjectLine(emailContext),
+        aiEmailAssistant.draftEmailMessage(emailContext),
+      ]);
+
+      res.json({
+        subject,
+        body,
+        to: client.email,
+        from: 'Simple Slips <notifications@simpleslips.co.za>',
+        replyTo: businessProfile.email || null,
+        attachmentName: `Invoice-${invoice.invoiceNumber}.pdf`,
+      });
+    } catch (error: any) {
+      log(`Error previewing invoice email: ${error.message}`, 'business-hub');
+      res.status(500).json({ error: "Failed to preview email" });
     }
   });
 

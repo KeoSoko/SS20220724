@@ -57,6 +57,15 @@ export default function InvoicesPage() {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingInvoiceId, setDeletingInvoiceId] = useState<number | null>(null);
+  const [isEmailPreviewDialogOpen, setIsEmailPreviewDialogOpen] = useState(false);
+  const [emailPreviewData, setEmailPreviewData] = useState<{
+    subject: string;
+    body: string;
+    to: string;
+    from: string;
+    replyTo: string | null;
+    attachmentName: string;
+  } | null>(null);
 
   const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -243,6 +252,42 @@ export default function InvoicesPage() {
     if (confirm("Send this invoice to the client via email?")) {
       sendInvoiceMutation.mutate(invoiceId);
     }
+  };
+
+  const previewEmailMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch(`/api/invoices/${invoiceId}/preview-email`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to preview email');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setEmailPreviewData(data);
+      setIsEmailPreviewDialogOpen(true);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to preview email",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handlePreviewEmail = (invoiceId: number) => {
+    previewEmailMutation.mutate(invoiceId);
   };
 
   const updateStatusMutation = useMutation({
@@ -507,7 +552,7 @@ export default function InvoicesPage() {
             </DialogHeader>
             {selectedInvoice && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Invoice #</h3>
                     <p className="mt-1">{selectedInvoice.invoiceNumber}</p>
@@ -566,6 +611,7 @@ export default function InvoicesPage() {
 
                 <div>
                   <h3 className="text-sm font-medium text-gray-500 mb-2">Line Items</h3>
+                  <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -586,6 +632,7 @@ export default function InvoicesPage() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 </div>
 
                 <div className="border-t pt-4">
@@ -614,6 +661,7 @@ export default function InvoicesPage() {
                 {invoicePayments.length > 0 && (
                   <div>
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Payment History</h3>
+                    <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -636,10 +684,20 @@ export default function InvoicesPage() {
                         ))}
                       </TableBody>
                     </Table>
+                    </div>
                   </div>
                 )}
 
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-end gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePreviewEmail(selectedInvoice.id)}
+                    disabled={previewEmailMutation.isPending}
+                    data-testid="button-preview-email"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    {previewEmailMutation.isPending ? "Loading..." : "Preview Email"}
+                  </Button>
                   <Button
                     variant="outline"
                     onClick={() => handleSendInvoice(selectedInvoice.id)}
@@ -792,6 +850,70 @@ export default function InvoicesPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Email Preview Dialog */}
+        <Dialog open={isEmailPreviewDialogOpen} onOpenChange={setIsEmailPreviewDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-email-preview">
+            <DialogHeader>
+              <DialogTitle>Email Preview</DialogTitle>
+              <DialogDescription>
+                Preview the AI-generated email before sending to your client
+              </DialogDescription>
+            </DialogHeader>
+            {emailPreviewData && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-500">From:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.from}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Reply-To:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.replyTo || 'Not set'}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">To:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.to}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Subject:</label>
+                  <p className="text-sm mt-1 font-semibold">{emailPreviewData.subject}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Message:</label>
+                  <div className="text-sm mt-1 p-4 bg-gray-50 rounded border whitespace-pre-wrap">
+                    {emailPreviewData.body}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Attachment:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.attachmentName}</p>
+                </div>
+              </div>
+            )}
+            <DialogFooter className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsEmailPreviewDialogOpen(false)}
+                data-testid="button-close-preview"
+              >
+                Close
+              </Button>
+              <Button
+                onClick={() => {
+                  if (selectedInvoice) {
+                    setIsEmailPreviewDialogOpen(false);
+                    handleSendInvoice(selectedInvoice.id);
+                  }
+                }}
+                disabled={sendInvoiceMutation.isPending}
+                data-testid="button-send-from-preview"
+              >
+                <Mail className="h-4 w-4 mr-2" />
+                {sendInvoiceMutation.isPending ? "Sending..." : "Send Email"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PageLayout>
   );

@@ -51,7 +51,7 @@ import { billingService } from "./billing-service";
 import { smartReminderService } from "./smart-reminder-service";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
 import { log } from "./vite";
-import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { scrypt, timingSafeEqual } from 'crypto';
 import { promisify } from 'util';
 
@@ -3185,49 +3185,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Helper function to generate unique quotation number
   const generateQuotationNumber = async (): Promise<string> => {
     const date = new Date();
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const year = date.getFullYear();
     
-    // Get count of quotations today to generate sequential number
-    const todayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const todayEnd = new Date(todayStart);
-    todayEnd.setDate(todayEnd.getDate() + 1);
+    // Get count of quotations this year to generate sequential number
+    const yearStart = new Date(year, 0, 1); // January 1st
+    const yearEnd = new Date(year + 1, 0, 1); // January 1st next year
     
-    const todayQuotations = await db
+    const yearQuotations = await db
       .select({ count: sql<number>`count(*)` })
       .from(quotations)
       .where(and(
-        gte(quotations.date, todayStart),
-        lte(quotations.date, todayEnd)
+        gte(quotations.date, yearStart),
+        lt(quotations.date, yearEnd)
       ));
     
-    const count = todayQuotations[0]?.count || 0;
+    const count = yearQuotations[0]?.count || 0;
     const sequence = String(count + 1).padStart(3, '0');
     
-    return `QUO-${dateStr}-${sequence}`;
+    return `QUO-${year}-${sequence}`;
   };
 
   // Helper function to generate unique invoice number
   const generateInvoiceNumber = async (): Promise<string> => {
     const date = new Date();
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const year = date.getFullYear();
     
-    // Get count of invoices today to generate sequential number
-    const todayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const todayEnd = new Date(todayStart);
-    todayEnd.setDate(todayEnd.getDate() + 1);
+    // Get count of invoices this year to generate sequential number
+    const yearStart = new Date(year, 0, 1); // January 1st
+    const yearEnd = new Date(year + 1, 0, 1); // January 1st next year
     
-    const todayInvoices = await db
+    const yearInvoices = await db
       .select({ count: sql<number>`count(*)` })
       .from(invoices)
       .where(and(
-        gte(invoices.date, todayStart),
-        lte(invoices.date, todayEnd)
+        gte(invoices.date, yearStart),
+        lt(invoices.date, yearEnd)
       ));
     
-    const count = todayInvoices[0]?.count || 0;
+    const count = yearInvoices[0]?.count || 0;
     const sequence = String(count + 1).padStart(3, '0');
     
-    return `INV-${dateStr}-${sequence}`;
+    return `INV-${year}-${sequence}`;
   };
 
   // ===== BUSINESS PROFILE ROUTES =====

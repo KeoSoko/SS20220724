@@ -214,6 +214,7 @@ export default function InvoicesPage() {
       return response.json();
     },
     onSuccess: () => {
+      setIsEmailPreviewDialogOpen(false);
       toast({
         title: "Success",
         description: "Invoice sent successfully to client",
@@ -693,19 +694,10 @@ export default function InvoicesPage() {
                     variant="outline"
                     onClick={() => handlePreviewEmail(selectedInvoice.id)}
                     disabled={previewEmailMutation.isPending}
-                    data-testid="button-preview-email"
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    {previewEmailMutation.isPending ? "Loading..." : "Preview Email"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleSendInvoice(selectedInvoice.id)}
-                    disabled={sendInvoiceMutation.isPending}
                     data-testid="button-send-invoice"
                   >
                     <Mail className="h-4 w-4 mr-2" />
-                    {sendInvoiceMutation.isPending ? "Sending..." : "Send to Client"}
+                    {previewEmailMutation.isPending ? "Loading..." : "Send to Client"}
                   </Button>
                   <Button
                     variant="outline"
@@ -901,8 +893,7 @@ export default function InvoicesPage() {
               <Button
                 onClick={() => {
                   if (selectedInvoice) {
-                    setIsEmailPreviewDialogOpen(false);
-                    handleSendInvoice(selectedInvoice.id);
+                    sendInvoiceMutation.mutate(selectedInvoice.id);
                   }
                 }}
                 disabled={sendInvoiceMutation.isPending}

@@ -19,6 +19,7 @@ import {
   EXPENSE_CATEGORIES, 
   EXPENSE_SUBCATEGORIES, 
   receipts,
+  users,
   businessProfiles,
   businessEmailIdentities,
   clients,

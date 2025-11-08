@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Users, FileText, Banknote, Plus, ArrowRight, Calculator, Settings, Bell, Clock, TrendingUp, Mail } from "lucide-react";
 import { Link } from "wouter";
 import { format, differenceInDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import type { Client, Quotation, Invoice } from "@shared/schema";
+import { useState } from "react";
 
 interface InvoiceStats {
   totalUnpaid: number;
@@ -65,6 +67,16 @@ const getStatusBadgeColor = (status: string) => {
 
 export default function BusinessHubPage() {
   const { toast } = useToast();
+  const [emailPreview, setEmailPreview] = useState<{
+    invoiceId: number;
+    subject: string;
+    body: string;
+    to: string;
+    from: string;
+    replyTo: string | null;
+    attachmentName: string;
+    reminderType: 'overdue' | 'pre_due';
+  } | null>(null);
 
   const { data: clients = [], isLoading: loadingClients } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
@@ -90,6 +102,37 @@ export default function BusinessHubPage() {
     queryKey: ["/api/business-hub/pre-due-reminders"],
   });
 
+  const previewReminderMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch(`/api/invoices/${invoiceId}/preview-email`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to load email preview');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data, invoiceId) => {
+      setEmailPreview({ ...data, invoiceId, reminderType: 'overdue' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to load email preview",
+        variant: "destructive",
+      });
+    },
+  });
+
   const sendReminderMutation = useMutation({
     mutationFn: async (invoiceId: number) => {
       const token = localStorage.getItem('auth_token');
@@ -111,6 +154,7 @@ export default function BusinessHubPage() {
       return response.json();
     },
     onSuccess: () => {
+      setEmailPreview(null);
       toast({
         title: "Success",
         description: "Payment reminder sent successfully",
@@ -122,6 +166,37 @@ export default function BusinessHubPage() {
       toast({
         title: "Error",
         description: error.message || "Failed to send reminder",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const previewPreDueReminderMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch(`/api/invoices/${invoiceId}/preview-email`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to load email preview');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data, invoiceId) => {
+      setEmailPreview({ ...data, invoiceId, reminderType: 'pre_due' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to load email preview",
         variant: "destructive",
       });
     },
@@ -148,6 +223,7 @@ export default function BusinessHubPage() {
       return response.json();
     },
     onSuccess: () => {
+      setEmailPreview(null);
       toast({
         title: "Success",
         description: "Pre-due reminder sent successfully",
@@ -351,16 +427,12 @@ export default function BusinessHubPage() {
                         size="sm"
                         variant="outline"
                         className="border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
-                        onClick={() => {
-                          if (confirm(`Send friendly reminder to ${reminder.client.name}?`)) {
-                            sendPreDueReminderMutation.mutate(reminder.invoice.id);
-                          }
-                        }}
-                        disabled={sendPreDueReminderMutation.isPending}
+                        onClick={() => previewPreDueReminderMutation.mutate(reminder.invoice.id)}
+                        disabled={previewPreDueReminderMutation.isPending}
                         data-testid={`button-send-pre-due-reminder-${reminder.invoice.id}`}
                       >
                         <Mail className="h-4 w-4 mr-2" />
-                        Send Reminder
+                        {previewPreDueReminderMutation.isPending ? 'Loading...' : 'Send Reminder'}
                       </Button>
                     </div>
                   );
@@ -439,16 +511,12 @@ export default function BusinessHubPage() {
                         </div>
                         <Button
                           size="sm"
-                          onClick={() => {
-                            if (confirm(`Send payment reminder to ${reminder.client.name}?`)) {
-                              sendReminderMutation.mutate(reminder.invoice.id);
-                            }
-                          }}
-                          disabled={sendReminderMutation.isPending}
+                          onClick={() => previewReminderMutation.mutate(reminder.invoice.id)}
+                          disabled={previewReminderMutation.isPending}
                           data-testid={`button-send-reminder-${reminder.invoice.id}`}
                         >
                           <Mail className="h-4 w-4 mr-2" />
-                          Send Reminder
+                          {previewReminderMutation.isPending ? 'Loading...' : 'Send Reminder'}
                         </Button>
                       </div>
                     );
@@ -634,6 +702,76 @@ export default function BusinessHubPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Email Preview Dialog */}
+      <Dialog open={!!emailPreview} onOpenChange={() => setEmailPreview(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Email Preview</DialogTitle>
+            <DialogDescription>
+              Review the email before sending to your client
+            </DialogDescription>
+          </DialogHeader>
+          
+          {emailPreview && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-[100px_1fr] gap-2 text-sm">
+                <div className="font-medium text-muted-foreground">From:</div>
+                <div>{emailPreview.from}</div>
+                
+                {emailPreview.replyTo && (
+                  <>
+                    <div className="font-medium text-muted-foreground">Reply-To:</div>
+                    <div>{emailPreview.replyTo}</div>
+                  </>
+                )}
+                
+                <div className="font-medium text-muted-foreground">To:</div>
+                <div>{emailPreview.to}</div>
+                
+                <div className="font-medium text-muted-foreground">Subject:</div>
+                <div className="font-medium">{emailPreview.subject}</div>
+                
+                <div className="font-medium text-muted-foreground">Attachment:</div>
+                <div className="text-blue-600">{emailPreview.attachmentName}</div>
+              </div>
+              
+              <div className="border-t pt-4">
+                <div className="font-medium text-sm text-muted-foreground mb-2">Message:</div>
+                <div className="bg-gray-50 p-4 rounded-lg whitespace-pre-wrap text-sm">
+                  {emailPreview.body}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setEmailPreview(null)}
+              data-testid="button-close-preview"
+            >
+              Close
+            </Button>
+            <Button
+              onClick={() => {
+                if (emailPreview) {
+                  if (emailPreview.reminderType === 'pre_due') {
+                    sendPreDueReminderMutation.mutate(emailPreview.invoiceId);
+                  } else {
+                    sendReminderMutation.mutate(emailPreview.invoiceId);
+                  }
+                }
+              }}
+              disabled={sendReminderMutation.isPending || sendPreDueReminderMutation.isPending}
+              data-testid="button-send-from-preview"
+            >
+              <Mail className="h-4 w-4 mr-2" />
+              {(sendReminderMutation.isPending || sendPreDueReminderMutation.isPending) ? 'Sending...' : 'Send Email'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageLayout>
   );
 }

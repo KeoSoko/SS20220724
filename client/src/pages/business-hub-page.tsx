@@ -474,13 +474,13 @@ export default function BusinessHubPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
+                        className="border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white shrink-0"
                         onClick={() => previewPreDueReminderMutation.mutate(reminder.invoice.id)}
                         disabled={previewPreDueReminderMutation.isPending}
                         data-testid={`button-send-pre-due-reminder-${reminder.invoice.id}`}
                       >
-                        <Mail className="h-4 w-4 mr-2" />
-                        {previewPreDueReminderMutation.isPending ? 'Loading...' : 'Send Reminder'}
+                        <Mail className="h-4 w-4 md:mr-2" />
+                        <span className="hidden md:inline">{previewPreDueReminderMutation.isPending ? 'Loading...' : 'Send Reminder'}</span>
                       </Button>
                     </div>
                   );
@@ -562,9 +562,10 @@ export default function BusinessHubPage() {
                           onClick={() => previewReminderMutation.mutate(reminder.invoice.id)}
                           disabled={previewReminderMutation.isPending}
                           data-testid={`button-send-reminder-${reminder.invoice.id}`}
+                          className="shrink-0"
                         >
-                          <Mail className="h-4 w-4 mr-2" />
-                          {previewReminderMutation.isPending ? 'Loading...' : 'Send Reminder'}
+                          <Mail className="h-4 w-4 md:mr-2" />
+                          <span className="hidden md:inline">{previewReminderMutation.isPending ? 'Loading...' : 'Send Reminder'}</span>
                         </Button>
                       </div>
                     );

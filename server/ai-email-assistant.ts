@@ -22,6 +22,13 @@ export interface EmailContext {
   amountOutstanding?: string;
   previousSentCount?: number;
   isNewClient?: boolean;
+  // Banking details from business profile
+  bankName?: string;
+  accountHolder?: string;
+  accountNumber?: string;
+  branchCode?: string;
+  businessEmail?: string;
+  businessPhone?: string;
 }
 
 export class AIEmailAssistant {
@@ -152,7 +159,29 @@ export class AIEmailAssistant {
         }
       }
       
-      parts.push(`Mention that the invoice is attached as a PDF. Include payment instructions.`);
+      parts.push(`Mention that the invoice is attached as a PDF.`);
+      
+      // Include actual payment instructions if banking details are provided
+      if (context.bankName && context.accountNumber) {
+        parts.push(`Include payment instructions with these banking details:`);
+        parts.push(`Bank: ${context.bankName}`);
+        parts.push(`Account Holder: ${context.accountHolder || context.businessName}`);
+        parts.push(`Account Number: ${context.accountNumber}`);
+        if (context.branchCode) {
+          parts.push(`Branch Code: ${context.branchCode}`);
+        }
+        parts.push(`Payment reference: Use the invoice number`);
+      } else {
+        parts.push(`Politely ask them to contact you for payment details.`);
+      }
+      
+      // Include contact information
+      if (context.businessEmail || context.businessPhone) {
+        const contacts: string[] = [];
+        if (context.businessEmail) contacts.push(`email: ${context.businessEmail}`);
+        if (context.businessPhone) contacts.push(`phone: ${context.businessPhone}`);
+        parts.push(`Sign off with "${context.businessName}" and include contact details: ${contacts.join(', ')}`);
+      }
     }
     
     return parts.join('\n');
@@ -193,22 +222,46 @@ export class AIEmailAssistant {
   }
 
   private getFallbackMessage(context: EmailContext): string {
+    const buildPaymentInstructions = (): string => {
+      if (context.bankName && context.accountNumber) {
+        const parts = [
+          `\n\nPayment can be made via EFT to the following account:`,
+          `Bank: ${context.bankName}`,
+          `Account Holder: ${context.accountHolder || context.businessName}`,
+          `Account Number: ${context.accountNumber}`,
+        ];
+        if (context.branchCode) {
+          parts.push(`Branch Code: ${context.branchCode}`);
+        }
+        parts.push(`Payment Reference: ${context.documentNumber}`);
+        return parts.join('\n');
+      }
+      return '\n\nPlease contact us for payment details.';
+    };
+
+    const buildSignature = (): string => {
+      const parts = [`\n\nKind regards,\n${context.businessName}`];
+      if (context.businessEmail) parts.push(context.businessEmail);
+      if (context.businessPhone) parts.push(context.businessPhone);
+      return parts.join('\n');
+    };
+
     if (context.documentType === 'quotation') {
-      return `Hi ${context.clientName.split(' ')[0]},\n\nThank you for your interest in working with us. Please find attached quotation ${context.documentNumber} for ${context.total}.\n\nThe quotation is valid until ${context.expiryDate ? format(context.expiryDate, 'dd MMMM yyyy') : 'the end of the month'}. Please review the details and let me know if you have any questions.\n\nLooking forward to working with you!\n\nKind regards`;
+      return `Hi ${context.clientName.split(' ')[0]},\n\nThank you for your interest in working with us. Please find attached quotation ${context.documentNumber} for ${context.total}.\n\nThe quotation is valid until ${context.expiryDate ? format(context.expiryDate, 'dd MMMM yyyy') : 'the end of the month'}. Please review the details and let me know if you have any questions.\n\nLooking forward to working with you!${buildSignature()}`;
     } else {
       if (context.isOverdue) {
-        return `Hi ${context.clientName.split(' ')[0]},\n\nI hope this email finds you well. This is a friendly reminder that invoice ${context.documentNumber} for ${context.amountOutstanding || context.total} is now ${context.daysOverdue} days overdue.\n\nPlease arrange payment at your earliest convenience. If you've already processed this payment, please disregard this reminder.\n\nBest regards`;
+        return `Hi ${context.clientName.split(' ')[0]},\n\nI hope this email finds you well. This is a friendly reminder that invoice ${context.documentNumber} for ${context.amountOutstanding || context.total} is now ${context.daysOverdue} days overdue.${buildPaymentInstructions()}\n\nIf you've already processed this payment, please disregard this reminder.${buildSignature()}`;
       }
       
       if (context.daysUntilDue !== undefined) {
         if (context.daysUntilDue === 0) {
-          return `Hi ${context.clientName.split(' ')[0]},\n\nJust a friendly reminder that invoice ${context.documentNumber} for ${context.total} is due today.\n\nPlease find the invoice attached for your reference. If you have any questions or need payment arrangements, please don't hesitate to reach out.\n\nThank you for your business!\n\nKind regards`;
+          return `Hi ${context.clientName.split(' ')[0]},\n\nJust a friendly reminder that invoice ${context.documentNumber} for ${context.total} is due today.${buildPaymentInstructions()}\n\nIf you have any questions, please don't hesitate to reach out.\n\nThank you for your business!${buildSignature()}`;
         } else {
-          return `Hi ${context.clientName.split(' ')[0]},\n\nI hope you're doing well! This is a friendly heads-up that invoice ${context.documentNumber} for ${context.total} is due in ${context.daysUntilDue} days (${context.dueDate ? format(context.dueDate, 'dd MMMM yyyy') : ''}).\n\nPlease find the invoice attached for your reference. If you have any questions, feel free to reach out.\n\nThank you for your business!\n\nWarm regards`;
+          return `Hi ${context.clientName.split(' ')[0]},\n\nI hope you're doing well! This is a friendly heads-up that invoice ${context.documentNumber} for ${context.total} is due in ${context.daysUntilDue} days (${context.dueDate ? format(context.dueDate, 'dd MMMM yyyy') : ''}).${buildPaymentInstructions()}\n\nIf you have any questions, feel free to reach out.\n\nThank you for your business!${buildSignature()}`;
         }
       }
       
-      return `Hi ${context.clientName.split(' ')[0]},\n\nPlease find attached invoice ${context.documentNumber} for ${context.total}. Payment is due by ${context.dueDate ? format(context.dueDate, 'dd MMMM yyyy') : 'the end of the month'}.\n\nThank you for your business!\n\nKind regards`;
+      return `Hi ${context.clientName.split(' ')[0]},\n\nPlease find attached invoice ${context.documentNumber} for ${context.total}. Payment is due by ${context.dueDate ? format(context.dueDate, 'dd MMMM yyyy') : 'the end of the month'}.${buildPaymentInstructions()}\n\nThank you for your business!${buildSignature()}`;
     }
   }
 

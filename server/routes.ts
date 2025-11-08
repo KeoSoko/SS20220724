@@ -4209,6 +4209,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         businessName,
         expiryDate: new Date(quotation.expiryDate),
         isNewClient: false,
+        // Contact details from business profile
+        businessEmail: businessProfile.email || undefined,
+        businessPhone: businessProfile.phone || undefined,
       };
 
       const [subject, body] = await Promise.all([
@@ -4754,6 +4757,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         amountPaid: `R ${parseFloat(invoice.amountPaid).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
         amountOutstanding: `R ${parseFloat(balance).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
         isNewClient: false,
+        // Banking and contact details from business profile
+        bankName: businessProfile.bankName || undefined,
+        accountHolder: businessProfile.accountHolder || undefined,
+        accountNumber: businessProfile.accountNumber || undefined,
+        branchCode: businessProfile.branchCode || undefined,
+        businessEmail: businessProfile.email || undefined,
+        businessPhone: businessProfile.phone || undefined,
       };
 
       const [subject, body] = await Promise.all([

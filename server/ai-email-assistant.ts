@@ -27,6 +27,9 @@ export interface EmailContext {
 export class AIEmailAssistant {
   async draftEmailMessage(context: EmailContext): Promise<string> {
     try {
+      log(`[AI Email] Generating message for ${context.documentType} ${context.documentNumber}`, 'ai-email');
+      log(`[AI Email] Context: client=${context.clientName}, total=${context.total}, business=${context.businessName}`, 'ai-email');
+      
       const prompt = this.buildPrompt(context);
       
       const completion = await openai.chat.completions.create({
@@ -46,11 +49,13 @@ export class AIEmailAssistant {
       });
 
       const message = completion.choices[0]?.message?.content || this.getFallbackMessage(context);
-      log(`AI drafted email for ${context.documentType} ${context.documentNumber}`, 'ai-email');
+      log(`[AI Email] Generated message (first 100 chars): ${message.substring(0, 100)}...`, 'ai-email');
       return message.trim();
     } catch (error: any) {
-      log(`Error drafting AI email: ${error.message}`, 'ai-email');
-      return this.getFallbackMessage(context);
+      log(`[AI Email] Error: ${error.message}, using fallback`, 'ai-email');
+      const fallback = this.getFallbackMessage(context);
+      log(`[AI Email] Fallback message (first 100 chars): ${fallback.substring(0, 100)}...`, 'ai-email');
+      return fallback;
     }
   }
 

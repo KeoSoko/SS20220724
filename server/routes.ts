@@ -2116,7 +2116,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== PROFIT & LOSS ENDPOINTS =====
   
   // Get Profit & Loss data
-  app.get("/api/profit-loss", async (req, res) => {
+  app.get("/api/profit-loss", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
     try {
@@ -3276,7 +3276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== BUSINESS PROFILE ROUTES =====
 
   // Get current user's business profile
-  app.get("/api/business-profile", async (req, res) => {
+  app.get("/api/business-profile", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3308,7 +3308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create or update business profile
-  app.post("/api/business-profile", async (req, res) => {
+  app.post("/api/business-profile", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3354,7 +3354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update existing business profile
-  app.put("/api/business-profile", async (req, res) => {
+  app.put("/api/business-profile", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3384,7 +3384,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Upload business profile logo
-  app.post("/api/business-profile/logo", async (req, res) => {
+  app.post("/api/business-profile/logo", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3437,7 +3437,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Remove business profile logo
-  app.delete("/api/business-profile/logo", async (req, res) => {
+  app.delete("/api/business-profile/logo", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3628,7 +3628,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== CLIENT ROUTES =====
 
   // Get all clients for current user
-  app.get("/api/clients", async (req, res) => {
+  app.get("/api/clients", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3647,7 +3647,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get single client
-  app.get("/api/clients/:id", async (req, res) => {
+  app.get("/api/clients/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3677,7 +3677,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new client
-  app.post("/api/clients", async (req, res) => {
+  app.post("/api/clients", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3705,7 +3705,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update client
-  app.put("/api/clients/:id", async (req, res) => {
+  app.put("/api/clients/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3743,7 +3743,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete client (soft delete)
-  app.delete("/api/clients/:id", async (req, res) => {
+  app.delete("/api/clients/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3777,7 +3777,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== QUOTATION ROUTES =====
 
   // Get all quotations for current user
-  app.get("/api/quotations", async (req, res) => {
+  app.get("/api/quotations", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3796,7 +3796,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get single quotation with line items
-  app.get("/api/quotations/:id", async (req, res) => {
+  app.get("/api/quotations/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3832,7 +3832,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create quotation with line items
-  app.post("/api/quotations", async (req, res) => {
+  app.post("/api/quotations", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3891,7 +3891,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update quotation
-  app.put("/api/quotations/:id", async (req, res) => {
+  app.put("/api/quotations/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3965,7 +3965,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // PATCH quotation status
-  app.patch("/api/quotations/:id", async (req, res) => {
+  app.patch("/api/quotations/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4010,7 +4010,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete quotation
-  app.delete("/api/quotations/:id", async (req, res) => {
+  app.delete("/api/quotations/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4041,7 +4041,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Convert quotation to invoice
-  app.post("/api/quotations/:id/convert-to-invoice", async (req, res) => {
+  app.post("/api/quotations/:id/convert-to-invoice", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4135,7 +4135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Export quotation to PDF
-  app.get("/api/quotations/:id/pdf", async (req, res) => {
+  app.get("/api/quotations/:id/pdf", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4196,7 +4196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Preview quotation email
-  app.get("/api/quotations/:id/preview-email", async (req, res) => {
+  app.get("/api/quotations/:id/preview-email", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4277,7 +4277,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send quotation via email
-  app.post("/api/quotations/:id/send", async (req, res) => {
+  app.post("/api/quotations/:id/send", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4405,7 +4405,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get all invoices for current user
-  app.get("/api/invoices", async (req, res) => {
+  app.get("/api/invoices", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4424,7 +4424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get single invoice with line items and payments
-  app.get("/api/invoices/:id", async (req, res) => {
+  app.get("/api/invoices/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4466,7 +4466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create invoice with line items
-  app.post("/api/invoices", async (req, res) => {
+  app.post("/api/invoices", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4524,7 +4524,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update invoice
-  app.put("/api/invoices/:id", async (req, res) => {
+  app.put("/api/invoices/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4598,7 +4598,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // PATCH invoice status
-  app.patch("/api/invoices/:id", async (req, res) => {
+  app.patch("/api/invoices/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4643,7 +4643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete invoice
-  app.delete("/api/invoices/:id", async (req, res) => {
+  app.delete("/api/invoices/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4674,7 +4674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Export invoice to PDF
-  app.get("/api/invoices/:id/pdf", async (req, res) => {
+  app.get("/api/invoices/:id/pdf", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4741,7 +4741,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Preview invoice email
-  app.get("/api/invoices/:id/preview-email", async (req, res) => {
+  app.get("/api/invoices/:id/preview-email", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4829,7 +4829,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send invoice via email
-  app.post("/api/invoices/:id/send", async (req, res) => {
+  app.post("/api/invoices/:id/send", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4923,7 +4923,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Record payment for invoice
-  app.post("/api/invoices/:id/payments", async (req, res) => {
+  app.post("/api/invoices/:id/payments", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5001,7 +5001,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== Smart Reminder Routes =====
 
   // Get dashboard statistics for Business Hub
-  app.get("/api/business-hub/dashboard-stats", async (req, res) => {
+  app.get("/api/business-hub/dashboard-stats", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5015,7 +5015,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get all overdue invoices
-  app.get("/api/business-hub/overdue-invoices", async (req, res) => {
+  app.get("/api/business-hub/overdue-invoices", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5029,7 +5029,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get invoices needing reminders with AI suggestions
-  app.get("/api/business-hub/reminders", async (req, res) => {
+  app.get("/api/business-hub/reminders", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5043,7 +5043,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send payment reminder for an invoice
-  app.post("/api/invoices/:id/send-reminder", async (req, res) => {
+  app.post("/api/invoices/:id/send-reminder", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5122,7 +5122,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get payment prediction for an invoice
-  app.get("/api/invoices/:id/payment-prediction", async (req, res) => {
+  app.get("/api/invoices/:id/payment-prediction", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5159,7 +5159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get pre-due reminders (invoices approaching due date)
-  app.get("/api/business-hub/pre-due-reminders", async (req, res) => {
+  app.get("/api/business-hub/pre-due-reminders", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5173,7 +5173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send pre-due reminder for an invoice
-  app.post("/api/invoices/:id/send-pre-due-reminder", async (req, res) => {
+  app.post("/api/invoices/:id/send-pre-due-reminder", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {

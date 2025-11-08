@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { Receipt, Search, Filter, Plus, ArrowLeft } from 'lucide-react';
+import { Receipt, Search, Filter, Plus, ArrowLeft, AlertCircle, CheckSquare, Square, Trash2, Tag } from 'lucide-react';
 import { PageLayout } from '@/components/page-layout';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -9,10 +9,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { EnhancedReceiptCard, SpacingContainer, EnhancedEmptyState } from '@/components/ui/enhanced-components';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import { queryClient, apiRequest } from '@/lib/queryClient';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const EXPENSE_CATEGORIES = [
   'food', 'groceries', 'dining', 'transportation', 'entertainment', 
@@ -33,6 +45,14 @@ export default function ReceiptsPage() {
   const [categoryFilter, setCategoryFilter] = useState(initialFilter);
   const [sortBy, setSortBy] = useState('date');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [showNeedsReview, setShowNeedsReview] = useState(false);
+  
+  // Bulk selection state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedReceiptIds, setSelectedReceiptIds] = useState<Set<number>>(new Set());
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  const [bulkCategory, setBulkCategory] = useState('');
 
   // Fetch receipts
   const { data: receipts = [], isLoading, error } = useQuery({
@@ -54,7 +74,11 @@ export default function ReceiptsPage() {
       matchesCategory = receipt.category === categoryFilter;
     }
     
-    return matchesSearch && matchesCategory;
+    // Needs Review filter (confidence < 80%)
+    const matchesNeedsReview = !showNeedsReview || 
+      (receipt.confidence !== undefined && receipt.confidence !== null && receipt.confidence < 80);
+    
+    return matchesSearch && matchesCategory && matchesNeedsReview;
   });
 
   // Sort receipts
@@ -106,21 +130,160 @@ export default function ReceiptsPage() {
 
   // Handle receipt click
   const handleReceiptClick = (receiptId: number) => {
-    setLocation(`/receipt/${receiptId}`);
+    if (selectionMode) {
+      toggleReceiptSelection(receiptId);
+    } else {
+      setLocation(`/receipt/${receiptId}`);
+    }
+  };
+
+  // Bulk selection handlers
+  const toggleSelectionMode = () => {
+    setSelectionMode(!selectionMode);
+    setSelectedReceiptIds(new Set());
+  };
+
+  const toggleReceiptSelection = (receiptId: number) => {
+    const newSelection = new Set(selectedReceiptIds);
+    if (newSelection.has(receiptId)) {
+      newSelection.delete(receiptId);
+    } else {
+      newSelection.add(receiptId);
+    }
+    setSelectedReceiptIds(newSelection);
+  };
+
+  const selectAll = () => {
+    const allIds = new Set(sortedReceipts.map((r: any) => r.id));
+    setSelectedReceiptIds(allIds);
+  };
+
+  const clearSelection = () => {
+    setSelectedReceiptIds(new Set());
+  };
+
+  // Bulk delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (receiptIds: number[]) => {
+      await Promise.all(
+        receiptIds.map(id => apiRequest('DELETE', `/api/receipts/${id}`))
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/receipts'] });
+      toast({
+        title: "Receipts deleted",
+        description: `Successfully deleted ${selectedReceiptIds.size} receipt(s)`,
+      });
+      setSelectedReceiptIds(new Set());
+      setShowDeleteDialog(false);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete receipts. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Bulk categorize mutation
+  const categorizeMutation = useMutation({
+    mutationFn: async ({ receiptIds, category }: { receiptIds: number[], category: string }) => {
+      await Promise.all(
+        receiptIds.map(id => 
+          apiRequest('PATCH', `/api/receipts/${id}`, { category })
+        )
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/receipts'] });
+      toast({
+        title: "Receipts updated",
+        description: `Successfully categorized ${selectedReceiptIds.size} receipt(s) as ${bulkCategory}`,
+      });
+      setSelectedReceiptIds(new Set());
+      setShowCategoryDialog(false);
+      setBulkCategory('');
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update receipts. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleBulkDelete = () => {
+    deleteMutation.mutate(Array.from(selectedReceiptIds));
+  };
+
+  const handleBulkCategorize = () => {
+    if (!bulkCategory) return;
+    categorizeMutation.mutate({ 
+      receiptIds: Array.from(selectedReceiptIds), 
+      category: bulkCategory 
+    });
   };
 
   // Header actions
   const headerActions = (
     <div className="flex items-center gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setLocation('/upload')}
-        className="flex items-center gap-2"
-      >
-        <Plus className="h-4 w-4" />
-        Add Receipt
-      </Button>
+      {!selectionMode && (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleSelectionMode}
+            className="flex items-center gap-2"
+            data-testid="button-select-mode"
+          >
+            <CheckSquare className="h-4 w-4" />
+            Select
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setLocation('/upload')}
+            className="flex items-center gap-2"
+            data-testid="button-add-receipt"
+          >
+            <Plus className="h-4 w-4" />
+            Add Receipt
+          </Button>
+        </>
+      )}
+      {selectionMode && (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleSelectionMode}
+            data-testid="button-cancel-selection"
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={selectAll}
+            disabled={selectedReceiptIds.size === sortedReceipts.length}
+            data-testid="button-select-all"
+          >
+            Select All ({sortedReceipts.length})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={clearSelection}
+            disabled={selectedReceiptIds.size === 0}
+            data-testid="button-clear-selection"
+          >
+            Clear
+          </Button>
+        </>
+      )}
     </div>
   );
 
@@ -154,6 +317,25 @@ export default function ReceiptsPage() {
         {/* Filters */}
         <Card>
           <CardContent className="p-4">
+            {/* Quick Filter Button */}
+            <div className="mb-4">
+              <Button
+                variant={showNeedsReview ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowNeedsReview(!showNeedsReview)}
+                className="flex items-center gap-2"
+                data-testid="button-needs-review-filter"
+              >
+                <AlertCircle className="h-4 w-4" />
+                {showNeedsReview ? 'Showing Needs Review' : 'Show Needs Review'}
+                {showNeedsReview && (
+                  <Badge variant="secondary" className="ml-1">
+                    {filteredReceipts.length}
+                  </Badge>
+                )}
+              </Button>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Search */}
               <div className="space-y-2">
@@ -167,6 +349,7 @@ export default function ReceiptsPage() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10"
+                    data-testid="input-search-receipts"
                   />
                 </div>
               </div>
@@ -175,7 +358,7 @@ export default function ReceiptsPage() {
               <div className="space-y-2">
                 <Label>Category</Label>
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="select-category-filter">
                     <SelectValue placeholder="All categories" />
                   </SelectTrigger>
                   <SelectContent>
@@ -195,7 +378,7 @@ export default function ReceiptsPage() {
                 <Label>Sort by</Label>
                 <div className="flex gap-2">
                   <Select value={sortBy} onValueChange={setSortBy}>
-                    <SelectTrigger>
+                    <SelectTrigger data-testid="select-sort-by">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -208,6 +391,7 @@ export default function ReceiptsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                    data-testid="button-sort-order"
                   >
                     {sortOrder === 'asc' ? '↑' : '↓'}
                   </Button>
@@ -218,8 +402,21 @@ export default function ReceiptsPage() {
         </Card>
 
         {/* Active Filters */}
-        {(categoryFilter !== 'all' || searchQuery) && (
+        {(categoryFilter !== 'all' || searchQuery || showNeedsReview) && (
           <div className="flex flex-wrap gap-2">
+            {showNeedsReview && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                Needs Review (Confidence &lt; 80%)
+                <button
+                  onClick={() => setShowNeedsReview(false)}
+                  className="ml-1 hover:bg-gray-200 rounded-full p-0.5"
+                  data-testid="button-clear-needs-review"
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
             {categoryFilter !== 'all' && (
               <Badge variant="secondary" className="flex items-center gap-1">
                 <Filter className="h-3 w-3" />
@@ -245,6 +442,41 @@ export default function ReceiptsPage() {
               </Badge>
             )}
           </div>
+        )}
+
+        {/* Bulk Action Bar */}
+        {selectionMode && selectedReceiptIds.size > 0 && (
+          <Card className="bg-primary/5 border-primary">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <Badge variant="default">{selectedReceiptIds.size} selected</Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowCategoryDialog(true)}
+                    className="flex items-center gap-2"
+                    data-testid="button-bulk-categorize"
+                  >
+                    <Tag className="h-4 w-4" />
+                    Categorize
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setShowDeleteDialog(true)}
+                    className="flex items-center gap-2"
+                    data-testid="button-bulk-delete"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Receipts List */}
@@ -281,21 +513,92 @@ export default function ReceiptsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2 }}
               >
-                <EnhancedReceiptCard
-                  receipt={{
-                    id: receipt.id,
-                    storeName: receipt.storeName || 'Unknown Store',
-                    total: parseFloat(receipt.total),
-                    date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
-                    category: receipt.category || 'other'
-                  }}
-                  onClick={() => handleReceiptClick(receipt.id)}
-                  showCategory={categoryFilter === 'all'}
-                />
+                <div className="flex items-center gap-3" data-testid={`receipt-${receipt.id}`}>
+                  {selectionMode && (
+                    <Checkbox
+                      checked={selectedReceiptIds.has(receipt.id)}
+                      onCheckedChange={() => toggleReceiptSelection(receipt.id)}
+                      className="mt-1"
+                      data-testid={`checkbox-receipt-${receipt.id}`}
+                    />
+                  )}
+                  <div className="flex-1">
+                    <EnhancedReceiptCard
+                      receipt={{
+                        id: receipt.id,
+                        storeName: receipt.storeName || 'Unknown Store',
+                        total: parseFloat(receipt.total),
+                        date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
+                        category: receipt.category || 'other'
+                      }}
+                      onClick={() => handleReceiptClick(receipt.id)}
+                      showCategory={categoryFilter === 'all'}
+                    />
+                  </div>
+                </div>
               </motion.div>
             ))}
           </div>
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Selected Receipts?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete {selectedReceiptIds.size} receipt(s)? 
+                This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleBulkDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="button-confirm-delete"
+              >
+                Delete {selectedReceiptIds.size} Receipt(s)
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Categorize Dialog */}
+        <AlertDialog open={showCategoryDialog} onOpenChange={setShowCategoryDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Categorize Selected Receipts</AlertDialogTitle>
+              <AlertDialogDescription>
+                Choose a category for {selectedReceiptIds.size} receipt(s):
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="py-4">
+              <Select value={bulkCategory} onValueChange={setBulkCategory}>
+                <SelectTrigger data-testid="select-bulk-category">
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {EXPENSE_CATEGORIES.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-categorize">Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleBulkCategorize}
+                disabled={!bulkCategory}
+                data-testid="button-confirm-categorize"
+              >
+                Categorize {selectedReceiptIds.size} Receipt(s)
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SpacingContainer>
     </PageLayout>
   );

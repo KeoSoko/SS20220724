@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { PageLayout } from "@/components/page-layout";
+import { SubscriptionGuard } from "@/lib/subscription-guard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -280,11 +281,12 @@ export default function BusinessHubPage() {
   const isLoading = loadingClients || loadingQuotations || loadingInvoices;
 
   return (
-    <PageLayout
-      title="Business Hub"
-      subtitle="Manage clients, quotations, and invoices"
-      showBackButton={true}
-    >
+    <SubscriptionGuard featureName="Business Hub">
+      <PageLayout
+        title="Business Hub"
+        subtitle="Manage clients, quotations, and invoices"
+        showBackButton={true}
+      >
       <div className="p-6 space-y-6">
         {/* Quick Actions */}
         <Card>
@@ -819,5 +821,6 @@ export default function BusinessHubPage() {
         </DialogContent>
       </Dialog>
     </PageLayout>
+    </SubscriptionGuard>
   );
 }

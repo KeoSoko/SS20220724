@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useEffect, useState, useRef } from "react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { PageLayout } from "@/components/page-layout";
+import { SubscriptionGuard } from "@/lib/subscription-guard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -258,11 +259,12 @@ export default function BusinessProfilePage() {
   }
 
   return (
-    <PageLayout
-      title="Business Profile"
-      subtitle="Manage your business information for quotations and invoices"
-      showBackButton={true}
-    >
+    <SubscriptionGuard featureName="Business Profile">
+      <PageLayout
+        title="Business Profile"
+        subtitle="Manage your business information for quotations and invoices"
+        showBackButton={true}
+      >
       <div className="p-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -636,5 +638,6 @@ export default function BusinessProfilePage() {
         </Form>
       </div>
     </PageLayout>
+    </SubscriptionGuard>
   );
 }

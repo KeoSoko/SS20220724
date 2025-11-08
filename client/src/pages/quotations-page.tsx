@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { PageLayout } from "@/components/page-layout";
+import { SubscriptionGuard } from "@/lib/subscription-guard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -329,11 +330,12 @@ export default function QuotationsPage() {
     : null;
 
   return (
-    <PageLayout
-      title="Quotations"
-      subtitle="Manage your quotations"
-      showBackButton={true}
-    >
+    <SubscriptionGuard featureName="Quotations">
+      <PageLayout
+        title="Quotations"
+        subtitle="Manage your quotations"
+        showBackButton={true}
+      >
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">All Quotations</h2>
@@ -733,5 +735,6 @@ export default function QuotationsPage() {
         </Dialog>
       </div>
     </PageLayout>
+    </SubscriptionGuard>
   );
 }

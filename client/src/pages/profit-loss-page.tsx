@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { PageLayout } from '@/components/page-layout';
+import { SubscriptionGuard } from '@/lib/subscription-guard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -336,11 +337,12 @@ export default function ProfitLossPage() {
   const profitIsPositive = plData.profit.netProfit >= 0;
 
   return (
-    <PageLayout
-      title="Profit & Loss Statement"
-      subtitle={plData.period}
-      showBackButton={true}
-    >
+    <SubscriptionGuard featureName="Profit & Loss Reports">
+      <PageLayout
+        title="Profit & Loss Statement"
+        subtitle={plData.period}
+        showBackButton={true}
+      >
       <div className="space-y-6">
         {/* Controls */}
         <Card>
@@ -625,5 +627,6 @@ export default function ProfitLossPage() {
         </div>
       </div>
     </PageLayout>
+    </SubscriptionGuard>
   );
 }

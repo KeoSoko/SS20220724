@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { PageLayout } from "@/components/page-layout";
+import { SubscriptionGuard } from "@/lib/subscription-guard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -382,11 +383,12 @@ export default function InvoicesPage() {
     : 0;
 
   return (
-    <PageLayout
-      title="Invoices"
-      subtitle="Manage your invoices and payments"
-      showBackButton={true}
-    >
+    <SubscriptionGuard featureName="Invoices">
+      <PageLayout
+        title="Invoices"
+        subtitle="Manage your invoices and payments"
+        showBackButton={true}
+      >
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">All Invoices</h2>
@@ -928,5 +930,6 @@ export default function InvoicesPage() {
         </Dialog>
       </div>
     </PageLayout>
+    </SubscriptionGuard>
   );
 }

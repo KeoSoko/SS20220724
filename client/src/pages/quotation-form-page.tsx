@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { PageLayout } from "@/components/page-layout";
+import { SubscriptionGuard } from "@/lib/subscription-guard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -208,11 +209,12 @@ export default function QuotationFormPage() {
   };
 
   return (
-    <PageLayout
-      title={isEditing ? "Edit Quotation" : "Create Quotation"}
-      subtitle={isEditing ? "Update quotation details" : "Create a new quotation"}
-      showBackButton={true}
-    >
+    <SubscriptionGuard featureName="Quotations">
+      <PageLayout
+        title={isEditing ? "Edit Quotation" : "Create Quotation"}
+        subtitle={isEditing ? "Update quotation details" : "Create a new quotation"}
+        showBackButton={true}
+      >
       <div className="p-6">
         <Form {...form}>
           <form className="space-y-6">
@@ -490,5 +492,6 @@ export default function QuotationFormPage() {
         </Form>
       </div>
     </PageLayout>
+    </SubscriptionGuard>
   );
 }

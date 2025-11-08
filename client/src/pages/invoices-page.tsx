@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -31,6 +32,13 @@ const paymentFormSchema = z.object({
 });
 
 type PaymentFormData = z.infer<typeof paymentFormSchema>;
+
+const emailFormSchema = z.object({
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Message body is required"),
+});
+
+type EmailFormData = z.infer<typeof emailFormSchema>;
 
 const formatCurrency = (amount: string | number) => {
   const numAmount = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -89,6 +97,14 @@ export default function InvoicesPage() {
       paymentMethod: "",
       reference: "",
       notes: "",
+    },
+  });
+
+  const emailForm = useForm<EmailFormData>({
+    resolver: zodResolver(emailFormSchema),
+    defaultValues: {
+      subject: "",
+      body: "",
     },
   });
 
@@ -190,7 +206,7 @@ export default function InvoicesPage() {
   };
 
   const sendInvoiceMutation = useMutation({
-    mutationFn: async (invoiceId: number) => {
+    mutationFn: async ({ invoiceId, subject, body }: { invoiceId: number; subject: string; body: string }) => {
       const token = localStorage.getItem('auth_token');
       if (!token) throw new Error('Not authenticated');
       
@@ -200,6 +216,7 @@ export default function InvoicesPage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ subject, body }),
       });
 
       if (!response.ok) {
@@ -227,12 +244,6 @@ export default function InvoicesPage() {
     },
   });
 
-  const handleSendInvoice = (invoiceId: number) => {
-    if (confirm("Send this invoice to the client via email?")) {
-      sendInvoiceMutation.mutate(invoiceId);
-    }
-  };
-
   const previewEmailMutation = useMutation({
     mutationFn: async (invoiceId: number) => {
       const token = localStorage.getItem('auth_token');
@@ -254,6 +265,10 @@ export default function InvoicesPage() {
     },
     onSuccess: (data) => {
       setEmailPreviewData(data);
+      emailForm.reset({
+        subject: data.subject,
+        body: data.body,
+      });
       setIsEmailPreviewDialogOpen(true);
     },
     onError: (error: Error) => {
@@ -825,62 +840,90 @@ export default function InvoicesPage() {
         <Dialog open={isEmailPreviewDialogOpen} onOpenChange={setIsEmailPreviewDialogOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-email-preview">
             <DialogHeader>
-              <DialogTitle>Email Preview</DialogTitle>
+              <DialogTitle>Review & Edit Email</DialogTitle>
               <DialogDescription>
-                Preview the AI-generated email before sending to your client
+                Review and edit the AI-generated email before sending to your client
               </DialogDescription>
             </DialogHeader>
             {emailPreviewData && (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-500">From:</label>
-                  <p className="text-sm mt-1">{emailPreviewData.from}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Reply-To:</label>
-                  <p className="text-sm mt-1">{emailPreviewData.replyTo || 'Not set'}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">To:</label>
-                  <p className="text-sm mt-1">{emailPreviewData.to}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Subject:</label>
-                  <p className="text-sm mt-1 font-semibold">{emailPreviewData.subject}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Message:</label>
-                  <div className="text-sm mt-1 p-4 bg-gray-50 rounded border whitespace-pre-wrap">
-                    {emailPreviewData.body}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Attachment:</label>
-                  <p className="text-sm mt-1">{emailPreviewData.attachmentName}</p>
-                </div>
-              </div>
-            )}
-            <DialogFooter className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsEmailPreviewDialogOpen(false)}
-                data-testid="button-close-preview"
-              >
-                Close
-              </Button>
-              <Button
-                onClick={() => {
+              <Form {...emailForm}>
+                <form onSubmit={emailForm.handleSubmit((data) => {
                   if (selectedInvoice) {
-                    sendInvoiceMutation.mutate(selectedInvoice.id);
+                    sendInvoiceMutation.mutate({
+                      invoiceId: selectedInvoice.id,
+                      subject: data.subject,
+                      body: data.body,
+                    });
                   }
-                }}
-                disabled={sendInvoiceMutation.isPending}
-                data-testid="button-send-from-preview"
-              >
-                <Mail className="h-4 w-4 mr-2" />
-                {sendInvoiceMutation.isPending ? "Sending..." : "Send Email"}
-              </Button>
-            </DialogFooter>
+                })} className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">From:</label>
+                    <p className="text-sm mt-1">{emailPreviewData.from}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Reply-To:</label>
+                    <p className="text-sm mt-1">{emailPreviewData.replyTo || 'Not set'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">To:</label>
+                    <p className="text-sm mt-1">{emailPreviewData.to}</p>
+                  </div>
+                  <FormField
+                    control={emailForm.control}
+                    name="subject"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Subject</FormLabel>
+                        <FormControl>
+                          <Input {...field} data-testid="input-email-subject" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={emailForm.control}
+                    name="body"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Message</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            rows={12}
+                            className="font-mono text-sm"
+                            data-testid="textarea-email-body"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Attachment:</label>
+                    <p className="text-sm mt-1">{emailPreviewData.attachmentName}</p>
+                  </div>
+                  <DialogFooter className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsEmailPreviewDialogOpen(false)}
+                      data-testid="button-close-preview"
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={sendInvoiceMutation.isPending}
+                      data-testid="button-send-from-preview"
+                    >
+                      <Mail className="h-4 w-4 mr-2" />
+                      {sendInvoiceMutation.isPending ? "Sending..." : "Send Email"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            )}
           </DialogContent>
         </Dialog>
       </div>

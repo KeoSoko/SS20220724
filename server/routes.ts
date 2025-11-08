@@ -4782,6 +4782,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       const invoiceId = parseInt(req.params.id, 10);
+      const { subject, body } = req.body;
 
       if (isNaN(invoiceId)) {
         return res.status(400).json({ error: "Invalid invoice ID" });
@@ -4836,8 +4837,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate PDF
       const pdfBuffer = await exportService.exportInvoiceToPDF(invoice, client, items, payments, businessProfile);
 
-      // Send email
-      const emailSent = await emailService.sendInvoice(invoice, client, businessProfile, items, pdfBuffer);
+      // Send email with custom subject and body if provided
+      const emailSent = await emailService.sendInvoice(
+        invoice, 
+        client, 
+        businessProfile, 
+        items, 
+        pdfBuffer,
+        subject,
+        body
+      );
 
       if (!emailSent) {
         return res.status(500).json({ error: "Failed to send email" });

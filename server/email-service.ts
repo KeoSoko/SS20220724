@@ -635,7 +635,9 @@ ${aiMessage}
     client: Client,
     businessProfile: BusinessProfile | null,
     lineItems: LineItem[],
-    pdfBuffer: Buffer
+    pdfBuffer: Buffer,
+    customSubject?: string,
+    customBody?: string
   ): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
       console.error("Cannot send invoice - SENDGRID_API_KEY not configured");
@@ -653,23 +655,32 @@ ${aiMessage}
       const balance = (parseFloat(invoice.total) - parseFloat(invoice.amountPaid)).toFixed(2);
       const isPaid = parseFloat(balance) <= 0;
 
-      // Generate AI-powered email content
-      const emailContext = {
-        documentType: 'invoice' as const,
-        documentNumber: invoice.invoiceNumber,
-        clientName: client.name,
-        total: `R ${parseFloat(invoice.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
-        businessName,
-        dueDate: new Date(invoice.dueDate),
-        amountPaid: `R ${parseFloat(invoice.amountPaid).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
-        amountOutstanding: `R ${parseFloat(balance).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
-        isNewClient: false, // Could enhance with client history check
-      };
+      // Use custom subject and body if provided, otherwise generate AI content
+      let subject: string;
+      let aiMessage: string;
 
-      const [subject, aiMessage] = await Promise.all([
-        aiEmailAssistant.generateSubjectLine(emailContext),
-        aiEmailAssistant.draftEmailMessage(emailContext),
-      ]);
+      if (customSubject && customBody) {
+        subject = customSubject;
+        aiMessage = customBody;
+      } else {
+        // Generate AI-powered email content
+        const emailContext = {
+          documentType: 'invoice' as const,
+          documentNumber: invoice.invoiceNumber,
+          clientName: client.name,
+          total: `R ${parseFloat(invoice.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+          businessName,
+          dueDate: new Date(invoice.dueDate),
+          amountPaid: `R ${parseFloat(invoice.amountPaid).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+          amountOutstanding: `R ${parseFloat(balance).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+          isNewClient: false, // Could enhance with client history check
+        };
+
+        [subject, aiMessage] = await Promise.all([
+          aiEmailAssistant.generateSubjectLine(emailContext),
+          aiEmailAssistant.draftEmailMessage(emailContext),
+        ]);
+      }
       
       // Format due date
       const dueDate = new Date(invoice.dueDate).toLocaleDateString('en-ZA', {

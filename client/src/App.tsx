@@ -38,6 +38,7 @@ import { SubscriptionBanner } from "@/components/subscription-banner";
 import EmailTrackingPage from "@/pages/email-tracking-page";
 import BusinessHubPage from "@/pages/business-hub-page";
 import BusinessProfilePage from "@/pages/business-profile-page";
+import ProfitLossPage from "@/pages/profit-loss-page";
 import ClientsPage from "@/pages/clients-page";
 import QuotationsPage from "@/pages/quotations-page";
 import QuotationFormPage from "@/pages/quotation-form-page";
@@ -72,6 +73,7 @@ function Router() {
       <AdminRoute path="/admin/email-tracking" component={EmailTrackingPage} />
       <ProtectedRoute path="/business-hub" component={BusinessHubPage} />
       <ProtectedRoute path="/business-profile" component={BusinessProfilePage} />
+      <ProtectedRoute path="/profit-loss" component={ProfitLossPage} />
       <ProtectedRoute path="/clients" component={ClientsPage} />
       <ProtectedRoute path="/quotations" component={QuotationsPage} />
       <ProtectedRoute path="/quotations/new" component={QuotationFormPage} />

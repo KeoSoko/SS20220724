@@ -49,6 +49,7 @@ import { aiEmailAssistant } from "./ai-email-assistant";
 import { recurringExpenseService } from "./recurring-expense-service";
 import { billingService } from "./billing-service";
 import { smartReminderService } from "./smart-reminder-service";
+import { profitLossService } from "./profit-loss-service";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
 import { log } from "./vite";
 import { and, asc, eq, gte, lt, lte, sql } from "drizzle-orm";
@@ -2109,6 +2110,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error getting merchant analysis: ${error.message}`, 'express');
       res.status(500).json({ error: "Failed to get merchant analysis" });
+    }
+  });
+
+  // ===== PROFIT & LOSS ENDPOINTS =====
+  
+  // Get Profit & Loss data
+  app.get("/api/profit-loss", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    
+    try {
+      const userId = getUserId(req);
+      const period = req.query.period as string || 'monthly'; // monthly, quarterly, yearly, custom
+      const year = req.query.year ? parseInt(req.query.year as string) : undefined;
+      const month = req.query.month !== undefined ? parseInt(req.query.month as string) : undefined;
+      const quarter = req.query.quarter ? parseInt(req.query.quarter as string) : undefined;
+      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+      
+      let profitLossData;
+      
+      switch (period) {
+        case 'monthly':
+          profitLossData = await profitLossService.getMonthlyProfitLoss(userId, year, month);
+          break;
+        case 'quarterly':
+          profitLossData = await profitLossService.getQuarterlyProfitLoss(userId, year, quarter);
+          break;
+        case 'yearly':
+          profitLossData = await profitLossService.getYearlyProfitLoss(userId, year);
+          break;
+        case 'custom':
+          if (!startDate || !endDate) {
+            return res.status(400).json({ error: "Start date and end date required for custom period" });
+          }
+          profitLossData = await profitLossService.getProfitLoss(userId, startDate, endDate);
+          break;
+        default:
+          profitLossData = await profitLossService.getMonthlyProfitLoss(userId);
+      }
+      
+      res.json(profitLossData);
+    } catch (error: any) {
+      log(`Error getting profit & loss data: ${error.message}`, 'express');
+      res.status(500).json({ error: "Failed to get profit & loss data" });
     }
   });
 

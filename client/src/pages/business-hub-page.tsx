@@ -98,6 +98,23 @@ export default function BusinessHubPage() {
     queryKey: ["/api/business-hub/dashboard-stats"],
   });
 
+  // Fetch current month P&L data for summary widget
+  const { data: plData } = useQuery({
+    queryKey: ['/api/profit-loss', { period: 'monthly' }],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const params = new URLSearchParams({ period: 'monthly' });
+      const response = await fetch(`/api/profit-loss?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!response.ok) throw new Error('Failed to fetch P&L');
+      return response.json();
+    }
+  });
+
   const { data: preDueReminders = [], isLoading: loadingPreDueReminders } = useQuery<ReminderSuggestion[]>({
     queryKey: ["/api/business-hub/pre-due-reminders"],
   });
@@ -306,12 +323,18 @@ export default function BusinessHubPage() {
                   Business Profile
                 </Button>
               </Link>
+              <Link href="/profit-loss">
+                <Button variant="outline" data-testid="button-profit-loss">
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  P&L Report
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>
 
         {/* Sales Report Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Link href="/clients" className="no-underline">
             <Card data-testid="stat-total-clients" className="cursor-pointer hover:bg-gray-50 transition-colors">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -381,6 +404,29 @@ export default function BusinessHubPage() {
               </p>
             </CardContent>
           </Card>
+
+          <Link href="/profit-loss" className="no-underline">
+            <Card data-testid="stat-net-profit" className="cursor-pointer hover:bg-gray-50 transition-colors">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {!plData?.profit ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className={`text-2xl font-bold ${parseFloat(plData.profit.netProfit) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(plData.profit.netProfit)}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {plData.profit.profitMargin}% margin
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </Link>
         </div>
 
         {/* Pre-Due Reminders Section */}

@@ -12,11 +12,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Upload, X, Image as ImageIcon } from "lucide-react";
+import { Save, Upload, X, Image as ImageIcon, CheckCircle, AlertCircle, Mail } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import type { BusinessProfile } from "@shared/schema";
 import { format } from "date-fns";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const businessProfileSchema = z.object({
   companyName: z.string().min(1, "Company name is required"),
@@ -46,10 +48,22 @@ export default function BusinessProfilePage() {
   const { user } = useAuth();
   const [logoPreview, setLogoPreview] = useState<string>("");
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isVerificationDialogOpen, setIsVerificationDialogOpen] = useState(false);
+  const [verificationInstructions, setVerificationInstructions] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: businessProfile, isLoading } = useQuery<BusinessProfile>({
     queryKey: ["/api/business-profile"],
+    retry: false,
+  });
+
+  // Query email verification status
+  const { data: emailVerification, refetch: refetchVerification } = useQuery<{
+    isVerified: boolean;
+    email: string;
+  }>({
+    queryKey: ["/api/business-email/status"],
+    enabled: !!businessProfile?.email,
     retry: false,
   });
 
@@ -168,6 +182,48 @@ export default function BusinessProfilePage() {
       toast({
         title: "Success",
         description: "Logo removed successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const initiateVerificationMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/business-email/verify");
+    },
+    onSuccess: (data: any) => {
+      setVerificationInstructions(data.message);
+      setIsVerificationDialogOpen(true);
+      toast({
+        title: "Verification Initiated",
+        description: "Check SendGrid for verification instructions",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const markVerifiedMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/business-email/mark-verified");
+    },
+    onSuccess: () => {
+      refetchVerification();
+      setIsVerificationDialogOpen(false);
+      toast({
+        title: "Success",
+        description: "Email verified successfully! You can now send invoices and quotations.",
       });
     },
     onError: (error: Error) => {
@@ -428,10 +484,44 @@ export default function BusinessProfilePage() {
                     name="email"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <Input type="email" {...field} data-testid="input-email" />
-                        </FormControl>
+                        <FormLabel className="flex items-center gap-2">
+                          Email
+                          {emailVerification && (
+                            emailVerification.isVerified ? (
+                              <Badge variant="default" className="bg-green-600 text-white">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Verified
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive">
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                Not Verified
+                              </Badge>
+                            )
+                          )}
+                        </FormLabel>
+                        <div className="flex gap-2">
+                          <FormControl>
+                            <Input type="email" {...field} data-testid="input-email" />
+                          </FormControl>
+                          {businessProfile?.email && !emailVerification?.isVerified && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => initiateVerificationMutation.mutate()}
+                              disabled={initiateVerificationMutation.isPending}
+                              data-testid="button-verify-email"
+                            >
+                              <Mail className="h-4 w-4 mr-2" />
+                              Verify
+                            </Button>
+                          )}
+                        </div>
+                        <FormDescription>
+                          {!emailVerification?.isVerified && businessProfile?.email && (
+                            "You must verify this email before sending invoices or quotations"
+                          )}
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -632,6 +722,52 @@ export default function BusinessProfilePage() {
             </div>
           </form>
         </Form>
+
+        {/* Email Verification Dialog */}
+        <Dialog open={isVerificationDialogOpen} onOpenChange={setIsVerificationDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Email Verification</DialogTitle>
+              <DialogDescription>
+                Follow these steps to verify your business email
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  {verificationInstructions || "A verification request has been sent to SendGrid. Please complete the verification process in your SendGrid account."}
+                </AlertDescription>
+              </Alert>
+              <div className="space-y-2 text-sm">
+                <p className="font-semibold">Next Steps:</p>
+                <ol className="list-decimal list-inside space-y-2 text-gray-600">
+                  <li>Check your email inbox for a verification link from SendGrid</li>
+                  <li>Click the verification link in the email</li>
+                  <li>Complete the verification process on SendGrid</li>
+                  <li>Return here and click "I've Verified" below</li>
+                </ol>
+              </div>
+            </div>
+            <DialogFooter className="flex gap-2 sm:justify-between">
+              <Button
+                variant="outline"
+                onClick={() => setIsVerificationDialogOpen(false)}
+                data-testid="button-close-verification-dialog"
+              >
+                Close
+              </Button>
+              <Button
+                onClick={() => markVerifiedMutation.mutate()}
+                disabled={markVerifiedMutation.isPending}
+                data-testid="button-mark-verified"
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                {markVerifiedMutation.isPending ? "Checking..." : "I've Verified"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PageLayout>
   );

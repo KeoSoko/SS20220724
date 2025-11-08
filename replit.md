@@ -7,6 +7,13 @@ Simple Slips is an AI-powered receipt management system for the South African ma
 Preferred communication style: Simple, everyday language.
 
 ## Recent Updates (November 2025)
+### Payment Failure Handling (November 8, 2025)
+- **Automatic Subscription Cancellation**: When Paystack disables a subscription due to failed payments, the system now automatically cancels the user's subscription in the database
+- **Payment Failure Notifications**: Users receive email notifications when payments fail or subscriptions are cancelled
+- **Robust Webhook Processing**: Enhanced Paystack webhook handlers properly find users by email and update subscription status
+- **Email Alerts**: Comprehensive email templates for payment failures and subscription cancellations with clear next steps
+
+## Recent Updates (November 2025)
 ### Business Hub Feature
 - Added comprehensive quotation and invoicing system for solopreneurs and freelancers
 - Replaced "Tax Pros" navigation with "Business Hub" for better feature alignment

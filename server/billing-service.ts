@@ -941,6 +941,26 @@ export class BillingService {
   }
 
   /**
+   * Record payment failure (public method for webhook handlers)
+   */
+  async recordPaymentFailure(
+    userId: number, 
+    reference: string, 
+    reason: string,
+    amount?: number,
+    currency?: string
+  ): Promise<void> {
+    await this.logBillingEvent(userId, 'payment_failed', {
+      reference,
+      reason,
+      amount,
+      currency,
+      timestamp: new Date().toISOString()
+    });
+    log(`Payment failure recorded for user ${userId}: ${reference} - ${reason}`, 'billing');
+  }
+
+  /**
    * Log billing event for auditing with enhanced error handling
    */
   private async logBillingEvent(userId: number, eventType: string, eventData: any, retryCount: number = 0): Promise<void> {

@@ -117,9 +117,32 @@ async function handlePaystackSubscriptionDisable(data: any) {
   try {
     log(`Paystack subscription disabled: ${data.subscription_code}`, 'billing');
     
-    // Find user by subscription and disable - skip for now as getAllUsers not available
-    // TODO: Implement proper user lookup by subscription code
-    log(`Subscription disable webhook received for: ${data.subscription_code}`, 'billing');
+    // Find user by email from the customer data
+    const customerEmail = data.customer?.email;
+    if (!customerEmail) {
+      log(`No customer email found for disabled subscription: ${data.subscription_code}`, 'billing');
+      return;
+    }
+
+    const users = await storage.findUsersByEmail?.(customerEmail);
+    const user = users?.[0];
+    
+    if (!user) {
+      log(`No user found with email ${customerEmail} for disabled subscription`, 'billing');
+      return;
+    }
+
+    // Cancel the user's subscription
+    await billingService.cancelSubscription(user.id);
+    log(`Successfully cancelled subscription for user ${user.id} (${customerEmail}) via Paystack webhook`, 'billing');
+
+    // Send notification email about cancelled subscription
+    await emailService.sendPaymentFailureNotification(
+      user.email,
+      user.username,
+      'subscription_cancelled',
+      'Your subscription has been cancelled due to payment issues. Please update your payment method to continue using premium features.'
+    );
   } catch (error) {
     log(`Error handling Paystack subscription disable: ${error}`, 'billing');
   }
@@ -129,16 +152,40 @@ async function handlePaystackPaymentFailed(data: any) {
   try {
     log(`Paystack payment failed: ${data.reference}`, 'billing');
     
-    // Log billing event for failed payment
-    const users = await storage.getAllUsers();
-    const user = users.find(u => u.email === data.customer?.email);
-    
-    if (user && billingService.logBillingEvent) {
-      await billingService.logBillingEvent(user.id, 'payment_failed', {
-        reference: data.reference,
-        reason: data.gateway_response || 'Payment failed'
-      });
+    // Find user by email
+    const customerEmail = data.customer?.email;
+    if (!customerEmail) {
+      log(`No customer email found for failed payment: ${data.reference}`, 'billing');
+      return;
     }
+
+    const users = await storage.findUsersByEmail?.(customerEmail);
+    const user = users?.[0];
+    
+    if (!user) {
+      log(`No user found with email ${customerEmail} for failed payment`, 'billing');
+      return;
+    }
+
+    // Log billing event for failed payment
+    await billingService.recordPaymentFailure(
+      user.id,
+      data.reference,
+      data.gateway_response || 'Payment failed',
+      data.amount,
+      data.currency
+    );
+
+    // Send notification email about payment failure
+    const failureReason = data.gateway_response || 'Your payment could not be processed';
+    await emailService.sendPaymentFailureNotification(
+      user.email,
+      user.username,
+      'payment_failed',
+      `${failureReason}. Please update your payment method to ensure uninterrupted service.`
+    );
+
+    log(`Payment failure notification sent to user ${user.id} (${customerEmail})`, 'billing');
   } catch (error) {
     log(`Error handling Paystack payment failed: ${error}`, 'billing');
   }

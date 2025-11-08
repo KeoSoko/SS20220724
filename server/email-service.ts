@@ -235,6 +235,119 @@ Security Notice: This link expires in 1 hour. If you didn't request this reset, 
   }
 
   /**
+   * Send payment failure notification
+   */
+  async sendPaymentFailureNotification(
+    email: string,
+    username: string,
+    notificationType: 'payment_failed' | 'subscription_cancelled',
+    message: string
+  ): Promise<boolean> {
+    if (!process.env.SENDGRID_API_KEY) {
+      console.error("Cannot send payment failure notification - SENDGRID_API_KEY not configured");
+      return false;
+    }
+
+    try {
+      const subject = notificationType === 'subscription_cancelled' 
+        ? '⚠️ Your Simple Slips subscription has been cancelled'
+        : '⚠️ Payment failed for your Simple Slips subscription';
+
+      const heading = notificationType === 'subscription_cancelled'
+        ? 'Subscription Cancelled'
+        : 'Payment Failed';
+
+      await mailService.send({
+        to: email,
+        from: {
+          email: this.fromEmail,
+          name: 'Simple Slips Billing'
+        },
+        replyTo: {
+          email: 'keo@nine28.co.za',
+          name: 'Simple Slips Support Team'
+        },
+        subject,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #0073AA; margin: 0;">Simple Slips</h1>
+              <p style="color: #666; font-size: 16px;">Billing Notification</p>
+            </div>
+            
+            <div style="background: #fff3cd; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #ffc107;">
+              <h2 style="color: #856404; margin-top: 0;">${heading}</h2>
+              <p style="color: #856404; margin: 0;">
+                Hi ${username},<br><br>
+                ${message}
+              </p>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
+              <h3 style="color: #333; margin-top: 0;">What happens next?</h3>
+              <ul style="color: #666; line-height: 1.8;">
+                ${notificationType === 'subscription_cancelled' 
+                  ? `
+                    <li>Your access to premium features has been disabled</li>
+                    <li>Business Hub (quotations, invoices, P&L reports) is no longer accessible</li>
+                    <li>You can resubscribe anytime to restore full access</li>
+                  `
+                  : `
+                    <li>We'll automatically retry the payment in a few days</li>
+                    <li>You can update your payment method now to avoid service interruption</li>
+                    <li>Your access remains active for now, but may be suspended after multiple failed attempts</li>
+                  `
+                }
+              </ul>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${this.appUrl}/subscription" 
+                 style="background: #0073AA; color: white; padding: 14px 30px; 
+                        text-decoration: none; border-radius: 6px; display: inline-block;
+                        font-weight: bold;">
+                ${notificationType === 'subscription_cancelled' ? 'Resubscribe Now' : 'Update Payment Method'}
+              </a>
+            </div>
+            
+            <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+            <p style="color: #999; font-size: 12px;">
+              Need help? Contact our support team at keo@nine28.co.za
+            </p>
+          </div>
+        `,
+        text: `
+${heading}
+
+Hi ${username},
+
+${message}
+
+What happens next?
+${notificationType === 'subscription_cancelled'
+  ? `- Your access to premium features has been disabled
+- Business Hub (quotations, invoices, P&L reports) is no longer accessible
+- You can resubscribe anytime to restore full access`
+  : `- We'll automatically retry the payment in a few days
+- You can update your payment method now to avoid service interruption
+- Your access remains active for now, but may be suspended after multiple failed attempts`
+}
+
+${notificationType === 'subscription_cancelled' ? 'Resubscribe' : 'Update your payment method'} at: ${this.appUrl}/subscription
+
+Need help? Contact support at keo@nine28.co.za
+        `
+      });
+
+      console.log(`Payment failure notification sent to ${email}`);
+      return true;
+    } catch (error) {
+      console.error('Failed to send payment failure notification:', error);
+      return false;
+    }
+  }
+
+  /**
    * Send receipt sharing notification
    */
   async sendReceiptShare(

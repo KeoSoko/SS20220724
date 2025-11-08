@@ -50,7 +50,7 @@ Transform your financial management with Simple Slips - the smart receipt tracki
 **Why Choose Simple Slips:**
 ✓ Built for South African tax guidelines and retailers (Source: www.sars.gov.za)
 ✓ Works offline - no internet required for scanning
-✓ Free 7-day trial, then only R99/month
+✓ Free 30-day trial, then only R49/month
 ✓ Professional tax reports in minutes
 ✓ 99.9% OCR accuracy rate
 ✓ Syncs across all your devices

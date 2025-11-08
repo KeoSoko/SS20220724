@@ -64,7 +64,7 @@ Transform your financial management with Simple Slips - the smart receipt tracki
 ✓ Built for South African tax guidelines and retailers
 ✓ Not affiliated with SARS - information for general guidance only
 ✓ Works offline - no internet required for scanning
-✓ Free 7-day trial, then only R99/month
+✓ Free 30-day trial, then only R49/month
 ✓ Professional tax reports in minutes
 ✓ 99.9% OCR accuracy rate
 ✓ Syncs across all your devices
@@ -77,10 +77,10 @@ Transform your financial management with Simple Slips - the smart receipt tracki
 
 Join thousands of South Africans already saving time and money with Simple Slips. Download now and get your financial life organized in minutes, not hours.
 
-Start your 7-day free trial today - no credit card required!
+Start your 30-day free trial today - no credit card required!
 
 ## Promotional Text (170 characters max)
-Smart receipt management for South African businesses. AI-powered scanning, tax compliance, and professional reports. 7-day free trial!
+Smart receipt management for South African businesses. AI-powered scanning, tax compliance, and professional reports. 30-day free trial!
 
 ## App Privacy Policy URL
 https://simpleslips.co.za/privacy
@@ -174,15 +174,15 @@ The app is designed specifically for South African users and provides substantia
 ### iOS App Pricing Strategy
 **Native iOS In-App Purchase Implementation**
 
-- **iOS App**: Free download with 7-day trial
-- **Subscription**: R99.00/month via Apple In-App Purchase
+- **iOS App**: Free download with 30-day trial
+- **Subscription**: R49.00/month via Apple In-App Purchase
 - **Apple Small Business Program**: 15% commission rate
 - **StoreKit Integration**: Native iOS billing experience
 
 ### In-App Purchases
-- Monthly Pro Subscription (R99.00)
-- Annual Pro Subscription (R990.00)
-- 7-day free trial included
+- Monthly Pro Subscription (R49.00)
+- Annual Pro Subscription (R490.00 - Save 2 months!)
+- 30-day free trial included
 
 ### Features Available
 - Full access to receipt scanning and management

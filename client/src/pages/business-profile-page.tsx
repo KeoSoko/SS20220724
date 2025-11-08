@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Upload, X, Image as ImageIcon, Mail, CheckCircle2, AlertCircle, Clock } from "lucide-react";
+import { Save, Upload, X, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import type { BusinessProfile } from "@shared/schema";
@@ -53,59 +53,6 @@ export default function BusinessProfilePage() {
     retry: false,
   });
 
-  // Email verification status query
-  const { data: emailVerificationStatus, isLoading: isLoadingEmailStatus } = useQuery<{
-    hasIdentity: boolean;
-    isVerified: boolean;
-    email: string | null;
-    verifiedAt: string | null;
-    lastError: string | null;
-  }>({
-    queryKey: ["/api/business-email/status"],
-    retry: false,
-  });
-
-  // Initiate email verification mutation
-  const initiateVerificationMutation = useMutation({
-    mutationFn: async (email: string) => {
-      return await apiRequest("POST", "/api/business-email/initiate-verification", { email });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/business-email/status"] });
-      toast({
-        title: "Verification Initiated",
-        description: "Please verify this email in SendGrid: Settings → Sender Authentication → Verify Single Sender",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Mark email as verified mutation
-  const markVerifiedMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest("POST", "/api/business-email/mark-verified");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/business-email/status"] });
-      toast({
-        title: "Email Verified",
-        description: "Your email is now verified! You can send quotations and invoices.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Verification Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
 
   // Set logo preview from existing profile
   useEffect(() => {
@@ -165,39 +112,10 @@ export default function BusinessProfilePage() {
         swiftCode: businessProfile.swiftCode || "",
       });
       
-      // If we auto-populated with login email, just update the form
-      // Don't save yet - wait for user to fill required fields and click save
-      // But do initiate verification check so it's ready when they save
-      if (!businessProfile.email && (businessProfile as any).loginEmail && emailToUse) {
-        // Trigger verification check in background
-        setTimeout(() => {
-          initiateVerificationMutation.mutate(emailToUse);
-          
-          // After initiating, test if it's already verified
-          setTimeout(() => {
-            markVerifiedMutation.mutate();
-          }, 1500);
-        }, 500);
-      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessProfile]);
 
-  // Auto-trigger email verification when email changes
-  useEffect(() => {
-    const subscription = form.watch((value, { name }) => {
-      if (name === "email" && value.email) {
-        const newEmail = value.email;
-        const verifiedEmail = emailVerificationStatus?.email;
-        
-        // Only trigger if email is valid and different from verified email
-        if (newEmail && newEmail !== verifiedEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
-          initiateVerificationMutation.mutate(newEmail);
-        }
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [form, emailVerificationStatus, initiateVerificationMutation]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: BusinessProfileFormData) => {
@@ -409,110 +327,6 @@ export default function BusinessProfilePage() {
               </CardContent>
             </Card>
 
-            {/* Email Sending Identity */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Mail className="h-5 w-5" />
-                  Email Sending Identity
-                </CardTitle>
-                <CardDescription>Verify your business email to send quotations and invoices to clients</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {isLoadingEmailStatus ? (
-                  <div className="text-sm text-muted-foreground">Loading verification status...</div>
-                ) : (
-                  <>
-                    {/* Current Email Display */}
-                    {businessProfile?.email && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-medium">Business Email</p>
-                            <p className="text-sm text-muted-foreground">{businessProfile.email}</p>
-                          </div>
-                          
-                          {/* Verification Status Badge */}
-                          {emailVerificationStatus?.isVerified ? (
-                            <Badge className="bg-green-500 hover:bg-green-600" data-testid="badge-verified">
-                              <CheckCircle2 className="h-3 w-3 mr-1" />
-                              Verified
-                            </Badge>
-                          ) : emailVerificationStatus?.hasIdentity ? (
-                            <Badge className="bg-yellow-500 hover:bg-yellow-600" data-testid="badge-pending">
-                              <Clock className="h-3 w-3 mr-1" />
-                              Pending Verification
-                            </Badge>
-                          ) : (
-                            <Badge variant="destructive" data-testid="badge-not-configured">
-                              <AlertCircle className="h-3 w-3 mr-1" />
-                              Not Configured
-                            </Badge>
-                          )}
-                        </div>
-
-                        {/* Verified Date */}
-                        {emailVerificationStatus?.isVerified && emailVerificationStatus?.verifiedAt && (
-                          <p className="text-xs text-green-600" data-testid="text-verified-date">
-                            Verified on {format(new Date(emailVerificationStatus.verifiedAt), "PPP")}
-                          </p>
-                        )}
-
-                        {/* Error Message */}
-                        {emailVerificationStatus?.lastError && !emailVerificationStatus?.isVerified && (
-                          <div className="rounded-md bg-destructive/10 p-3" data-testid="alert-error">
-                            <p className="text-xs text-destructive font-medium">Verification Error:</p>
-                            <p className="text-xs text-destructive">{emailVerificationStatus.lastError}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Instructions */}
-                    <div className="rounded-md bg-blue-50 dark:bg-blue-950 p-3 border border-blue-200 dark:border-blue-800">
-                      <p className="text-xs text-blue-900 dark:text-blue-100">
-                        <strong>Instructions:</strong> To send quotations/invoices, verify your email in SendGrid: 
-                        Settings → Sender Authentication → Verify Single Sender
-                      </p>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-2">
-                      {(!emailVerificationStatus?.hasIdentity || 
-                        (businessProfile?.email && businessProfile.email !== emailVerificationStatus?.email)) && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            const email = businessProfile?.email;
-                            if (email) {
-                              initiateVerificationMutation.mutate(email);
-                            }
-                          }}
-                          disabled={!businessProfile?.email || initiateVerificationMutation.isPending}
-                          data-testid="button-setup-verification"
-                        >
-                          <Mail className="h-4 w-4 mr-2" />
-                          {initiateVerificationMutation.isPending ? "Setting Up..." : "Set Up Email Verification"}
-                        </Button>
-                      )}
-
-                      {emailVerificationStatus?.hasIdentity && !emailVerificationStatus?.isVerified && (
-                        <Button
-                          type="button"
-                          onClick={() => markVerifiedMutation.mutate()}
-                          disabled={markVerifiedMutation.isPending}
-                          data-testid="button-test-verify"
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-2" />
-                          {markVerifiedMutation.isPending ? "Verifying..." : "Test & Verify Email"}
-                        </Button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
 
             {/* Company Information */}
             <Card>

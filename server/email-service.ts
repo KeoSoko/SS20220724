@@ -12,7 +12,7 @@ if (process.env.SENDGRID_API_KEY) {
 }
 
 export class EmailService {
-  private fromEmail = 'keo@nine28.co.za';
+  private fromEmail = 'notifications@simpleslips.co.za';
   private appUrl = process.env.APP_URL || 'https://simpleslips.app';
 
   /**
@@ -599,8 +599,8 @@ ${aiMessage}
       await mailService.send({
         to: client.email,
         from: {
-          email: businessProfile?.email || this.fromEmail,
-          name: businessName
+          email: this.fromEmail,
+          name: 'Simple Slips'
         },
         replyTo: businessProfile?.email ? {
           email: businessProfile.email,
@@ -772,8 +772,8 @@ ${aiMessage}
       await mailService.send({
         to: client.email,
         from: {
-          email: businessProfile?.email || this.fromEmail,
-          name: businessName
+          email: this.fromEmail,
+          name: 'Simple Slips'
         },
         replyTo: businessProfile?.email ? {
           email: businessProfile.email,

@@ -33,6 +33,17 @@ Preferred communication style: Simple, everyday language.
 - Implemented dual-mode search: AI semantic search (primary) with 60% threshold text search (fallback)
 - Improved search relevance to filter out irrelevant results while maintaining flexibility
 
+### Pre-Launch Enhancements (November 8, 2025)
+- **Final Pricing**: Standardized to R49/month with 30-day free trial across all platforms (Google Play, Apple App Store)
+- **Needs Review Filter**: Quick filter button on receipts page shows only receipts with confidence scores below 80% for easy verification
+- **Bulk Receipt Operations**: Complete batch operations system with:
+  - Selection mode toggle with checkboxes on each receipt
+  - Select All / Clear selection controls
+  - Bulk delete with confirmation dialog
+  - Bulk categorize with category selector
+  - Visual feedback with bulk action bar showing selected count
+  - Proper error handling and cache invalidation
+
 ## System Architecture
 The system is built as a full-stack TypeScript application within a monorepo structure, separating client, server, and shared code.
 

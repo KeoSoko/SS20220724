@@ -37,19 +37,32 @@
 
 ## SLIDE 3: THE SOLUTION
 
-### Simple Slips: Your AI Financial Assistant
+### Simple Slips: Your Complete Business Financial Platform
 
-**Snap. Save. Stay Audit-Ready.**
+**Snap. Invoice. Get Paid. Stay Audit-Ready.**
 
-One app that makes receipt management effortless:
+One app that replaces multiple expensive tools:
+
+**Expense Management:**
 - 📸 **Instant Capture** - Photo → Digitized receipt in seconds
 - 🤖 **AI Categorization** - Smart learning system knows your spending
 - 📊 **Real-Time Insights** - See exactly where your money goes
 - 🏛️ **Tax-Ready** - SARS-compliant records, always organized
+
+**Business Hub (NEW!):**
+- 💼 **Professional Invoicing** - Create & send branded invoices (INV-2025-001 format)
+- 📝 **Smart Quotations** - Build quotes that convert to invoices instantly
+- 🤝 **Client Management** - Organize all your customer relationships
+- 📧 **AI Email Assistant** - Automated professional emails with payment reminders
+- 💰 **Payment Tracking** - Monitor what's paid, overdue, and coming
+
+**AI-Powered Intelligence:**
 - 💬 **AI Tax Assistant** - Get instant advice on SA tax law
+- 🔔 **Smart Reminders** - Automated payment follow-ups with urgency detection
+- 🎯 **Payment Predictions** - AI forecasts client payment patterns
 
 **The Promise:**  
-Never lose another receipt. Never miss another deduction. Feel confident and in control.
+Complete financial control. Track every expense. Get paid faster. Feel confident and professional.
 
 ---
 
@@ -77,7 +90,9 @@ This isn't a tech founder who researched a market opportunity. This is a domain 
 
 ## SLIDE 5: HOW IT WORKS
 
-### AI-Powered Intelligence That Learns
+### Complete Financial Workflow Powered by AI
+
+**EXPENSE TRACKING:**
 
 **Step 1: Capture**
 - Native camera integration with smart image enhancement
@@ -93,38 +108,73 @@ This isn't a tech founder who researched a market opportunity. This is a domain 
 - Tracks your corrections and preferences
 - Learns merchant patterns specific to your spending
 - Gets more accurate with every receipt you process
-- Personalized to your business or lifestyle
 
-**Step 4: Insights & Action**
+**BUSINESS HUB WORKFLOW:**
+
+**Step 1: Client & Quote Management**
+- Add clients with full contact details and VAT numbers
+- Create professional quotations (QUO-2025-001 format)
+- Send quotes via email with one click
+- Track status: Draft → Sent → Accepted/Declined
+
+**Step 2: Invoice & Get Paid**
+- Convert accepted quotes to invoices instantly
+- Or create standalone invoices (INV-2025-001 format)
+- AI drafts professional emails with YOUR banking details
+- Review & edit before sending - complete control
+
+**Step 3: Smart Payment Tracking**
+- AI detects upcoming due dates (3-day pre-reminders)
+- Automatic overdue detection with progressive urgency
+- One-click payment reminders with escalating tone
+- Track partial payments and outstanding balances
+
+**UNIFIED INSIGHTS:**
 - Natural language search: *"How much did I spend on office supplies in Q1?"*
-- Real-time budget monitoring and alerts
+- Real-time budget monitoring for expenses
+- Cash flow visibility: money in vs. money out
 - AI Tax Assistant trained on SA tax law
-- One-click exports for tax filing
+- Complete PDF/CSV exports for accountants
 
 ---
 
 ## SLIDE 6: THE AI ADVANTAGE
 
-### Technology That Understands & Learns
+### Technology That Understands, Learns & Communicates
 
 **What Makes Simple Slips Different:**
 
 **Multi-Layer AI Architecture:**
+
+**For Expenses:**
 1. **Image Preprocessing** - Auto-enhance before OCR (40% better accuracy)
 2. **Intelligent Extraction** - Precise data capture with confidence scoring
 3. **Smart Categorization** - GPT-4o analyzes context, not just keywords
 4. **Continuous Learning** - Tracks corrections and merchant patterns
 
+**For Revenue (NEW!):**
+5. **AI Email Assistant** - GPT-4o drafts professional client emails
+   - Contextual messaging based on invoice status (new, reminder, overdue)
+   - Auto-includes YOUR banking details and contact information
+   - Fully editable before sending - you stay in control
+
+6. **Smart Payment Intelligence** - Predictive reminder system
+   - Pre-due reminders: Friendly 3-day heads-up before payment due
+   - Overdue escalation: Progressive urgency (3/7/7/14 day cadence)
+   - Tone adaptation: Friendly → Polite → Firm based on days overdue
+   - Payment pattern learning: AI predicts client payment behavior
+
 **Real-World Impact:**
-- Users spend **75% less time** on receipt management
-- **95% accuracy** on categorization after first month of use
-- Confidence scoring helps users focus only on receipts that need review
-- AI Tax Assistant provides instant answers to SA tax questions 24/7
+- **Expense Tracking:** 75% less time spent, 95% accuracy after one month
+- **Client Communications:** Professional emails in seconds, not hours
+- **Payment Collection:** Faster payments through automated smart reminders
+- **Cash Flow:** Visibility into what's coming vs. what's going out
+- **Tax Readiness:** AI Tax Assistant provides instant SA tax answers 24/7
 
 **The Result:**  
-Simple Slips doesn't just scan receipts—it understands them, learns from your behavior, and helps you make smarter financial decisions.
+Simple Slips doesn't just track money—it manages your entire financial workflow, communicates with clients professionally, and helps you get paid faster.
 
-*"It's like having a personal tax practitioner and bookkeeper in your pocket."*
+*"It's like having a personal tax practitioner, bookkeeper, and business assistant in your pocket."*
 
 ---
 
@@ -169,6 +219,9 @@ Make financial management accessible, effortless, and stress-free for every Sout
 **The Freelance Graphic Designer:**
 *"I used to dread tax season. Receipts everywhere, half of them faded. I'd spend entire weekends trying to piece together my expenses. Last year I probably missed R8,000 in deductions because I couldn't find receipts. This changes everything."*
 
+**The Marketing Consultant (NEW - Business Hub User):**
+*"I was paying R350/month for separate tools: QuickBooks for invoicing, Expensify for receipts, and still writing payment reminder emails manually. Simple Slips does it ALL for R49/month. The AI writes my invoice emails with my banking details already filled in—I just review and send. My clients are paying faster because the reminders go out automatically. I'm saving money AND getting paid quicker. Game changer."*
+
 **The Small Restaurant Owner:**
 *"Between managing staff, inventory, and customers, keeping track of supplier receipts was impossible. We were definitely overpaying on taxes. Now everything's organized automatically. My accountant is thrilled."*
 
@@ -176,7 +229,7 @@ Make financial management accessible, effortless, and stress-free for every Sout
 *"I recommend Simple Slips to every client now. It's built by someone who actually understands tax preparation. The confidence scoring is brilliant—my clients know exactly which receipts to double-check. It saves us both hours."*
 
 **The Working Parent:**
-*"As a consultant and mom, I don't have time for shoebox accounting. Simple Slips fits into my life—snap a receipt while waiting in the school pickup line, done. The AI even reminds me when I'm approaching budget limits."*
+*"As a consultant and mom, I don't have time for shoebox accounting. Simple Slips fits into my life—snap a receipt while waiting in the school pickup line, done. The AI even reminds me when I'm approaching budget limits. And now I can send professional invoices from the same app? Perfect."*
 
 **Common Themes:**
 - ⏱️ **Time Saved:** 8+ hours per month back in their lives
@@ -197,14 +250,40 @@ Make financial management accessible, effortless, and stress-free for every Sout
 - ✅ Comprehensive feature set tested and refined
 
 **Complete Feature Suite:**
+
+**Expense Management:**
 - ✅ AI-powered OCR with image preprocessing
 - ✅ Confidence scoring & smart learning system
 - ✅ Custom categories & budget management
-- ✅ AI Tax Assistant (SA regulations)
 - ✅ Recurring expense detection
+- ✅ Natural language search (semantic AI search)
 - ✅ PDF/CSV export & custom reports
-- ✅ Subscription system with 7-day free trials
+
+**Business Hub (Revenue Management):**
+- ✅ Professional quotation system (QUO-2025-001 numbering)
+- ✅ Complete invoicing platform (INV-2025-001 numbering)
+- ✅ Client relationship management (CRM)
+- ✅ One-click quote-to-invoice conversion
+- ✅ Payment tracking (partial & full payments)
+- ✅ Branded PDF generation with business logo
+- ✅ AI Email Assistant for client communications
+- ✅ Smart payment reminder system
+- ✅ Pre-due reminders (3-day heads-up)
+- ✅ Overdue detection with progressive urgency
+- ✅ Payment pattern predictions
+- ✅ Business profile & banking details management
+
+**AI Intelligence:**
+- ✅ AI Tax Assistant (SA tax regulations)
+- ✅ GPT-4o email drafting (contextual & professional)
+- ✅ Smart categorization with continuous learning
+- ✅ Payment behavior prediction
+
+**Platform & Security:**
+- ✅ Subscription system with 30-day free trials (R49/month)
 - ✅ GDPR-compliant data handling
+- ✅ Bank-level encryption & security
+- ✅ Email tracking (delivered, opened, clicked)
 
 **Security & Trust:**
 - ✅ Bank-level encryption
@@ -257,37 +336,52 @@ Make financial management accessible, effortless, and stress-free for every Sout
 
 ### Why Simple Slips Wins
 
-**1. Lived Experience Meets Technical Innovation**
+**1. Complete Financial Platform (Expense + Revenue)**
+- **Competitors** focus on EITHER receipt scanning OR invoicing—never both
+- **Simple Slips** is the ONLY app combining AI expense tracking with professional invoicing
+- Track what you spend AND get paid faster—complete financial visibility
+- One subscription (R49/month) replaces 3-4 separate tools (saving R300+/month)
+- Seamless cash flow: see money in vs. money out in real-time
+
+**2. Lived Experience Meets Technical Innovation**
 - 13 years as a tax practitioner who learned to code
 - Every feature designed from real-world tax preparation experience
 - Deep understanding of what makes records "audit-ready"
 - Not built from market research—built from lived expertise
+- Knows what freelancers and solopreneurs actually need (not what developers think they need)
 
-**2. AI That Actually Gets Smarter**
-- Smart learning system improves with every user interaction
-- Merchant pattern recognition across user base
-- Personalized categorization unique to each business
-- Network effects: more users = smarter system for everyone
+**3. AI That Actually Gets Smarter & Communicates**
+- **Smart Learning:** System improves with every user interaction
+- **Merchant Recognition:** Learns patterns across user base
+- **Email Intelligence:** AI drafts professional client communications with YOUR details
+- **Payment Predictions:** Forecasts when clients will pay based on behavior
+- **Network Effects:** More users = smarter system for everyone
 
-**3. Built for South Africa**
+**4. Built for South Africa**
 - AI trained specifically on SA tax regulations
+- Professional numbering (QUO-2025-001, INV-2025-001 format)
 - Paystack integration (local payment provider)
-- Pricing accessible to SA market (R99/month)
+- Pricing accessible to SA market (R49/month)
 - Understands the unique challenges of SA small businesses
 
-**4. Empowerment, Not Just Efficiency**
+**5. Empowerment, Not Just Efficiency**
 - Democratizes access to professional-grade financial tools
 - Levels the playing field for sole proprietors vs large firms
 - Removes barriers (cost, complexity, time) to proper financial management
-- Gives users confidence and control
+- Gives users confidence and control over their entire business
 
-**5. Complete Solution**
-- Not just scanning—budgets, analytics, AI tax advice, recurring expenses
-- One app replaces multiple expensive tools
-- End-to-end financial management in your pocket
+**6. Complete Solution with Zero Placeholders**
+- Not just scanning—complete expense + revenue management
+- AI Email Assistant uses YOUR actual banking details (no generic templates)
+- Professional PDF invoices with YOUR branding
+- Smart reminders that actually get you paid faster
+- One app to run your entire financial operation
 
 **The Moat:**  
-The combination of deep tax domain expertise + self-taught technical execution + SA market focus + continuous learning AI creates a competitive advantage that can't be easily replicated.
+Deep tax domain expertise + self-taught technical execution + SA market focus + dual-sided financial platform (expense + revenue) + continuous learning AI = an advantage competitors can't replicate.
+
+**Bottom Line:**  
+Every other tool solves half the problem. Simple Slips solves the whole thing.
 
 ---
 

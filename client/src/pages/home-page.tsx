@@ -789,9 +789,10 @@ function HomePage() {
                           variant="outline" 
                           className="h-auto p-4 flex flex-col gap-2 pt-[0px] pb-[0px] pl-[0px] pr-[0px]"
                           onClick={() => setIsTaxAIOpen(true)}
+                          data-testid="button-tax-info-chat"
                         >
                           <Calculator className="w-5 h-5" />
-                          <span className="font-medium text-[12px]">Tax AI Chat</span>
+                          <span className="font-medium text-[12px]">Tax Info</span>
                         </Button>
                         <Button variant="outline" className="h-auto p-4 flex flex-col gap-2" asChild>
                           <Link href="/analytics">
@@ -985,7 +986,7 @@ function HomePage() {
       {/* Mobile Navigation */}
       {isMobile && <MobileBottomNav />}
       
-      {/* Tax AI Assistant - Updated positioning */}
+      {/* Tax Information Bot - Updated positioning */}
       <TaxAIAssistant 
         isOpen={isTaxAIOpen} 
         onToggle={setIsTaxAIOpen} 

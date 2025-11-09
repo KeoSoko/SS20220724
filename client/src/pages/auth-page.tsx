@@ -44,6 +44,7 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [agreedToTaxDisclaimer, setAgreedToTaxDisclaimer] = useState(false);
   const [emailValidation, setEmailValidation] = useState<{
     status: 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
     message?: string;
@@ -259,6 +260,16 @@ export default function AuthPage() {
       setErrorDetails({
         title: "Terms Required",
         message: "Please agree to the terms and conditions before creating your account.",
+        type: 'general'
+      });
+      setShowErrorDialog(true);
+      return;
+    }
+
+    if (!agreedToTaxDisclaimer) {
+      setErrorDetails({
+        title: "Tax Disclaimer Required",
+        message: "Please acknowledge the tax information disclaimer before creating your account.",
         type: 'general'
       });
       setShowErrorDialog(true);
@@ -700,32 +711,53 @@ export default function AuthPage() {
                       )}
                     />
 
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="terms"
-                        checked={agreedToTerms}
-                        onCheckedChange={(checked) => setAgreedToTerms(checked === true)}
-                      />
-                      <label
-                        htmlFor="terms"
-                        className="text-sm text-gray-600 leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                      >
-                        I agree to the{" "}
-                        <a
-                          href="https://simpleslips.co.za/terms"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:text-primary/80 underline"
+                    <div className="space-y-3">
+                      <div className="flex items-start space-x-2">
+                        <Checkbox
+                          id="terms"
+                          checked={agreedToTerms}
+                          onCheckedChange={(checked) => setAgreedToTerms(checked === true)}
+                          className="mt-1"
+                          data-testid="checkbox-terms"
+                        />
+                        <label
+                          htmlFor="terms"
+                          className="text-sm text-gray-600 leading-tight peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                         >
-                          terms and conditions
-                        </a>
-                      </label>
+                          I agree to the{" "}
+                          <a
+                            href="https://simpleslips.co.za/terms"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:text-primary/80 underline"
+                          >
+                            terms and conditions
+                          </a>
+                        </label>
+                      </div>
+
+                      <div className="flex items-start space-x-2">
+                        <Checkbox
+                          id="taxDisclaimer"
+                          checked={agreedToTaxDisclaimer}
+                          onCheckedChange={(checked) => setAgreedToTaxDisclaimer(checked === true)}
+                          className="mt-1"
+                          data-testid="checkbox-tax-disclaimer"
+                        />
+                        <label
+                          htmlFor="taxDisclaimer"
+                          className="text-sm text-gray-600 leading-tight peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          I understand that Simple Slips is not a registered tax practitioner and provides expense tracking tools and tax information only. This is NOT professional tax advice. I remain responsible for my tax filings and will consult a registered tax practitioner for official advice.
+                        </label>
+                      </div>
                     </div>
 
                     <Button
                       type="submit"
                       className="w-full text-white py-6 bg-primary hover:bg-primary/90"
                       disabled={registerMutation.isPending}
+                      data-testid="button-create-account"
                     >
                       {registerMutation.isPending ? "Creating account..." : "Create Account"}
                     </Button>

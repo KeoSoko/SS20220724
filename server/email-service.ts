@@ -119,7 +119,7 @@ export class EmailService {
                 <li><strong>Upload your first receipt</strong> - Use the scan button to capture receipts</li>
                 <li><strong>Review AI categorization</strong> - Our AI automatically categorizes expenses</li>
                 <li><strong>Set up budgets</strong> - Track spending against monthly limits</li>
-                <li><strong>Explore tax features</strong> - Maximize deductions with AI insights</li>
+                <li><strong>Explore tax features</strong> - Track expenses with organizational suggestions</li>
               </ol>
             </div>
             
@@ -140,7 +140,7 @@ Quick Start Guide:
 1. Upload your first receipt - Use the scan button to capture receipts
 2. Review AI categorization - Our AI automatically categorizes expenses  
 3. Set up budgets - Track spending against monthly limits
-4. Explore tax features - Maximize deductions with AI insights
+4. Explore tax features - Track expenses with organizational suggestions
 
 Get started: ${this.appUrl}/home
 

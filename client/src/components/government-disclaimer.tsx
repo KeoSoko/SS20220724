@@ -50,11 +50,11 @@ export function GovernmentDisclaimer({ variant = 'default', className = '' }: Go
         <Alert className="mt-2 border-orange-200 bg-orange-50">
           <AlertTriangle className="h-4 w-4 text-orange-600" />
           <AlertDescription className="text-sm text-orange-800">
-            <strong>Important Disclaimer:</strong> Simple Slips is not affiliated with the South African Revenue Service (SARS) 
+            <strong>Important Disclaimer:</strong> Simple Slips is not a registered tax practitioner and is not affiliated with the South African Revenue Service (SARS) 
             or any South African government entity. The tax information provided by this app is for general 
-            guidance only and is based on publicly available SARS documentation (Source: <a href="https://www.sars.gov.za" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">www.sars.gov.za</a>). 
-            Please consult with a qualified tax professional or visit the official SARS website at <a href="https://www.sars.gov.za" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">www.sars.gov.za</a> 
-            for authoritative tax advice and compliance requirements.
+            reference only and is based on publicly available SARS documentation (Source: <a href="https://www.sars.gov.za" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">www.sars.gov.za</a>). 
+            Please consult with a registered tax practitioner or visit the official SARS website at <a href="https://www.sars.gov.za" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">www.sars.gov.za</a> 
+            for professional tax advice and compliance assistance.
           </AlertDescription>
         </Alert>
       )}

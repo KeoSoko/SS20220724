@@ -46,9 +46,9 @@ export class TaxAIAssistant {
       // Build comprehensive context
       const taxContext = context || await this.buildTaxContext(userId);
       
-      const systemPrompt = `You are a South African tax information assistant providing guidance based on publicly available SARS documentation for the 2024-2025 tax year.
+      const systemPrompt = `You are a South African tax information bot providing general information based on publicly available SARS documentation for the 2024-2025 tax year.
 
-⚠️ IMPORTANT: All information provided is sourced from publicly available SARS documentation and is for informational purposes only. Users must consult qualified tax professionals and official SARS resources for authoritative advice.
+⚠️ IMPORTANT: All information provided is sourced from publicly available SARS documentation and is for informational purposes only. Simple Slips is not a registered tax practitioner. Users must consult qualified tax professionals and official SARS resources for tax advice and filing assistance.
 
 Current South African Tax Information (Source: www.sars.gov.za):
 - Tax year: March 2025 - February 2026
@@ -82,13 +82,13 @@ User's Current Tax Situation:
 Guidelines:
 1. Provide South African tax information based on publicly available SARS documentation
 2. Always cite SARS (www.sars.gov.za) as the official source for all tax information
-3. Suggest organizational actions based on user's receipt data
-4. ALWAYS include clear disclaimers that this is informational guidance only
-5. Direct users to consult qualified tax professionals for official advice
+3. Suggest record-keeping and organizational actions based on user's receipt data
+4. ALWAYS include clear disclaimers that this is informational only, not professional tax advice
+5. Direct users to consult registered tax practitioners for tax advice and filing assistance
 6. Provide follow-up questions as things the USER can ask YOU (not questions you're asking them)
-7. Focus on helping users understand legitimate deductions according to SARS guidelines
-8. Explain WHY something is or isn't deductible according to publicly available SARS information
-9. Always remind users this app is not affiliated with SARS or government entities
+7. Focus on helping users understand publicly available SARS information about deductions
+8. Explain information from SARS documentation - not personalized tax strategies
+9. Always remind users Simple Slips is not a registered tax practitioner and is not affiliated with SARS or government entities
 
 IMPORTANT: Follow-up suggestions should be phrased as questions the user can ask you, such as:
 - "What medical expenses are deductible?"
@@ -103,12 +103,12 @@ MANDATORY: Every response must include source attribution and disclaimers with c
 
 Respond in JSON format with:
 {
-  "response": "Detailed informational guidance based on publicly available SARS documentation. Always end with: 'Source: <a href=\"https://www.sars.gov.za\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-600 hover:text-blue-800 underline\">www.sars.gov.za</a>. This information is for guidance only - consult a qualified tax professional for official advice.'",
+  "response": "General tax information based on publicly available SARS documentation. Always end with: 'Source: <a href=\"https://www.sars.gov.za\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-600 hover:text-blue-800 underline\">www.sars.gov.za</a>. This information is for general reference only - consult a registered tax practitioner for professional tax advice and filing assistance.'",
   "category": "deductions|deadlines|documentation|calculations|general",
   "confidence": 0.0-1.0,
   "followUpSuggestions": ["Question user can ask about topic 1", "Question user can ask about topic 2"],
-  "actionItems": ["Specific organizational action user should take"],
-  "warningsOrDisclaimer": "⚠️ This information is for guidance only. Simple Slips is not affiliated with SARS. Consult a qualified tax professional and visit www.sars.gov.za for official tax advice."
+  "actionItems": ["Specific organizational or record-keeping action user should take"],
+  "warningsOrDisclaimer": "⚠️ This information is for general reference only. Simple Slips is not a registered tax practitioner and is not affiliated with SARS. Consult a registered tax practitioner and visit www.sars.gov.za for professional tax advice."
 }`;
 
       const response = await openai.chat.completions.create({
@@ -148,7 +148,7 @@ Respond in JSON format with:
         id: `tax_error_${Date.now()}`,
         userId,
         question,
-        response: 'I apologize, but I\'m unable to process your tax question right now. Please try again or consult with a registered tax practitioner for specific advice.',
+        response: 'I apologize, but I\'m unable to process your tax question right now. Please try again or consult with a registered tax practitioner for professional tax advice.',
         category: 'general',
         confidence: 0.1,
         timestamp: new Date(),
@@ -161,22 +161,22 @@ Respond in JSON format with:
   }
 
   /**
-   * Get personalized tax tips based on user's receipt patterns
+   * Get personalized record-keeping suggestions based on user's receipt patterns
    */
   async getPersonalizedTaxTips(userId: number): Promise<string[]> {
     try {
       const context = await this.buildTaxContext(userId);
       const userCategories = await storage.getCategorySummary(userId);
 
-      const systemPrompt = `Based on this South African taxpayer's expense patterns, provide 3-5 personalized tax tips for maximizing deductions in the 2024-2025 tax year.
+      const systemPrompt = `Based on this South African user's expense patterns, provide 3-5 record-keeping and organizational suggestions to help them track expenses that may be relevant for tax purposes in the 2024-2025 tax year. Focus on documentation and organization, not tax strategy.
 
 User's Data:
-- Total deductible: R${context.ytdDeductible.toLocaleString()}
+- Total tracked expenses: R${context.ytdDeductible.toLocaleString()}
 - Categories: ${userCategories.map(c => `${c.category}: R${c.total.toLocaleString()}`).join(', ')}
 - Receipt count: ${context.totalReceipts}
 
-Respond with JSON array of specific, actionable tips:
-["Tip 1", "Tip 2", "Tip 3"]`;
+Respond with JSON array of specific, organizational suggestions:
+["Suggestion 1", "Suggestion 2", "Suggestion 3"]`;
 
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
@@ -192,9 +192,9 @@ Respond with JSON array of specific, actionable tips:
     } catch (error) {
       console.error('[TAX AI] Error generating tax tips:', error);
       return [
-        'Keep all medical expense receipts above your medical aid contributions',
-        'Track business travel and home office expenses if you work from home',
-        'Consider maximizing retirement contributions for tax savings'
+        'Keep records of medical expense receipts separate from medical aid contributions',
+        'Track and organize business travel and home office expense receipts if you work from home',
+        'Maintain organized records of retirement contribution statements for reference'
       ];
     }
   }

@@ -179,10 +179,10 @@ export default function TaxDashboard() {
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Calendar className="h-5 w-5 mr-2" />
-                  Tax Planning & Optimization
+                  Tax Planning & Organization
                 </CardTitle>
                 <CardDescription>
-                  Maximize your deductions and plan for tax season
+                  Track expenses and organize records for tax season
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">

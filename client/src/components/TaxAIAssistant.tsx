@@ -175,10 +175,11 @@ const TaxAIAssistant: React.FC<TaxAIAssistantProps> = ({ isOpen, onToggle }) => 
           onClick={() => handleToggle(true)}
           className="h-16 w-16 md:h-14 md:w-14 shadow-2xl bg-[#0073AA] hover:bg-[#005c8a] text-white flex flex-col items-center justify-center p-2 border-2 border-white"
           size="lg"
-          title="Tax AI Assistant - Get South African tax information (guidance only)"
+          title="Tax Information Bot - South African tax information (not professional advice)"
+          data-testid="button-tax-info-bot"
         >
           <MessageCircle className="h-6 w-6 mb-1 md:h-5 md:w-5" />
-          <span className="text-[10px] font-bold leading-tight md:text-xs">TAX AI</span>
+          <span className="text-[10px] font-bold leading-tight md:text-xs">TAX INFO</span>
         </Button>
       </div>
     );
@@ -191,8 +192,10 @@ const TaxAIAssistant: React.FC<TaxAIAssistantProps> = ({ isOpen, onToggle }) => 
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-primary" />
-              Tax AI Assistant
-              <span className="text-xs text-gray-500 font-normal hidden sm:inline">(Informational Only)</span>
+              Tax Information Bot
+              <Badge variant="outline" className="text-[10px] bg-orange-50 text-orange-700 border-orange-200 font-normal">
+                Information Only - Not Advice
+              </Badge>
             </CardTitle>
             <div className="flex gap-1">
               {messages.length > 0 && (

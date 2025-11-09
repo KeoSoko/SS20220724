@@ -7,13 +7,19 @@ Simple Slips is an AI-powered receipt management system for the South African ma
 Preferred communication style: Simple, everyday language.
 
 ## Recent Updates (November 2025)
+### User-Specific Sequential Numbering (November 9, 2025)
+- **Per-User Sequential Numbers**: Quotations and invoices now use independent numbering per user (User A: QUO-2025-001, User B: QUO-2025-001)
+- **Database Constraints**: Implemented composite unique constraints on (userId, quotationNumber) and (userId, invoiceNumber) to enforce uniqueness
+- **Race Condition Prevention**: PostgreSQL advisory locks (pg_advisory_xact_lock) serialize concurrent document creation per user, ensuring gap-free sequential numbering
+- **Transaction-Based Generation**: Document numbers are now generated inside database transactions using advisory locks for concurrency safety
+- **Annual Reset**: Sequential numbering resets each year (QUO-2025-001, QUO-2026-001, etc.)
+
 ### Payment Failure Handling (November 8, 2025)
 - **Automatic Subscription Cancellation**: When Paystack disables a subscription due to failed payments, the system now automatically cancels the user's subscription in the database
 - **Payment Failure Notifications**: Users receive email notifications when payments fail or subscriptions are cancelled
 - **Robust Webhook Processing**: Enhanced Paystack webhook handlers properly find users by email and update subscription status
 - **Email Alerts**: Comprehensive email templates for payment failures and subscription cancellations with clear next steps
 
-## Recent Updates (November 2025)
 ### Business Hub Feature
 - Added comprehensive quotation and invoicing system for solopreneurs and freelancers
 - Replaced "Tax Pros" navigation with "Business Hub" for better feature alignment

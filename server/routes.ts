@@ -3274,54 +3274,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ===== BUSINESS HUB ENDPOINTS =====
 
-  // Helper function to generate unique quotation number for a specific user
-  const generateQuotationNumber = async (userId: number): Promise<string> => {
-    const date = new Date();
-    const year = date.getFullYear();
-    
-    // Get count of quotations this year for THIS USER to generate sequential number
-    const yearStart = new Date(year, 0, 1); // January 1st
-    const yearEnd = new Date(year + 1, 0, 1); // January 1st next year
-    
-    const yearQuotations = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(quotations)
-      .where(and(
-        eq(quotations.userId, userId),
-        gte(quotations.date, yearStart),
-        lt(quotations.date, yearEnd)
-      ));
-    
-    const count = yearQuotations[0]?.count || 0;
-    const sequence = String(count + 1).padStart(3, '0');
-    
-    return `QUO-${year}-${sequence}`;
-  };
-
-  // Helper function to generate unique invoice number for a specific user
-  const generateInvoiceNumber = async (userId: number): Promise<string> => {
-    const date = new Date();
-    const year = date.getFullYear();
-    
-    // Get count of invoices this year for THIS USER to generate sequential number
-    const yearStart = new Date(year, 0, 1); // January 1st
-    const yearEnd = new Date(year + 1, 0, 1); // January 1st next year
-    
-    const yearInvoices = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(invoices)
-      .where(and(
-        eq(invoices.userId, userId),
-        gte(invoices.date, yearStart),
-        lt(invoices.date, yearEnd)
-      ));
-    
-    const count = yearInvoices[0]?.count || 0;
-    const sequence = String(count + 1).padStart(3, '0');
-    
-    return `INV-${year}-${sequence}`;
-  };
-
   // ===== BUSINESS PROFILE ROUTES =====
 
   // Get current user's business profile
@@ -3888,18 +3840,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       const { lineItems: items, ...quotationData } = req.body;
 
-      // Generate quotation number
-      const quotationNumber = await generateQuotationNumber(userId);
-
-      // Validate quotation data
-      const validatedQuotation = insertQuotationSchema.parse({
-        ...quotationData,
-        userId,
-        quotationNumber,
-      });
-
-      // Start transaction
+      // Start transaction with advisory lock
       const result = await db.transaction(async (tx) => {
+        // Acquire advisory lock for this user (namespace: 1 for quotations)
+        // This serializes all quotation creation for this user
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 1)`);
+        
+        // Generate quotation number inside the locked transaction
+        const date = new Date();
+        const year = date.getFullYear();
+        const yearStart = new Date(year, 0, 1);
+        const yearEnd = new Date(year + 1, 0, 1);
+        
+        const yearQuotations = await tx
+          .select({ count: sql<number>`count(*)` })
+          .from(quotations)
+          .where(and(
+            eq(quotations.userId, userId),
+            gte(quotations.date, yearStart),
+            lt(quotations.date, yearEnd)
+          ));
+        
+        const count = yearQuotations[0]?.count || 0;
+        const sequence = String(count + 1).padStart(3, '0');
+        const quotationNumber = `QUO-${year}-${sequence}`;
+
+        // Validate quotation data
+        const validatedQuotation = insertQuotationSchema.parse({
+          ...quotationData,
+          userId,
+          quotationNumber,
+        });
+
         // Insert quotation
         const [newQuotation] = await tx
           .insert(quotations)
@@ -4124,11 +4096,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         orderBy: [asc(lineItems.sortOrder)],
       });
 
-      // Generate invoice number
-      const invoiceNumber = await generateInvoiceNumber(userId);
-
-      // Start transaction
+      // Start transaction with advisory lock
       const result = await db.transaction(async (tx) => {
+        // Acquire advisory lock for this user (namespace: 2 for invoices)
+        // This serializes all invoice creation for this user
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 2)`);
+        
+        // Generate invoice number inside the locked transaction
+        const date = new Date();
+        const year = date.getFullYear();
+        const yearStart = new Date(year, 0, 1);
+        const yearEnd = new Date(year + 1, 0, 1);
+        
+        const yearInvoices = await tx
+          .select({ count: sql<number>`count(*)` })
+          .from(invoices)
+          .where(and(
+            eq(invoices.userId, userId),
+            gte(invoices.date, yearStart),
+            lt(invoices.date, yearEnd)
+          ));
+        
+        const count = yearInvoices[0]?.count || 0;
+        const sequence = String(count + 1).padStart(3, '0');
+        const invoiceNumber = `INV-${year}-${sequence}`;
+        
         // Create invoice
         const [newInvoice] = await tx
           .insert(invoices)
@@ -4522,18 +4514,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       const { lineItems: items, ...invoiceData } = req.body;
 
-      // Generate invoice number
-      const invoiceNumber = await generateInvoiceNumber(userId);
-
-      // Validate invoice data
-      const validatedInvoice = insertInvoiceSchema.parse({
-        ...invoiceData,
-        userId,
-        invoiceNumber,
-      });
-
-      // Start transaction
+      // Start transaction with advisory lock
       const result = await db.transaction(async (tx) => {
+        // Acquire advisory lock for this user (namespace: 2 for invoices)
+        // This serializes all invoice creation for this user
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 2)`);
+        
+        // Generate invoice number inside the locked transaction
+        const date = new Date();
+        const year = date.getFullYear();
+        const yearStart = new Date(year, 0, 1);
+        const yearEnd = new Date(year + 1, 0, 1);
+        
+        const yearInvoices = await tx
+          .select({ count: sql<number>`count(*)` })
+          .from(invoices)
+          .where(and(
+            eq(invoices.userId, userId),
+            gte(invoices.date, yearStart),
+            lt(invoices.date, yearEnd)
+          ));
+        
+        const count = yearInvoices[0]?.count || 0;
+        const sequence = String(count + 1).padStart(3, '0');
+        const invoiceNumber = `INV-${year}-${sequence}`;
+
+        // Validate invoice data
+        const validatedInvoice = insertInvoiceSchema.parse({
+          ...invoiceData,
+          userId,
+          invoiceNumber,
+        });
+
         // Insert invoice
         const [newInvoice] = await tx
           .insert(invoices)

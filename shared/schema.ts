@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, primaryKey, pgEnum, uuid, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, primaryKey, pgEnum, uuid, doublePrecision, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 import { z } from "zod";
@@ -1039,7 +1039,7 @@ export const quotations = pgTable("quotations", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   clientId: integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
-  quotationNumber: text("quotation_number").notNull().unique(),
+  quotationNumber: text("quotation_number").notNull(),
   date: timestamp("date").notNull().defaultNow(),
   expiryDate: timestamp("expiry_date").notNull(),
   status: text("status").notNull().default("draft"), // draft, sent, accepted, declined, expired
@@ -1052,14 +1052,16 @@ export const quotations = pgTable("quotations", {
   sentAt: timestamp("sent_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  unique("user_quotation_number_unique").on(table.userId, table.quotationNumber)
+]);
 
 // Invoices table
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   clientId: integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
-  invoiceNumber: text("invoice_number").notNull().unique(),
+  invoiceNumber: text("invoice_number").notNull(),
   quotationId: integer("quotation_id").references(() => quotations.id),
   date: timestamp("date").notNull().defaultNow(),
   dueDate: timestamp("due_date").notNull(),
@@ -1078,7 +1080,9 @@ export const invoices = pgTable("invoices", {
   preDueRemindersSent: integer("pre_due_reminders_sent").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  unique("user_invoice_number_unique").on(table.userId, table.invoiceNumber)
+]);
 
 // Line items for both quotations and invoices
 export const lineItems = pgTable("line_items", {

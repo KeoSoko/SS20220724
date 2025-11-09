@@ -3752,7 +3752,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update client
-  app.put("/api/clients/:id", requireSubscription(), async (req, res) => {
+  app.patch("/api/clients/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {

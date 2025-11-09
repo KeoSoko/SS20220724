@@ -4352,9 +4352,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       const quotationId = parseInt(req.params.id, 10);
+      const { subject, body } = req.body;
 
       if (isNaN(quotationId)) {
         return res.status(400).json({ error: "Invalid quotation ID" });
+      }
+
+      if (!subject || !body) {
+        return res.status(400).json({ error: "Subject and body are required" });
       }
 
       // Get quotation
@@ -4400,8 +4405,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate PDF
       const pdfBuffer = await exportService.exportQuotationToPDF(quotation, client, items, businessProfile);
 
-      // Send email
-      const emailSent = await emailService.sendQuotation(quotation, client, businessProfile, items, pdfBuffer);
+      // Send email with custom subject and body
+      const emailSent = await emailService.sendQuotationWithCustomMessage(
+        quotation, 
+        client, 
+        businessProfile, 
+        items, 
+        pdfBuffer,
+        subject,
+        body
+      );
 
       if (!emailSent) {
         return res.status(500).json({ error: "Failed to send email" });

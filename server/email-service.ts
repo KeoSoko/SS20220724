@@ -618,6 +618,72 @@ Create a backup: ${this.appUrl}/settings
   }
 
   /**
+   * Send quotation with custom subject and message using HTML template
+   */
+  async sendQuotationWithCustomMessage(
+    quotation: Quotation,
+    client: Client,
+    businessProfile: BusinessProfile | null,
+    lineItems: LineItem[],
+    pdfBuffer: Buffer,
+    subject: string,
+    aiGeneratedMessage: string
+  ): Promise<boolean> {
+    if (!process.env.SENDGRID_API_KEY) {
+      console.error("Cannot send quotation - SENDGRID_API_KEY not configured");
+      return false;
+    }
+
+    if (!client.email) {
+      console.error("Cannot send quotation - client has no email address");
+      return false;
+    }
+
+    try {
+      const { generateQuotationEmailHTML } = await import('./email-templates');
+      const businessName = businessProfile?.companyName || 'Your Business';
+      
+      // Generate professional HTML email using template
+      const htmlBody = generateQuotationEmailHTML(
+        quotation,
+        client,
+        lineItems,
+        businessProfile,
+        aiGeneratedMessage
+      );
+
+      await mailService.send({
+        to: client.email,
+        from: {
+          email: this.fromEmail,
+          name: 'Simple Slips'
+        },
+        replyTo: businessProfile?.email ? {
+          email: businessProfile.email,
+          name: businessName
+        } : undefined,
+        subject: subject,
+        html: htmlBody,
+        attachments: [
+          {
+            content: pdfBuffer.toString('base64'),
+            filename: `Quotation-${quotation.quotationNumber}.pdf`,
+            type: 'application/pdf',
+            disposition: 'attachment'
+          }
+        ]
+      });
+
+      console.log(`[EMAIL] Quotation ${quotation.quotationNumber} sent to ${client.email}`);
+      return true;
+
+    } catch (error) {
+      console.error('Failed to send quotation email:', error);
+      return false;
+    }
+  }
+
+  /**
    * Send quotation to client via email with PDF attachment
    */
   async sendQuotation(
@@ -763,10 +829,10 @@ ${aiMessage}
     }
 
     try {
+      const { generateInvoiceEmailHTML } = await import('./email-templates');
       const businessName = businessProfile?.companyName || 'Your Business';
       
       const balance = (parseFloat(invoice.total) - parseFloat(invoice.amountPaid)).toFixed(2);
-      const isPaid = parseFloat(balance) <= 0;
 
       // Use custom subject and body if provided, otherwise generate AI content
       let subject: string;
@@ -795,103 +861,14 @@ ${aiMessage}
         ]);
       }
       
-      // Format due date
-      const dueDate = new Date(invoice.dueDate).toLocaleDateString('en-ZA', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-
-      // Build professional HTML email with AI-generated message
-      const emailBody = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="text-align: center; margin-bottom: 30px;">
-            ${businessProfile?.logoUrl ? `<img src="${businessProfile.logoUrl}" alt="${businessName}" style="max-width: 200px; margin-bottom: 20px;">` : ''}
-            <h1 style="color: #0073AA; margin: 0;">${businessName}</h1>
-          </div>
-          
-          <div style="color: #333; font-size: 16px; line-height: 1.6; white-space: pre-wrap; margin-bottom: 30px;">
-${aiMessage}
-          </div>
-          
-          <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin: 30px 0;">
-            <h3 style="color: #333; margin-top: 0;">Invoice Summary</h3>
-            <table style="width: 100%; color: #666;">
-              <tr>
-                <td style="padding: 8px 0;"><strong>Invoice Number:</strong></td>
-                <td style="text-align: right;">${invoice.invoiceNumber}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0;"><strong>Invoice Date:</strong></td>
-                <td style="text-align: right;">${new Date(invoice.date).toLocaleDateString('en-ZA')}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0;"><strong>Due Date:</strong></td>
-                <td style="text-align: right;">${dueDate}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0;"><strong>Total Amount:</strong></td>
-                <td style="text-align: right;">R ${parseFloat(invoice.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-              </tr>
-              ${parseFloat(invoice.amountPaid) > 0 ? `
-              <tr>
-                <td style="padding: 8px 0;"><strong>Amount Paid:</strong></td>
-                <td style="text-align: right; color: #28a745;">R ${parseFloat(invoice.amountPaid).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-              </tr>
-              ` : ''}
-              <tr style="border-top: 2px solid #dee2e6;">
-                <td style="padding: 12px 0;"><strong style="font-size: 18px;">${isPaid ? 'Status:' : 'Balance Due:'}</strong></td>
-                <td style="text-align: right;"><strong style="font-size: 18px; color: ${isPaid ? '#28a745' : '#dc3545'};">${isPaid ? 'PAID' : 'R ' + parseFloat(balance).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
-              </tr>
-            </table>
-          </div>
-
-          ${!isPaid && businessProfile?.bankName ? `
-          <div style="background: #e7f3ff; padding: 20px; border-radius: 6px; margin: 30px 0;">
-            <h3 style="color: #333; margin-top: 0;">Payment Details</h3>
-            <table style="width: 100%; color: #666; font-size: 14px;">
-              ${businessProfile.bankName ? `
-              <tr>
-                <td style="padding: 4px 0;"><strong>Bank:</strong></td>
-                <td>${businessProfile.bankName}</td>
-              </tr>
-              ` : ''}
-              ${businessProfile.accountHolder ? `
-              <tr>
-                <td style="padding: 4px 0;"><strong>Account Holder:</strong></td>
-                <td>${businessProfile.accountHolder}</td>
-              </tr>
-              ` : ''}
-              ${businessProfile.accountNumber ? `
-              <tr>
-                <td style="padding: 4px 0;"><strong>Account Number:</strong></td>
-                <td>${businessProfile.accountNumber}</td>
-              </tr>
-              ` : ''}
-              ${businessProfile.branchCode ? `
-              <tr>
-                <td style="padding: 4px 0;"><strong>Branch Code:</strong></td>
-                <td>${businessProfile.branchCode}</td>
-              </tr>
-              ` : ''}
-            </table>
-            <p style="color: #666; font-size: 12px; margin-top: 10px; margin-bottom: 0;">
-              Please use invoice number ${invoice.invoiceNumber} as payment reference.
-            </p>
-          </div>
-          ` : ''}
-
-          ${businessProfile?.email || businessProfile?.phone ? `
-          <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
-            <p style="color: #999; font-size: 14px; margin: 5px 0;">
-              ${businessProfile.email ? `Email: ${businessProfile.email}<br>` : ''}
-              ${businessProfile.phone ? `Phone: ${businessProfile.phone}<br>` : ''}
-              ${businessProfile.website ? `Website: ${businessProfile.website}` : ''}
-            </p>
-          </div>
-          ` : ''}
-        </div>
-      `;
+      // Generate professional HTML email using template
+      const emailBody = generateInvoiceEmailHTML(
+        invoice,
+        client,
+        lineItems,
+        businessProfile,
+        aiMessage
+      );
 
       await mailService.send({
         to: client.email,

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { getQueryFn } from '@/lib/queryClient';
 
 export interface SubscriptionStatus {
   hasActiveSubscription: boolean;
@@ -9,45 +10,9 @@ export interface SubscriptionStatus {
 }
 
 export function useSubscription() {
-  const query = useQuery({
+  const query = useQuery<SubscriptionStatus | null>({
     queryKey: ['/api/subscription/status'],
-    queryFn: async () => {
-      try {
-        const response = await fetch('/api/subscription/status', {
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (!response.ok) {
-          if (response.status === 401) {
-            // User not authenticated - return null to indicate auth failure
-            console.log('[useSubscription] 401 - User not authenticated, returning null');
-            return null;
-          }
-          
-          // Try to get error details from response
-          let errorMessage = 'Failed to fetch subscription status';
-          try {
-            const errorData = await response.json();
-            errorMessage = errorData.error || errorData.message || errorMessage;
-          } catch {
-            // If we can't parse the error, use the status text
-            errorMessage = response.statusText || errorMessage;
-          }
-          
-          throw new Error(errorMessage);
-        }
-        
-        const data = await response.json() as SubscriptionStatus;
-        console.log('[useSubscription] Subscription status:', data);
-        return data;
-      } catch (error) {
-        console.error('[useSubscription] Error fetching subscription status:', error);
-        throw error;
-      }
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: (failureCount, error) => {
       // Don't retry on 401 (authentication errors)

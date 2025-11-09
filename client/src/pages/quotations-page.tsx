@@ -16,7 +16,18 @@ import { Plus, Edit, Trash2, FileText, Eye, Download, Mail } from "lucide-react"
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import type { Quotation, Client, LineItem } from "@shared/schema";
+
+const emailFormSchema = z.object({
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Email body is required"),
+});
 
 const formatCurrency = (amount: string | number) => {
   const numAmount = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -33,6 +44,8 @@ const getStatusBadgeColor = (status: string) => {
   };
   return colors[status] || "bg-gray-100 text-gray-800";
 };
+
+type EmailFormData = z.infer<typeof emailFormSchema>;
 
 export default function QuotationsPage() {
   const { toast } = useToast();
@@ -51,6 +64,14 @@ export default function QuotationsPage() {
     replyTo: string | null;
     attachmentName: string;
   } | null>(null);
+
+  const emailForm = useForm<EmailFormData>({
+    resolver: zodResolver(emailFormSchema),
+    defaultValues: {
+      subject: "",
+      body: "",
+    },
+  });
 
   const { data: quotations = [], isLoading } = useQuery<Quotation[]>({
     queryKey: ["/api/quotations"],
@@ -138,7 +159,7 @@ export default function QuotationsPage() {
   };
 
   const sendQuotationMutation = useMutation({
-    mutationFn: async (quotationId: number) => {
+    mutationFn: async ({ quotationId, subject, body }: { quotationId: number; subject: string; body: string }) => {
       const token = localStorage.getItem('auth_token');
       if (!token) throw new Error('Not authenticated');
       
@@ -148,6 +169,7 @@ export default function QuotationsPage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ subject, body }),
       });
 
       if (!response.ok) {
@@ -162,6 +184,7 @@ export default function QuotationsPage() {
       return response.json();
     },
     onSuccess: () => {
+      setIsEmailPreviewDialogOpen(false);
       toast({
         title: "Success",
         description: "Quotation sent successfully to client",
@@ -196,12 +219,6 @@ export default function QuotationsPage() {
     },
   });
 
-  const handleSendQuotation = (quotationId: number) => {
-    if (confirm("Send this quotation to the client via email?")) {
-      sendQuotationMutation.mutate(quotationId);
-    }
-  };
-
   const previewEmailMutation = useMutation({
     mutationFn: async (quotationId: number) => {
       const token = localStorage.getItem('auth_token');
@@ -223,6 +240,10 @@ export default function QuotationsPage() {
     },
     onSuccess: (data) => {
       setEmailPreviewData(data);
+      emailForm.reset({
+        subject: data.subject,
+        body: data.body,
+      });
       setIsEmailPreviewDialogOpen(true);
     },
     onError: (error: Error) => {
@@ -614,19 +635,10 @@ export default function QuotationsPage() {
                     variant="outline"
                     onClick={() => handlePreviewEmail(selectedQuotation.id)}
                     disabled={previewEmailMutation.isPending}
-                    data-testid="button-preview-email"
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    {previewEmailMutation.isPending ? "Loading..." : "Preview Email"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleSendQuotation(selectedQuotation.id)}
-                    disabled={sendQuotationMutation.isPending}
                     data-testid="button-send-quotation"
                   >
                     <Mail className="h-4 w-4 mr-2" />
-                    {sendQuotationMutation.isPending ? "Sending..." : "Send to Client"}
+                    {previewEmailMutation.isPending ? "Loading..." : "Send to Client"}
                   </Button>
                   <Button
                     variant="outline"
@@ -676,63 +688,90 @@ export default function QuotationsPage() {
         <Dialog open={isEmailPreviewDialogOpen} onOpenChange={setIsEmailPreviewDialogOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-email-preview">
             <DialogHeader>
-              <DialogTitle>Email Preview</DialogTitle>
+              <DialogTitle>Review & Edit Email</DialogTitle>
               <DialogDescription>
-                Preview the AI-generated email before sending to your client
+                Review and edit the AI-generated email before sending to your client
               </DialogDescription>
             </DialogHeader>
             {emailPreviewData && (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-500">From:</label>
-                  <p className="text-sm mt-1">{emailPreviewData.from}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Reply-To:</label>
-                  <p className="text-sm mt-1">{emailPreviewData.replyTo || 'Not set'}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">To:</label>
-                  <p className="text-sm mt-1">{emailPreviewData.to}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Subject:</label>
-                  <p className="text-sm mt-1 font-semibold">{emailPreviewData.subject}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Message:</label>
-                  <div className="text-sm mt-1 p-4 bg-gray-50 rounded border whitespace-pre-wrap">
-                    {emailPreviewData.body}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Attachment:</label>
-                  <p className="text-sm mt-1">{emailPreviewData.attachmentName}</p>
-                </div>
-              </div>
-            )}
-            <DialogFooter className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsEmailPreviewDialogOpen(false)}
-                data-testid="button-close-preview"
-              >
-                Close
-              </Button>
-              <Button
-                onClick={() => {
+              <Form {...emailForm}>
+                <form onSubmit={emailForm.handleSubmit((data) => {
                   if (selectedQuotation) {
-                    setIsEmailPreviewDialogOpen(false);
-                    handleSendQuotation(selectedQuotation.id);
+                    sendQuotationMutation.mutate({
+                      quotationId: selectedQuotation.id,
+                      subject: data.subject,
+                      body: data.body,
+                    });
                   }
-                }}
-                disabled={sendQuotationMutation.isPending}
-                data-testid="button-send-from-preview"
-              >
-                <Mail className="h-4 w-4 mr-2" />
-                {sendQuotationMutation.isPending ? "Sending..." : "Send Email"}
-              </Button>
-            </DialogFooter>
+                })} className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">From:</label>
+                    <p className="text-sm mt-1">{emailPreviewData.from}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Reply-To:</label>
+                    <p className="text-sm mt-1">{emailPreviewData.replyTo || 'Not set'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">To:</label>
+                    <p className="text-sm mt-1">{emailPreviewData.to}</p>
+                  </div>
+                  <FormField
+                    control={emailForm.control}
+                    name="subject"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Subject</FormLabel>
+                        <FormControl>
+                          <Input {...field} data-testid="input-email-subject" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={emailForm.control}
+                    name="body"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Message</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            rows={12}
+                            className="font-mono text-sm"
+                            data-testid="textarea-email-body"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Attachment:</label>
+                    <p className="text-sm mt-1">{emailPreviewData.attachmentName}</p>
+                  </div>
+                  <DialogFooter className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsEmailPreviewDialogOpen(false)}
+                      data-testid="button-close-preview"
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={sendQuotationMutation.isPending}
+                      data-testid="button-send-from-preview"
+                    >
+                      <Mail className="h-4 w-4 mr-2" />
+                      {sendQuotationMutation.isPending ? "Sending..." : "Send Email"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            )}
           </DialogContent>
         </Dialog>
       </div>

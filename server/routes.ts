@@ -3852,8 +3852,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const yearStart = new Date(year, 0, 1);
         const yearEnd = new Date(year + 1, 0, 1);
         
-        const yearQuotations = await tx
-          .select({ count: sql<number>`count(*)` })
+        // Find the highest sequence number for this user this year
+        const maxResult = await tx
+          .select({ 
+            maxNumber: sql<string>`MAX(${quotations.quotationNumber})`
+          })
           .from(quotations)
           .where(and(
             eq(quotations.userId, userId),
@@ -3861,8 +3864,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             lt(quotations.date, yearEnd)
           ));
         
-        const count = yearQuotations[0]?.count || 0;
-        const sequence = String(count + 1).padStart(3, '0');
+        // Extract sequence from the max number (QUO-YYYY-XXX format)
+        let nextSequence = 1;
+        if (maxResult[0]?.maxNumber) {
+          const parts = maxResult[0].maxNumber.split('-');
+          if (parts.length === 3) {
+            const currentMax = parseInt(parts[2], 10);
+            if (!isNaN(currentMax)) {
+              nextSequence = currentMax + 1;
+            }
+          }
+        }
+        
+        const sequence = String(nextSequence).padStart(3, '0');
         const quotationNumber = `QUO-${year}-${sequence}`;
 
         // Validate quotation data
@@ -4108,8 +4122,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const yearStart = new Date(year, 0, 1);
         const yearEnd = new Date(year + 1, 0, 1);
         
-        const yearInvoices = await tx
-          .select({ count: sql<number>`count(*)` })
+        // Find the highest sequence number for this user this year
+        const maxResult = await tx
+          .select({ 
+            maxNumber: sql<string>`MAX(${invoices.invoiceNumber})`
+          })
           .from(invoices)
           .where(and(
             eq(invoices.userId, userId),
@@ -4117,8 +4134,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             lt(invoices.date, yearEnd)
           ));
         
-        const count = yearInvoices[0]?.count || 0;
-        const sequence = String(count + 1).padStart(3, '0');
+        // Extract sequence from the max number (INV-YYYY-XXX format)
+        let nextSequence = 1;
+        if (maxResult[0]?.maxNumber) {
+          const parts = maxResult[0].maxNumber.split('-');
+          if (parts.length === 3) {
+            const currentMax = parseInt(parts[2], 10);
+            if (!isNaN(currentMax)) {
+              nextSequence = currentMax + 1;
+            }
+          }
+        }
+        
+        const sequence = String(nextSequence).padStart(3, '0');
         const invoiceNumber = `INV-${year}-${sequence}`;
         
         // Create invoice
@@ -4526,8 +4554,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const yearStart = new Date(year, 0, 1);
         const yearEnd = new Date(year + 1, 0, 1);
         
-        const yearInvoices = await tx
-          .select({ count: sql<number>`count(*)` })
+        // Find the highest sequence number for this user this year
+        const maxResult = await tx
+          .select({ 
+            maxNumber: sql<string>`MAX(${invoices.invoiceNumber})`
+          })
           .from(invoices)
           .where(and(
             eq(invoices.userId, userId),
@@ -4535,8 +4566,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             lt(invoices.date, yearEnd)
           ));
         
-        const count = yearInvoices[0]?.count || 0;
-        const sequence = String(count + 1).padStart(3, '0');
+        // Extract sequence from the max number (INV-YYYY-XXX format)
+        let nextSequence = 1;
+        if (maxResult[0]?.maxNumber) {
+          const parts = maxResult[0].maxNumber.split('-');
+          if (parts.length === 3) {
+            const currentMax = parseInt(parts[2], 10);
+            if (!isNaN(currentMax)) {
+              nextSequence = currentMax + 1;
+            }
+          }
+        }
+        
+        const sequence = String(nextSequence).padStart(3, '0');
         const invoiceNumber = `INV-${year}-${sequence}`;
 
         // Validate invoice data

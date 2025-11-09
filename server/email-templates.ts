@@ -1,0 +1,496 @@
+import type { 
+  Quotation, 
+  Invoice, 
+  Client, 
+  LineItem,
+  BusinessProfile 
+} from '../shared/schema';
+
+interface EmailTemplateOptions {
+  companyName: string;
+  companyEmail?: string;
+  companyPhone?: string;
+  companyAddress?: string;
+  primaryColor?: string;
+}
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+  }).format(amount);
+}
+
+function formatDate(date: Date | string): string {
+  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  return new Intl.DateTimeFormat('en-ZA', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(dateObj);
+}
+
+function getBaseEmailTemplate(content: string, options: EmailTemplateOptions): string {
+  const primaryColor = options.primaryColor || '#0073AA';
+  
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Slips</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: #f5f5f5;
+      color: #333333;
+    }
+    .email-container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+    }
+    .header {
+      background-color: ${primaryColor};
+      padding: 30px 40px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      color: #ffffff;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    .content {
+      padding: 40px;
+    }
+    .message-section {
+      background-color: #f9f9f9;
+      border-left: 4px solid ${primaryColor};
+      padding: 20px;
+      margin: 20px 0;
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+    .document-details {
+      margin: 30px 0;
+      padding: 20px;
+      background-color: #f9f9f9;
+      border-radius: 4px;
+    }
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #e5e5e5;
+    }
+    .detail-row:last-child {
+      border-bottom: none;
+    }
+    .detail-label {
+      font-weight: 600;
+      color: #666666;
+    }
+    .detail-value {
+      color: #333333;
+    }
+    .line-items-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 30px 0;
+    }
+    .line-items-table th {
+      background-color: ${primaryColor};
+      color: #ffffff;
+      padding: 12px;
+      text-align: left;
+      font-weight: 600;
+    }
+    .line-items-table td {
+      padding: 12px;
+      border-bottom: 1px solid #e5e5e5;
+    }
+    .line-items-table tr:last-child td {
+      border-bottom: none;
+    }
+    .text-right {
+      text-align: right;
+    }
+    .totals-section {
+      margin: 30px 0;
+      padding: 20px;
+      background-color: #f9f9f9;
+      border-radius: 4px;
+    }
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+    }
+    .total-row.grand-total {
+      font-size: 20px;
+      font-weight: 700;
+      color: ${primaryColor};
+      border-top: 2px solid ${primaryColor};
+      padding-top: 12px;
+      margin-top: 8px;
+    }
+    .footer {
+      background-color: #f5f5f5;
+      padding: 30px 40px;
+      text-align: center;
+      color: #666666;
+      font-size: 14px;
+    }
+    .footer-company {
+      margin-bottom: 15px;
+    }
+    .footer-contact {
+      margin: 5px 0;
+    }
+    .alert-box {
+      background-color: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 15px;
+      margin: 20px 0;
+      color: #856404;
+    }
+    .alert-box.info {
+      background-color: #d1ecf1;
+      border-color: #bee5eb;
+      color: #0c5460;
+    }
+    @media only screen and (max-width: 600px) {
+      .content {
+        padding: 20px;
+      }
+      .header {
+        padding: 20px;
+      }
+      .header h1 {
+        font-size: 24px;
+      }
+      .line-items-table th,
+      .line-items-table td {
+        padding: 8px 4px;
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <div class="header">
+      <h1>${options.companyName}</h1>
+    </div>
+    <div class="content">
+      ${content}
+    </div>
+    <div class="footer">
+      <div class="footer-company">
+        <strong>${options.companyName}</strong>
+      </div>
+      ${options.companyEmail ? `<div class="footer-contact">${options.companyEmail}</div>` : ''}
+      ${options.companyPhone ? `<div class="footer-contact">${options.companyPhone}</div>` : ''}
+      ${options.companyAddress ? `<div class="footer-contact">${options.companyAddress}</div>` : ''}
+      <div style="margin-top: 20px; font-size: 12px; color: #999999;">
+        Powered by Simple Slips - AI-Powered Financial Management
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+}
+
+export function generateQuotationEmailHTML(
+  quotation: Quotation,
+  client: Client,
+  lineItems: LineItem[],
+  businessProfile: BusinessProfile | null,
+  aiGeneratedMessage: string
+): string {
+  const companyName = businessProfile?.companyName || 'Simple Slips';
+  const companyEmail = businessProfile?.email || undefined;
+  const companyPhone = businessProfile?.phone || undefined;
+  const companyAddress = businessProfile?.address || undefined;
+
+  const expiryDate = quotation.expiryDate ? formatDate(quotation.expiryDate) : 'N/A';
+  const daysUntilExpiry = quotation.expiryDate 
+    ? Math.ceil((new Date(quotation.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  const lineItemsHTML = lineItems.map(item => `
+    <tr>
+      <td>${item.description}</td>
+      <td class="text-right">${item.quantity}</td>
+      <td class="text-right">${formatCurrency(parseFloat(item.unitPrice))}</td>
+      <td class="text-right"><strong>${formatCurrency(parseFloat(item.total))}</strong></td>
+    </tr>
+  `).join('');
+
+  const content = `
+    <h2 style="color: #333333; margin-top: 0;">Quotation ${quotation.quotationNumber}</h2>
+    
+    ${aiGeneratedMessage ? `
+    <div class="message-section">
+      ${aiGeneratedMessage}
+    </div>
+    ` : ''}
+
+    ${daysUntilExpiry !== null && daysUntilExpiry <= 7 ? `
+    <div class="alert-box">
+      <strong>⏰ Time Sensitive:</strong> This quotation expires in ${daysUntilExpiry} day${daysUntilExpiry !== 1 ? 's' : ''}.
+    </div>
+    ` : ''}
+
+    <div class="document-details">
+      <div class="detail-row">
+        <span class="detail-label">Quotation Number:</span>
+        <span class="detail-value"><strong>${quotation.quotationNumber}</strong></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Date:</span>
+        <span class="detail-value">${formatDate(quotation.createdAt)}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Valid Until:</span>
+        <span class="detail-value">${expiryDate}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Client:</span>
+        <span class="detail-value">${client.name}</span>
+      </div>
+    </div>
+
+    <h3 style="color: #333333; margin-top: 40px;">Items</h3>
+    <table class="line-items-table">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="text-right">Qty</th>
+          <th class="text-right">Unit Price</th>
+          <th class="text-right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lineItemsHTML}
+      </tbody>
+    </table>
+
+    <div class="totals-section">
+      <div class="total-row">
+        <span>Subtotal:</span>
+        <span>${formatCurrency(parseFloat(quotation.subtotal))}</span>
+      </div>
+      <div class="total-row">
+        <span>VAT (15%):</span>
+        <span>${formatCurrency(parseFloat(quotation.vatAmount))}</span>
+      </div>
+      <div class="total-row grand-total">
+        <span>Total:</span>
+        <span>${formatCurrency(parseFloat(quotation.total))}</span>
+      </div>
+    </div>
+
+    ${quotation.notes ? `
+    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+      <h4 style="margin-top: 0; color: #666666;">Notes</h4>
+      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6;">${quotation.notes}</p>
+    </div>
+    ` : ''}
+
+    ${quotation.terms ? `
+    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+      <h4 style="margin-top: 0; color: #666666;">Terms & Conditions</h4>
+      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; font-size: 14px;">${quotation.terms}</p>
+    </div>
+    ` : ''}
+
+    <div class="alert-box info">
+      <strong>📄 Next Steps:</strong> Please review this quotation and let us know if you have any questions. We're happy to discuss any details or make adjustments as needed.
+    </div>
+  `;
+
+  return getBaseEmailTemplate(content, {
+    companyName,
+    companyEmail,
+    companyPhone,
+    companyAddress,
+  });
+}
+
+export function generateInvoiceEmailHTML(
+  invoice: Invoice,
+  client: Client,
+  lineItems: LineItem[],
+  businessProfile: BusinessProfile | null,
+  aiGeneratedMessage: string
+): string {
+  const companyName = businessProfile?.companyName || 'Simple Slips';
+  const companyEmail = businessProfile?.email || undefined;
+  const companyPhone = businessProfile?.phone || undefined;
+  const companyAddress = businessProfile?.address || undefined;
+
+  const dueDate = invoice.dueDate ? formatDate(invoice.dueDate) : 'Upon receipt';
+  const daysUntilDue = invoice.dueDate 
+    ? Math.ceil((new Date(invoice.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  const isOverdue = daysUntilDue !== null && daysUntilDue < 0;
+  const isDueSoon = daysUntilDue !== null && daysUntilDue > 0 && daysUntilDue <= 7;
+
+  const amountDue = parseFloat(invoice.total) - parseFloat(invoice.amountPaid);
+
+  const lineItemsHTML = lineItems.map(item => `
+    <tr>
+      <td>${item.description}</td>
+      <td class="text-right">${item.quantity}</td>
+      <td class="text-right">${formatCurrency(parseFloat(item.unitPrice))}</td>
+      <td class="text-right"><strong>${formatCurrency(parseFloat(item.total))}</strong></td>
+    </tr>
+  `).join('');
+
+  const bankingDetails = businessProfile?.bankName && businessProfile?.accountNumber ? `
+    <div style="margin: 30px 0; padding: 20px; background-color: #f0f8ff; border: 2px solid #0073AA; border-radius: 4px;">
+      <h4 style="margin-top: 0; color: #0073AA;">💳 Payment Details</h4>
+      <table style="width: 100%; font-size: 14px;">
+        <tr>
+          <td style="padding: 5px 0;"><strong>Bank Name:</strong></td>
+          <td style="padding: 5px 0;">${businessProfile.bankName}</td>
+        </tr>
+        ${businessProfile.accountHolder ? `
+        <tr>
+          <td style="padding: 5px 0;"><strong>Account Holder:</strong></td>
+          <td style="padding: 5px 0;">${businessProfile.accountHolder}</td>
+        </tr>
+        ` : ''}
+        <tr>
+          <td style="padding: 5px 0;"><strong>Account Number:</strong></td>
+          <td style="padding: 5px 0;"><strong>${businessProfile.accountNumber}</strong></td>
+        </tr>
+        ${businessProfile.branchCode ? `
+        <tr>
+          <td style="padding: 5px 0;"><strong>Branch Code:</strong></td>
+          <td style="padding: 5px 0;">${businessProfile.branchCode}</td>
+        </tr>
+        ` : ''}
+      </table>
+      <p style="margin: 15px 0 0 0; font-size: 13px; color: #666;">Please use invoice number <strong>${invoice.invoiceNumber}</strong> as payment reference.</p>
+    </div>
+  ` : '';
+
+  const content = `
+    <h2 style="color: #333333; margin-top: 0;">Invoice ${invoice.invoiceNumber}</h2>
+    
+    ${aiGeneratedMessage ? `
+    <div class="message-section">
+      ${aiGeneratedMessage}
+    </div>
+    ` : ''}
+
+    ${isOverdue ? `
+    <div class="alert-box" style="background-color: #f8d7da; border-color: #f5c6cb; color: #721c24;">
+      <strong>⚠️ Payment Overdue:</strong> This invoice was due ${Math.abs(daysUntilDue!)} day${Math.abs(daysUntilDue!) !== 1 ? 's' : ''} ago.
+    </div>
+    ` : isDueSoon ? `
+    <div class="alert-box">
+      <strong>⏰ Due Soon:</strong> This invoice is due in ${daysUntilDue} day${daysUntilDue !== 1 ? 's' : ''}.
+    </div>
+    ` : ''}
+
+    <div class="document-details">
+      <div class="detail-row">
+        <span class="detail-label">Invoice Number:</span>
+        <span class="detail-value"><strong>${invoice.invoiceNumber}</strong></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Date:</span>
+        <span class="detail-value">${formatDate(invoice.createdAt)}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Due Date:</span>
+        <span class="detail-value"><strong>${dueDate}</strong></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Client:</span>
+        <span class="detail-value">${client.name}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Amount Due:</span>
+        <span class="detail-value" style="color: #0073AA; font-size: 18px;"><strong>${formatCurrency(amountDue)}</strong></span>
+      </div>
+    </div>
+
+    <h3 style="color: #333333; margin-top: 40px;">Items</h3>
+    <table class="line-items-table">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="text-right">Qty</th>
+          <th class="text-right">Unit Price</th>
+          <th class="text-right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lineItemsHTML}
+      </tbody>
+    </table>
+
+    <div class="totals-section">
+      <div class="total-row">
+        <span>Subtotal:</span>
+        <span>${formatCurrency(parseFloat(invoice.subtotal))}</span>
+      </div>
+      <div class="total-row">
+        <span>VAT (15%):</span>
+        <span>${formatCurrency(parseFloat(invoice.vatAmount))}</span>
+      </div>
+      <div class="total-row">
+        <span>Total:</span>
+        <span>${formatCurrency(parseFloat(invoice.total))}</span>
+      </div>
+      ${parseFloat(invoice.amountPaid) > 0 ? `
+      <div class="total-row">
+        <span>Amount Paid:</span>
+        <span style="color: #28a745;">-${formatCurrency(parseFloat(invoice.amountPaid))}</span>
+      </div>
+      ` : ''}
+      <div class="total-row grand-total">
+        <span>Amount Due:</span>
+        <span>${formatCurrency(amountDue)}</span>
+      </div>
+    </div>
+
+    ${bankingDetails}
+
+    ${invoice.notes ? `
+    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+      <h4 style="margin-top: 0; color: #666666;">Notes</h4>
+      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6;">${invoice.notes}</p>
+    </div>
+    ` : ''}
+
+    ${invoice.terms ? `
+    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+      <h4 style="margin-top: 0; color: #666666;">Terms & Conditions</h4>
+      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; font-size: 14px;">${invoice.terms}</p>
+    </div>
+    ` : ''}
+
+    <div class="alert-box info">
+      <strong>💼 Thank you for your business!</strong> If you have any questions about this invoice, please don't hesitate to contact us.
+    </div>
+  `;
+
+  return getBaseEmailTemplate(content, {
+    companyName,
+    companyEmail,
+    companyPhone,
+    companyAddress,
+  });
+}

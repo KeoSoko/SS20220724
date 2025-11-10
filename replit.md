@@ -7,6 +7,15 @@ Simple Slips is an AI-powered receipt management system for the South African ma
 Preferred communication style: Simple, everyday language.
 
 ## Recent Updates (November 2025)
+### Professional HTML Email Templates (November 9, 2025)
+- **Responsive Email Design**: Quotation and invoice emails now use professionally designed HTML templates with inline CSS for cross-client compatibility
+- **Branded Email Experience**: Emails feature Simple Slips blue (#0073AA) branding, company logo, and business contact details
+- **Line Items Tables**: Professional table formatting displays all line items with descriptions, quantities, unit prices, and totals
+- **Smart Alerts**: Dynamic sections for expiry warnings (quotations) and overdue notices (invoices) with color-coded urgency
+- **Payment Details**: Invoice emails automatically include banking information and payment instructions when configured
+- **AI Message Integration**: AI-generated email content seamlessly embedded in professionally formatted HTML templates
+- **Email Client Compatibility**: Table-based responsive layout ensures consistent rendering across Gmail, Outlook, and mobile email clients
+
 ### User-Specific Sequential Numbering (November 9, 2025)
 - **Per-User Sequential Numbers**: Quotations and invoices now use independent numbering per user (User A: QUO-2025-001, User B: QUO-2025-001)
 - **Database Constraints**: Implemented composite unique constraints on (userId, quotationNumber) and (userId, invoiceNumber) to enforce uniqueness
@@ -33,7 +42,8 @@ Preferred communication style: Simple, everyday language.
 ### AI-Powered Email & Smart Reminders (MVP Phase 2-3)
 - **AI Email Assistant**: GPT-4o powered email drafting for quotations and invoices with contextual, professional messaging
 - **Smart Subject Lines**: Auto-generated subject lines based on document type, amount, and due dates
-- **Email Delivery**: One-click "Send to Client" buttons with PDF attachments via SendGrid
+- **Email Delivery**: One-click "Send to Client" buttons with PDF attachments via SendGrid, delivered using professional HTML email templates
+- **HTML Email Templates**: Professionally designed, responsive email templates with company branding, line items tables, and smart alerts (see Professional HTML Email Templates section above)
 - **Email Verification System**: Auto-population of business email with user's login email, automatic verification testing against SendGrid, seamless zero-friction onboarding for users who want to send from their login email
 - **Smart Reminder System**: Automated payment reminder detection with progressive cadencing (3/7/7/14 days)
 - **Urgency Escalation**: Four-level priority system (low/medium/high/critical) based on days overdue

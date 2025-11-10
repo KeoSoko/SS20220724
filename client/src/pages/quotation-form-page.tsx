@@ -485,7 +485,7 @@ export default function QuotationFormPage() {
                 data-testid="button-send"
               >
                 <Send className="h-4 w-4 mr-2" />
-                {isEditing ? "Update & Send" : "Send Quotation"}
+                {isEditing ? "Save & Mark as Sent" : "Create & Mark as Sent"}
               </Button>
             </div>
           </form>

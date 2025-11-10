@@ -656,7 +656,7 @@ Create a backup: ${this.appUrl}/settings
         to: client.email,
         from: {
           email: this.fromEmail,
-          name: 'Simple Slips'
+          name: 'Messaging-Service @ Simple Slips'
         },
         replyTo: businessProfile?.email ? {
           email: businessProfile.email,
@@ -779,7 +779,7 @@ ${aiMessage}
         to: client.email,
         from: {
           email: this.fromEmail,
-          name: 'Simple Slips'
+          name: 'Messaging-Service @ Simple Slips'
         },
         replyTo: businessProfile?.email ? {
           email: businessProfile.email,
@@ -874,7 +874,7 @@ ${aiMessage}
         to: client.email,
         from: {
           email: this.fromEmail,
-          name: 'Simple Slips'
+          name: 'Messaging-Service @ Simple Slips'
         },
         replyTo: businessProfile?.email ? {
           email: businessProfile.email,

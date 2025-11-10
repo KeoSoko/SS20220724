@@ -63,6 +63,11 @@
     border-radius: 2px !important;
   }
   
+  /* Ensure all badges are square - consistent with design system */
+  [class*="badge"], [class*="Badge"] {
+    border-radius: 0 !important;
+  }
+  
   /* Modern Edge-to-Edge Safe Areas */
   .safe-area {
     padding-top: env(safe-area-inset-top, 0);

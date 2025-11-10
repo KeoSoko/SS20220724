@@ -458,7 +458,7 @@ export default function BusinessHubPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <p className="font-medium">{reminder.client.name}</p>
-                          <Badge className="bg-blue-100 text-blue-800">
+                          <Badge className="bg-blue-100 text-blue-800 rounded-none">
                             {daysText}
                           </Badge>
                         </div>

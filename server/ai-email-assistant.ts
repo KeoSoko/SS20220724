@@ -29,6 +29,7 @@ export interface EmailContext {
   branchCode?: string;
   businessEmail?: string;
   businessPhone?: string;
+  contactName?: string;
 }
 
 export class AIEmailAssistant {
@@ -175,12 +176,15 @@ export class AIEmailAssistant {
         parts.push(`Politely ask them to contact you for payment details.`);
       }
       
-      // Include contact information
-      if (context.businessEmail || context.businessPhone) {
-        const contacts: string[] = [];
-        if (context.businessEmail) contacts.push(`email: ${context.businessEmail}`);
-        if (context.businessPhone) contacts.push(`phone: ${context.businessPhone}`);
-        parts.push(`Sign off with "${context.businessName}" and include contact details: ${contacts.join(', ')}`);
+      // Include contact information in signature
+      const signatureParts: string[] = [];
+      if (context.contactName) signatureParts.push(context.contactName);
+      signatureParts.push(context.businessName);
+      if (context.businessEmail) signatureParts.push(`email: ${context.businessEmail}`);
+      if (context.businessPhone) signatureParts.push(`phone: ${context.businessPhone}`);
+      
+      if (signatureParts.length > 0) {
+        parts.push(`Sign off with: ${signatureParts.join(', ')}`);
       }
     }
     
@@ -240,10 +244,14 @@ export class AIEmailAssistant {
     };
 
     const buildSignature = (): string => {
-      const parts = [`\n\nKind regards,\n${context.businessName}`];
-      if (context.businessEmail) parts.push(context.businessEmail);
-      if (context.businessPhone) parts.push(context.businessPhone);
-      return parts.join('\n');
+      const signatureParts = ['\n\nKind regards,'];
+      if (context.contactName) {
+        signatureParts.push(context.contactName);
+      }
+      signatureParts.push(context.businessName);
+      if (context.businessEmail) signatureParts.push(context.businessEmail);
+      if (context.businessPhone) signatureParts.push(context.businessPhone);
+      return signatureParts.join('\n');
     };
 
     if (context.documentType === 'quotation') {

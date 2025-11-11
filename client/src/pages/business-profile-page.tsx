@@ -24,6 +24,7 @@ const businessProfileSchema = z.object({
   registrationNumber: z.string().optional(),
   vatNumber: z.string().optional(),
   isVatRegistered: z.boolean().default(false),
+  contactName: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),
   website: z.string().optional(),
@@ -69,6 +70,7 @@ export default function BusinessProfilePage() {
       registrationNumber: "",
       vatNumber: "",
       isVatRegistered: false,
+      contactName: "",
       email: "",
       phone: "",
       website: "",
@@ -97,6 +99,7 @@ export default function BusinessProfilePage() {
         registrationNumber: businessProfile.registrationNumber || "",
         vatNumber: businessProfile.vatNumber || "",
         isVatRegistered: businessProfile.isVatRegistered || false,
+        contactName: businessProfile.contactName || "",
         email: emailToUse,
         phone: businessProfile.phone || "",
         website: businessProfile.website || "",
@@ -424,6 +427,22 @@ export default function BusinessProfilePage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="contactName"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-2">
+                        <FormLabel>Contact Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="e.g., John Smith" data-testid="input-contact-name" />
+                        </FormControl>
+                        <FormDescription>
+                          Your full name for email signatures
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name="email"

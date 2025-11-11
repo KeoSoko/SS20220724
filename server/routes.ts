@@ -4322,6 +4322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         expiryDate: new Date(quotation.expiryDate),
         isNewClient: false,
         // Contact details from business profile
+        contactName: businessProfile.contactName || undefined,
         businessEmail: businessProfile.email || undefined,
         businessPhone: businessProfile.phone || undefined,
       };
@@ -4921,6 +4922,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accountHolder: businessProfile.accountHolder || undefined,
         accountNumber: businessProfile.accountNumber || undefined,
         branchCode: businessProfile.branchCode || undefined,
+        contactName: businessProfile.contactName || undefined,
         businessEmail: businessProfile.email || undefined,
         businessPhone: businessProfile.phone || undefined,
       };

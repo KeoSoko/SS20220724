@@ -982,6 +982,7 @@ export const businessProfiles = pgTable("business_profiles", {
   registrationNumber: text("registration_number"),
   vatNumber: text("vat_number"),
   isVatRegistered: boolean("is_vat_registered").default(false).notNull(),
+  contactName: text("contact_name"),
   email: text("email"),
   phone: text("phone"),
   website: text("website"),

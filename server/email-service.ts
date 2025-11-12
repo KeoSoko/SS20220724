@@ -838,7 +838,7 @@ ${aiMessage}
     }
 
     try {
-      const { generateInvoiceEmailHTML } = await import('./email-templates');
+      const { generateInvoiceEmailHTML, generateInvoiceEmailPlainText } = await import('./email-templates');
       const businessName = businessProfile?.companyName || 'Your Business';
       
       const balance = (parseFloat(invoice.total) - parseFloat(invoice.amountPaid)).toFixed(2);
@@ -870,8 +870,16 @@ ${aiMessage}
         ]);
       }
       
-      // Generate professional HTML email using template
+      // Generate professional HTML and plain text email versions
       const emailBody = generateInvoiceEmailHTML(
+        invoice,
+        client,
+        lineItems,
+        businessProfile,
+        aiMessage
+      );
+      
+      const textBody = generateInvoiceEmailPlainText(
         invoice,
         client,
         lineItems,
@@ -891,6 +899,7 @@ ${aiMessage}
         } : undefined,
         subject: subject,
         html: emailBody,
+        text: textBody,
         attachments: [
           {
             content: pdfBuffer.toString('base64'),

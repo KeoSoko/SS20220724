@@ -40,165 +40,39 @@ function getBaseEmailTemplate(content: string, options: EmailTemplateOptions): s
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Simple Slips</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background-color: #f5f5f5;
-      color: #333333;
-    }
-    .email-container {
-      max-width: 600px;
-      margin: 0 auto;
-      background-color: #ffffff;
-    }
-    .header {
-      background-color: ${primaryColor};
-      padding: 30px 40px;
-      text-align: center;
-    }
-    .header h1 {
-      margin: 0;
-      color: #ffffff;
-      font-size: 28px;
-      font-weight: 600;
-    }
-    .content {
-      padding: 40px;
-    }
-    .message-section {
-      background-color: #f9f9f9;
-      border-left: 4px solid ${primaryColor};
-      padding: 20px;
-      margin: 20px 0;
-      white-space: pre-wrap;
-      line-height: 1.6;
-    }
-    .document-details {
-      margin: 30px 0;
-      padding: 20px;
-      background-color: #f9f9f9;
-    }
-    .detail-row {
-      width: 100%;
-      padding: 8px 0;
-      border-bottom: 1px solid #e5e5e5;
-    }
-    .detail-row:last-child {
-      border-bottom: none;
-    }
-    .detail-label {
-      font-weight: 600;
-      color: #666666;
-    }
-    .detail-value {
-      color: #333333;
-      text-align: right;
-    }
-    .line-items-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 30px 0;
-    }
-    .line-items-table th {
-      background-color: ${primaryColor};
-      color: #ffffff;
-      padding: 12px;
-      text-align: left;
-      font-weight: 600;
-    }
-    .line-items-table td {
-      padding: 12px;
-      border-bottom: 1px solid #e5e5e5;
-    }
-    .line-items-table tr:last-child td {
-      border-bottom: none;
-    }
-    .text-right {
-      text-align: right;
-    }
-    .totals-section {
-      margin: 30px 0;
-      padding: 20px;
-      background-color: #f9f9f9;
-    }
-    .total-row {
-      width: 100%;
-      padding: 8px 0;
-    }
-    .total-row.grand-total {
-      font-size: 20px;
-      font-weight: 700;
-      color: ${primaryColor};
-      border-top: 2px solid ${primaryColor};
-      padding-top: 12px;
-      margin-top: 8px;
-    }
-    .footer {
-      background-color: #f5f5f5;
-      padding: 30px 40px;
-      text-align: center;
-      color: #666666;
-      font-size: 14px;
-    }
-    .footer-company {
-      margin-bottom: 15px;
-    }
-    .footer-contact {
-      margin: 5px 0;
-    }
-    .alert-box {
-      background-color: #fff3cd;
-      border: 1px solid #ffc107;
-      border-radius: 4px;
-      padding: 15px;
-      margin: 20px 0;
-      color: #856404;
-    }
-    .alert-box.info {
-      background-color: #d1ecf1;
-      border-color: #bee5eb;
-      color: #0c5460;
-    }
-    @media only screen and (max-width: 600px) {
-      .content {
-        padding: 20px;
-      }
-      .header {
-        padding: 20px;
-      }
-      .header h1 {
-        font-size: 24px;
-      }
-      .line-items-table th,
-      .line-items-table td {
-        padding: 8px 4px;
-        font-size: 14px;
-      }
-    }
-  </style>
 </head>
-<body>
-  <div class="email-container">
-    <div class="header">
-      <h1>${options.companyName}</h1>
-    </div>
-    <div class="content">
-      ${content}
-    </div>
-    <div class="footer">
-      <div class="footer-company">
-        <strong>${options.companyName}</strong>
-      </div>
-      ${options.companyEmail ? `<div class="footer-contact">${options.companyEmail}</div>` : ''}
-      ${options.companyPhone ? `<div class="footer-contact">${options.companyPhone}</div>` : ''}
-      ${options.companyAddress ? `<div class="footer-contact">${options.companyAddress}</div>` : ''}
-      <div style="margin-top: 20px; font-size: 12px; color: #999999;">
-        Powered by Simple Slips - AI-Powered Financial Management
-      </div>
-    </div>
-  </div>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5; color: #333333;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f5f5f5;" bgcolor="#f5f5f5">
+    <tr>
+      <td align="center" style="padding: 20px 0;">
+        <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; background-color: #ffffff;" bgcolor="#ffffff">
+          <tr>
+            <td style="background-color: ${primaryColor}; padding: 30px 40px; text-align: center;" bgcolor="${primaryColor}">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600;">${options.companyName}</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              ${content}
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f5f5f5; padding: 30px 40px; text-align: center; color: #666666; font-size: 14px;" bgcolor="#f5f5f5">
+              <div style="margin-bottom: 15px;">
+                <strong>${options.companyName}</strong>
+              </div>
+              ${options.companyEmail ? `<div style="margin: 5px 0;">${options.companyEmail}</div>` : ''}
+              ${options.companyPhone ? `<div style="margin: 5px 0;">${options.companyPhone}</div>` : ''}
+              ${options.companyAddress ? `<div style="margin: 5px 0;">${options.companyAddress}</div>` : ''}
+              <div style="margin-top: 20px; font-size: 12px; color: #999999;">
+                Powered by Simple Slips - AI-Powered Financial Management
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>
   `.trim();
@@ -215,6 +89,7 @@ export function generateQuotationEmailHTML(
   const companyEmail = businessProfile?.email || undefined;
   const companyPhone = businessProfile?.phone || undefined;
   const companyAddress = businessProfile?.address || undefined;
+  const primaryColor = '#0073AA'; // Simple Slips blue
 
   const expiryDate = quotation.expiryDate ? formatDate(quotation.expiryDate) : 'N/A';
   const daysUntilExpiry = quotation.expiryDate 
@@ -223,10 +98,10 @@ export function generateQuotationEmailHTML(
 
   const lineItemsHTML = lineItems.map(item => `
     <tr>
-      <td>${item.description}</td>
-      <td class="text-right">${item.quantity}</td>
-      <td class="text-right">${formatCurrency(parseFloat(item.unitPrice))}</td>
-      <td class="text-right"><strong>${formatCurrency(parseFloat(item.total))}</strong></td>
+      <td style="padding: 12px; border-bottom: 1px solid #e5e5e5; color: #333333;">${item.description}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;">${item.quantity}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;">${formatCurrency(parseFloat(item.unitPrice))}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;"><strong>${formatCurrency(parseFloat(item.total))}</strong></td>
     </tr>
   `).join('');
 
@@ -234,22 +109,22 @@ export function generateQuotationEmailHTML(
     <h2 style="color: #333333; margin-top: 0;">Quotation ${quotation.quotationNumber}</h2>
     
     ${aiGeneratedMessage ? `
-    <div class="message-section">
+    <div style="background-color: #f9f9f9; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 20px 0; white-space: pre-wrap; line-height: 1.6; color: #333333;">
       ${aiGeneratedMessage}
     </div>
     ` : ''}
 
     ${daysUntilExpiry !== null && daysUntilExpiry <= 7 ? `
-    <div class="alert-box">
+    <div style="background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 20px 0; color: #856404;">
       <strong>⏰ Time Sensitive:</strong> This quotation expires in ${daysUntilExpiry} day${daysUntilExpiry !== 1 ? 's' : ''}.
     </div>
     ` : ''}
 
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr><td style="padding: 15px 0;"></td></tr>
       <tr>
         <td style="padding: 20px; background-color: #f9f9f9;" bgcolor="#f9f9f9">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; font-weight: 600; color: #666666;">Quotation Number:</td>
               <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;"><strong>${quotation.quotationNumber}</strong></td>
@@ -272,14 +147,14 @@ export function generateQuotationEmailHTML(
       <tr><td style="padding: 15px 0;"></td></tr>
     </table>
 
-    <h3 style="color: #333333; margin-top: 40px;">Items</h3>
-    <table class="line-items-table">
+    <h3 style="color: #333333; margin-top: 40px; margin-bottom: 20px;">Items</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; margin: 30px 0;">
       <thead>
         <tr>
-          <th>Description</th>
-          <th class="text-right">Qty</th>
-          <th class="text-right">Unit Price</th>
-          <th class="text-right">Total</th>
+          <th style="background-color: ${primaryColor}; color: #ffffff; padding: 12px; text-align: left; font-weight: 600;" bgcolor="${primaryColor}">Description</th>
+          <th style="background-color: ${primaryColor}; color: #ffffff; padding: 12px; text-align: right; font-weight: 600;" bgcolor="${primaryColor}">Qty</th>
+          <th style="background-color: ${primaryColor}; color: #ffffff; padding: 12px; text-align: right; font-weight: 600;" bgcolor="${primaryColor}">Unit Price</th>
+          <th style="background-color: ${primaryColor}; color: #ffffff; padding: 12px; text-align: right; font-weight: 600;" bgcolor="${primaryColor}">Total</th>
         </tr>
       </thead>
       <tbody>
@@ -287,22 +162,22 @@ export function generateQuotationEmailHTML(
       </tbody>
     </table>
 
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr><td style="padding: 15px 0;"></td></tr>
       <tr>
         <td style="padding: 20px; background-color: #f9f9f9;" bgcolor="#f9f9f9">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
-              <td style="padding: 8px 0;">Subtotal:</td>
-              <td style="padding: 8px 0; text-align: right;">${formatCurrency(parseFloat(quotation.subtotal))}</td>
+              <td style="padding: 8px 0; color: #333333;">Subtotal:</td>
+              <td style="padding: 8px 0; color: #333333; text-align: right;">${formatCurrency(parseFloat(quotation.subtotal))}</td>
             </tr>
             <tr>
-              <td style="padding: 8px 0;">VAT (15%):</td>
-              <td style="padding: 8px 0; text-align: right;">${formatCurrency(parseFloat(quotation.vatAmount))}</td>
+              <td style="padding: 8px 0; color: #333333;">VAT (15%):</td>
+              <td style="padding: 8px 0; color: #333333; text-align: right;">${formatCurrency(parseFloat(quotation.vatAmount))}</td>
             </tr>
             <tr>
-              <td style="padding-top: 12px; border-top: 2px solid #0073AA; font-size: 20px; font-weight: 700; color: #0073AA;">Total:</td>
-              <td style="padding-top: 12px; border-top: 2px solid #0073AA; font-size: 20px; font-weight: 700; color: #0073AA; text-align: right;">${formatCurrency(parseFloat(quotation.total))}</td>
+              <td style="padding-top: 12px; margin-top: 8px; border-top: 2px solid ${primaryColor}; font-size: 20px; font-weight: 700; color: ${primaryColor};">Total:</td>
+              <td style="padding-top: 12px; margin-top: 8px; border-top: 2px solid ${primaryColor}; font-size: 20px; font-weight: 700; color: ${primaryColor}; text-align: right;">${formatCurrency(parseFloat(quotation.total))}</td>
             </tr>
           </table>
         </td>
@@ -311,20 +186,20 @@ export function generateQuotationEmailHTML(
     </table>
 
     ${quotation.notes ? `
-    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9;">
       <h4 style="margin-top: 0; color: #666666;">Notes</h4>
-      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6;">${quotation.notes}</p>
+      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; color: #333333;">${quotation.notes}</p>
     </div>
     ` : ''}
 
     ${quotation.terms ? `
-    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9;">
       <h4 style="margin-top: 0; color: #666666;">Terms & Conditions</h4>
-      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; font-size: 14px;">${quotation.terms}</p>
+      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; font-size: 14px; color: #333333;">${quotation.terms}</p>
     </div>
     ` : ''}
 
-    <div class="alert-box info">
+    <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; margin: 20px 0; color: #0c5460;">
       <strong>📄 Next Steps:</strong> Please review this quotation and let us know if you have any questions. We're happy to discuss any details or make adjustments as needed.
     </div>
   `;
@@ -334,6 +209,7 @@ export function generateQuotationEmailHTML(
     companyEmail,
     companyPhone,
     companyAddress,
+    primaryColor,
   });
 }
 
@@ -348,6 +224,7 @@ export function generateInvoiceEmailHTML(
   const companyEmail = businessProfile?.email || undefined;
   const companyPhone = businessProfile?.phone || undefined;
   const companyAddress = businessProfile?.address || undefined;
+  const primaryColor = '#0073AA'; // Simple Slips blue
 
   const dueDate = invoice.dueDate ? formatDate(invoice.dueDate) : 'Upon receipt';
   const daysUntilDue = invoice.dueDate 
@@ -361,35 +238,35 @@ export function generateInvoiceEmailHTML(
 
   const lineItemsHTML = lineItems.map(item => `
     <tr>
-      <td>${item.description}</td>
-      <td class="text-right">${item.quantity}</td>
-      <td class="text-right">${formatCurrency(parseFloat(item.unitPrice))}</td>
-      <td class="text-right"><strong>${formatCurrency(parseFloat(item.total))}</strong></td>
+      <td style="padding: 12px; border-bottom: 1px solid #e5e5e5; color: #333333;">${item.description}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;">${item.quantity}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;">${formatCurrency(parseFloat(item.unitPrice))}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;"><strong>${formatCurrency(parseFloat(item.total))}</strong></td>
     </tr>
   `).join('');
 
   const bankingDetails = businessProfile?.bankName && businessProfile?.accountNumber ? `
-    <div style="margin: 30px 0; padding: 20px; background-color: #f0f8ff; border: 2px solid #0073AA; border-radius: 4px;">
-      <h4 style="margin-top: 0; color: #0073AA;">💳 Payment Details</h4>
+    <div style="margin: 30px 0; padding: 20px; background-color: #f0f8ff; border: 2px solid ${primaryColor};">
+      <h4 style="margin-top: 0; color: ${primaryColor};">💳 Payment Details</h4>
       <table style="width: 100%; font-size: 14px;">
         <tr>
-          <td style="padding: 5px 0;"><strong>Bank Name:</strong></td>
-          <td style="padding: 5px 0;">${businessProfile.bankName}</td>
+          <td style="padding: 5px 0; color: #333333;"><strong>Bank Name:</strong></td>
+          <td style="padding: 5px 0; color: #333333;">${businessProfile.bankName}</td>
         </tr>
         ${businessProfile.accountHolder ? `
         <tr>
-          <td style="padding: 5px 0;"><strong>Account Holder:</strong></td>
-          <td style="padding: 5px 0;">${businessProfile.accountHolder}</td>
+          <td style="padding: 5px 0; color: #333333;"><strong>Account Holder:</strong></td>
+          <td style="padding: 5px 0; color: #333333;">${businessProfile.accountHolder}</td>
         </tr>
         ` : ''}
         <tr>
-          <td style="padding: 5px 0;"><strong>Account Number:</strong></td>
-          <td style="padding: 5px 0;"><strong>${businessProfile.accountNumber}</strong></td>
+          <td style="padding: 5px 0; color: #333333;"><strong>Account Number:</strong></td>
+          <td style="padding: 5px 0; color: #333333;"><strong>${businessProfile.accountNumber}</strong></td>
         </tr>
         ${businessProfile.branchCode ? `
         <tr>
-          <td style="padding: 5px 0;"><strong>Branch Code:</strong></td>
-          <td style="padding: 5px 0;">${businessProfile.branchCode}</td>
+          <td style="padding: 5px 0; color: #333333;"><strong>Branch Code:</strong></td>
+          <td style="padding: 5px 0; color: #333333;">${businessProfile.branchCode}</td>
         </tr>
         ` : ''}
       </table>
@@ -401,26 +278,26 @@ export function generateInvoiceEmailHTML(
     <h2 style="color: #333333; margin-top: 0;">Invoice ${invoice.invoiceNumber}</h2>
     
     ${aiGeneratedMessage ? `
-    <div class="message-section">
+    <div style="background-color: #f9f9f9; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 20px 0; white-space: pre-wrap; line-height: 1.6; color: #333333;">
       ${aiGeneratedMessage}
     </div>
     ` : ''}
 
     ${isOverdue ? `
-    <div class="alert-box" style="background-color: #f8d7da; border-color: #f5c6cb; color: #721c24;">
+    <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; margin: 20px 0; color: #721c24;">
       <strong>⚠️ Payment Overdue:</strong> This invoice was due ${Math.abs(daysUntilDue!)} day${Math.abs(daysUntilDue!) !== 1 ? 's' : ''} ago.
     </div>
     ` : isDueSoon ? `
-    <div class="alert-box">
+    <div style="background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 20px 0; color: #856404;">
       <strong>⏰ Due Soon:</strong> This invoice is due in ${daysUntilDue} day${daysUntilDue !== 1 ? 's' : ''}.
     </div>
     ` : ''}
 
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr><td style="padding: 15px 0;"></td></tr>
       <tr>
         <td style="padding: 20px; background-color: #f9f9f9;" bgcolor="#f9f9f9">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; font-weight: 600; color: #666666;">Invoice Number:</td>
               <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;"><strong>${invoice.invoiceNumber}</strong></td>
@@ -439,7 +316,7 @@ export function generateInvoiceEmailHTML(
             </tr>
             <tr>
               <td style="padding: 8px 0; font-weight: 600; color: #666666;">Amount Due:</td>
-              <td style="padding: 8px 0; color: #0073AA; font-size: 18px; text-align: right;"><strong>${formatCurrency(amountDue)}</strong></td>
+              <td style="padding: 8px 0; color: ${primaryColor}; font-size: 18px; text-align: right;"><strong>${formatCurrency(amountDue)}</strong></td>
             </tr>
           </table>
         </td>
@@ -447,14 +324,14 @@ export function generateInvoiceEmailHTML(
       <tr><td style="padding: 15px 0;"></td></tr>
     </table>
 
-    <h3 style="color: #333333; margin-top: 40px;">Items</h3>
-    <table class="line-items-table">
+    <h3 style="color: #333333; margin-top: 40px; margin-bottom: 20px;">Items</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; margin: 30px 0;">
       <thead>
         <tr>
-          <th>Description</th>
-          <th class="text-right">Qty</th>
-          <th class="text-right">Unit Price</th>
-          <th class="text-right">Total</th>
+          <th style="background-color: ${primaryColor}; color: #ffffff; padding: 12px; text-align: left; font-weight: 600;" bgcolor="${primaryColor}">Description</th>
+          <th style="background-color: ${primaryColor}; color: #ffffff; padding: 12px; text-align: right; font-weight: 600;" bgcolor="${primaryColor}">Qty</th>
+          <th style="background-color: ${primaryColor}; color: #ffffff; padding: 12px; text-align: right; font-weight: 600;" bgcolor="${primaryColor}">Unit Price</th>
+          <th style="background-color: ${primaryColor}; color: #ffffff; padding: 12px; text-align: right; font-weight: 600;" bgcolor="${primaryColor}">Total</th>
         </tr>
       </thead>
       <tbody>
@@ -462,32 +339,32 @@ export function generateInvoiceEmailHTML(
       </tbody>
     </table>
 
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr><td style="padding: 15px 0;"></td></tr>
       <tr>
         <td style="padding: 20px; background-color: #f9f9f9;" bgcolor="#f9f9f9">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
-              <td style="padding: 8px 0;">Subtotal:</td>
-              <td style="padding: 8px 0; text-align: right;">${formatCurrency(parseFloat(invoice.subtotal))}</td>
+              <td style="padding: 8px 0; color: #333333;">Subtotal:</td>
+              <td style="padding: 8px 0; color: #333333; text-align: right;">${formatCurrency(parseFloat(invoice.subtotal))}</td>
             </tr>
             <tr>
-              <td style="padding: 8px 0;">VAT (15%):</td>
-              <td style="padding: 8px 0; text-align: right;">${formatCurrency(parseFloat(invoice.vatAmount))}</td>
+              <td style="padding: 8px 0; color: #333333;">VAT (15%):</td>
+              <td style="padding: 8px 0; color: #333333; text-align: right;">${formatCurrency(parseFloat(invoice.vatAmount))}</td>
             </tr>
             <tr>
-              <td style="padding: 8px 0;">Total:</td>
-              <td style="padding: 8px 0; text-align: right;">${formatCurrency(parseFloat(invoice.total))}</td>
+              <td style="padding: 8px 0; color: #333333;">Total:</td>
+              <td style="padding: 8px 0; color: #333333; text-align: right;">${formatCurrency(parseFloat(invoice.total))}</td>
             </tr>
             ${parseFloat(invoice.amountPaid) > 0 ? `
             <tr>
-              <td style="padding: 8px 0;">Amount Paid:</td>
+              <td style="padding: 8px 0; color: #333333;">Amount Paid:</td>
               <td style="padding: 8px 0; text-align: right; color: #28a745;">-${formatCurrency(parseFloat(invoice.amountPaid))}</td>
             </tr>
             ` : ''}
             <tr>
-              <td style="padding-top: 12px; border-top: 2px solid #0073AA; font-size: 20px; font-weight: 700; color: #0073AA;">Amount Due:</td>
-              <td style="padding-top: 12px; border-top: 2px solid #0073AA; font-size: 20px; font-weight: 700; color: #0073AA; text-align: right;">${formatCurrency(amountDue)}</td>
+              <td style="padding-top: 12px; margin-top: 8px; border-top: 2px solid ${primaryColor}; font-size: 20px; font-weight: 700; color: ${primaryColor};">Amount Due:</td>
+              <td style="padding-top: 12px; margin-top: 8px; border-top: 2px solid ${primaryColor}; font-size: 20px; font-weight: 700; color: ${primaryColor}; text-align: right;">${formatCurrency(amountDue)}</td>
             </tr>
           </table>
         </td>
@@ -498,20 +375,20 @@ export function generateInvoiceEmailHTML(
     ${bankingDetails}
 
     ${invoice.notes ? `
-    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9;">
       <h4 style="margin-top: 0; color: #666666;">Notes</h4>
-      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6;">${invoice.notes}</p>
+      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; color: #333333;">${invoice.notes}</p>
     </div>
     ` : ''}
 
     ${invoice.terms ? `
-    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+    <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9;">
       <h4 style="margin-top: 0; color: #666666;">Terms & Conditions</h4>
-      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; font-size: 14px;">${invoice.terms}</p>
+      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; font-size: 14px; color: #333333;">${invoice.terms}</p>
     </div>
     ` : ''}
 
-    <div class="alert-box info">
+    <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; margin: 20px 0; color: #0c5460;">
       <strong>💼 Thank you for your business!</strong> If you have any questions about this invoice, please don't hesitate to contact us.
     </div>
   `;
@@ -521,6 +398,7 @@ export function generateInvoiceEmailHTML(
     companyEmail,
     companyPhone,
     companyAddress,
+    primaryColor,
   });
 }
 

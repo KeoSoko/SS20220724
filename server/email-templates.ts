@@ -79,11 +79,9 @@ function getBaseEmailTemplate(content: string, options: EmailTemplateOptions): s
       margin: 30px 0;
       padding: 20px;
       background-color: #f9f9f9;
-      border-radius: 4px;
     }
     .detail-row {
-      display: flex;
-      justify-content: space-between;
+      width: 100%;
       padding: 8px 0;
       border-bottom: 1px solid #e5e5e5;
     }
@@ -96,6 +94,7 @@ function getBaseEmailTemplate(content: string, options: EmailTemplateOptions): s
     }
     .detail-value {
       color: #333333;
+      text-align: right;
     }
     .line-items-table {
       width: 100%;
@@ -123,11 +122,9 @@ function getBaseEmailTemplate(content: string, options: EmailTemplateOptions): s
       margin: 30px 0;
       padding: 20px;
       background-color: #f9f9f9;
-      border-radius: 4px;
     }
     .total-row {
-      display: flex;
-      justify-content: space-between;
+      width: 100%;
       padding: 8px 0;
     }
     .total-row.grand-total {
@@ -248,24 +245,32 @@ export function generateQuotationEmailHTML(
     </div>
     ` : ''}
 
-    <div class="document-details">
-      <div class="detail-row">
-        <span class="detail-label">Quotation Number:</span>
-        <span class="detail-value"><strong>${quotation.quotationNumber}</strong></span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Date:</span>
-        <span class="detail-value">${formatDate(quotation.createdAt)}</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Valid Until:</span>
-        <span class="detail-value">${expiryDate}</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Client:</span>
-        <span class="detail-value">${client.name}</span>
-      </div>
-    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td style="padding: 15px 0;"></td></tr>
+      <tr>
+        <td style="padding: 20px; background-color: #f9f9f9;" bgcolor="#f9f9f9">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; font-weight: 600; color: #666666;">Quotation Number:</td>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;"><strong>${quotation.quotationNumber}</strong></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; font-weight: 600; color: #666666;">Date:</td>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;">${formatDate(quotation.createdAt)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; font-weight: 600; color: #666666;">Valid Until:</td>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;">${expiryDate}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; font-weight: 600; color: #666666;">Client:</td>
+              <td style="padding: 8px 0; color: #333333; text-align: right;">${client.name}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr><td style="padding: 15px 0;"></td></tr>
+    </table>
 
     <h3 style="color: #333333; margin-top: 40px;">Items</h3>
     <table class="line-items-table">
@@ -282,20 +287,28 @@ export function generateQuotationEmailHTML(
       </tbody>
     </table>
 
-    <div class="totals-section">
-      <div class="total-row">
-        <span>Subtotal:</span>
-        <span>${formatCurrency(parseFloat(quotation.subtotal))}</span>
-      </div>
-      <div class="total-row">
-        <span>VAT (15%):</span>
-        <span>${formatCurrency(parseFloat(quotation.vatAmount))}</span>
-      </div>
-      <div class="total-row grand-total">
-        <span>Total:</span>
-        <span>${formatCurrency(parseFloat(quotation.total))}</span>
-      </div>
-    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td style="padding: 15px 0;"></td></tr>
+      <tr>
+        <td style="padding: 20px; background-color: #f9f9f9;" bgcolor="#f9f9f9">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 8px 0;">Subtotal:</td>
+              <td style="padding: 8px 0; text-align: right;">${formatCurrency(parseFloat(quotation.subtotal))}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0;">VAT (15%):</td>
+              <td style="padding: 8px 0; text-align: right;">${formatCurrency(parseFloat(quotation.vatAmount))}</td>
+            </tr>
+            <tr>
+              <td style="padding-top: 12px; border-top: 2px solid #0073AA; font-size: 20px; font-weight: 700; color: #0073AA;">Total:</td>
+              <td style="padding-top: 12px; border-top: 2px solid #0073AA; font-size: 20px; font-weight: 700; color: #0073AA; text-align: right;">${formatCurrency(parseFloat(quotation.total))}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr><td style="padding: 15px 0;"></td></tr>
+    </table>
 
     ${quotation.notes ? `
     <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
@@ -403,28 +416,36 @@ export function generateInvoiceEmailHTML(
     </div>
     ` : ''}
 
-    <div class="document-details">
-      <div class="detail-row">
-        <span class="detail-label">Invoice Number:</span>
-        <span class="detail-value"><strong>${invoice.invoiceNumber}</strong></span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Date:</span>
-        <span class="detail-value">${formatDate(invoice.createdAt)}</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Due Date:</span>
-        <span class="detail-value"><strong>${dueDate}</strong></span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Client:</span>
-        <span class="detail-value">${client.name}</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Amount Due:</span>
-        <span class="detail-value" style="color: #0073AA; font-size: 18px;"><strong>${formatCurrency(amountDue)}</strong></span>
-      </div>
-    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td style="padding: 15px 0;"></td></tr>
+      <tr>
+        <td style="padding: 20px; background-color: #f9f9f9;" bgcolor="#f9f9f9">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; font-weight: 600; color: #666666;">Invoice Number:</td>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;"><strong>${invoice.invoiceNumber}</strong></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; font-weight: 600; color: #666666;">Date:</td>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;">${formatDate(invoice.createdAt)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; font-weight: 600; color: #666666;">Due Date:</td>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;"><strong>${dueDate}</strong></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; font-weight: 600; color: #666666;">Client:</td>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e5e5e5; color: #333333; text-align: right;">${client.name}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; font-weight: 600; color: #666666;">Amount Due:</td>
+              <td style="padding: 8px 0; color: #0073AA; font-size: 18px; text-align: right;"><strong>${formatCurrency(amountDue)}</strong></td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr><td style="padding: 15px 0;"></td></tr>
+    </table>
 
     <h3 style="color: #333333; margin-top: 40px;">Items</h3>
     <table class="line-items-table">
@@ -441,30 +462,38 @@ export function generateInvoiceEmailHTML(
       </tbody>
     </table>
 
-    <div class="totals-section">
-      <div class="total-row">
-        <span>Subtotal:</span>
-        <span>${formatCurrency(parseFloat(invoice.subtotal))}</span>
-      </div>
-      <div class="total-row">
-        <span>VAT (15%):</span>
-        <span>${formatCurrency(parseFloat(invoice.vatAmount))}</span>
-      </div>
-      <div class="total-row">
-        <span>Total:</span>
-        <span>${formatCurrency(parseFloat(invoice.total))}</span>
-      </div>
-      ${parseFloat(invoice.amountPaid) > 0 ? `
-      <div class="total-row">
-        <span>Amount Paid:</span>
-        <span style="color: #28a745;">-${formatCurrency(parseFloat(invoice.amountPaid))}</span>
-      </div>
-      ` : ''}
-      <div class="total-row grand-total">
-        <span>Amount Due:</span>
-        <span>${formatCurrency(amountDue)}</span>
-      </div>
-    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td style="padding: 15px 0;"></td></tr>
+      <tr>
+        <td style="padding: 20px; background-color: #f9f9f9;" bgcolor="#f9f9f9">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 8px 0;">Subtotal:</td>
+              <td style="padding: 8px 0; text-align: right;">${formatCurrency(parseFloat(invoice.subtotal))}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0;">VAT (15%):</td>
+              <td style="padding: 8px 0; text-align: right;">${formatCurrency(parseFloat(invoice.vatAmount))}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0;">Total:</td>
+              <td style="padding: 8px 0; text-align: right;">${formatCurrency(parseFloat(invoice.total))}</td>
+            </tr>
+            ${parseFloat(invoice.amountPaid) > 0 ? `
+            <tr>
+              <td style="padding: 8px 0;">Amount Paid:</td>
+              <td style="padding: 8px 0; text-align: right; color: #28a745;">-${formatCurrency(parseFloat(invoice.amountPaid))}</td>
+            </tr>
+            ` : ''}
+            <tr>
+              <td style="padding-top: 12px; border-top: 2px solid #0073AA; font-size: 20px; font-weight: 700; color: #0073AA;">Amount Due:</td>
+              <td style="padding-top: 12px; border-top: 2px solid #0073AA; font-size: 20px; font-weight: 700; color: #0073AA; text-align: right;">${formatCurrency(amountDue)}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr><td style="padding: 15px 0;"></td></tr>
+    </table>
 
     ${bankingDetails}
 

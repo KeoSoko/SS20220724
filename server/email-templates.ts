@@ -30,6 +30,26 @@ function formatDate(date: Date | string): string {
   }).format(dateObj);
 }
 
+/**
+ * Formats plain text with line breaks into HTML paragraphs for emails
+ * - Double line breaks (\n\n) create new paragraphs with spacing
+ * - Single line breaks (\n) become <br> tags
+ */
+function formatTextToParagraphs(text: string): string {
+  if (!text) return '';
+  
+  // Split by double line breaks to create paragraphs
+  const paragraphs = text.split(/\n\n+/).filter(p => p.trim());
+  
+  // Convert each paragraph: replace single line breaks with <br> and wrap in <p>
+  return paragraphs
+    .map(para => {
+      const formatted = para.trim().replace(/\n/g, '<br>');
+      return `<p style="margin: 0 0 15px 0; line-height: 1.6; color: #333333;">${formatted}</p>`;
+    })
+    .join('');
+}
+
 function getBaseEmailTemplate(content: string, options: EmailTemplateOptions): string {
   const primaryColor = options.primaryColor || '#0073AA';
   
@@ -109,8 +129,8 @@ export function generateQuotationEmailHTML(
     <h2 style="color: #333333; margin-top: 0;">Quotation ${quotation.quotationNumber}</h2>
     
     ${aiGeneratedMessage ? `
-    <div style="background-color: #f9f9f9; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 20px 0; white-space: pre-wrap; line-height: 1.6; color: #333333;">
-      ${aiGeneratedMessage}
+    <div style="background-color: #f9f9f9; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 20px 0;">
+      ${formatTextToParagraphs(aiGeneratedMessage)}
     </div>
     ` : ''}
 
@@ -188,14 +208,16 @@ export function generateQuotationEmailHTML(
     ${quotation.notes ? `
     <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9;">
       <h4 style="margin-top: 0; color: #666666;">Notes</h4>
-      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; color: #333333;">${quotation.notes}</p>
+      ${formatTextToParagraphs(quotation.notes)}
     </div>
     ` : ''}
 
     ${quotation.terms ? `
     <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9;">
       <h4 style="margin-top: 0; color: #666666;">Terms & Conditions</h4>
-      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; font-size: 14px; color: #333333;">${quotation.terms}</p>
+      <div style="font-size: 14px;">
+        ${formatTextToParagraphs(quotation.terms)}
+      </div>
     </div>
     ` : ''}
 
@@ -278,8 +300,8 @@ export function generateInvoiceEmailHTML(
     <h2 style="color: #333333; margin-top: 0;">Invoice ${invoice.invoiceNumber}</h2>
     
     ${aiGeneratedMessage ? `
-    <div style="background-color: #f9f9f9; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 20px 0; white-space: pre-wrap; line-height: 1.6; color: #333333;">
-      ${aiGeneratedMessage}
+    <div style="background-color: #f9f9f9; border-left: 4px solid ${primaryColor}; padding: 20px; margin: 20px 0;">
+      ${formatTextToParagraphs(aiGeneratedMessage)}
     </div>
     ` : ''}
 
@@ -377,14 +399,16 @@ export function generateInvoiceEmailHTML(
     ${invoice.notes ? `
     <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9;">
       <h4 style="margin-top: 0; color: #666666;">Notes</h4>
-      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; color: #333333;">${invoice.notes}</p>
+      ${formatTextToParagraphs(invoice.notes)}
     </div>
     ` : ''}
 
     ${invoice.terms ? `
     <div style="margin: 30px 0; padding: 20px; background-color: #f9f9f9;">
       <h4 style="margin-top: 0; color: #666666;">Terms & Conditions</h4>
-      <p style="margin: 0; white-space: pre-wrap; line-height: 1.6; font-size: 14px; color: #333333;">${invoice.terms}</p>
+      <div style="font-size: 14px;">
+        ${formatTextToParagraphs(invoice.terms)}
+      </div>
     </div>
     ` : ''}
 

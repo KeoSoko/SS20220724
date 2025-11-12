@@ -683,7 +683,6 @@ export function generateInvoiceEmailPlainText(
     if (businessProfile?.bankName) text += `Bank:            ${businessProfile.bankName}\n`;
     if (businessProfile?.accountNumber) text += `Account Number:  ${businessProfile.accountNumber}\n`;
     if (businessProfile?.branchCode) text += `Branch Code:     ${businessProfile.branchCode}\n`;
-    if (businessProfile?.accountType) text += `Account Type:    ${businessProfile.accountType}\n`;
     text += `\nPlease use invoice number ${invoice.invoiceNumber} as payment reference.\n\n`;
   }
   

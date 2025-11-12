@@ -640,11 +640,19 @@ Create a backup: ${this.appUrl}/settings
     }
 
     try {
-      const { generateQuotationEmailHTML } = await import('./email-templates');
+      const { generateQuotationEmailHTML, generateQuotationEmailPlainText } = await import('./email-templates');
       const businessName = businessProfile?.companyName || 'Your Business';
       
-      // Generate professional HTML email using template
+      // Generate professional HTML and plain text email versions
       const htmlBody = generateQuotationEmailHTML(
+        quotation,
+        client,
+        lineItems,
+        businessProfile,
+        aiGeneratedMessage
+      );
+      
+      const textBody = generateQuotationEmailPlainText(
         quotation,
         client,
         lineItems,
@@ -664,6 +672,7 @@ Create a backup: ${this.appUrl}/settings
         } : undefined,
         subject: subject,
         html: htmlBody,
+        text: textBody,
         attachments: [
           {
             content: pdfBuffer.toString('base64'),

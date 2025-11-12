@@ -523,3 +523,193 @@ export function generateInvoiceEmailHTML(
     companyAddress,
   });
 }
+
+/**
+ * Generate plain text version of quotation email for email client fallback
+ */
+export function generateQuotationEmailPlainText(
+  quotation: Quotation,
+  client: Client,
+  lineItems: LineItem[],
+  businessProfile: BusinessProfile | null,
+  aiGeneratedMessage: string
+): string {
+  const companyName = businessProfile?.companyName || 'Simple Slips';
+  const expiryDate = formatDate(quotation.expiryDate);
+  const quotationDate = formatDate(quotation.createdAt);
+  
+  let text = `${companyName}\n`;
+  text += `${'='.repeat(companyName.length)}\n\n`;
+  
+  text += `${aiGeneratedMessage}\n\n`;
+  
+  text += `${'─'.repeat(60)}\n`;
+  text += `QUOTATION DETAILS\n`;
+  text += `${'─'.repeat(60)}\n\n`;
+  
+  text += `Quotation Number:  ${quotation.quotationNumber}\n`;
+  text += `Date:              ${quotationDate}\n`;
+  text += `Valid Until:       ${expiryDate}\n`;
+  text += `Client:            ${client.name}\n\n`;
+  
+  const now = new Date();
+  const expiry = new Date(quotation.expiryDate);
+  const daysUntilExpiry = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (daysUntilExpiry > 0 && daysUntilExpiry <= 7) {
+    text += `⏰ TIME SENSITIVE: This quotation expires in ${daysUntilExpiry} day${daysUntilExpiry !== 1 ? 's' : ''}.\n\n`;
+  }
+  
+  text += `${'─'.repeat(60)}\n`;
+  text += `LINE ITEMS\n`;
+  text += `${'─'.repeat(60)}\n\n`;
+  
+  text += `Description                         Qty    Price      Total\n`;
+  text += `${'-'.repeat(60)}\n`;
+  
+  lineItems.forEach((item: LineItem) => {
+    const desc = item.description.substring(0, 35).padEnd(35);
+    const qty = item.quantity.toString().padStart(3);
+    const price = formatCurrency(parseFloat(item.unitPrice)).padStart(10);
+    const total = formatCurrency(parseFloat(item.total)).padStart(10);
+    text += `${desc} ${qty}  ${price}  ${total}\n`;
+  });
+  
+  text += `${'-'.repeat(60)}\n\n`;
+  
+  text += `Subtotal:          ${formatCurrency(parseFloat(quotation.subtotal))}\n`;
+  text += `VAT (15%):         ${formatCurrency(parseFloat(quotation.vatAmount))}\n`;
+  text += `${'─'.repeat(60)}\n`;
+  text += `TOTAL:             ${formatCurrency(parseFloat(quotation.total))}\n`;
+  text += `${'─'.repeat(60)}\n\n`;
+  
+  if (quotation.notes) {
+    text += `NOTES:\n${quotation.notes}\n\n`;
+  }
+  
+  if (quotation.terms) {
+    text += `TERMS & CONDITIONS:\n${quotation.terms}\n\n`;
+  }
+  
+  text += `${'─'.repeat(60)}\n`;
+  if (businessProfile?.email || businessProfile?.phone || businessProfile?.address) {
+    text += `CONTACT INFORMATION\n`;
+    text += `${'─'.repeat(60)}\n`;
+    if (businessProfile?.email) text += `Email:   ${businessProfile.email}\n`;
+    if (businessProfile?.phone) text += `Phone:   ${businessProfile.phone}\n`;
+    if (businessProfile?.address) text += `Address: ${businessProfile.address}\n`;
+    text += `\n`;
+  }
+  
+  text += `This email was sent by Simple Slips on behalf of ${companyName}.\n`;
+  text += `Please find the detailed quotation PDF attached.\n`;
+  
+  return text;
+}
+
+/**
+ * Generate plain text version of invoice email for email client fallback
+ */
+export function generateInvoiceEmailPlainText(
+  invoice: Invoice,
+  client: Client,
+  lineItems: LineItem[],
+  businessProfile: BusinessProfile | null,
+  aiGeneratedMessage: string
+): string {
+  const companyName = businessProfile?.companyName || 'Simple Slips';
+  const dueDate = formatDate(invoice.dueDate);
+  const invoiceDate = formatDate(invoice.createdAt);
+  const amountDue = parseFloat(invoice.total) - parseFloat(invoice.amountPaid);
+  
+  let text = `${companyName}\n`;
+  text += `${'='.repeat(companyName.length)}\n\n`;
+  
+  text += `${aiGeneratedMessage}\n\n`;
+  
+  const now = new Date();
+  const due = new Date(invoice.dueDate);
+  const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const daysOverdue = Math.ceil((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (invoice.status === 'overdue' && daysOverdue > 0) {
+    text += `⚠️ OVERDUE: This invoice is ${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue.\n\n`;
+  } else if (daysUntilDue > 0 && daysUntilDue <= 7) {
+    text += `⏰ DUE SOON: This invoice is due in ${daysUntilDue} day${daysUntilDue !== 1 ? 's' : ''}.\n\n`;
+  }
+  
+  text += `${'─'.repeat(60)}\n`;
+  text += `INVOICE DETAILS\n`;
+  text += `${'─'.repeat(60)}\n\n`;
+  
+  text += `Invoice Number:    ${invoice.invoiceNumber}\n`;
+  text += `Date:              ${invoiceDate}\n`;
+  text += `Due Date:          ${dueDate}\n`;
+  text += `Client:            ${client.name}\n`;
+  text += `Amount Due:        ${formatCurrency(amountDue)}\n\n`;
+  
+  text += `${'─'.repeat(60)}\n`;
+  text += `LINE ITEMS\n`;
+  text += `${'─'.repeat(60)}\n\n`;
+  
+  text += `Description                         Qty    Price      Total\n`;
+  text += `${'-'.repeat(60)}\n`;
+  
+  lineItems.forEach((item: LineItem) => {
+    const desc = item.description.substring(0, 35).padEnd(35);
+    const qty = item.quantity.toString().padStart(3);
+    const price = formatCurrency(parseFloat(item.unitPrice)).padStart(10);
+    const total = formatCurrency(parseFloat(item.total)).padStart(10);
+    text += `${desc} ${qty}  ${price}  ${total}\n`;
+  });
+  
+  text += `${'-'.repeat(60)}\n\n`;
+  
+  text += `Subtotal:          ${formatCurrency(parseFloat(invoice.subtotal))}\n`;
+  text += `VAT (15%):         ${formatCurrency(parseFloat(invoice.vatAmount))}\n`;
+  text += `Total:             ${formatCurrency(parseFloat(invoice.total))}\n`;
+  
+  if (parseFloat(invoice.amountPaid) > 0) {
+    text += `Amount Paid:       -${formatCurrency(parseFloat(invoice.amountPaid))}\n`;
+  }
+  
+  text += `${'─'.repeat(60)}\n`;
+  text += `AMOUNT DUE:        ${formatCurrency(amountDue)}\n`;
+  text += `${'─'.repeat(60)}\n\n`;
+  
+  if (businessProfile?.bankName || businessProfile?.accountNumber) {
+    text += `PAYMENT DETAILS\n`;
+    text += `${'─'.repeat(60)}\n`;
+    if (businessProfile?.bankName) text += `Bank:            ${businessProfile.bankName}\n`;
+    if (businessProfile?.accountNumber) text += `Account Number:  ${businessProfile.accountNumber}\n`;
+    if (businessProfile?.branchCode) text += `Branch Code:     ${businessProfile.branchCode}\n`;
+    if (businessProfile?.accountType) text += `Account Type:    ${businessProfile.accountType}\n`;
+    text += `\nPlease use invoice number ${invoice.invoiceNumber} as payment reference.\n\n`;
+  }
+  
+  if (invoice.notes) {
+    text += `NOTES:\n${invoice.notes}\n\n`;
+  }
+  
+  if (invoice.terms) {
+    text += `TERMS & CONDITIONS:\n${invoice.terms}\n\n`;
+  }
+  
+  text += `${'─'.repeat(60)}\n`;
+  if (businessProfile?.email || businessProfile?.phone || businessProfile?.address) {
+    text += `CONTACT INFORMATION\n`;
+    text += `${'─'.repeat(60)}\n`;
+    if (businessProfile?.email) text += `Email:   ${businessProfile.email}\n`;
+    if (businessProfile?.phone) text += `Phone:   ${businessProfile.phone}\n`;
+    if (businessProfile?.address) text += `Address: ${businessProfile.address}\n`;
+    text += `\n`;
+  }
+  
+  text += `💼 Thank you for your business! If you have any questions about\n`;
+  text += `this invoice, please don't hesitate to contact us.\n\n`;
+  
+  text += `This email was sent by Simple Slips on behalf of ${companyName}.\n`;
+  text += `Please find the detailed invoice PDF attached.\n`;
+  
+  return text;
+}

@@ -113,6 +113,17 @@ export class AIEmailAssistant {
       
       parts.push(`Mention that the quotation is attached as a PDF. Ask them to review it and let you know if they have questions. Express enthusiasm about potentially working together.`);
       
+      // Include contact information in signature
+      const signatureParts: string[] = [];
+      if (context.contactName) signatureParts.push(context.contactName);
+      signatureParts.push(context.businessName);
+      if (context.businessEmail) signatureParts.push(`email: ${context.businessEmail}`);
+      if (context.businessPhone) signatureParts.push(`phone: ${context.businessPhone}`);
+      
+      if (signatureParts.length > 0) {
+        parts.push(`Sign off with: ${signatureParts.join(', ')}`);
+      }
+      
     } else if (context.documentType === 'invoice') {
       if (context.isOverdue && context.daysOverdue) {
         // Overdue reminder

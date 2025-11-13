@@ -454,7 +454,7 @@ export default function BusinessHubPage() {
                     : `due in ${reminder.daysUntilDue} days`;
 
                   return (
-                    <div key={reminder.invoice.id} className="flex items-center justify-between p-4 border border-blue-200 rounded-lg bg-blue-50/30 hover:bg-blue-50/50">
+                    <div key={reminder.invoice.id} className="flex items-center justify-between p-4 border border-blue-200 rounded-sm bg-blue-50/30 hover:bg-blue-50/50">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <p className="font-medium">{reminder.client.name}</p>
@@ -537,7 +537,7 @@ export default function BusinessHubPage() {
                     }[reminder.urgency];
 
                     return (
-                      <div key={reminder.invoice.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                      <div key={reminder.invoice.id} className="flex items-center justify-between p-4 border rounded-sm hover:bg-gray-50">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
                             <p className="font-medium">{reminder.client.name}</p>
@@ -787,7 +787,7 @@ export default function BusinessHubPage() {
               
               <div className="border-t pt-4">
                 <div className="font-medium text-sm text-muted-foreground mb-2">Message:</div>
-                <div className="bg-gray-50 p-4 rounded-lg whitespace-pre-wrap text-sm">
+                <div className="bg-gray-50 p-4 rounded-sm whitespace-pre-wrap text-sm">
                   {emailPreview.body}
                 </div>
               </div>

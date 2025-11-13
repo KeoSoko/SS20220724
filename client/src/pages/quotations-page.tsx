@@ -75,6 +75,8 @@ export default function QuotationsPage() {
 
   const { data: quotations = [], isLoading } = useQuery<Quotation[]>({
     queryKey: ["/api/quotations"],
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const { data: clients = [] } = useQuery<Client[]>({

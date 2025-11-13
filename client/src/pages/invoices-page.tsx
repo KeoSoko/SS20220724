@@ -78,6 +78,8 @@ export default function InvoicesPage() {
 
   const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const { data: clients = [] } = useQuery<Client[]>({

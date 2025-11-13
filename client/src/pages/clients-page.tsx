@@ -29,6 +29,8 @@ export default function ClientsPage() {
 
   const { data: clients = [], isLoading } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const form = useForm<InsertClient>({

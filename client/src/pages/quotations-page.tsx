@@ -573,20 +573,19 @@ export default function QuotationsPage() {
 
                 <div>
                   <h3 className="text-sm font-medium text-gray-500 mb-2">Line Items</h3>
-                  <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Quantity</TableHead>
-                        <TableHead>Unit Price</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="w-[40%]">Description</TableHead>
+                        <TableHead className="w-[15%]">Quantity</TableHead>
+                        <TableHead className="w-[20%]">Unit Price</TableHead>
+                        <TableHead className="w-[25%] text-right">Total</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {quotationLineItems.map((item) => (
                         <TableRow key={item.id}>
-                          <TableCell>{item.description}</TableCell>
+                          <TableCell className="break-words">{item.description}</TableCell>
                           <TableCell>{item.quantity}</TableCell>
                           <TableCell>{formatCurrency(item.unitPrice)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(item.total)}</TableCell>
@@ -594,7 +593,6 @@ export default function QuotationsPage() {
                       ))}
                     </TableBody>
                   </Table>
-                  </div>
                 </div>
 
                 <div className="border-t pt-4">

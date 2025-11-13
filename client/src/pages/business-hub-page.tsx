@@ -787,7 +787,7 @@ export default function BusinessHubPage() {
               
               <div className="border-t pt-4">
                 <div className="font-medium text-sm text-muted-foreground mb-2">Message:</div>
-                <div className="bg-gray-50 p-4 rounded-sm whitespace-pre-wrap text-sm">
+                <div className="bg-gray-50 p-4 rounded-sm whitespace-pre-wrap text-sm max-h-96 overflow-y-auto">
                   {emailPreview.body}
                 </div>
               </div>

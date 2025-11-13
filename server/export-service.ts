@@ -579,6 +579,12 @@ export class ExportService {
         theme: 'striped',
         headStyles: { fillColor: [0, 115, 170] },
         styles: { fontSize: 10 },
+        columnStyles: {
+          0: { cellWidth: 'auto' },  // Description - takes remaining space
+          1: { cellWidth: 25, halign: 'center' },  // Quantity - centered
+          2: { cellWidth: 35, halign: 'right' },   // Unit Price - right aligned
+          3: { cellWidth: 35, halign: 'right' }    // Total - right aligned
+        }
       });
 
       yPos = (doc as any).lastAutoTable.finalY + 10;
@@ -589,23 +595,26 @@ export class ExportService {
       const vatAmount = subtotal * vatRate;
       const total = subtotal + vatAmount;
 
-      // Totals section (right aligned)
-      const totalsX = pageWidth - 70;
+      // Totals section - aligned with the Total column
+      // The Total column ends at pageWidth - 15 (table margin) - 35 (column width) = pageWidth - 50
+      const totalsLabelX = pageWidth - 85;
+      const totalsValueX = pageWidth - 15;
+      
       doc.setFontSize(10);
-      doc.text('Subtotal:', totalsX, yPos);
-      doc.text(`R ${subtotal.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+      doc.text('Subtotal:', totalsLabelX, yPos);
+      doc.text(`R ${subtotal.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
       yPos += 7;
 
       if (businessProfile.isVatRegistered) {
-        doc.text('VAT (15%):', totalsX, yPos);
-        doc.text(`R ${vatAmount.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+        doc.text('VAT (15%):', totalsLabelX, yPos);
+        doc.text(`R ${vatAmount.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
         yPos += 7;
       }
 
       doc.setFontSize(12);
       doc.setFont(undefined, 'bold');
-      doc.text('Total:', totalsX, yPos);
-      doc.text(`R ${total.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+      doc.text('Total:', totalsLabelX, yPos);
+      doc.text(`R ${total.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
       yPos += 15;
 
       // Terms and conditions
@@ -723,6 +732,12 @@ export class ExportService {
         theme: 'striped',
         headStyles: { fillColor: [0, 115, 170] },
         styles: { fontSize: 10 },
+        columnStyles: {
+          0: { cellWidth: 'auto' },  // Description - takes remaining space
+          1: { cellWidth: 25, halign: 'center' },  // Quantity - centered
+          2: { cellWidth: 35, halign: 'right' },   // Unit Price - right aligned
+          3: { cellWidth: 35, halign: 'right' }    // Total - right aligned
+        }
       });
 
       yPos = (doc as any).lastAutoTable.finalY + 10;
@@ -735,37 +750,39 @@ export class ExportService {
       const amountPaid = parseFloat(invoice.amountPaid);
       const balance = total - amountPaid;
 
-      // Totals section (right aligned)
-      const totalsX = pageWidth - 70;
+      // Totals section - aligned with the Total column
+      const totalsLabelX = pageWidth - 85;
+      const totalsValueX = pageWidth - 15;
+      
       doc.setFontSize(10);
-      doc.text('Subtotal:', totalsX, yPos);
-      doc.text(`R ${subtotal.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+      doc.text('Subtotal:', totalsLabelX, yPos);
+      doc.text(`R ${subtotal.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
       yPos += 7;
 
       if (businessProfile.isVatRegistered) {
-        doc.text('VAT (15%):', totalsX, yPos);
-        doc.text(`R ${vatAmount.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+        doc.text('VAT (15%):', totalsLabelX, yPos);
+        doc.text(`R ${vatAmount.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
         yPos += 7;
       }
 
       doc.setFontSize(12);
       doc.setFont(undefined, 'bold');
-      doc.text('Total:', totalsX, yPos);
-      doc.text(`R ${total.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+      doc.text('Total:', totalsLabelX, yPos);
+      doc.text(`R ${total.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
       yPos += 7;
 
       if (amountPaid > 0) {
         doc.setFont(undefined, 'normal');
         doc.setFontSize(10);
-        doc.text('Amount Paid:', totalsX, yPos);
-        doc.text(`R ${amountPaid.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+        doc.text('Amount Paid:', totalsLabelX, yPos);
+        doc.text(`R ${amountPaid.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
         yPos += 7;
 
         doc.setFont(undefined, 'bold');
         doc.setFontSize(12);
         doc.setTextColor(balance > 0 ? 200 : 0, balance > 0 ? 0 : 128, 0);
-        doc.text('Balance Due:', totalsX, yPos);
-        doc.text(`R ${balance.toFixed(2)}`, pageWidth - 15, yPos, { align: 'right' });
+        doc.text('Balance Due:', totalsLabelX, yPos);
+        doc.text(`R ${balance.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
         yPos += 10;
         doc.setTextColor(60, 60, 60);
       }

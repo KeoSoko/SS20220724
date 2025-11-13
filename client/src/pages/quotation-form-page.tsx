@@ -13,9 +13,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useRoute, useLocation } from "wouter";
-import { Plus, Trash2, Save, Send } from "lucide-react";
+import { Plus, Trash2, Save, Send, Mail } from "lucide-react";
 import { format } from "date-fns";
 import type { Client, Quotation, LineItem, BusinessProfile } from "@shared/schema";
 
@@ -42,12 +43,29 @@ const formatCurrency = (amount: string | number) => {
   return `R ${numAmount.toFixed(2)}`;
 };
 
+const emailFormSchema = z.object({
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Message is required"),
+});
+
+type EmailFormData = z.infer<typeof emailFormSchema>;
+
 export default function QuotationFormPage() {
   const { toast } = useToast();
   const [, params] = useRoute("/quotations/:id/edit");
   const [, setLocation] = useLocation();
   const quotationId = params?.id ? parseInt(params.id) : null;
   const isEditing = quotationId !== null;
+  const [isEmailPreviewDialogOpen, setIsEmailPreviewDialogOpen] = useState(false);
+  const [emailPreviewData, setEmailPreviewData] = useState<{
+    subject: string;
+    body: string;
+    to: string;
+    from: string;
+    replyTo: string | null;
+    attachmentName: string;
+    quotationId: number;
+  } | null>(null);
 
   const { data: clients = [] } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
@@ -78,6 +96,14 @@ export default function QuotationFormPage() {
   const { fields, append, remove } = useFieldArray({
     control: form.control,
     name: "lineItems",
+  });
+
+  const emailForm = useForm<EmailFormData>({
+    resolver: zodResolver(emailFormSchema),
+    defaultValues: {
+      subject: "",
+      body: "",
+    },
   });
 
   // Load existing quotation data
@@ -199,6 +225,81 @@ export default function QuotationFormPage() {
     },
   });
 
+  const previewEmailMutation = useMutation({
+    mutationFn: async (quotationId: number) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch(`/api/quotations/${quotationId}/preview-email`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.message || 'Failed to preview email');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setEmailPreviewData(data);
+      emailForm.reset({
+        subject: data.subject,
+        body: data.body,
+      });
+      setIsEmailPreviewDialogOpen(true);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to preview email",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const sendQuotationMutation = useMutation({
+    mutationFn: async ({ quotationId, subject, body }: { quotationId: number; subject: string; body: string }) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch(`/api/quotations/${quotationId}/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ subject, body }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.message || 'Failed to send email');
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      setIsEmailPreviewDialogOpen(false);
+      setEmailPreviewData(null);
+      toast({
+        title: "Success",
+        description: "Quotation sent successfully to client",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/quotations'] });
+      setLocation("/quotations");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send email",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSubmit = (data: QuotationFormData, status: string) => {
     const formData = { ...data, status };
     if (isEditing) {
@@ -206,6 +307,44 @@ export default function QuotationFormPage() {
     } else {
       createMutation.mutate(formData);
     }
+  };
+
+  const handleCreateAndSend = (data: QuotationFormData) => {
+    // Create quotation as draft first
+    const formData = { ...data, status: "draft" };
+    
+    // Calculate totals
+    const formSubtotal = data.lineItems.reduce((sum, item) => {
+      const qty = parseFloat(item.quantity) || 0;
+      const price = parseFloat(item.unitPrice) || 0;
+      return sum + (qty * price);
+    }, 0);
+    
+    const formVatAmount = isVatRegistered ? formSubtotal * 0.15 : 0;
+    const formTotal = formSubtotal + formVatAmount;
+    
+    const quotationData = {
+      ...formData,
+      date: new Date(data.date),
+      expiryDate: new Date(data.expiryDate),
+      subtotal: formSubtotal.toString(),
+      vatAmount: formVatAmount.toString(),
+      total: formTotal.toString(),
+    };
+
+    apiRequest("POST", "/api/quotations", quotationData)
+      .then((result: any) => {
+        queryClient.invalidateQueries({ queryKey: ["/api/quotations"] });
+        // Immediately preview email for the newly created quotation
+        previewEmailMutation.mutate(result.id);
+      })
+      .catch((error: Error) => {
+        toast({
+          title: "Error",
+          description: error.message,
+          variant: "destructive",
+        });
+      });
   };
 
   return (
@@ -478,19 +617,118 @@ export default function QuotationFormPage() {
                 <Save className="h-4 w-4 mr-2" />
                 Save as Draft
               </Button>
-              <Button
-                type="button"
-                onClick={form.handleSubmit((data) => handleSubmit(data, "sent"))}
-                disabled={createMutation.isPending || updateMutation.isPending}
-                data-testid="button-send"
-              >
-                <Send className="h-4 w-4 mr-2" />
-                {isEditing ? "Save & Mark as Sent" : "Create & Mark as Sent"}
-              </Button>
+              {!isEditing && (
+                <Button
+                  type="button"
+                  onClick={form.handleSubmit(handleCreateAndSend)}
+                  disabled={createMutation.isPending || updateMutation.isPending || previewEmailMutation.isPending}
+                  data-testid="button-create-and-send"
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  {previewEmailMutation.isPending ? "Loading..." : "Create & Send"}
+                </Button>
+              )}
+              {isEditing && (
+                <Button
+                  type="button"
+                  onClick={form.handleSubmit((data) => handleSubmit(data, "draft"))}
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  data-testid="button-save"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Changes
+                </Button>
+              )}
             </div>
           </form>
         </Form>
       </div>
+
+      {/* Email Preview Dialog */}
+      <Dialog open={isEmailPreviewDialogOpen} onOpenChange={setIsEmailPreviewDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-email-preview">
+          <DialogHeader>
+            <DialogTitle>Review & Edit Email</DialogTitle>
+            <DialogDescription>
+              Review and edit the AI-generated email before sending to your client
+            </DialogDescription>
+          </DialogHeader>
+          {emailPreviewData && (
+            <Form {...emailForm}>
+              <form onSubmit={emailForm.handleSubmit((data) => {
+                if (emailPreviewData) {
+                  sendQuotationMutation.mutate({
+                    quotationId: emailPreviewData.quotationId,
+                    subject: data.subject,
+                    body: data.body,
+                  });
+                }
+              })} className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-500">From:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.from}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Reply-To:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.replyTo || 'Not set'}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">To:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.to}</p>
+                </div>
+                <FormField
+                  control={emailForm.control}
+                  name="subject"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Subject</FormLabel>
+                      <FormControl>
+                        <Input {...field} data-testid="input-email-subject" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={emailForm.control}
+                  name="body"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Message</FormLabel>
+                      <FormControl>
+                        <Textarea {...field} rows={10} data-testid="input-email-body" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Attachment:</label>
+                  <p className="text-sm mt-1">{emailPreviewData.attachmentName}</p>
+                </div>
+                <DialogFooter className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsEmailPreviewDialogOpen(false)}
+                    data-testid="button-close-preview"
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={sendQuotationMutation.isPending}
+                    data-testid="button-send-from-preview"
+                  >
+                    <Mail className="h-4 w-4 mr-2" />
+                    {sendQuotationMutation.isPending ? "Sending..." : "Send Email"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          )}
+        </DialogContent>
+      </Dialog>
     </PageLayout>
     </SubscriptionGuard>
   );

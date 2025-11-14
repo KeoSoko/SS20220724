@@ -95,6 +95,7 @@ export async function apiRequest(
       headers,
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include", // Include credentials for session-based auth fallback
+      cache: "no-cache", // Always bypass browser cache for fresh data
     });
 
     await throwIfResNotOk(res);
@@ -160,6 +161,7 @@ export const getQueryFn: <T>(options: {
     const res = await fetch(url, {
       headers,
       credentials: "include", // Include credentials for session-based auth fallback
+      cache: "no-cache", // Always bypass browser cache for fresh data
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

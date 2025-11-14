@@ -3804,7 +3804,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       
       const quotationsList = await db.query.quotations.findMany({
-        where: eq(quotations.userId, userId),
+        where: and(
+          eq(quotations.userId, userId),
+          eq(quotations.isActive, true)
+        ),
         orderBy: [asc(quotations.date)],
       });
 

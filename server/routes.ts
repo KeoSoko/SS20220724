@@ -3636,7 +3636,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       
       const clientsList = await db.query.clients.findMany({
-        where: eq(clients.userId, userId),
+        where: and(
+          eq(clients.userId, userId),
+          eq(clients.isActive, true)
+        ),
         orderBy: [asc(clients.name)],
       });
 

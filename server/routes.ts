@@ -3746,7 +3746,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Delete client (soft delete)
+  // Delete client (soft delete with cascade)
   app.delete("/api/clients/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
@@ -3770,6 +3770,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deleted) {
         return res.status(404).json({ error: "Client not found" });
       }
+
+      await db
+        .update(quotations)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(
+          eq(quotations.clientId, clientId),
+          eq(quotations.userId, userId)
+        ));
+
+      await db
+        .update(invoices)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(
+          eq(invoices.clientId, clientId),
+          eq(invoices.userId, userId)
+        ));
 
       res.json({ message: "Client deleted successfully" });
     } catch (error: any) {

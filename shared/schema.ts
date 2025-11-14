@@ -1051,6 +1051,7 @@ export const quotations = pgTable("quotations", {
   terms: text("terms"),
   convertedToInvoiceId: integer("converted_to_invoice_id"),
   sentAt: timestamp("sent_at"),
+  isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [
@@ -1079,6 +1080,7 @@ export const invoices = pgTable("invoices", {
   nextReminderDate: timestamp("next_reminder_date"),
   lastPreDueReminderSent: timestamp("last_pre_due_reminder_sent"),
   preDueRemindersSent: integer("pre_due_reminders_sent").notNull().default(0),
+  isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [

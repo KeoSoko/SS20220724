@@ -616,27 +616,16 @@ export default function QuotationFormPage() {
               >
                 Cancel
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={form.handleSubmit((data) => handleSubmit(data, "draft"))}
-                disabled={createMutation.isPending || updateMutation.isPending}
-                data-testid="button-save-draft"
-                className="w-full sm:w-auto"
-              >
-                <Save className="h-4 w-4 mr-2" />
-                Save as Draft
-              </Button>
               {!isEditing && (
                 <Button
                   type="button"
-                  onClick={form.handleSubmit(handleCreateAndSend)}
-                  disabled={createMutation.isPending || updateMutation.isPending || previewEmailMutation.isPending}
-                  data-testid="button-create-and-send"
+                  onClick={form.handleSubmit((data) => handleSubmit(data, "draft"))}
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  data-testid="button-create-quotation"
                   className="w-full sm:w-auto"
                 >
-                  <Send className="h-4 w-4 mr-2" />
-                  {previewEmailMutation.isPending ? "Loading..." : "Create & Send"}
+                  <Save className="h-4 w-4 mr-2" />
+                  Create Quotation
                 </Button>
               )}
               {isEditing && (

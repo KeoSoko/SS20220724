@@ -646,26 +646,13 @@ export default function InvoiceFormPage() {
               {!isEditing && (
                 <Button
                   type="button"
-                  variant="outline"
                   onClick={form.handleSubmit(handleSubmit)}
-                  disabled={createMutation.isPending || updateMutation.isPending || previewEmailMutation.isPending}
-                  data-testid="button-save-draft"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  data-testid="button-create-invoice"
                   className="w-full sm:w-auto"
                 >
                   <Save className="h-4 w-4 mr-2" />
-                  Save as Draft
-                </Button>
-              )}
-              {!isEditing && (
-                <Button
-                  type="button"
-                  onClick={form.handleSubmit(handleCreateAndSend)}
-                  disabled={createMutation.isPending || updateMutation.isPending || previewEmailMutation.isPending}
-                  data-testid="button-create-and-send"
-                  className="w-full sm:w-auto"
-                >
-                  <Send className="h-4 w-4 mr-2" />
-                  {previewEmailMutation.isPending ? "Loading..." : "Create & Send"}
+                  Create Invoice
                 </Button>
               )}
               {isEditing && (

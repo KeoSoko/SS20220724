@@ -4066,7 +4066,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Delete quotation
+  // Delete quotation (soft delete)
   app.delete("/api/quotations/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
@@ -4079,7 +4079,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const [deleted] = await db
-        .delete(quotations)
+        .update(quotations)
+        .set({ isActive: false, updatedAt: new Date() })
         .where(and(
           eq(quotations.id, quotationId),
           eq(quotations.userId, userId)
@@ -4784,7 +4785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Delete invoice
+  // Delete invoice (soft delete)
   app.delete("/api/invoices/:id", requireSubscription(), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
@@ -4797,7 +4798,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const [deleted] = await db
-        .delete(invoices)
+        .update(invoices)
+        .set({ isActive: false, updatedAt: new Date() })
         .where(and(
           eq(invoices.id, invoiceId),
           eq(invoices.userId, userId)

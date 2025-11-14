@@ -336,7 +336,15 @@ export default function QuotationFormPage() {
       .then((result: any) => {
         queryClient.invalidateQueries({ queryKey: ["/api/quotations"] });
         // Immediately preview email for the newly created quotation
-        previewEmailMutation.mutate(result.id);
+        if (result && result.id) {
+          previewEmailMutation.mutate(result.id);
+        } else {
+          toast({
+            title: "Error",
+            description: "Failed to get quotation ID for email preview",
+            variant: "destructive",
+          });
+        }
       })
       .catch((error: Error) => {
         toast({
@@ -598,12 +606,13 @@ export default function QuotationFormPage() {
               </CardContent>
             </Card>
 
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-col sm:flex-row justify-end gap-3">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setLocation("/quotations")}
                 data-testid="button-cancel"
+                className="w-full sm:w-auto"
               >
                 Cancel
               </Button>
@@ -613,6 +622,7 @@ export default function QuotationFormPage() {
                 onClick={form.handleSubmit((data) => handleSubmit(data, "draft"))}
                 disabled={createMutation.isPending || updateMutation.isPending}
                 data-testid="button-save-draft"
+                className="w-full sm:w-auto"
               >
                 <Save className="h-4 w-4 mr-2" />
                 Save as Draft
@@ -623,6 +633,7 @@ export default function QuotationFormPage() {
                   onClick={form.handleSubmit(handleCreateAndSend)}
                   disabled={createMutation.isPending || updateMutation.isPending || previewEmailMutation.isPending}
                   data-testid="button-create-and-send"
+                  className="w-full sm:w-auto"
                 >
                   <Send className="h-4 w-4 mr-2" />
                   {previewEmailMutation.isPending ? "Loading..." : "Create & Send"}
@@ -634,6 +645,7 @@ export default function QuotationFormPage() {
                   onClick={form.handleSubmit((data) => handleSubmit(data, "draft"))}
                   disabled={createMutation.isPending || updateMutation.isPending}
                   data-testid="button-save"
+                  className="w-full sm:w-auto"
                 >
                   <Save className="h-4 w-4 mr-2" />
                   Save Changes

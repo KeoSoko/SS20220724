@@ -4456,10 +4456,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get all invoices for user
       const userInvoices = await db.query.invoices.findMany({
-        where: and(
-          eq(invoices.userId, userId),
-          eq(invoices.isActive, true)
-        ),
+        where: eq(invoices.userId, userId),
       });
 
       // Calculate stats

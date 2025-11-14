@@ -4501,7 +4501,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       
       const invoicesList = await db.query.invoices.findMany({
-        where: eq(invoices.userId, userId),
+        where: and(
+          eq(invoices.userId, userId),
+          eq(invoices.isActive, true)
+        ),
         orderBy: [asc(invoices.date)],
       });
 

@@ -3803,15 +3803,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       
-      const quotationsList = await db.query.quotations.findMany({
-        where: and(
+      const quotationsList = await db
+        .select()
+        .from(quotations)
+        .innerJoin(clients, eq(quotations.clientId, clients.id))
+        .where(and(
           eq(quotations.userId, userId),
-          eq(quotations.isActive, true)
-        ),
-        orderBy: [asc(quotations.date)],
-      });
+          eq(quotations.isActive, true),
+          eq(clients.isActive, true)
+        ))
+        .orderBy(asc(quotations.date));
 
-      res.json(quotationsList);
+      res.json(quotationsList.map(row => row.quotations));
     } catch (error: any) {
       log(`Error fetching quotations: ${error.message}`, 'business-hub');
       res.status(500).json({ error: "Failed to fetch quotations" });
@@ -4517,15 +4520,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       
-      const invoicesList = await db.query.invoices.findMany({
-        where: and(
+      const invoicesList = await db
+        .select()
+        .from(invoices)
+        .innerJoin(clients, eq(invoices.clientId, clients.id))
+        .where(and(
           eq(invoices.userId, userId),
-          eq(invoices.isActive, true)
-        ),
-        orderBy: [asc(invoices.date)],
-      });
+          eq(invoices.isActive, true),
+          eq(clients.isActive, true)
+        ))
+        .orderBy(asc(invoices.date));
 
-      res.json(invoicesList);
+      res.json(invoicesList.map(row => row.invoices));
     } catch (error: any) {
       log(`Error fetching invoices: ${error.message}`, 'business-hub');
       res.status(500).json({ error: "Failed to fetch invoices" });

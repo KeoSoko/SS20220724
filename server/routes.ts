@@ -3788,10 +3788,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       
       const quotationsList = await db.query.quotations.findMany({
-        where: and(
-          eq(quotations.userId, userId),
-          eq(quotations.isActive, true)
-        ),
+        where: eq(quotations.userId, userId),
         orderBy: [asc(quotations.date)],
       });
 
@@ -4501,10 +4498,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       
       const invoicesList = await db.query.invoices.findMany({
-        where: and(
-          eq(invoices.userId, userId),
-          eq(invoices.isActive, true)
-        ),
+        where: eq(invoices.userId, userId),
         orderBy: [asc(invoices.date)],
       });
 

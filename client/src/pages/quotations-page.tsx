@@ -348,8 +348,10 @@ export default function QuotationsPage() {
 
   const quotationLineItems = quotationDetails?.lineItems || [];
 
-  const selectedClient = selectedQuotation
-    ? clients.find((c) => c.id === selectedQuotation.clientId)
+  const displayQuotation = quotationDetails || selectedQuotation;
+  
+  const selectedClient = displayQuotation
+    ? clients.find((c) => c.id === displayQuotation.clientId)
     : null;
 
   return (
@@ -511,17 +513,17 @@ export default function QuotationsPage() {
             <DialogHeader>
               <DialogTitle>Quotation Details</DialogTitle>
             </DialogHeader>
-            {selectedQuotation && (
+            {displayQuotation && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Quotation #</h3>
-                    <p className="mt-1">{selectedQuotation.quotationNumber}</p>
+                    <p className="mt-1">{displayQuotation.quotationNumber}</p>
                   </div>
                   <div>
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Status</h3>
                     <Select
-                      value={selectedQuotation.status}
+                      value={displayQuotation.status}
                       onValueChange={handleStatusChange}
                       disabled={updateStatusMutation.isPending}
                     >
@@ -529,7 +531,7 @@ export default function QuotationsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {getAvailableStatuses(selectedQuotation.status).map((status) => (
+                        {getAvailableStatuses(displayQuotation.status).map((status) => (
                           <SelectItem key={status} value={status}>
                             <div className="flex items-center gap-2">
                               <span className={`inline-block px-2 py-1 rounded text-xs ${getStatusBadgeColor(status)}`}>
@@ -544,13 +546,13 @@ export default function QuotationsPage() {
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Date</h3>
                     <p className="mt-1">
-                      {format(new Date(selectedQuotation.date), "MMM dd, yyyy")}
+                      {format(new Date(displayQuotation.date), "MMM dd, yyyy")}
                     </p>
                   </div>
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Expiry Date</h3>
                     <p className="mt-1">
-                      {format(new Date(selectedQuotation.expiryDate), "MMM dd, yyyy")}
+                      {format(new Date(displayQuotation.expiryDate), "MMM dd, yyyy")}
                     </p>
                   </div>
                 </div>
@@ -600,32 +602,32 @@ export default function QuotationsPage() {
                 <div className="border-t pt-4">
                   <div className="flex justify-between mb-2">
                     <span className="text-gray-600">Subtotal</span>
-                    <span>{formatCurrency(selectedQuotation.subtotal)}</span>
+                    <span>{formatCurrency(displayQuotation.subtotal)}</span>
                   </div>
                   <div className="flex justify-between mb-2">
                     <span className="text-gray-600">VAT (15%)</span>
-                    <span>{formatCurrency(selectedQuotation.vatAmount)}</span>
+                    <span>{formatCurrency(displayQuotation.vatAmount)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-lg">
                     <span>Total</span>
-                    <span>{formatCurrency(selectedQuotation.total)}</span>
+                    <span>{formatCurrency(displayQuotation.total)}</span>
                   </div>
                 </div>
 
-                {selectedQuotation.notes && (
+                {displayQuotation.notes && (
                   <div>
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Notes</h3>
                     <p className="text-sm text-gray-600 whitespace-pre-wrap">
-                      {selectedQuotation.notes}
+                      {displayQuotation.notes}
                     </p>
                   </div>
                 )}
 
-                {selectedQuotation.terms && (
+                {displayQuotation.terms && (
                   <div>
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Terms</h3>
                     <p className="text-sm text-gray-600 whitespace-pre-wrap">
-                      {selectedQuotation.terms}
+                      {displayQuotation.terms}
                     </p>
                   </div>
                 )}
@@ -633,7 +635,7 @@ export default function QuotationsPage() {
                 <div className="flex justify-end gap-2 flex-wrap">
                   <Button
                     variant="outline"
-                    onClick={() => handlePreviewEmail(selectedQuotation.id)}
+                    onClick={() => handlePreviewEmail(displayQuotation.id)}
                     disabled={previewEmailMutation.isPending}
                     data-testid="button-send-quotation"
                   >
@@ -642,15 +644,15 @@ export default function QuotationsPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => handleDownloadPDF(selectedQuotation.id)}
+                    onClick={() => handleDownloadPDF(displayQuotation.id)}
                     data-testid="button-download-pdf"
                   >
                     <Download className="h-4 w-4 mr-2" />
                     Download PDF
                   </Button>
-                  {selectedQuotation.status === "accepted" && (
+                  {displayQuotation.status === "accepted" && (
                     <Button
-                      onClick={() => handleConvertToInvoice(selectedQuotation.id)}
+                      onClick={() => handleConvertToInvoice(displayQuotation.id)}
                       data-testid="button-convert-to-invoice"
                     >
                       Convert to Invoice

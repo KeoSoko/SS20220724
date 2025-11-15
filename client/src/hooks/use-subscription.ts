@@ -9,10 +9,17 @@ export interface SubscriptionStatus {
   subscriptionPlatform?: 'paystack' | 'google_play' | 'apple';
 }
 
+const getStoredToken = (): string | null => {
+  return localStorage.getItem('auth_token');
+};
+
 export function useSubscription() {
+  const hasToken = !!getStoredToken();
+  
   const query = useQuery<SubscriptionStatus | null>({
     queryKey: ['/api/subscription/status'],
     queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: hasToken,
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: (failureCount, error) => {
       // Don't retry on 401 (authentication errors)

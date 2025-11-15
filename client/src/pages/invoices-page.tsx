@@ -376,12 +376,14 @@ export default function InvoicesPage() {
   const invoiceLineItems = invoiceDetails?.lineItems || [];
   const invoicePayments = invoiceDetails?.payments || [];
 
-  const selectedClient = selectedInvoice
-    ? clients.find((c) => c.id === selectedInvoice.clientId)
+  const displayInvoice = invoiceDetails || selectedInvoice;
+
+  const selectedClient = displayInvoice
+    ? clients.find((c) => c.id === displayInvoice.clientId)
     : null;
 
-  const balance = selectedInvoice
-    ? parseFloat(selectedInvoice.total) - parseFloat(selectedInvoice.amountPaid)
+  const balance = displayInvoice
+    ? parseFloat(displayInvoice.total) - parseFloat(displayInvoice.amountPaid)
     : 0;
 
   return (
@@ -550,17 +552,17 @@ export default function InvoicesPage() {
             <DialogHeader>
               <DialogTitle>Invoice Details</DialogTitle>
             </DialogHeader>
-            {selectedInvoice && (
+            {displayInvoice && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Invoice #</h3>
-                    <p className="mt-1">{selectedInvoice.invoiceNumber}</p>
+                    <p className="mt-1">{displayInvoice.invoiceNumber}</p>
                   </div>
                   <div>
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Status</h3>
                     <Select
-                      value={selectedInvoice.status}
+                      value={displayInvoice.status}
                       onValueChange={handleStatusChange}
                       disabled={updateStatusMutation.isPending}
                     >
@@ -568,7 +570,7 @@ export default function InvoicesPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {getAvailableStatuses(selectedInvoice.status).map((status) => (
+                        {getAvailableStatuses(displayInvoice.status).map((status) => (
                           <SelectItem key={status} value={status}>
                             <div className="flex items-center gap-2">
                               <span className={`inline-block px-2 py-1 rounded text-xs ${getStatusBadgeColor(status)}`}>
@@ -583,13 +585,13 @@ export default function InvoicesPage() {
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Date</h3>
                     <p className="mt-1">
-                      {format(new Date(selectedInvoice.date), "MMM dd, yyyy")}
+                      {format(new Date(displayInvoice.date), "MMM dd, yyyy")}
                     </p>
                   </div>
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Due Date</h3>
                     <p className="mt-1">
-                      {format(new Date(selectedInvoice.dueDate), "MMM dd, yyyy")}
+                      {format(new Date(displayInvoice.dueDate), "MMM dd, yyyy")}
                     </p>
                   </div>
                 </div>
@@ -636,19 +638,19 @@ export default function InvoicesPage() {
                 <div className="border-t pt-4">
                   <div className="flex justify-between mb-2">
                     <span className="text-gray-600">Subtotal</span>
-                    <span>{formatCurrency(selectedInvoice.subtotal)}</span>
+                    <span>{formatCurrency(displayInvoice.subtotal)}</span>
                   </div>
                   <div className="flex justify-between mb-2">
                     <span className="text-gray-600">VAT (15%)</span>
-                    <span>{formatCurrency(selectedInvoice.vatAmount)}</span>
+                    <span>{formatCurrency(displayInvoice.vatAmount)}</span>
                   </div>
                   <div className="flex justify-between mb-2 font-bold">
                     <span>Total</span>
-                    <span>{formatCurrency(selectedInvoice.total)}</span>
+                    <span>{formatCurrency(displayInvoice.total)}</span>
                   </div>
                   <div className="flex justify-between mb-2 text-green-600">
                     <span>Amount Paid</span>
-                    <span>{formatCurrency(selectedInvoice.amountPaid)}</span>
+                    <span>{formatCurrency(displayInvoice.amountPaid)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-lg border-t pt-2">
                     <span>Balance Due</span>
@@ -689,7 +691,7 @@ export default function InvoicesPage() {
                 <div className="flex justify-end gap-2 flex-wrap">
                   <Button
                     variant="outline"
-                    onClick={() => handlePreviewEmail(selectedInvoice.id)}
+                    onClick={() => handlePreviewEmail(displayInvoice.id)}
                     disabled={previewEmailMutation.isPending}
                     data-testid="button-send-invoice"
                   >
@@ -698,7 +700,7 @@ export default function InvoicesPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => handleDownloadPDF(selectedInvoice.id)}
+                    onClick={() => handleDownloadPDF(displayInvoice.id)}
                     data-testid="button-download-pdf"
                   >
                     <Download className="h-4 w-4 mr-2" />

@@ -4490,7 +4490,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const paid = parseFloat(invoice.amountPaid);
         const remaining = total - paid;
 
-        if (invoice.status === 'unpaid' || invoice.status === 'partially_paid') {
+        if (invoice.status === 'unpaid' || invoice.status === 'partially_paid' || invoice.status === 'overdue') {
           totalUnpaid += remaining;
 
           // Check if overdue

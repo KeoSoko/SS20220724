@@ -19,7 +19,7 @@ Business
 
 ## App Description (4000 characters max)
 
-Transform your financial management with Simple Slips - the smart receipt tracking app designed specifically for South African users. Our AI-powered platform makes expense tracking effortless, helping you stay organized for tax season and personal budgeting.
+Transform your financial management with Simple Slips - the complete AI-powered platform for South African freelancers, solopreneurs, and small businesses. Track expenses, manage receipts, create professional quotations and invoices, and stay tax-ready all year round.
 
 **🔥 Key Features:**
 
@@ -28,6 +28,15 @@ Transform your financial management with Simple Slips - the smart receipt tracki
 • AI extracts all details automatically - store name, date, amount, items
 • Works with any South African retailer receipt format
 • Offline scanning capability for remote areas
+
+💼 **Business Hub - NEW!**
+• Create professional quotations and invoices
+• Manage client database with full contact details
+• AI-powered email drafting for professional communication
+• Smart payment reminders with automated follow-ups
+• One-click conversion from quote to invoice
+• Track payment status and overdue invoices
+• Generate P&L reports for business insights
 
 💰 **Tax-Ready Organization**
 • Automatic tax deductible identification (based on public guidelines)
@@ -38,6 +47,7 @@ Transform your financial management with Simple Slips - the smart receipt tracki
 🤖 **AI-Powered Intelligence**
 • Smart categorization learns your spending patterns
 • Natural language search: "Show me restaurant expenses in July"
+• AI email assistant drafts professional messages
 • Duplicate detection prevents double entries
 • Budget tracking with intelligent alerts
 
@@ -46,6 +56,7 @@ Transform your financial management with Simple Slips - the smart receipt tracki
 • Category breakdowns with visual charts
 • Compare spending across different periods
 • Budget vs actual spending analysis
+• Business performance dashboards
 
 🔒 **Enterprise-Grade Security**
 • Bank-level encryption for all data
@@ -54,14 +65,17 @@ Transform your financial management with Simple Slips - the smart receipt tracki
 • Complete data control - delete anytime
 
 **Perfect For:**
+• Freelancers managing clients and invoicing
+• Solopreneurs running small businesses
 • Small business owners tracking expenses
-• Freelancers managing tax deductions
+• Tax professionals organizing client receipts
 • Families budgeting household spending
-• Students monitoring university expenses
 • Anyone wanting better financial control
 
 **Why Choose Simple Slips:**
 ✓ Built for South African tax guidelines and retailers
+✓ Professional quotations and invoicing included
+✓ AI-powered email drafting saves hours
 ✓ Not affiliated with SARS - information for general guidance only
 ✓ Works offline - no internet required for scanning
 ✓ Free 30-day trial, then only R49/month
@@ -73,14 +87,15 @@ Transform your financial management with Simple Slips - the smart receipt tracki
 1. Download and create your free account
 2. Scan your first receipt in seconds
 3. Watch AI organize everything automatically
-4. Export professional reports when needed
+4. Create professional quotations and invoices
+5. Export professional reports when needed
 
 Join thousands of South Africans already saving time and money with Simple Slips. Download now and get your financial life organized in minutes, not hours.
 
 Start your 30-day free trial today - no credit card required!
 
 ## Promotional Text (170 characters max)
-Smart receipt management for South African businesses. AI-powered scanning, tax compliance, and professional reports. 30-day free trial!
+Complete business platform: receipt scanning, quotations, invoices & AI email drafting. Built for SA freelancers. 30-day free trial, R49/month!
 
 ## App Privacy Policy URL
 https://simpleslips.co.za/privacy
@@ -132,20 +147,20 @@ The app is designed specifically for South African users and provides substantia
 
 ## Screenshots Description
 
-**Screenshot 1: Dashboard**
-"AI-powered dashboard with smart expense insights, budget tracking, and intelligent search functionality for comprehensive financial management."
+**Screenshot 1: Business Hub Dashboard**
+"Complete business management platform with quotations, invoices, client tracking, and smart payment reminders all in one place."
 
-**Screenshot 2: Receipt Management**
-"Comprehensive receipt organization with filtering, categorization, and bulk actions for efficient expense management."
+**Screenshot 2: Professional Invoicing**
+"Create professional invoices with line items, automated email delivery, and AI-powered payment reminder system."
 
-**Screenshot 3: Scanner Interface**
+**Screenshot 3: Receipt Scanner**
 "Advanced receipt scanner with real-time OCR processing, automatic data extraction, and offline scanning capabilities."
 
-**Screenshot 4: Expense Reports**
-"Professional expense reports ready for tax season with PDF/CSV export options and South African tax compliance features."
+**Screenshot 4: AI Email Assistant**
+"AI-powered email drafting creates professional messages for quotations and invoices, saving hours of writing time."
 
-**Screenshot 5: Tax Dashboard**
-"Specialized tax tracking dashboard designed for South African tax laws with deduction identification and compliance tools."
+**Screenshot 5: Expense Analytics**
+"Comprehensive analytics dashboard with spending insights, budget tracking, and tax-deductible expense identification."
 
 ## App Store Optimization
 
@@ -160,14 +175,20 @@ The app is designed specifically for South African users and provides substantia
 - Financial management
 - Business tools
 - South Africa
+- Invoicing software
+- Quotation creator
+- Client management
+- Payment reminders
 
 ### Competitive Advantages
 1. South African tax law specialization
-2. Advanced AI categorization
-3. Offline scanning capability
-4. Professional report generation
-5. Natural language search
-6. Enterprise-grade security
+2. Complete business hub (quotations + invoices + client management)
+3. AI-powered email drafting for professional communication
+4. Smart payment reminders with automated follow-ups
+5. Advanced AI categorization and natural language search
+6. Offline scanning capability
+7. Professional report generation (receipts, invoices, P&L)
+8. Enterprise-grade security
 
 ## Pricing Information
 
@@ -186,6 +207,11 @@ The app is designed specifically for South African users and provides substantia
 
 ### Features Available
 - Full access to receipt scanning and management
+- Professional quotations and invoicing
+- Client management system
+- AI-powered email drafting
+- Smart payment reminders
+- P&L report generation
 - AI-powered categorization and search
 - Tax reporting and analytics
 - Native iOS payment experience

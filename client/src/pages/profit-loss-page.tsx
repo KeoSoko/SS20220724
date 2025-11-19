@@ -264,9 +264,12 @@ export default function ProfitLossPage() {
     try {
       if (!plData) return;
 
+      // Use business profile company name, fallback to "Simple Slips"
+      const companyName = businessProfile?.companyName || 'Simple Slips';
+
       // Create CSV content
       const csvRows = [
-        ['Simple Slips - Profit & Loss Statement'],
+        [`${companyName} - Profit & Loss Statement`],
         [`Period: ${plData.period}`],
         [''],
         ['REVENUE'],

@@ -73,16 +73,6 @@
     border-radius: 2px !important;
   }
   
-  /* Ensure all preview boxes, scrollable areas use 2px border radius */
-  .rounded-sm, [class*="rounded-sm"] {
-    border-radius: 2px !important;
-  }
-  
-  /* Override any default rounded styles */
-  .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl, .rounded-full {
-    border-radius: 2px !important;
-  }
-  
   /* Modern Edge-to-Edge Safe Areas */
   .safe-area {
     padding-top: env(safe-area-inset-top, 0);

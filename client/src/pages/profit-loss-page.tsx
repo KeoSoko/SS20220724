@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -14,7 +16,8 @@ import {
   FileText, 
   Download,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  CalendarIcon
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -99,10 +102,12 @@ export default function ProfitLossPage() {
   const [year, setYear] = useState<number>(new Date().getFullYear());
   const [month, setMonth] = useState<number>(new Date().getMonth());
   const [quarter, setQuarter] = useState<number>(Math.floor(new Date().getMonth() / 3));
+  const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
+  const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
 
   // Fetch P&L data
   const { data: plData, isLoading } = useQuery<ProfitLossData>({
-    queryKey: ['/api/profit-loss', { period, year, month, quarter }],
+    queryKey: ['/api/profit-loss', { period, year, month, quarter, customStartDate, customEndDate }],
     queryFn: async () => {
       const token = localStorage.getItem('auth_token');
       if (!token) throw new Error('Not authenticated');
@@ -110,6 +115,10 @@ export default function ProfitLossPage() {
       const params = new URLSearchParams({ period, year: year.toString() });
       if (period === 'monthly') params.append('month', month.toString());
       if (period === 'quarterly') params.append('quarter', quarter.toString());
+      if (period === 'custom' && customStartDate && customEndDate) {
+        params.append('startDate', format(customStartDate, 'yyyy-MM-dd'));
+        params.append('endDate', format(customEndDate, 'yyyy-MM-dd'));
+      }
 
       const response = await fetch(`/api/profit-loss?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -117,7 +126,8 @@ export default function ProfitLossPage() {
 
       if (!response.ok) throw new Error('Failed to fetch P&L data');
       return response.json();
-    }
+    },
+    enabled: period !== 'custom' || (customStartDate !== undefined && customEndDate !== undefined),
   });
 
   // Fetch business profile for company name
@@ -374,6 +384,7 @@ export default function ProfitLossPage() {
                     <SelectItem value="monthly">Monthly</SelectItem>
                     <SelectItem value="quarterly">Quarterly</SelectItem>
                     <SelectItem value="yearly">Yearly</SelectItem>
+                    <SelectItem value="custom">Custom Range</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -422,6 +433,59 @@ export default function ProfitLossPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              )}
+
+              {period === 'custom' && (
+                <>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Start Date</label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                          data-testid="button-start-date"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {customStartDate ? format(customStartDate, 'PPP') : <span>Pick a date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={customStartDate}
+                          onSelect={setCustomStartDate}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">End Date</label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                          data-testid="button-end-date"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {customEndDate ? format(customEndDate, 'PPP') : <span>Pick a date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={customEndDate}
+                          onSelect={setCustomEndDate}
+                          initialFocus
+                          disabled={(date) => customStartDate ? date < customStartDate : false}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </>
               )}
 
               <div className="flex items-end gap-2">

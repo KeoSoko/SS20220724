@@ -20,6 +20,7 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import type { BusinessProfile } from '@shared/schema';
 
 interface ProfitLossData {
   period: string;
@@ -119,6 +120,11 @@ export default function ProfitLossPage() {
     }
   });
 
+  // Fetch business profile for company name
+  const { data: businessProfile } = useQuery<BusinessProfile>({
+    queryKey: ['/api/business-profile'],
+  });
+
   const handleExportPDF = async () => {
     try {
       if (!plData) return;
@@ -131,10 +137,13 @@ export default function ProfitLossPage() {
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       
+      // Use business profile company name, fallback to "Simple Slips"
+      const companyName = businessProfile?.companyName || 'Simple Slips';
+      
       // Header
       doc.setFontSize(20);
       doc.setTextColor(0, 115, 170); // Simple Slips blue
-      doc.text('Simple Slips', pageWidth / 2, 20, { align: 'center' });
+      doc.text(companyName, pageWidth / 2, 20, { align: 'center' });
       
       doc.setFontSize(16);
       doc.setTextColor(0, 0, 0);

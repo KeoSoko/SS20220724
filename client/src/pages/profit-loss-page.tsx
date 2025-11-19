@@ -340,6 +340,96 @@ export default function ProfitLossPage() {
     );
   }
 
+  // Show helpful message if custom dates aren't selected yet
+  if (period === 'custom' && (!customStartDate || !customEndDate)) {
+    return (
+      <PageLayout
+        title="Profit & Loss Statement"
+        subtitle="Custom Date Range"
+        showBackButton={true}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>Report Period</CardTitle>
+            <CardDescription>Select the time period for your P&L statement</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Period Type</label>
+                <Select value={period} onValueChange={setPeriod}>
+                  <SelectTrigger data-testid="select-period-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="yearly">Yearly</SelectItem>
+                    <SelectItem value="custom">Custom Range</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-2 block">Start Date</label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                      data-testid="button-start-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {customStartDate ? format(customStartDate, 'PPP') : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={customStartDate}
+                      onSelect={setCustomStartDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-2 block">End Date</label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                      data-testid="button-end-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {customEndDate ? format(customEndDate, 'PPP') : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={customEndDate}
+                      onSelect={setCustomEndDate}
+                      initialFocus
+                      disabled={(date) => customStartDate ? date < customStartDate : false}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+            <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg text-center">
+              <p className="text-sm text-blue-900 dark:text-blue-100">
+                Please select both a start date and end date to view your P&L statement.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </PageLayout>
+    );
+  }
+
   if (!plData) {
     return (
       <PageLayout

@@ -10,7 +10,7 @@ import {
   TrendingUp, 
   TrendingDown, 
   Banknote, 
-  Receipt, 
+  Wallet, 
   FileText, 
   Download,
   ArrowUpRight,
@@ -480,7 +480,7 @@ export default function ProfitLossPage() {
           <Card data-testid="card-expenses">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
-              <Receipt className="h-4 w-4 text-orange-600" />
+              <Wallet className="h-4 w-4 text-orange-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-600">

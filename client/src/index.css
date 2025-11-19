@@ -68,6 +68,11 @@
     border-radius: 0 !important;
   }
   
+  /* Ensure all dialogs use consistent 2px border radius - no circular elements */
+  [role="dialog"], [data-radix-dialog-content] {
+    border-radius: 2px !important;
+  }
+  
   /* Modern Edge-to-Edge Safe Areas */
   .safe-area {
     padding-top: env(safe-area-inset-top, 0);

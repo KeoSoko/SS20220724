@@ -5109,7 +5109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (paymentAmount > remainingBalance) {
         return res.status(400).json({ 
-          error: `Payment amount exceeds remaining balance. Maximum allowed: R${remainingBalance.toFixed(2)}` 
+          error: `Payment cannot exceed the remaining balance of R${remainingBalance.toFixed(2)}` 
         });
       }
 

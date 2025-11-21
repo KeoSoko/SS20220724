@@ -202,6 +202,10 @@ export default function InvoicesPage() {
     setIsPaymentDialogOpen(true);
   };
 
+  const selectedInvoiceBalance = selectedInvoice 
+    ? parseFloat(selectedInvoice.total) - parseFloat(selectedInvoice.amountPaid)
+    : 0;
+
   const submitPayment = (data: PaymentFormData) => {
     if (selectedInvoice) {
       recordPaymentMutation.mutate({ ...data, invoiceId: selectedInvoice.id });
@@ -723,6 +727,10 @@ export default function InvoicesPage() {
             </DialogHeader>
             <Form {...paymentForm}>
               <form onSubmit={paymentForm.handleSubmit(submitPayment)} className="space-y-4">
+                <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-sm p-3 mb-4">
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Remaining Balance</p>
+                  <p className="text-lg font-semibold text-blue-700 dark:text-blue-300">{formatCurrency(selectedInvoiceBalance.toString())}</p>
+                </div>
                 <FormField
                   control={paymentForm.control}
                   name="amount"
@@ -732,6 +740,7 @@ export default function InvoicesPage() {
                       <FormControl>
                         <Input type="number" step="0.01" {...field} data-testid="input-payment-amount" />
                       </FormControl>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Maximum: {formatCurrency(selectedInvoiceBalance.toString())}</p>
                       <FormMessage />
                     </FormItem>
                   )}

@@ -8,6 +8,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Users, FileText, Banknote, Plus, ArrowRight, Calculator, Settings, Bell, Clock, TrendingUp, Mail } from "lucide-react";
 import { Link } from "wouter";
 import { format, differenceInDays } from "date-fns";
@@ -45,6 +51,13 @@ interface DashboardStats {
   reminders: ReminderSuggestion[];
 }
 
+const emailFormSchema = z.object({
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().min(1, "Email body is required"),
+});
+
+type EmailFormData = z.infer<typeof emailFormSchema>;
+
 const formatCurrency = (amount: string | number) => {
   const numAmount = typeof amount === "string" ? parseFloat(amount) : amount;
   return `R ${numAmount.toFixed(2)}`;
@@ -78,6 +91,14 @@ export default function BusinessHubPage() {
     attachmentName: string;
     reminderType: 'overdue' | 'pre_due';
   } | null>(null);
+
+  const emailForm = useForm<EmailFormData>({
+    resolver: zodResolver(emailFormSchema),
+    defaultValues: {
+      subject: "",
+      body: "",
+    },
+  });
 
   const { data: clients = [], isLoading: loadingClients } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
@@ -141,6 +162,10 @@ export default function BusinessHubPage() {
     },
     onSuccess: (data, invoiceId) => {
       setEmailPreview({ ...data, invoiceId, reminderType: 'overdue' });
+      emailForm.reset({
+        subject: data.subject,
+        body: data.body,
+      });
     },
     onError: (error: Error) => {
       toast({
@@ -152,7 +177,7 @@ export default function BusinessHubPage() {
   });
 
   const sendReminderMutation = useMutation({
-    mutationFn: async (invoiceId: number) => {
+    mutationFn: async ({ invoiceId, subject, body }: { invoiceId: number; subject: string; body: string }) => {
       const token = localStorage.getItem('auth_token');
       if (!token) throw new Error('Not authenticated');
       
@@ -162,6 +187,7 @@ export default function BusinessHubPage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ subject, body }),
       });
 
       if (!response.ok) {
@@ -210,6 +236,10 @@ export default function BusinessHubPage() {
     },
     onSuccess: (data, invoiceId) => {
       setEmailPreview({ ...data, invoiceId, reminderType: 'pre_due' });
+      emailForm.reset({
+        subject: data.subject,
+        body: data.body,
+      });
     },
     onError: (error: Error) => {
       toast({
@@ -221,7 +251,7 @@ export default function BusinessHubPage() {
   });
 
   const sendPreDueReminderMutation = useMutation({
-    mutationFn: async (invoiceId: number) => {
+    mutationFn: async ({ invoiceId, subject, body }: { invoiceId: number; subject: string; body: string }) => {
       const token = localStorage.getItem('auth_token');
       if (!token) throw new Error('Not authenticated');
       
@@ -231,6 +261,7 @@ export default function BusinessHubPage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ subject, body }),
       });
 
       if (!response.ok) {
@@ -754,71 +785,103 @@ export default function BusinessHubPage() {
 
       {/* Email Preview Dialog */}
       <Dialog open={!!emailPreview} onOpenChange={() => setEmailPreview(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-email-preview">
           <DialogHeader>
-            <DialogTitle>Email Preview</DialogTitle>
+            <DialogTitle>Review & Edit Email</DialogTitle>
             <DialogDescription>
-              Review the email before sending to your client
+              Review and edit the AI-generated email before sending to your client
             </DialogDescription>
           </DialogHeader>
           
           {emailPreview && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-[100px_1fr] gap-2 text-sm">
-                <div className="font-medium text-muted-foreground">From:</div>
-                <div>{emailPreview.from}</div>
-                
-                {emailPreview.replyTo && (
-                  <>
-                    <div className="font-medium text-muted-foreground">Reply-To:</div>
-                    <div>{emailPreview.replyTo}</div>
-                  </>
-                )}
-                
-                <div className="font-medium text-muted-foreground">To:</div>
-                <div>{emailPreview.to}</div>
-                
-                <div className="font-medium text-muted-foreground">Subject:</div>
-                <div className="font-medium">{emailPreview.subject}</div>
-                
-                <div className="font-medium text-muted-foreground">Attachment:</div>
-                <div className="text-blue-600">{emailPreview.attachmentName}</div>
-              </div>
-              
-              <div className="border-t pt-4">
-                <div className="font-medium text-sm text-muted-foreground mb-2">Message:</div>
-                <div className="bg-gray-50 p-4 rounded-sm whitespace-pre-wrap text-sm max-h-96 overflow-y-auto">
-                  {emailPreview.body}
-                </div>
-              </div>
-            </div>
-          )}
-          
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setEmailPreview(null)}
-              data-testid="button-close-preview"
-            >
-              Close
-            </Button>
-            <Button
-              onClick={() => {
+            <Form {...emailForm}>
+              <form onSubmit={emailForm.handleSubmit((data) => {
                 if (emailPreview) {
                   if (emailPreview.reminderType === 'pre_due') {
-                    sendPreDueReminderMutation.mutate(emailPreview.invoiceId);
+                    sendPreDueReminderMutation.mutate({
+                      invoiceId: emailPreview.invoiceId,
+                      subject: data.subject,
+                      body: data.body,
+                    });
                   } else {
-                    sendReminderMutation.mutate(emailPreview.invoiceId);
+                    sendReminderMutation.mutate({
+                      invoiceId: emailPreview.invoiceId,
+                      subject: data.subject,
+                      body: data.body,
+                    });
                   }
                 }
-              }}
-              disabled={sendReminderMutation.isPending || sendPreDueReminderMutation.isPending}
-              data-testid="button-send-from-preview"
-            >
-              <Mail className="h-4 w-4 mr-2" />
-              {(sendReminderMutation.isPending || sendPreDueReminderMutation.isPending) ? 'Sending...' : 'Send Email'}
-            </Button>
-          </DialogFooter>
+              })} className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-500">From:</label>
+                  <p className="text-sm mt-1">{emailPreview.from}</p>
+                </div>
+                {emailPreview.replyTo && (
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">Reply-To:</label>
+                    <p className="text-sm mt-1">{emailPreview.replyTo}</p>
+                  </div>
+                )}
+                <div>
+                  <label className="text-sm font-medium text-gray-500">To:</label>
+                  <p className="text-sm mt-1">{emailPreview.to}</p>
+                </div>
+                <FormField
+                  control={emailForm.control}
+                  name="subject"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-gray-500">Subject</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Email subject" data-testid="input-email-subject" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={emailForm.control}
+                  name="body"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-gray-500">Message</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          placeholder="Email message"
+                          className="min-h-[300px]"
+                          data-testid="textarea-email-body"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Attachment:</label>
+                  <p className="text-sm mt-1 text-blue-600">{emailPreview.attachmentName}</p>
+                </div>
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setEmailPreview(null)}
+                    data-testid="button-close-preview"
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={sendReminderMutation.isPending || sendPreDueReminderMutation.isPending}
+                    data-testid="button-send-from-preview"
+                  >
+                    <Mail className="h-4 w-4 mr-2" />
+                    {(sendReminderMutation.isPending || sendPreDueReminderMutation.isPending) ? 'Sending...' : 'Send Email'}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          )}
         </DialogContent>
       </Dialog>
     </PageLayout>

@@ -5103,6 +5103,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         invoiceId,
       });
 
+      // Calculate remaining balance and validate payment amount
+      const remainingBalance = parseFloat(invoice.total) - parseFloat(invoice.amountPaid);
+      const paymentAmount = parseFloat(validatedPayment.amount);
+
+      if (paymentAmount > remainingBalance) {
+        return res.status(400).json({ 
+          error: `Payment amount exceeds remaining balance. Maximum allowed: R${remainingBalance.toFixed(2)}` 
+        });
+      }
+
       // Start transaction
       const result = await db.transaction(async (tx) => {
         // Insert payment

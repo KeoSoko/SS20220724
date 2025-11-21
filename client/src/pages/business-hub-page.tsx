@@ -496,11 +496,6 @@ export default function BusinessHubPage() {
                         <p className="text-sm text-muted-foreground">
                           Invoice {reminder.invoice.invoiceNumber} • {formatCurrency(reminder.invoice.total)}
                         </p>
-                        {reminder.aiSubject && (
-                          <p className="text-xs text-muted-foreground mt-1 italic">
-                            "{reminder.aiSubject}"
-                          </p>
-                        )}
                       </div>
                       <Button
                         size="sm"

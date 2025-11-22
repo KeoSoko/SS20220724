@@ -485,16 +485,19 @@ export default function BusinessHubPage() {
                     : `due in ${reminder.daysUntilDue} days`;
 
                   return (
-                    <div key={reminder.invoice.id} className="flex items-center justify-between p-4 border border-blue-200 rounded-sm bg-blue-50/30 hover:bg-blue-50/50">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
+                    <div key={reminder.invoice.id} className="flex items-start justify-between gap-3 p-4 border border-blue-200 rounded-sm bg-blue-50/30 hover:bg-blue-50/50">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
                           <p className="font-medium">{reminder.client.name}</p>
-                          <Badge className="bg-blue-100 text-blue-800 rounded-none">
+                          <Badge className="bg-blue-100 text-blue-800 rounded-none w-fit">
                             {daysText}
                           </Badge>
                         </div>
+                        <p className="text-sm text-muted-foreground break-words">
+                          Invoice {reminder.invoice.invoiceNumber}
+                        </p>
                         <p className="text-sm text-muted-foreground">
-                          Invoice {reminder.invoice.invoiceNumber} • {formatCurrency(reminder.invoice.total)}
+                          {formatCurrency(reminder.invoice.total)}
                         </p>
                       </div>
                       <Button
@@ -563,19 +566,24 @@ export default function BusinessHubPage() {
                     }[reminder.urgency];
 
                     return (
-                      <div key={reminder.invoice.id} className="flex items-center justify-between p-4 border rounded-sm hover:bg-gray-50">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
+                      <div key={reminder.invoice.id} className="flex items-start justify-between gap-3 p-4 border rounded-sm hover:bg-gray-50">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
                             <p className="font-medium">{reminder.client.name}</p>
-                            <Badge className={urgencyColor}>
-                              {reminder.urgency}
-                            </Badge>
-                            <Badge variant="outline">
-                              {reminder.daysOverdue} days overdue
-                            </Badge>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge className={urgencyColor}>
+                                {reminder.urgency}
+                              </Badge>
+                              <Badge variant="outline">
+                                {reminder.daysOverdue} days overdue
+                              </Badge>
+                            </div>
                           </div>
+                          <p className="text-sm text-muted-foreground break-words">
+                            Invoice {reminder.invoice.invoiceNumber}
+                          </p>
                           <p className="text-sm text-muted-foreground">
-                            Invoice {reminder.invoice.invoiceNumber} • {formatCurrency(balance)} outstanding
+                            {formatCurrency(balance)} outstanding
                           </p>
                         </div>
                         <Button

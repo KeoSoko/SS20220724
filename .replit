@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "bash", "web", "postgresql-16", "java-17"]
+modules = ["nodejs-20", "bash", "web", "java-17", "postgresql-16"]
 run = "npm start"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 

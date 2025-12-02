@@ -266,32 +266,32 @@ export function EnhancedReceiptCard({ receipt, onClick, className, showCategory 
           </div>
           
           <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2 mb-1">
+            <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-gray-900 text-base leading-tight group-hover:text-primary transition-colors" data-testid={`receipt-storename-${receipt.id}`}>
-                    {receipt.storeName || 'Unknown Store'}
-                  </h3>
+                <h3 className="font-semibold text-gray-900 text-base leading-tight group-hover:text-primary transition-colors" data-testid={`receipt-storename-${receipt.id}`}>
+                  {receipt.storeName || 'Unknown Store'}
+                </h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-sm text-gray-500" data-testid={`receipt-date-${receipt.id}`}>
+                    {format(parseISO(receipt.date), 'MMM dd, yyyy')}
+                  </p>
                   {confidence.level && (
                     <Badge 
                       variant="outline" 
-                      className={cn("text-[10px] px-1.5 py-0 h-5 flex items-center gap-1 flex-shrink-0", confidence.color)}
+                      className={cn("text-[10px] px-1.5 py-0 h-4 flex items-center gap-0.5", confidence.color)}
                     >
                       {confidence.icon}
                     </Badge>
                   )}
                 </div>
-                <p className="text-sm text-gray-500 mt-0.5" data-testid={`receipt-date-${receipt.id}`}>
-                  {format(parseISO(receipt.date), 'MMM dd, yyyy')}
-                </p>
               </div>
               
-              <div className="text-right flex-shrink-0">
+              <div className="text-right flex-shrink-0 flex flex-col items-end">
                 <div className="font-bold text-lg text-primary whitespace-nowrap" data-testid={`receipt-amount-${receipt.id}`}>
                   R{parseFloat(receipt.total.toString()).toFixed(2)}
                 </div>
                 {showCategory && (
-                  <Badge variant="secondary" className="text-xs bg-primary/10 text-primary border-primary/20 mt-1" data-testid={`receipt-category-${receipt.id}`}>
+                  <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-600 border-gray-200 mt-1 font-normal" data-testid={`receipt-category-${receipt.id}`}>
                     {receipt.category.replace(/_/g, ' ')}
                   </Badge>
                 )}

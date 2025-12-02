@@ -52,6 +52,10 @@ export default function UploadReceipt() {
   const [scanProgress, setScanProgress] = useState<string>("");
   const [progressValue, setProgressValue] = useState(0);
   
+  // Multi-scan session tracking
+  const [sessionReceiptCount, setSessionReceiptCount] = useState(0);
+  const [continuousMode, setContinuousMode] = useState(false);
+  
   // Form data states
   const [imageData, setImageData] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -128,6 +132,41 @@ export default function UploadReceipt() {
       restoreFormState();
     }
   }, []);
+
+  // Reset form for another scan (used in continuous mode)
+  const resetForAnotherScan = () => {
+    setImageData(null);
+    setPreviewUrl(null);
+    setStoreName("");
+    setDate("");
+    setTotal("");
+    setCategory("other");
+    setNotes("");
+    setItems([]);
+    setConfidenceScore(null);
+    setIsRecurring(false);
+    setIsTaxDeductible(false);
+    setProgressValue(0);
+    setScanProgress("");
+    setIsScanning(false);
+  };
+
+  // Handle "Save & Scan Another" action
+  const handleSaveAndScanAnother = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!storeName || !date || !total) {
+      toast({
+        title: "Missing information",
+        description: "Please fill in store name, date, and total amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setContinuousMode(true);
+    uploadMutation.mutate();
+  };
 
   // Query for custom categories
   const { data: customCategories = [] } = useQuery({
@@ -641,34 +680,65 @@ export default function UploadReceipt() {
         });
       }
       
+      // Increment session counter
+      setSessionReceiptCount(prev => prev + 1);
+      const newCount = sessionReceiptCount + 1;
+      
       // Show completion progress
       setProgressValue(75);
       setScanProgress("🎊 Receipt saved successfully!");
       
-      // Slowly increase to 100% to show completion
-      setTimeout(() => {
-        setProgressValue(90);
-        setScanProgress("🏁 Almost done...");
-        
+      // Check if we're in continuous mode (scan another)
+      if (continuousMode) {
         setTimeout(() => {
           setProgressValue(100);
-          setScanProgress("✨ All done! Receipt saved!");
-          
-          const toastTitle = data.duplicateDetection?.isDuplicate ? 
-            "⚠️ Receipt saved (possible duplicate)" : 
-            "🎉 Receipt uploaded successfully";
+          setScanProgress("✨ Receipt saved! Opening camera...");
           
           toast({
-            title: toastTitle,
-            description: "Your receipt has been processed and saved to your account",
+            title: `✅ Receipt ${newCount} saved`,
+            description: "Ready to scan the next receipt",
+            duration: 2000,
           });
           
-          // Redirect after a short delay to show the success state
+          // Reset form and go to camera mode
           setTimeout(() => {
-            setLocation("/home");
-          }, 1000);
+            resetForAnotherScan();
+            setContinuousMode(false);
+            setCameraMode(true);
+          }, 500);
         }, 300);
-      }, 300);
+      } else {
+        // Normal single-receipt flow
+        // Slowly increase to 100% to show completion
+        setTimeout(() => {
+          setProgressValue(90);
+          setScanProgress("🏁 Almost done...");
+          
+          setTimeout(() => {
+            setProgressValue(100);
+            setScanProgress("✨ All done! Receipt saved!");
+            
+            const toastTitle = data.duplicateDetection?.isDuplicate ? 
+              "⚠️ Receipt saved (possible duplicate)" : 
+              "🎉 Receipt uploaded successfully";
+            
+            // Show session summary if multiple receipts were scanned
+            const description = newCount > 1 
+              ? `${newCount} receipts saved in this session!`
+              : "Your receipt has been processed and saved to your account";
+            
+            toast({
+              title: toastTitle,
+              description: description,
+            });
+            
+            // Redirect after a short delay to show the success state
+            setTimeout(() => {
+              setLocation("/home");
+            }, 1000);
+          }, 300);
+        }, 300);
+      }
     },
     onError: (error: any) => {
       setProgressValue(0);
@@ -1289,45 +1359,82 @@ export default function UploadReceipt() {
               </form>
             </CardContent>
             
-            <CardFooter className="flex gap-4 justify-end pt-6">
-              <EnhancedButton 
-                variant="default" 
-                onClick={() => {
-                  setImageData(null);
-                  setPreviewUrl(null);
-                  setStoreName("");
-                  setDate("");
-                  setTotal("");
-                  setCategory("other");
-                  setNotes("");
-                  setItems([]);
-                  setConfidenceScore(null);
-                }}
-                disabled={isScanning || uploadMutation.isPending}
-                className="min-w-[100px]"
-              >
-                Cancel
-              </EnhancedButton>
+            <CardFooter className="flex flex-col gap-4 pt-6">
+              {/* Session counter badge */}
+              {sessionReceiptCount > 0 && (
+                <div className="w-full flex justify-center mb-2">
+                  <Badge variant="secondary" className="flex items-center gap-2">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {sessionReceiptCount} receipt{sessionReceiptCount > 1 ? 's' : ''} saved this session
+                  </Badge>
+                </div>
+              )}
               
-              <EnhancedButton 
-                variant="primary"
-                isPrimary={true}
-                onClick={handleSubmit}
-                disabled={isScanning || uploadMutation.isPending || !storeName || !date || !total}
-                className="min-w-[140px]"
-              >
-                {uploadMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    Save Receipt
-                  </>
+              <div className="flex flex-wrap gap-3 justify-end w-full">
+                <EnhancedButton 
+                  variant="default" 
+                  onClick={() => {
+                    setImageData(null);
+                    setPreviewUrl(null);
+                    setStoreName("");
+                    setDate("");
+                    setTotal("");
+                    setCategory("other");
+                    setNotes("");
+                    setItems([]);
+                    setConfidenceScore(null);
+                  }}
+                  disabled={isScanning || uploadMutation.isPending}
+                  className="min-w-[80px]"
+                  data-testid="button-cancel-upload"
+                >
+                  Cancel
+                </EnhancedButton>
+                
+                {/* Scan Another button - only show on mobile */}
+                {isMobile && (
+                  <EnhancedButton 
+                    variant="default"
+                    onClick={handleSaveAndScanAnother}
+                    disabled={isScanning || uploadMutation.isPending || !storeName || !date || !total}
+                    className="min-w-[120px] bg-secondary hover:bg-secondary/80"
+                    data-testid="button-save-scan-another"
+                  >
+                    {uploadMutation.isPending && continuousMode ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="h-4 w-4 mr-2" />
+                        Save & Scan Next
+                      </>
+                    )}
+                  </EnhancedButton>
                 )}
-              </EnhancedButton>
+                
+                <EnhancedButton 
+                  variant="primary"
+                  isPrimary={true}
+                  onClick={handleSubmit}
+                  disabled={isScanning || uploadMutation.isPending || !storeName || !date || !total}
+                  className="min-w-[120px]"
+                  data-testid="button-save-receipt"
+                >
+                  {uploadMutation.isPending && !continuousMode ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Save Receipt
+                    </>
+                  )}
+                </EnhancedButton>
+              </div>
             </CardFooter>
           </Card>
         )}

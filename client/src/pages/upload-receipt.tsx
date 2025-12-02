@@ -56,6 +56,18 @@ export default function UploadReceipt() {
   const [sessionReceiptCount, setSessionReceiptCount] = useState(0);
   const [continuousMode, setContinuousMode] = useState(false);
   
+  // Batch gallery import
+  interface BatchFile {
+    id: string;
+    file: File;
+    name: string;
+    status: 'pending' | 'processing' | 'completed' | 'error';
+    error?: string;
+  }
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchQueue, setBatchQueue] = useState<BatchFile[]>([]);
+  const [batchProcessingIndex, setBatchProcessingIndex] = useState(-1);
+  
   // Form data states
   const [imageData, setImageData] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -166,6 +178,195 @@ export default function UploadReceipt() {
     
     setContinuousMode(true);
     uploadMutation.mutate();
+  };
+
+  // Handle batch file selection (multiple gallery images)
+  const handleBatchFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    // If single file, use normal flow
+    if (files.length === 1) {
+      handleFileChange(e);
+      return;
+    }
+    
+    // Multiple files - enter batch mode
+    const newBatchFiles: BatchFile[] = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const validation = validateImageFile(file);
+      
+      if (validation.isValid) {
+        newBatchFiles.push({
+          id: `batch-${Date.now()}-${i}`,
+          file,
+          name: file.name,
+          status: 'pending'
+        });
+      } else {
+        toast({
+          title: `Invalid file: ${file.name}`,
+          description: validation.error,
+          variant: "destructive",
+        });
+      }
+    }
+    
+    if (newBatchFiles.length > 0) {
+      setBatchQueue(newBatchFiles);
+      setBatchMode(true);
+      
+      toast({
+        title: `${newBatchFiles.length} receipts selected`,
+        description: "Tap 'Start Processing' to scan all receipts",
+      });
+    }
+    
+    // Reset the input
+    e.target.value = '';
+  };
+
+  // Process batch queue
+  const processBatchQueue = async () => {
+    if (batchQueue.length === 0) return;
+    
+    for (let i = 0; i < batchQueue.length; i++) {
+      const batchFile = batchQueue[i];
+      setBatchProcessingIndex(i);
+      
+      // Update status to processing
+      setBatchQueue(prev => prev.map((item, idx) => 
+        idx === i ? { ...item, status: 'processing' as const } : item
+      ));
+      
+      try {
+        // Read file as data URL
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(batchFile.file);
+        });
+        
+        // Optimize image
+        const optimizedResult = await optimizeImage(batchFile.file, 'receipt');
+        
+        // If online, scan the receipt
+        if (isOnline) {
+          try {
+            const res = await apiRequest("POST", "/api/receipts/scan", { 
+              imageData: optimizedResult.dataUrl 
+            });
+            
+            if (res.ok) {
+              const scanData = await res.json();
+              
+              // Upload the receipt
+              await apiRequest("POST", "/api/receipts", {
+                storeName: scanData.storeName || `Receipt ${i + 1}`,
+                date: scanData.date ? formatScanDate(scanData.date) : new Date().toISOString().split('T')[0],
+                total: scanData.total || "0.00",
+                items: Array.isArray(scanData.items) ? scanData.items : [],
+                category: scanData.category || "other",
+                notes: `Batch imported receipt`,
+                confidenceScore: scanData.confidenceScore || null,
+                imageData: optimizedResult.dataUrl,
+                isRecurring: false,
+                isTaxDeductible: false,
+              });
+              
+              // Mark as completed
+              setBatchQueue(prev => prev.map((item, idx) => 
+                idx === i ? { ...item, status: 'completed' as const } : item
+              ));
+              
+              setSessionReceiptCount(prev => prev + 1);
+            } else {
+              throw new Error('Scan failed');
+            }
+          } catch (error) {
+            // Scan/upload failed, mark with error
+            setBatchQueue(prev => prev.map((item, idx) => 
+              idx === i ? { 
+                ...item, 
+                status: 'error' as const,
+                error: error instanceof Error ? error.message : 'Processing failed'
+              } : item
+            ));
+          }
+        } else {
+          // Offline - add to pending uploads
+          addPendingUpload({
+            storeName: `Pending Receipt ${i + 1}`,
+            date: new Date().toISOString().split('T')[0],
+            total: "0.00",
+            items: [],
+            category: "other",
+            notes: "Batch imported while offline - needs review",
+            confidenceScore: null,
+            imageData: optimizedResult.dataUrl,
+            isRecurring: false,
+            isTaxDeductible: false,
+          }, '/api/receipts');
+          
+          setBatchQueue(prev => prev.map((item, idx) => 
+            idx === i ? { ...item, status: 'completed' as const } : item
+          ));
+          
+          setSessionReceiptCount(prev => prev + 1);
+        }
+      } catch (error) {
+        setBatchQueue(prev => prev.map((item, idx) => 
+          idx === i ? { 
+            ...item, 
+            status: 'error' as const,
+            error: error instanceof Error ? error.message : 'Processing failed'
+          } : item
+        ));
+      }
+    }
+    
+    setBatchProcessingIndex(-1);
+    
+    // Invalidate queries
+    queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
+    
+    const completedCount = batchQueue.filter(f => f.status === 'completed').length;
+    
+    toast({
+      title: "Batch processing complete",
+      description: `${completedCount} of ${batchQueue.length} receipts saved`,
+    });
+  };
+
+  // Helper to format scan date
+  const formatScanDate = (dateStr: string): string => {
+    const dateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/;
+    const match = dateStr.match(dateRegex);
+    
+    if (match) {
+      const day = match[1].padStart(2, '0');
+      const month = match[2].padStart(2, '0');
+      let year = match[3];
+      if (year.length === 2) year = '20' + year;
+      return `${year}-${month}-${day}`;
+    }
+    
+    const parsedDate = new Date(dateStr);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.toISOString().split('T')[0];
+    }
+    
+    return new Date().toISOString().split('T')[0];
+  };
+
+  // Cancel batch mode
+  const cancelBatchMode = () => {
+    setBatchMode(false);
+    setBatchQueue([]);
+    setBatchProcessingIndex(-1);
   };
 
   // Query for custom categories
@@ -1111,19 +1312,166 @@ export default function UploadReceipt() {
           </div>
         )}
 
-        {!imageData ? (
+        {/* Batch Mode UI */}
+        {batchMode ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Batch Import</h3>
+                  <Badge variant="secondary">
+                    {batchQueue.length} receipt{batchQueue.length !== 1 ? 's' : ''}
+                  </Badge>
+                </div>
+                
+                {/* Progress overview */}
+                {batchProcessingIndex >= 0 && (
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span>Processing receipt {batchProcessingIndex + 1} of {batchQueue.length}</span>
+                      <span>{Math.round(((batchProcessingIndex + 1) / batchQueue.length) * 100)}%</span>
+                    </div>
+                    <Progress 
+                      value={((batchProcessingIndex + 1) / batchQueue.length) * 100} 
+                      className="h-2" 
+                    />
+                  </div>
+                )}
+                
+                {/* Batch file list */}
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {batchQueue.map((file, index) => (
+                    <div 
+                      key={file.id}
+                      className={`flex items-center justify-between p-3 border rounded-md transition-colors ${
+                        file.status === 'processing' ? 'bg-blue-50 border-blue-200' :
+                        file.status === 'completed' ? 'bg-green-50 border-green-200' :
+                        file.status === 'error' ? 'bg-red-50 border-red-200' :
+                        'bg-gray-50 border-gray-200'
+                      }`}
+                      data-testid={`batch-file-${index}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <FileImage className={`h-5 w-5 ${
+                          file.status === 'processing' ? 'text-blue-500' :
+                          file.status === 'completed' ? 'text-green-500' :
+                          file.status === 'error' ? 'text-red-500' :
+                          'text-gray-400'
+                        }`} />
+                        <div>
+                          <p className="text-sm font-medium truncate max-w-[180px]">
+                            {file.name}
+                          </p>
+                          {file.error && (
+                            <p className="text-xs text-red-500">{file.error}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        {file.status === 'pending' && (
+                          <Badge variant="outline" className="text-xs">Pending</Badge>
+                        )}
+                        {file.status === 'processing' && (
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                        )}
+                        {file.status === 'completed' && (
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        )}
+                        {file.status === 'error' && (
+                          <AlertCircle className="h-4 w-4 text-red-500" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Action buttons */}
+                <div className="flex gap-3 pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={cancelBatchMode}
+                    disabled={batchProcessingIndex >= 0}
+                    className="flex-1"
+                    data-testid="button-cancel-batch"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={processBatchQueue}
+                    disabled={batchProcessingIndex >= 0 || batchQueue.every(f => f.status !== 'pending')}
+                    className="flex-1"
+                    data-testid="button-start-batch"
+                  >
+                    {batchProcessingIndex >= 0 ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : batchQueue.every(f => f.status !== 'pending') ? (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                        Done
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4 mr-2" />
+                        Start Processing
+                      </>
+                    )}
+                  </Button>
+                </div>
+                
+                {/* Session summary when done */}
+                {batchQueue.every(f => f.status !== 'pending' && f.status !== 'processing') && (
+                  <div className="pt-4 border-t">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-medium">
+                          {batchQueue.filter(f => f.status === 'completed').length} receipts saved
+                        </p>
+                        {batchQueue.some(f => f.status === 'error') && (
+                          <p className="text-xs text-red-500">
+                            {batchQueue.filter(f => f.status === 'error').length} failed
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        variant="default"
+                        onClick={() => setLocation('/home')}
+                        data-testid="button-batch-done"
+                      >
+                        View Receipts
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ) : !imageData ? (
           // Upload/capture interface
           <Card>
             <CardContent className="pt-6">
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="receipt">Receipt Image</Label>
+                  {/* Single file input */}
                   <Input
                     id="receipt"
                     name="receipt"
                     type="file"
                     accept="image/jpeg,image/jpg,image/png,image/webp,image/*"
                     onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  {/* Multi-file input for batch import */}
+                  <Input
+                    id="receipt-batch"
+                    name="receipt-batch"
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp,image/*"
+                    multiple
+                    onChange={handleBatchFileSelect}
                     className="hidden"
                   />
                   
@@ -1144,11 +1492,12 @@ export default function UploadReceipt() {
                           className="h-32 w-full bg-secondary hover:bg-secondary/90 border-2 border-dashed border-gray-300 hover:border-primary/50 transition-all duration-200"
                           variant="default"
                           style={{ minHeight: '128px', minWidth: '100%' }}
+                          data-testid="button-upload-single"
                         >
                           <div className="flex flex-col items-center space-y-2">
                             <FileImage className="h-10 w-10 mb-2 text-primary" />
                             <span className="font-medium">Upload Image</span>
-                            <span className="text-xs text-gray-500">Choose from photos</span>
+                            <span className="text-xs text-gray-500">Choose one photo</span>
                           </div>
                         </EnhancedButton>
                       </motion.div>
@@ -1164,6 +1513,7 @@ export default function UploadReceipt() {
                             className="h-32 w-full bg-secondary hover:bg-secondary/90 border-2 border-dashed border-gray-300 hover:border-primary/50"
                             variant="default"
                             style={{ minHeight: '128px', minWidth: '100%' }}
+                            data-testid="button-camera-capture"
                           >
                             <div className="flex flex-col items-center space-y-2">
                               <Camera className="h-10 w-10 mb-2 text-primary" />
@@ -1174,6 +1524,38 @@ export default function UploadReceipt() {
                         </motion.div>
                       )}
                     </div>
+                    
+                    {/* Batch Import button */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: 0.2 }}
+                      className="mt-4"
+                    >
+                      <EnhancedButton 
+                        onClick={() => {
+                          const fileInput = document.getElementById("receipt-batch") as HTMLInputElement;
+                          if (fileInput) {
+                            fileInput.click();
+                          }
+                        }}
+                        className="w-full h-16 bg-gradient-to-r from-primary/10 to-primary/5 hover:from-primary/20 hover:to-primary/10 border border-primary/30 hover:border-primary/50"
+                        variant="default"
+                        data-testid="button-batch-import"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex -space-x-2">
+                            <FileImage className="h-5 w-5 text-primary" />
+                            <FileImage className="h-5 w-5 text-primary/70" />
+                            <Plus className="h-4 w-4 text-primary/50" />
+                          </div>
+                          <div className="text-left">
+                            <span className="font-medium text-primary">Batch Import</span>
+                            <span className="text-xs text-gray-500 block">Select multiple receipts at once</span>
+                          </div>
+                        </div>
+                      </EnhancedButton>
+                    </motion.div>
                   </SpacingContainer>
                   
                   <p className="text-xs text-gray-500 mt-2">

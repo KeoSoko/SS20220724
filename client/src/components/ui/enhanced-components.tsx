@@ -144,7 +144,7 @@ interface EnhancedReceiptCardProps {
   className?: string;
 }
 
-export function EnhancedReceiptCard({ receipt, onClick, className }: EnhancedReceiptCardProps) {
+export function EnhancedReceiptCard({ receipt, onClick, className, showCategory = true }: EnhancedReceiptCardProps & { showCategory?: boolean }) {
   const confidence = getConfidenceLevel(receipt.confidenceScore);
   
   return (
@@ -157,44 +157,48 @@ export function EnhancedReceiptCard({ receipt, onClick, className }: EnhancedRec
     >
       <Card 
         className={cn(
-          "p-5 border border-gray-200 hover:border-primary/30 hover:shadow-lg transition-all duration-300 cursor-pointer group",
+          "p-4 border border-gray-200 hover:border-primary/30 hover:shadow-lg transition-all duration-300 cursor-pointer group",
           "bg-white rounded-none shadow-sm hover:shadow-md",
           className
         )}
         onClick={onClick}
+        data-testid={`receipt-card-${receipt.id}`}
       >
-        <div className="flex items-center gap-4">
-          <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-primary/10 to-primary/5 rounded-none flex items-center justify-center group-hover:from-primary/20 group-hover:to-primary/10 transition-colors">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-primary/10 to-primary/5 rounded-none flex items-center justify-center group-hover:from-primary/20 group-hover:to-primary/10 transition-colors">
             {getCategoryIcon(receipt.category)}
           </div>
           
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-gray-900 text-lg truncate group-hover:text-primary transition-colors">
-                {receipt.storeName}
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-semibold text-gray-900 text-base truncate group-hover:text-primary transition-colors" data-testid={`receipt-storename-${receipt.id}`}>
+                {receipt.storeName || 'Unknown Store'}
               </h3>
               {confidence.level && (
                 <Badge 
                   variant="outline" 
-                  className={cn("text-[10px] px-1.5 py-0 h-5 flex items-center gap-1", confidence.color)}
+                  className={cn("text-[10px] px-1.5 py-0 h-5 flex items-center gap-1 flex-shrink-0", confidence.color)}
                 >
                   {confidence.icon}
-                  <span className="hidden sm:inline">{confidence.level === 'low' ? 'Review' : confidence.level}</span>
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-gray-500 truncate mt-1">
-              {format(parseISO(receipt.date), 'MMM dd, yyyy')}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm text-gray-500" data-testid={`receipt-date-${receipt.id}`}>
+                {format(parseISO(receipt.date), 'MMM dd, yyyy')}
+              </p>
+              {showCategory && (
+                <Badge variant="secondary" className="text-xs bg-primary/10 text-primary border-primary/20 flex-shrink-0" data-testid={`receipt-category-${receipt.id}`}>
+                  {receipt.category.replace(/_/g, ' ')}
+                </Badge>
+              )}
+            </div>
           </div>
           
-          <div className="text-right">
-            <div className="font-bold text-xl text-gray-900 whitespace-nowrap">
+          <div className="text-right flex-shrink-0">
+            <div className="font-bold text-lg text-gray-900 whitespace-nowrap" data-testid={`receipt-amount-${receipt.id}`}>
               R{parseFloat(receipt.total.toString()).toFixed(2)}
             </div>
-            <Badge variant="secondary" className="text-xs mt-1 bg-primary/10 text-primary border-primary/20">
-              {receipt.category}
-            </Badge>
           </div>
         </div>
       </Card>

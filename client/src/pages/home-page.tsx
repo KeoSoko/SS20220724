@@ -885,7 +885,7 @@ function HomePage() {
               </TabsContent>
 
               {/* Receipts Tab */}
-              <TabsContent value="receipts" className="space-y-4">
+              <TabsContent value="receipts" className="space-y-4 pb-32">
                 {/* Search and Basic Filters */}
                 <div className="space-y-3">
                   <div className="flex-1">

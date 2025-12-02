@@ -1,0 +1,55 @@
+Prioritized Receipt Management Features
+
+For South African freelancers, speed and automation are key. Leading expense apps now emphasize batch capture, flexible imports, and smart search. Based on user impact (time saved, ease-of-use) and competitive norms, the top improvements are:
+
+Multi-receipt scanning: High impact. Allowing users to snap multiple receipts back-to-back dramatically reduces capture time. Expensify’s 2025 update explicitly touts “scan multiple receipts at once – no extra taps required”
+use.expensify.com
+. Similarly, Dext (Receipt Bank) highlights “scan single or multiple receipts instantly” in its mobile app
+play.google.com
+. In practice, this beats a one-at-a-time workflow and matches what top apps like Wave and Genius Scan offer.
+
+Flexible import (gallery & email): High impact. Letting users import a batch of existing images or email receipts saves manual work. For example, EzzyBills recently added “multi-page gallery upload” so you can “upload multiple receipts without waiting”
+apps.apple.com
+. Likewise, Expensify allows forwarding receipts via email (receipts@expensify.com) or even SMS
+use.expensify.com
+. These channels mean a freelancer can forward emailed PDF receipts or select many photos at once, avoiding tedious one-by-one data entry.
+
+Smart organization & search: High impact. Powerful filtering and grouping help users find receipts in a large list. Dext’s app advertises “smart filters” for quick searches, letting users filter by date or amount
+play.google.com
+. Another scanner app, Alces, touts “smart filters” to find receipts by keyword or vendor name
+apps.apple.com
+. Including vendor/merchant filters is especially useful for freelancers who work with repeat clients or suppliers. Similarly, grouping receipts by project or trip streamlines reporting: Expensify now lets you “split expenses by client or team…across projects or departments”
+use.expensify.com
+, and Dext’s interface even lets you “track by … project” in its web app
+play.google.com
+. Folder/tag features to group receipts by client/project will greatly reduce admin overhead when preparing invoices or tax claims.
+
+Bulk editing & cleanup: Medium–high impact. Once receipts are imported, being able to edit or tag many at once saves time. Features like bulk edit (apply categories or tags to multiple receipts) and duplicate merging are invaluable. Dext emphasizes “detect duplicates and sync clean data automatically”
+play.google.com
+, showing that duplicate removal is an expected convenience. (This also avoids double-billing or clutter.) Archiving old receipts is another time-saver: for example Dext provides a “Secure Vault” to hide past documents
+play.google.com
+. Overall, batch tools that let a solopreneur select dozens of receipts and adjust categories or delete duplicates in one go will relieve tedious bookkeeping.
+
+Flexible export/reporting: High impact. Exporting subsets of receipts (for specific clients, dates or categories) is often needed for accounting or taxes. Users expect common formats like CSV or PDF. For instance, Smart Receipts lets you generate customizable reports in PDF or CSV
+tailride.so
+. Dext similarly touts “Export in multiple formats (CSV, PDF, ZIP) and analyse spending in detail”
+play.google.com
+. Offering filters in export (by date range, category, custom set) directly serves reporting needs. This saves manual copying of data and meets competitive expectations of even basic expense apps.
+
+User interface & convenience features: Medium–low impact. Grid or thumbnail views of receipts (vs. list view) can make browsing easier, but are mostly “nice-to-have” rather than essential. A receipt preview (tap to peek without full open) and the ability to star/favorite important receipts can improve usability, but these yield smaller time savings. Many apps include such UI conveniences, but they rank below core features. Likewise, a Date Range picker and Amount filter are subsets of smart filtering already discussed; they are useful but expected as part of a good filter UI.
+
+Summary: In short, the biggest wins are on capture and search. Batch-upload (multi-scan, gallery, email) and robust filters (date/vendor/amount, and grouping by project) deliver the most time savings and match what leading apps offer
+use.expensify.com
+apps.apple.com
+. Bulk edit and export features follow closely, as they significantly reduce manual work
+play.google.com
+tailride.so
+. Lower-priority are purely UI tweaks (grid view, favorites), which can improve the experience but don’t save as much effort.
+
+Sources: Industry examples and app documentation show these features drive user value. For example, Expensify and Dext explicitly cite multi-receipt scanning and filtering by date/amount as key capabilities
+use.expensify.com
+play.google.com
+. Receipt-app reviews likewise stress email import and smart search as top requests
+use.expensify.com
+apps.apple.com
+. The priority list above reflects these patterns.

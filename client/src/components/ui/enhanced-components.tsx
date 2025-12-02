@@ -18,7 +18,24 @@ import {
   GraduationCap,
   CheckCircle,
   AlertTriangle,
-  HelpCircle
+  HelpCircle,
+  Zap,
+  Building2,
+  Users,
+  Wrench,
+  Bus,
+  Fuel,
+  Smartphone,
+  Tv,
+  Shield,
+  Plane,
+  Shirt,
+  Sparkles,
+  Gift,
+  Heart,
+  Users2,
+  BatteryCharging,
+  MoreHorizontal
 } from "lucide-react";
 
 // Enhanced Button with proper feedback states
@@ -69,35 +86,114 @@ export const EnhancedButton = React.forwardRef<HTMLButtonElement, EnhancedButton
 
 EnhancedButton.displayName = "EnhancedButton";
 
-// Category icon mapping with consistent styling
+// Category icon mapping with consistent styling - South African expense categories
 const getCategoryIcon = (category: string) => {
   const iconClass = "h-5 w-5";
+  const cat = category.toLowerCase();
   
-  switch(category.toLowerCase()) {
-    case 'food':
-    case 'dining':
-    case 'groceries':
-      return <Utensils className={cn(iconClass, "text-green-600")} />;
-    case 'shopping':
-    case 'retail':
-      return <ShoppingBag className={cn(iconClass, "text-blue-600")} />;
-    case 'transport':
-    case 'fuel':
-      return <Car className={cn(iconClass, "text-red-600")} />;
-    case 'home':
-    case 'utilities':
-      return <HomeIcon className={cn(iconClass, "text-amber-600")} />;
-    case 'business':
-    case 'office':
-      return <Briefcase className={cn(iconClass, "text-purple-600")} />;
-    case 'health':
-    case 'medical':
-      return <Pill className={cn(iconClass, "text-pink-600")} />;
-    case 'education':
-      return <GraduationCap className={cn(iconClass, "text-indigo-600")} />;
-    default:
-      return <ReceiptIcon className={cn(iconClass, "text-gray-600")} />;
+  // Groceries & Food
+  if (cat === 'groceries') {
+    return <ShoppingBag className={cn(iconClass, "text-green-600")} />;
   }
+  if (cat === 'dining_takeaways' || cat === 'dining' || cat === 'food') {
+    return <Utensils className={cn(iconClass, "text-orange-600")} />;
+  }
+  
+  // Utilities & Home
+  if (cat === 'electricity_water') {
+    return <Zap className={cn(iconClass, "text-yellow-600")} />;
+  }
+  if (cat === 'municipal_rates_taxes') {
+    return <Building2 className={cn(iconClass, "text-slate-600")} />;
+  }
+  if (cat === 'rent_bond') {
+    return <HomeIcon className={cn(iconClass, "text-amber-600")} />;
+  }
+  if (cat === 'domestic_help_home_services') {
+    return <Users className={cn(iconClass, "text-teal-600")} />;
+  }
+  if (cat === 'home_maintenance') {
+    return <Wrench className={cn(iconClass, "text-gray-600")} />;
+  }
+  
+  // Transport
+  if (cat === 'transport_public_taxi' || cat === 'transport') {
+    return <Bus className={cn(iconClass, "text-blue-600")} />;
+  }
+  if (cat === 'fuel') {
+    return <Fuel className={cn(iconClass, "text-red-600")} />;
+  }
+  if (cat === 'vehicle_maintenance_licensing') {
+    return <Car className={cn(iconClass, "text-red-500")} />;
+  }
+  
+  // Communications & Subscriptions
+  if (cat === 'airtime_data_internet' || cat === 'telecommunications') {
+    return <Smartphone className={cn(iconClass, "text-cyan-600")} />;
+  }
+  if (cat === 'subscriptions') {
+    return <Tv className={cn(iconClass, "text-purple-600")} />;
+  }
+  
+  // Insurance & Health
+  if (cat === 'insurance') {
+    return <Shield className={cn(iconClass, "text-blue-700")} />;
+  }
+  if (cat === 'pharmacy_medication' || cat === 'medical' || cat === 'health' || cat === 'healthcare') {
+    return <Pill className={cn(iconClass, "text-pink-600")} />;
+  }
+  
+  // Education
+  if (cat === 'education_courses' || cat === 'education') {
+    return <GraduationCap className={cn(iconClass, "text-indigo-600")} />;
+  }
+  
+  // Entertainment & Travel
+  if (cat === 'entertainment') {
+    return <Sparkles className={cn(iconClass, "text-pink-500")} />;
+  }
+  if (cat === 'travel_accommodation' || cat === 'travel') {
+    return <Plane className={cn(iconClass, "text-sky-600")} />;
+  }
+  
+  // Shopping & Personal
+  if (cat === 'clothing_shopping' || cat === 'shopping' || cat === 'retail') {
+    return <Shirt className={cn(iconClass, "text-violet-600")} />;
+  }
+  if (cat === 'personal_care_beauty' || cat === 'personal_care') {
+    return <Sparkles className={cn(iconClass, "text-rose-500")} />;
+  }
+  
+  // Gifts & Donations
+  if (cat === 'gifts_celebrations' || cat === 'gifts') {
+    return <Gift className={cn(iconClass, "text-red-500")} />;
+  }
+  if (cat === 'donations_tithes' || cat === 'donations') {
+    return <Heart className={cn(iconClass, "text-rose-600")} />;
+  }
+  
+  // Family & Support
+  if (cat === 'family_support_remittances') {
+    return <Users2 className={cn(iconClass, "text-emerald-600")} />;
+  }
+  
+  // Load shedding (SA specific)
+  if (cat === 'load_shedding_costs') {
+    return <BatteryCharging className={cn(iconClass, "text-yellow-500")} />;
+  }
+  
+  // Business
+  if (cat === 'business' || cat === 'office') {
+    return <Briefcase className={cn(iconClass, "text-purple-600")} />;
+  }
+  
+  // Other/Default
+  if (cat === 'other') {
+    return <MoreHorizontal className={cn(iconClass, "text-gray-500")} />;
+  }
+  
+  // Fallback for custom categories
+  return <ReceiptIcon className={cn(iconClass, "text-gray-600")} />;
 };
 
 // Confidence level helper

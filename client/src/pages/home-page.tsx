@@ -999,18 +999,20 @@ function HomePage() {
                           <CalendarIcon className="h-4 w-4 text-gray-500" />
                           <Label className="text-sm font-medium">Date Range</Label>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-2">
                           <div>
                             <Label className="text-xs text-gray-500">From</Label>
                             <Popover>
                               <PopoverTrigger asChild>
                                 <Button
                                   variant="outline"
-                                  className="w-full mt-1 justify-start text-left font-normal"
+                                  className="w-full mt-1 justify-start text-left font-normal h-9 px-2 text-xs sm:text-sm sm:px-3"
                                   data-testid="input-date-from"
                                 >
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {dateFrom ? format(dateFrom, "dd MMM yyyy") : "Select date"}
+                                  <CalendarIcon className="mr-1.5 h-3.5 w-3.5 flex-shrink-0" />
+                                  <span className="truncate">
+                                    {dateFrom ? format(dateFrom, "dd MMM") : "Pick date"}
+                                  </span>
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-auto p-0" align="start">
@@ -1029,11 +1031,13 @@ function HomePage() {
                               <PopoverTrigger asChild>
                                 <Button
                                   variant="outline"
-                                  className="w-full mt-1 justify-start text-left font-normal"
+                                  className="w-full mt-1 justify-start text-left font-normal h-9 px-2 text-xs sm:text-sm sm:px-3"
                                   data-testid="input-date-to"
                                 >
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {dateTo ? format(dateTo, "dd MMM yyyy") : "Select date"}
+                                  <CalendarIcon className="mr-1.5 h-3.5 w-3.5 flex-shrink-0" />
+                                  <span className="truncate">
+                                    {dateTo ? format(dateTo, "dd MMM") : "Pick date"}
+                                  </span>
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-auto p-0" align="start">

@@ -43,7 +43,12 @@ import {
   Users,
   Wallet,
   AlertTriangle,
-  Briefcase
+  Briefcase,
+  ChevronDown,
+  ChevronUp,
+  DollarSign,
+  Store,
+  X
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -56,6 +61,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import TaxAIAssistant from "@/components/TaxAIAssistant";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useMemo } from "react";
 
 
 function HomePage() {
@@ -74,6 +81,14 @@ function HomePage() {
   const [isTaxAIOpen, setIsTaxAIOpen] = useState(false);
   const isMobile = useIsMobile();
   const { isOnline, pendingUploads } = useOfflineSync();
+  
+  // Smart Filters state
+  const [showSmartFilters, setShowSmartFilters] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [amountMin, setAmountMin] = useState("");
+  const [amountMax, setAmountMax] = useState("");
+  const [vendorFilter, setVendorFilter] = useState("all");
 
   // Fetch receipts
   const { data: receipts = [], isLoading, error } = useQuery<Receipt[]>({
@@ -179,6 +194,27 @@ function HomePage() {
     },
   });
 
+  // Unique vendors list for filter
+  const uniqueVendors = useMemo(() => {
+    const vendors = new Set<string>();
+    receipts.forEach(r => {
+      if (r.storeName) vendors.add(r.storeName);
+    });
+    return Array.from(vendors).sort();
+  }, [receipts]);
+
+  // Check if any smart filters are active
+  const hasActiveSmartFilters = dateFrom || dateTo || amountMin || amountMax || vendorFilter !== "all";
+
+  // Clear all smart filters
+  const clearSmartFilters = () => {
+    setDateFrom("");
+    setDateTo("");
+    setAmountMin("");
+    setAmountMax("");
+    setVendorFilter("all");
+  };
+
   // Filter and sort receipts
   const filteredReceipts = receipts
     .filter((receipt) => {
@@ -193,7 +229,32 @@ function HomePage() {
         matchesConfidence = confidenceScore < 0.8;
       }
       
-      return matchesSearch && matchesCategory && matchesConfidence;
+      // Smart Filters: Date range
+      let matchesDateRange = true;
+      if (dateFrom || dateTo) {
+        const receiptDate = new Date(receipt.date);
+        if (dateFrom) {
+          matchesDateRange = matchesDateRange && receiptDate >= new Date(dateFrom);
+        }
+        if (dateTo) {
+          matchesDateRange = matchesDateRange && receiptDate <= new Date(dateTo);
+        }
+      }
+
+      // Smart Filters: Amount range
+      let matchesAmountRange = true;
+      const amount = parseFloat(receipt.total);
+      if (amountMin && !isNaN(parseFloat(amountMin))) {
+        matchesAmountRange = matchesAmountRange && amount >= parseFloat(amountMin);
+      }
+      if (amountMax && !isNaN(parseFloat(amountMax))) {
+        matchesAmountRange = matchesAmountRange && amount <= parseFloat(amountMax);
+      }
+
+      // Smart Filters: Vendor
+      const matchesVendor = vendorFilter === "all" || receipt.storeName === vendorFilter;
+      
+      return matchesSearch && matchesCategory && matchesConfidence && matchesDateRange && matchesAmountRange && matchesVendor;
     })
     .sort((a, b) => {
       switch (sortBy) {
@@ -821,77 +882,217 @@ function HomePage() {
               </TabsContent>
 
               {/* Receipts Tab */}
-              <TabsContent value="receipts" className="space-y-6">
-                {/* Filters and Actions */}
-                <div className="flex flex-col md:flex-row gap-4">
+              <TabsContent value="receipts" className="space-y-4">
+                {/* Search and Basic Filters */}
+                <div className="space-y-3">
                   <div className="flex-1">
-                    <Label htmlFor="search">Search receipts</Label>
+                    <Label htmlFor="search" className="text-sm font-medium">Search receipts</Label>
                     <Input
                       id="search"
                       type="text"
                       placeholder="Search by store name or description..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full"
+                      className="w-full mt-1"
+                      data-testid="input-search-receipts"
                     />
                   </div>
-                  <div className="md:w-48">
-                    <Label htmlFor="category">Category</Label>
-                    <Select value={categoryFilter} onValueChange={setCategoryFilter as any}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="All categories" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All categories</SelectItem>
-                        {EXPENSE_CATEGORIES.map((cat) => (
-                          <SelectItem key={cat} value={cat}>
-                            {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                          </SelectItem>
-                        ))}
-                        {Array.isArray(customCategories) && customCategories.length > 0 && (
-                          <>
-                            {customCategories.map((customCat: any) => (
-                              <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
-                                {customCat.displayName}
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="category" className="text-sm font-medium">Category</Label>
+                      <Select value={categoryFilter} onValueChange={setCategoryFilter as any}>
+                        <SelectTrigger className="mt-1" data-testid="select-category-filter">
+                          <SelectValue placeholder="All categories" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All categories</SelectItem>
+                          {EXPENSE_CATEGORIES.map((cat) => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                            </SelectItem>
+                          ))}
+                          {Array.isArray(customCategories) && customCategories.length > 0 && (
+                            <>
+                              {customCategories.map((customCat: any) => (
+                                <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
+                                  {customCat.displayName}
+                                </SelectItem>
+                              ))}
+                            </>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="sort" className="text-sm font-medium">Sort by</Label>
+                      <Select value={sortBy} onValueChange={setSortBy as any}>
+                        <SelectTrigger className="mt-1" data-testid="select-sort-by">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="date">Date</SelectItem>
+                          <SelectItem value="amount">Amount</SelectItem>
+                          <SelectItem value="category">Category</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={showNeedsReview ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setShowNeedsReview(!showNeedsReview)}
+                    className={showNeedsReview ? "bg-amber-600 hover:bg-amber-700" : ""}
+                    data-testid="button-filter-needs-review"
+                  >
+                    <AlertTriangle className="h-4 w-4 mr-1.5" />
+                    Needs Review
+                  </Button>
+                  <Button
+                    variant={bulkMode ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setBulkMode(!bulkMode)}
+                    data-testid="button-bulk-select"
+                  >
+                    <CheckSquare className="h-4 w-4 mr-1.5" />
+                    Bulk Select
+                  </Button>
+                </div>
+
+                {/* Smart Filters - Collapsible */}
+                <Collapsible open={showSmartFilters} onOpenChange={setShowSmartFilters}>
+                  <CollapsibleTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="w-full justify-between text-gray-600 hover:text-gray-900 border border-dashed border-gray-300 hover:border-gray-400"
+                      data-testid="button-toggle-smart-filters"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Filter className="h-4 w-4" />
+                        <span>Smart Filters</span>
+                        {hasActiveSmartFilters && (
+                          <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700">
+                            Active
+                          </Badge>
+                        )}
+                      </div>
+                      {showSmartFilters ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-3">
+                    <div className="p-4 bg-gray-50 rounded-[2px] border border-gray-200 space-y-4">
+                      {/* Date Range */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Calendar className="h-4 w-4 text-gray-500" />
+                          <Label className="text-sm font-medium">Date Range</Label>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs text-gray-500">From</Label>
+                            <Input
+                              type="date"
+                              value={dateFrom}
+                              onChange={(e) => setDateFrom(e.target.value)}
+                              className="mt-1"
+                              data-testid="input-date-from"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">To</Label>
+                            <Input
+                              type="date"
+                              value={dateTo}
+                              onChange={(e) => setDateTo(e.target.value)}
+                              className="mt-1"
+                              data-testid="input-date-to"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Amount Range */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <DollarSign className="h-4 w-4 text-gray-500" />
+                          <Label className="text-sm font-medium">Amount Range (R)</Label>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs text-gray-500">Min</Label>
+                            <Input
+                              type="number"
+                              placeholder="0"
+                              value={amountMin}
+                              onChange={(e) => setAmountMin(e.target.value)}
+                              className="mt-1"
+                              data-testid="input-amount-min"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Max</Label>
+                            <Input
+                              type="number"
+                              placeholder="No limit"
+                              value={amountMax}
+                              onChange={(e) => setAmountMax(e.target.value)}
+                              className="mt-1"
+                              data-testid="input-amount-max"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Vendor Filter */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Store className="h-4 w-4 text-gray-500" />
+                          <Label className="text-sm font-medium">Vendor</Label>
+                        </div>
+                        <Select value={vendorFilter} onValueChange={setVendorFilter}>
+                          <SelectTrigger data-testid="select-vendor-filter">
+                            <SelectValue placeholder="All vendors" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All vendors</SelectItem>
+                            {uniqueVendors.map((vendor) => (
+                              <SelectItem key={vendor} value={vendor}>
+                                {vendor}
                               </SelectItem>
                             ))}
-                          </>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="md:w-32">
-                    <Label htmlFor="sort">Sort by</Label>
-                    <Select value={sortBy} onValueChange={setSortBy as any}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="date">Date</SelectItem>
-                        <SelectItem value="amount">Amount</SelectItem>
-                        <SelectItem value="category">Category</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <Button
-                      variant={showNeedsReview ? "default" : "outline"}
-                      onClick={() => setShowNeedsReview(!showNeedsReview)}
-                      className={showNeedsReview ? "bg-amber-600 hover:bg-amber-700" : ""}
-                      data-testid="button-filter-needs-review"
-                    >
-                      <AlertTriangle className="h-4 w-4 mr-2" />
-                      {showNeedsReview ? "All Receipts" : "Needs Review"}
-                    </Button>
-                    <Button
-                      variant={bulkMode ? "default" : "outline"}
-                      onClick={() => setBulkMode(!bulkMode)}
-                      data-testid="button-bulk-select"
-                    >
-                      <CheckSquare className="h-4 w-4 mr-2" />
-                      {bulkMode ? "Exit Bulk" : "Bulk Select"}
-                    </Button>
-                  </div>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Clear Filters Button */}
+                      {hasActiveSmartFilters && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={clearSmartFilters}
+                          className="w-full"
+                          data-testid="button-clear-smart-filters"
+                        >
+                          <X className="h-4 w-4 mr-1.5" />
+                          Clear All Filters
+                        </Button>
+                      )}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {/* Results count */}
+                <div className="text-sm text-gray-500">
+                  Showing {filteredReceipts.length} of {receipts.length} receipts
                 </div>
 
                 {/* Receipts List */}

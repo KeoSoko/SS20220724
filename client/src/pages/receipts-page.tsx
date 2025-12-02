@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { Receipt, Search, Filter, Plus, ArrowLeft, AlertCircle, CheckSquare, Square, Trash2, Tag } from 'lucide-react';
+import { Receipt, Search, Filter, Plus, ArrowLeft, AlertCircle, CheckSquare, Square, Trash2, Tag, Calendar, DollarSign, Store, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { PageLayout } from '@/components/page-layout';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { EnhancedReceiptCard, SpacingContainer, EnhancedEmptyState } from '@/components/ui/enhanced-components';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
@@ -47,6 +48,14 @@ export default function ReceiptsPage() {
   const [sortOrder, setSortOrder] = useState('desc');
   const [showNeedsReview, setShowNeedsReview] = useState(false);
   
+  // Smart Filters state
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [amountMin, setAmountMin] = useState('');
+  const [amountMax, setAmountMax] = useState('');
+  const [vendorFilter, setVendorFilter] = useState('all');
+  
   // Bulk selection state
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedReceiptIds, setSelectedReceiptIds] = useState<Set<number>>(new Set());
@@ -58,6 +67,35 @@ export default function ReceiptsPage() {
   const { data: receipts = [], isLoading, error } = useQuery({
     queryKey: ['/api/receipts', { limit: 100, offset: 0 }],
   });
+
+  // Get unique vendors from receipts for dropdown
+  const uniqueVendors = useMemo(() => {
+    const vendors = receipts
+      .map((r: any) => r.storeName)
+      .filter((name: string) => name && name.trim() !== '')
+      .map((name: string) => name.trim());
+    return [...new Set(vendors)].sort((a, b) => a.localeCompare(b));
+  }, [receipts]);
+
+  // Check if any smart filters are active
+  const hasActiveSmartFilters = dateFrom || dateTo || amountMin || amountMax || vendorFilter !== 'all';
+
+  // Clear all smart filters
+  const clearAllSmartFilters = () => {
+    setDateFrom('');
+    setDateTo('');
+    setAmountMin('');
+    setAmountMax('');
+    setVendorFilter('all');
+  };
+
+  // Clear all filters including search and category
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setCategoryFilter('all');
+    setShowNeedsReview(false);
+    clearAllSmartFilters();
+  };
 
   // Filter receipts based on URL parameters and filters
   const filteredReceipts = receipts.filter((receipt: any) => {
@@ -78,7 +116,35 @@ export default function ReceiptsPage() {
     const matchesNeedsReview = !showNeedsReview || 
       (receipt.confidence !== undefined && receipt.confidence !== null && receipt.confidence < 80);
     
-    return matchesSearch && matchesCategory && matchesNeedsReview;
+    // Date range filter
+    let matchesDateRange = true;
+    if (dateFrom) {
+      const receiptDate = new Date(receipt.date);
+      const fromDate = new Date(dateFrom);
+      matchesDateRange = receiptDate >= fromDate;
+    }
+    if (dateTo && matchesDateRange) {
+      const receiptDate = new Date(receipt.date);
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999); // Include the entire day
+      matchesDateRange = receiptDate <= toDate;
+    }
+    
+    // Amount range filter
+    let matchesAmountRange = true;
+    const receiptAmount = parseFloat(receipt.total) || 0;
+    if (amountMin) {
+      matchesAmountRange = receiptAmount >= parseFloat(amountMin);
+    }
+    if (amountMax && matchesAmountRange) {
+      matchesAmountRange = receiptAmount <= parseFloat(amountMax);
+    }
+    
+    // Vendor filter
+    const matchesVendor = vendorFilter === 'all' || 
+      receipt.storeName?.toLowerCase() === vendorFilter.toLowerCase();
+    
+    return matchesSearch && matchesCategory && matchesNeedsReview && matchesDateRange && matchesAmountRange && matchesVendor;
   });
 
   // Sort receipts
@@ -398,19 +464,139 @@ export default function ReceiptsPage() {
                 </div>
               </div>
             </div>
+
+            {/* Advanced Filters - Collapsible */}
+            <Collapsible open={showAdvancedFilters} onOpenChange={setShowAdvancedFilters} className="mt-4">
+              <div className="flex items-center justify-between">
+                <CollapsibleTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="flex items-center gap-2 p-0 h-auto hover:bg-transparent"
+                    data-testid="button-toggle-advanced-filters"
+                  >
+                    <Filter className="h-4 w-4" />
+                    <span className="font-medium">Smart Filters</span>
+                    {hasActiveSmartFilters && (
+                      <Badge variant="secondary" className="ml-1">Active</Badge>
+                    )}
+                    {showAdvancedFilters ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+                {hasActiveSmartFilters && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearAllSmartFilters}
+                    className="text-muted-foreground hover:text-foreground"
+                    data-testid="button-clear-smart-filters"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Clear
+                  </Button>
+                )}
+              </div>
+              
+              <CollapsibleContent className="mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
+                  {/* Date Range */}
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      Date From
+                    </Label>
+                    <Input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      data-testid="input-date-from"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      Date To
+                    </Label>
+                    <Input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      data-testid="input-date-to"
+                    />
+                  </div>
+                  
+                  {/* Amount Range */}
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <DollarSign className="h-4 w-4" />
+                      Min Amount (R)
+                    </Label>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      min="0"
+                      step="0.01"
+                      value={amountMin}
+                      onChange={(e) => setAmountMin(e.target.value)}
+                      data-testid="input-amount-min"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <DollarSign className="h-4 w-4" />
+                      Max Amount (R)
+                    </Label>
+                    <Input
+                      type="number"
+                      placeholder="No limit"
+                      min="0"
+                      step="0.01"
+                      value={amountMax}
+                      onChange={(e) => setAmountMax(e.target.value)}
+                      data-testid="input-amount-max"
+                    />
+                  </div>
+                  
+                  {/* Vendor Filter */}
+                  <div className="space-y-2 md:col-span-2 lg:col-span-4">
+                    <Label className="flex items-center gap-2">
+                      <Store className="h-4 w-4" />
+                      Vendor / Store
+                    </Label>
+                    <Select value={vendorFilter} onValueChange={setVendorFilter}>
+                      <SelectTrigger data-testid="select-vendor-filter">
+                        <SelectValue placeholder="All vendors" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All vendors</SelectItem>
+                        {uniqueVendors.map((vendor: string) => (
+                          <SelectItem key={vendor} value={vendor}>
+                            {vendor}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           </CardContent>
         </Card>
 
         {/* Active Filters */}
-        {(categoryFilter !== 'all' || searchQuery || showNeedsReview) && (
-          <div className="flex flex-wrap gap-2">
+        {(categoryFilter !== 'all' || searchQuery || showNeedsReview || hasActiveSmartFilters) && (
+          <div className="flex flex-wrap gap-2 items-center">
             {showNeedsReview && (
               <Badge variant="secondary" className="flex items-center gap-1">
                 <AlertCircle className="h-3 w-3" />
                 Needs Review (Confidence &lt; 80%)
                 <button
                   onClick={() => setShowNeedsReview(false)}
-                  className="ml-1 hover:bg-gray-200 rounded-full p-0.5"
+                  className="ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full p-0.5"
                   data-testid="button-clear-needs-review"
                 >
                   ×
@@ -423,7 +609,7 @@ export default function ReceiptsPage() {
                 {categoryFilter === 'uncategorized' ? 'Uncategorized' : categoryFilter}
                 <button
                   onClick={() => setCategoryFilter('all')}
-                  className="ml-1 hover:bg-gray-200 rounded-full p-0.5"
+                  className="ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full p-0.5"
                 >
                   ×
                 </button>
@@ -435,11 +621,89 @@ export default function ReceiptsPage() {
                 "{searchQuery}"
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="ml-1 hover:bg-gray-200 rounded-full p-0.5"
+                  className="ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full p-0.5"
                 >
                   ×
                 </button>
               </Badge>
+            )}
+            {/* Smart Filter Badges */}
+            {dateFrom && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                From: {format(new Date(dateFrom), 'dd MMM yyyy')}
+                <button
+                  onClick={() => setDateFrom('')}
+                  className="ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full p-0.5"
+                  data-testid="button-clear-date-from"
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
+            {dateTo && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                To: {format(new Date(dateTo), 'dd MMM yyyy')}
+                <button
+                  onClick={() => setDateTo('')}
+                  className="ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full p-0.5"
+                  data-testid="button-clear-date-to"
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
+            {amountMin && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <DollarSign className="h-3 w-3" />
+                Min: R{amountMin}
+                <button
+                  onClick={() => setAmountMin('')}
+                  className="ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full p-0.5"
+                  data-testid="button-clear-amount-min"
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
+            {amountMax && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <DollarSign className="h-3 w-3" />
+                Max: R{amountMax}
+                <button
+                  onClick={() => setAmountMax('')}
+                  className="ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full p-0.5"
+                  data-testid="button-clear-amount-max"
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
+            {vendorFilter !== 'all' && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Store className="h-3 w-3" />
+                {vendorFilter}
+                <button
+                  onClick={() => setVendorFilter('all')}
+                  className="ml-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full p-0.5"
+                  data-testid="button-clear-vendor"
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
+            {/* Clear All Filters Button */}
+            {(categoryFilter !== 'all' || searchQuery || showNeedsReview || hasActiveSmartFilters) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearAllFilters}
+                className="text-muted-foreground hover:text-foreground ml-2"
+                data-testid="button-clear-all-filters"
+              >
+                Clear all
+              </Button>
             )}
           </div>
         )}

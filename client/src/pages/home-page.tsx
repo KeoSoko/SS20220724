@@ -21,7 +21,7 @@ import { useOfflineSync } from "@/hooks/use-offline-sync";
 import { format } from "date-fns";
 import { Link, useLocation, useRouter } from "wouter";
 import { 
-  Calendar, 
+  Calendar as CalendarIcon, 
   Calculator,
   Download,
   FileText, 
@@ -46,7 +46,6 @@ import {
   Briefcase,
   ChevronDown,
   ChevronUp,
-  DollarSign,
   Store,
   X
 } from "lucide-react";
@@ -62,6 +61,8 @@ import { useToast } from "@/hooks/use-toast";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import TaxAIAssistant from "@/components/TaxAIAssistant";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { useMemo } from "react";
 
 
@@ -84,8 +85,8 @@ function HomePage() {
   
   // Smart Filters state
   const [showSmartFilters, setShowSmartFilters] = useState(false);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
+  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
   const [amountMin, setAmountMin] = useState("");
   const [amountMax, setAmountMax] = useState("");
   const [vendorFilter, setVendorFilter] = useState("all");
@@ -208,8 +209,8 @@ function HomePage() {
 
   // Clear all smart filters
   const clearSmartFilters = () => {
-    setDateFrom("");
-    setDateTo("");
+    setDateFrom(undefined);
+    setDateTo(undefined);
     setAmountMin("");
     setAmountMax("");
     setVendorFilter("all");
@@ -234,10 +235,12 @@ function HomePage() {
       if (dateFrom || dateTo) {
         const receiptDate = new Date(receipt.date);
         if (dateFrom) {
-          matchesDateRange = matchesDateRange && receiptDate >= new Date(dateFrom);
+          matchesDateRange = matchesDateRange && receiptDate >= dateFrom;
         }
         if (dateTo) {
-          matchesDateRange = matchesDateRange && receiptDate <= new Date(dateTo);
+          const endOfDay = new Date(dateTo);
+          endOfDay.setHours(23, 59, 59, 999);
+          matchesDateRange = matchesDateRange && receiptDate <= endOfDay;
         }
       }
 
@@ -993,40 +996,63 @@ function HomePage() {
                       {/* Date Range */}
                       <div>
                         <div className="flex items-center gap-2 mb-2">
-                          <Calendar className="h-4 w-4 text-gray-500" />
+                          <CalendarIcon className="h-4 w-4 text-gray-500" />
                           <Label className="text-sm font-medium">Date Range</Label>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <Label className="text-xs text-gray-500">From</Label>
-                            <Input
-                              type="date"
-                              value={dateFrom}
-                              onChange={(e) => setDateFrom(e.target.value)}
-                              className="mt-1"
-                              data-testid="input-date-from"
-                            />
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className="w-full mt-1 justify-start text-left font-normal"
+                                  data-testid="input-date-from"
+                                >
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {dateFrom ? format(dateFrom, "dd MMM yyyy") : "Select date"}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                  mode="single"
+                                  selected={dateFrom}
+                                  onSelect={setDateFrom}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
                           </div>
                           <div>
                             <Label className="text-xs text-gray-500">To</Label>
-                            <Input
-                              type="date"
-                              value={dateTo}
-                              onChange={(e) => setDateTo(e.target.value)}
-                              className="mt-1"
-                              data-testid="input-date-to"
-                            />
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className="w-full mt-1 justify-start text-left font-normal"
+                                  data-testid="input-date-to"
+                                >
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {dateTo ? format(dateTo, "dd MMM yyyy") : "Select date"}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                  mode="single"
+                                  selected={dateTo}
+                                  onSelect={setDateTo}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
                           </div>
                         </div>
                       </div>
 
                       {/* Amount Range */}
                       <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <DollarSign className="h-4 w-4 text-gray-500" />
-                          <Label className="text-sm font-medium">Amount Range (R)</Label>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
+                        <Label className="text-sm font-medium">Amount Range (R)</Label>
+                        <div className="grid grid-cols-2 gap-3 mt-2">
                           <div>
                             <Label className="text-xs text-gray-500">Min</Label>
                             <Input

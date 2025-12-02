@@ -265,35 +265,37 @@ export function EnhancedReceiptCard({ receipt, onClick, className, showCategory 
             {getCategoryIcon(receipt.category)}
           </div>
           
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-semibold text-gray-900 text-base truncate group-hover:text-primary transition-colors" data-testid={`receipt-storename-${receipt.id}`}>
-                {receipt.storeName || 'Unknown Store'}
-              </h3>
-              {confidence.level && (
-                <Badge 
-                  variant="outline" 
-                  className={cn("text-[10px] px-1.5 py-0 h-5 flex items-center gap-1 flex-shrink-0", confidence.color)}
-                >
-                  {confidence.icon}
-                </Badge>
-              )}
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm text-gray-500" data-testid={`receipt-date-${receipt.id}`}>
-                {format(parseISO(receipt.date), 'MMM dd, yyyy')}
-              </p>
-              {showCategory && (
-                <Badge variant="secondary" className="text-xs bg-primary/10 text-primary border-primary/20 flex-shrink-0" data-testid={`receipt-category-${receipt.id}`}>
-                  {receipt.category.replace(/_/g, ' ')}
-                </Badge>
-              )}
-            </div>
-          </div>
-          
-          <div className="text-right flex-shrink-0">
-            <div className="font-bold text-lg text-gray-900 whitespace-nowrap" data-testid={`receipt-amount-${receipt.id}`}>
-              R{parseFloat(receipt.total.toString()).toFixed(2)}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-gray-900 text-base leading-tight group-hover:text-primary transition-colors" data-testid={`receipt-storename-${receipt.id}`}>
+                    {receipt.storeName || 'Unknown Store'}
+                  </h3>
+                  {confidence.level && (
+                    <Badge 
+                      variant="outline" 
+                      className={cn("text-[10px] px-1.5 py-0 h-5 flex items-center gap-1 flex-shrink-0", confidence.color)}
+                    >
+                      {confidence.icon}
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500 mt-0.5" data-testid={`receipt-date-${receipt.id}`}>
+                  {format(parseISO(receipt.date), 'MMM dd, yyyy')}
+                </p>
+              </div>
+              
+              <div className="text-right flex-shrink-0">
+                <div className="font-bold text-lg text-primary whitespace-nowrap" data-testid={`receipt-amount-${receipt.id}`}>
+                  R{parseFloat(receipt.total.toString()).toFixed(2)}
+                </div>
+                {showCategory && (
+                  <Badge variant="secondary" className="text-xs bg-primary/10 text-primary border-primary/20 mt-1" data-testid={`receipt-category-${receipt.id}`}>
+                    {receipt.category.replace(/_/g, ' ')}
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
         </div>

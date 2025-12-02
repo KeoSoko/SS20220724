@@ -793,10 +793,10 @@ export default function ReceiptsPage() {
                         storeName: receipt.storeName || 'Unknown Store',
                         total: parseFloat(receipt.total),
                         date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
-                        category: receipt.category || 'other'
+                        category: receipt.category || 'other',
+                        confidenceScore: receipt.confidenceScore
                       }}
                       onClick={() => handleReceiptClick(receipt.id)}
-                      showCategory={categoryFilter === 'all'}
                     />
                   </div>
                 </div>

@@ -53,6 +53,7 @@ import { profitLossService } from "./profit-loss-service";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
 import { log } from "./vite";
 import { and, asc, eq, gte, lt, lte, sql } from "drizzle-orm";
+import multer from "multer";
 import { scrypt, timingSafeEqual } from 'crypto';
 import { promisify } from 'util';
 
@@ -3215,6 +3216,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error in /api/admin/problematic-emails: ${error.message}`, 'email');
       res.status(500).json({ error: "Failed to get problematic emails" });
+    }
+  });
+
+  // SendGrid Inbound Parse webhook for receiving receipt emails
+  app.post("/api/webhooks/inbound-email", multer().any(), async (req, res) => {
+    try {
+      log('Received inbound email webhook', 'inbound-email');
+      
+      const { inboundEmailService } = await import('./inbound-email-service');
+      
+      // SendGrid Inbound Parse sends data as multipart form
+      const emailData = {
+        to: req.body.to || '',
+        from: req.body.from || '',
+        subject: req.body.subject || '',
+        text: req.body.text || '',
+        html: req.body.html || '',
+        attachments: parseInt(req.body.attachments || '0'),
+        'attachment-info': req.body['attachment-info'] || '',
+      };
+      
+      log(`Inbound email from: ${emailData.from} to: ${emailData.to}`, 'inbound-email');
+      
+      // Parse attachments from multer
+      const attachments = new Map<string, { content: Buffer; contentType: string; filename: string }>();
+      
+      if (req.files && Array.isArray(req.files)) {
+        for (const file of req.files) {
+          attachments.set(file.fieldname, {
+            content: file.buffer,
+            contentType: file.mimetype,
+            filename: file.originalname || file.fieldname,
+          });
+          log(`Attachment: ${file.fieldname} - ${file.mimetype} (${file.size} bytes)`, 'inbound-email');
+        }
+      }
+      
+      // Process the inbound email
+      const result = await inboundEmailService.processInboundEmail(emailData, attachments);
+      
+      if (result.success) {
+        log(`Successfully processed inbound email, receipt ID: ${result.receiptId}`, 'inbound-email');
+      } else {
+        log(`Failed to process inbound email: ${result.error}`, 'inbound-email');
+      }
+      
+      // SendGrid expects a 200 response
+      res.status(200).send('OK');
+    } catch (error: any) {
+      log(`Error in inbound email webhook: ${error.message}`, 'inbound-email');
+      // Still return 200 to prevent SendGrid from retrying
+      res.status(200).send('OK');
     }
   });
 

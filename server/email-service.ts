@@ -957,6 +957,185 @@ ${aiMessage}
       throw new Error(`Email verification failed: ${error.message}. Please ensure this email is verified in SendGrid.`);
     }
   }
+
+  /**
+   * Send receipt import confirmation email
+   */
+  async sendReceiptImportConfirmation(email: string, username: string, receiptCount: number): Promise<boolean> {
+    if (!process.env.SENDGRID_API_KEY) {
+      console.error("Cannot send receipt import confirmation - SENDGRID_API_KEY not configured");
+      return false;
+    }
+
+    try {
+      await mailService.send({
+        to: email,
+        from: {
+          email: this.fromEmail,
+          name: 'Simple Slips'
+        },
+        replyTo: {
+          email: 'keo@nine28.co.za',
+          name: 'Simple Slips Support Team'
+        },
+        subject: `Receipt${receiptCount > 1 ? 's' : ''} Successfully Imported`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #0073AA; margin: 0;">Simple Slips</h1>
+              <p style="color: #666; font-size: 16px;">Receipt Import Confirmation</p>
+            </div>
+            
+            <div style="background: #d4edda; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #28a745;">
+              <h2 style="color: #155724; margin-top: 0;">Success!</h2>
+              <p style="color: #155724; margin: 0;">
+                Hi ${username},<br><br>
+                We've successfully processed <strong>${receiptCount} receipt${receiptCount > 1 ? 's' : ''}</strong> from your email.
+                The receipt${receiptCount > 1 ? 's have' : ' has'} been automatically categorized and added to your account.
+              </p>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${this.appUrl}/receipts" 
+                 style="background: #0073AA; color: white; padding: 14px 30px; 
+                        text-decoration: none; border-radius: 6px; display: inline-block;
+                        font-weight: bold;">
+                View Your Receipts
+              </a>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
+              <p style="color: #666; margin: 0; font-size: 14px;">
+                <strong>Tip:</strong> You can forward or email receipts anytime to your unique Simple Slips email address
+                to automatically add them to your account.
+              </p>
+            </div>
+            
+            <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+            <p style="color: #999; font-size: 12px;">
+              This email was sent from Simple Slips. If you didn't expect this email, please contact support.
+            </p>
+          </div>
+        `,
+        text: `
+Receipt${receiptCount > 1 ? 's' : ''} Successfully Imported
+
+Hi ${username},
+
+We've successfully processed ${receiptCount} receipt${receiptCount > 1 ? 's' : ''} from your email.
+The receipt${receiptCount > 1 ? 's have' : ' has'} been automatically categorized and added to your account.
+
+View your receipts: ${this.appUrl}/receipts
+
+Tip: You can forward or email receipts anytime to your unique Simple Slips email address
+to automatically add them to your account.
+        `
+      });
+
+      console.log(`[EMAIL] Receipt import confirmation sent to ${email}`);
+      return true;
+
+    } catch (error: any) {
+      console.error(`[EMAIL] Failed to send receipt import confirmation: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Send receipt import failure email
+   */
+  async sendReceiptImportFailure(
+    email: string,
+    username: string,
+    errorTitle: string,
+    errorMessage: string
+  ): Promise<boolean> {
+    if (!process.env.SENDGRID_API_KEY) {
+      console.error("Cannot send receipt import failure - SENDGRID_API_KEY not configured");
+      return false;
+    }
+
+    try {
+      await mailService.send({
+        to: email,
+        from: {
+          email: this.fromEmail,
+          name: 'Simple Slips'
+        },
+        replyTo: {
+          email: 'keo@nine28.co.za',
+          name: 'Simple Slips Support Team'
+        },
+        subject: 'Receipt Import - Action Required',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #0073AA; margin: 0;">Simple Slips</h1>
+              <p style="color: #666; font-size: 16px;">Receipt Import Notice</p>
+            </div>
+            
+            <div style="background: #fff3cd; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #ffc107;">
+              <h2 style="color: #856404; margin-top: 0;">${errorTitle}</h2>
+              <p style="color: #856404; margin: 0;">
+                Hi ${username},<br><br>
+                ${errorMessage}
+              </p>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
+              <h3 style="color: #333; margin-top: 0;">Tips for successful receipt imports:</h3>
+              <ul style="color: #666; line-height: 1.8;">
+                <li>Attach clear photos of your receipts (JPEG, PNG, or PDF)</li>
+                <li>Make sure the receipt text is visible and not blurry</li>
+                <li>Include only one receipt per image for best results</li>
+                <li>Avoid screenshots of digital receipts - forward the original email instead</li>
+              </ul>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${this.appUrl}/upload-receipt" 
+                 style="background: #0073AA; color: white; padding: 14px 30px; 
+                        text-decoration: none; border-radius: 6px; display: inline-block;
+                        font-weight: bold;">
+                Try Uploading Manually
+              </a>
+            </div>
+            
+            <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+            <p style="color: #999; font-size: 12px;">
+              Need help? Reply to this email and our support team will assist you.
+            </p>
+          </div>
+        `,
+        text: `
+Receipt Import - Action Required
+
+Hi ${username},
+
+${errorTitle}
+
+${errorMessage}
+
+Tips for successful receipt imports:
+- Attach clear photos of your receipts (JPEG, PNG, or PDF)
+- Make sure the receipt text is visible and not blurry
+- Include only one receipt per image for best results
+- Avoid screenshots of digital receipts - forward the original email instead
+
+Try uploading manually: ${this.appUrl}/upload-receipt
+
+Need help? Reply to this email and our support team will assist you.
+        `
+      });
+
+      console.log(`[EMAIL] Receipt import failure notification sent to ${email}`);
+      return true;
+
+    } catch (error: any) {
+      console.error(`[EMAIL] Failed to send receipt import failure notification: ${error.message}`);
+      return false;
+    }
+  }
 }
 
 export const emailService = new EmailService();

@@ -138,12 +138,14 @@ async function handlePaystackSubscriptionDisable(data: any) {
     log(`Successfully cancelled subscription for user ${user.id} (${customerEmail}) via Paystack webhook`, 'billing');
 
     // Send notification email about cancelled subscription
-    await emailService.sendPaymentFailureNotification(
-      user.email,
-      user.username,
-      'subscription_cancelled',
-      'Your subscription has been cancelled due to payment issues. Please update your payment method to continue using premium features.'
-    );
+    if (user.email) {
+      await emailService.sendPaymentFailureNotification(
+        user.email,
+        user.username,
+        'subscription_cancelled',
+        'Your subscription has been cancelled due to payment issues. Please update your payment method to continue using premium features.'
+      );
+    }
   } catch (error) {
     log(`Error handling Paystack subscription disable: ${error}`, 'billing');
   }
@@ -179,14 +181,15 @@ async function handlePaystackPaymentFailed(data: any) {
 
     // Send notification email about payment failure
     const failureReason = data.gateway_response || 'Your payment could not be processed';
-    await emailService.sendPaymentFailureNotification(
-      user.email,
-      user.username,
-      'payment_failed',
-      `${failureReason}. Please update your payment method to ensure uninterrupted service.`
-    );
-
-    log(`Payment failure notification sent to user ${user.id} (${customerEmail})`, 'billing');
+    if (user.email) {
+      await emailService.sendPaymentFailureNotification(
+        user.email,
+        user.username,
+        'payment_failed',
+        `${failureReason}. Please update your payment method to ensure uninterrupted service.`
+      );
+      log(`Payment failure notification sent to user ${user.id} (${customerEmail})`, 'billing');
+    }
   } catch (error) {
     log(`Error handling Paystack payment failed: ${error}`, 'billing');
   }
@@ -283,7 +286,7 @@ async function validateCategory(category: any, userId?: number): Promise<{ isVal
   }
   
   // Check if it's a custom category for this user
-  if (userId) {
+  if (userId && storage.getCustomCategories) {
     try {
       const customCategories = await storage.getCustomCategories(userId);
       const customCategory = customCategories.find(cat => cat.name === category);
@@ -3017,17 +3020,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const userReceipts = await storage.getReceiptsByUser(userId);
         for (const receipt of userReceipts) {
           // Delete receipt image from storage if it exists
-          if (receipt.imageUrl) {
+          if (receipt.blobUrl) {
             try {
-              if (receipt.imageUrl.includes('blob.core.windows.net')) {
-                // Azure storage
-                await azureStorage.deleteImage(receipt.imageUrl);
-              } else if (receipt.imageUrl.includes('/uploads/')) {
-                // Replit storage
-                await replitStorage.deleteImage(receipt.imageUrl);
+              if (receipt.blobUrl.includes('blob.core.windows.net')) {
+                // Azure storage - extract blob name and delete
+                const blobName = receipt.blobUrl.split('/').pop();
+                if (blobName) {
+                  await azureStorage.deleteFile(blobName);
+                }
               }
+              // Note: Replit storage cleanup handled by deleteReceiptsByUserId
             } catch (imageError) {
-              log(`Warning: Failed to delete image ${receipt.imageUrl}: ${imageError}`, "api");
+              log(`Warning: Failed to delete image ${receipt.blobUrl}: ${imageError}`, "api");
               // Continue with deletion even if image cleanup fails
             }
           }
@@ -3047,7 +3051,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         // 7. Finally, delete the user account
-        await storage.deleteUser(userId);
+        if (storage.deleteUser) {
+          await storage.deleteUser(userId);
+        }
         
         log(`Successfully deleted account for user ${userId}`, "api");
         
@@ -3082,10 +3088,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Clear all user data (keeping account active)
   app.delete("/api/account/clear-data", async (req: Request, res: Response) => {
     try {
-      log(`Clear data request received from user ${req.user?.id || 'unknown'}, session user: ${req.session?.user?.id || 'none'}`, "api");
+      log(`Clear data request received from user ${req.user?.id || 'unknown'}`, "api");
       
       // Try session-based auth first, then JWT 
-      const userId = req.user?.id || req.session?.user?.id;
+      const userId = req.user?.id || req.jwtUser?.id;
       if (!userId) {
         log(`Clear data failed: No user ID found in session or JWT`, "api");
         return res.status(401).json({ error: "Not authenticated" });
@@ -3147,17 +3153,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const userReceipts = await storage.getReceiptsByUser(userId);
         for (const receipt of userReceipts) {
           // Delete receipt image from storage if it exists
-          if (receipt.imageUrl) {
+          if (receipt.blobUrl) {
             try {
-              if (receipt.imageUrl.includes('blob.core.windows.net')) {
-                // Azure storage
-                await azureStorage.deleteImage(receipt.imageUrl);
-              } else if (receipt.imageUrl.includes('/uploads/')) {
-                // Replit storage
-                await replitStorage.deleteImage(receipt.imageUrl);
+              if (receipt.blobUrl.includes('blob.core.windows.net')) {
+                // Azure storage - extract blob name and delete
+                const blobName = receipt.blobUrl.split('/').pop();
+                if (blobName) {
+                  await azureStorage.deleteFile(blobName);
+                }
               }
+              // Note: Replit storage cleanup handled by deleteReceiptsByUserId
             } catch (imageError) {
-              log(`Warning: Failed to delete image ${receipt.imageUrl}: ${imageError}`, "api");
+              log(`Warning: Failed to delete image ${receipt.blobUrl}: ${imageError}`, "api");
               // Continue with deletion even if image cleanup fails
             }
           }
@@ -3352,7 +3359,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const event of events) {
         try {
           // Extract relevant data from SendGrid event
-          const emailEvent = {
+          const emailEvent: {
+            messageId: string;
+            email: string;
+            eventType: string;
+            timestamp: Date;
+            userId: number | null;
+            emailType: string | null;
+            bounceReason: string | null;
+            bounceType: string | null;
+            smtpResponse: string | null;
+            userAgent: string | null;
+            clickedUrl: string | null;
+            ipAddress: string | null;
+            rawEvent: any;
+          } = {
             messageId: event.sg_message_id || event['smtp-id'] || 'unknown',
             email: event.email,
             eventType: event.event,

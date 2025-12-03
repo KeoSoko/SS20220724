@@ -35,7 +35,8 @@ import {
   Heart,
   Users2,
   BatteryCharging,
-  MoreHorizontal
+  MoreHorizontal,
+  Mail
 } from "lucide-react";
 
 // Enhanced Button with proper feedback states
@@ -235,6 +236,7 @@ interface EnhancedReceiptCardProps {
     date: string;
     category: string;
     confidenceScore?: string | null;
+    source?: string | null;
   };
   onClick?: () => void;
   className?: string;
@@ -271,10 +273,20 @@ export function EnhancedReceiptCard({ receipt, onClick, className, showCategory 
                 <h3 className="font-semibold text-gray-900 text-base leading-tight group-hover:text-primary transition-colors" data-testid={`receipt-storename-${receipt.id}`}>
                   {receipt.storeName || 'Unknown Store'}
                 </h3>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <p className="text-sm text-gray-500" data-testid={`receipt-date-${receipt.id}`}>
                     {format(parseISO(receipt.date), 'MMM dd, yyyy')}
                   </p>
+                  {receipt.source === 'email' && (
+                    <Badge 
+                      variant="outline" 
+                      className="text-[10px] px-1.5 py-0 h-4 flex items-center gap-0.5 bg-blue-50 text-blue-700 border-blue-200"
+                      data-testid={`receipt-source-email-${receipt.id}`}
+                    >
+                      <Mail className="h-2.5 w-2.5" />
+                      <span className="hidden sm:inline">via Email</span>
+                    </Badge>
+                  )}
                   {confidence.level && (
                     <Badge 
                       variant="outline" 

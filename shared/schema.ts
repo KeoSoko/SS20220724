@@ -103,6 +103,7 @@ export const users = pgTable("users", {
   tokenVersion: integer("token_version").default(1).notNull(), // Token version for invalidating JWT tokens
   promoCodeUsed: text("promo_code_used"), // Promo code used during signup
   trialEndDate: timestamp("trial_end_date"), // When trial period ends
+  receiptEmailId: text("receipt_email_id").unique(), // Unique ID for email-to-receipt forwarding (e.g., abc123@receipts.simpleslips.co.za)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at"),
 });
@@ -148,6 +149,10 @@ export const receipts = pgTable("receipts", {
   // Tax and financial management
   isTaxDeductible: boolean("is_tax_deductible").default(false),
   taxCategory: text("tax_category"), // For tax reporting purposes
+  
+  // Source tracking
+  source: text("source").default("scan"), // 'scan', 'email', 'gallery', 'manual'
+  sourceEmailId: integer("source_email_id"), // Reference to emailReceipts if imported via email
   
   // Timestamps
   createdAt: timestamp("created_at").notNull().defaultNow(),

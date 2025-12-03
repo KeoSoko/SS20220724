@@ -7,7 +7,7 @@ import { aiCategorizationService } from "./ai-categorization";
 import { imagePreprocessor } from "./image-preprocessing";
 import { emailService } from "./email-service";
 import { log } from "./vite";
-import * as crypto from "crypto";
+import crypto from "crypto";
 
 interface InboundEmailData {
   to: string;
@@ -97,14 +97,14 @@ export class InboundEmailService {
 
       const validAttachments: Array<{ content: Buffer; contentType: string; filename: string }> = [];
       
-      for (const [key, attachment] of attachments.entries()) {
+      attachments.forEach((attachment, key) => {
         if (this.isValidImageType(attachment.contentType)) {
           validAttachments.push(attachment);
           log(`Found valid attachment: ${attachment.filename} (${attachment.contentType})`, 'inbound-email');
         } else {
           log(`Skipping non-image attachment: ${attachment.filename} (${attachment.contentType})`, 'inbound-email');
         }
-      }
+      });
 
       if (validAttachments.length === 0) {
         await db
@@ -184,15 +184,14 @@ export class InboundEmailService {
     try {
       log(`Processing attachment: ${attachment.filename}`, 'inbound-email');
 
-      let imageBuffer = attachment.content;
       let imageBase64: string;
 
       if (attachment.contentType === 'application/pdf') {
         log('PDF attachment detected - will process directly with OCR', 'inbound-email');
-        imageBase64 = imageBuffer.toString('base64');
+        imageBase64 = `data:application/pdf;base64,${attachment.content.toString('base64')}`;
       } else {
-        const preprocessed = await imagePreprocessor.preprocessImage(imageBuffer);
-        imageBase64 = preprocessed.base64;
+        const rawBase64 = `data:${attachment.contentType};base64,${attachment.content.toString('base64')}`;
+        imageBase64 = await imagePreprocessor.enhanceImage(rawBase64);
       }
 
       log('Running OCR on attachment...', 'inbound-email');
@@ -202,7 +201,7 @@ export class InboundEmailService {
         throw new Error('OCR failed to extract receipt data');
       }
 
-      const { storeName, total, date, items, confidence, rawOcrData } = ocrResult;
+      const { storeName, total, date, items, confidenceScore } = ocrResult;
 
       log(`OCR extracted: ${storeName}, R${total}, ${items?.length || 0} items`, 'inbound-email');
 
@@ -223,9 +222,9 @@ export class InboundEmailService {
       let blobName: string | null = null;
 
       try {
-        const uploadResult = await azureStorage.uploadReceiptImage(imageBase64, userId.toString());
+        const uploadResult = await azureStorage.uploadFile(imageBase64, `receipt_${userId}_${Date.now()}.jpg`);
         if (uploadResult) {
-          blobUrl = uploadResult.url;
+          blobUrl = uploadResult.blobUrl;
           blobName = uploadResult.blobName;
           log(`Uploaded to Azure: ${blobName}`, 'inbound-email');
         }
@@ -242,11 +241,10 @@ export class InboundEmailService {
           total: total || '0.00',
           items: items || [],
           category: category as any,
-          confidenceScore: confidence?.toString() || null,
-          rawOcrData: rawOcrData || null,
+          confidenceScore: confidenceScore || null,
           blobUrl,
           blobName,
-          imageData: blobUrl ? null : `data:${attachment.contentType};base64,${imageBase64}`,
+          imageData: blobUrl ? null : imageBase64,
           source: 'email',
           sourceEmailId: emailReceiptId,
           processedAt: new Date(),

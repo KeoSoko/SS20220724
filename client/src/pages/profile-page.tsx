@@ -17,13 +17,13 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { PageLayout } from '@/components/page-layout';
 import { ContentCard, Section, StatusBadge } from '@/components/design-system';
 // import { StorageMonitor } from '@/components/storage-monitor';
 import { useToast } from '@/hooks/use-toast';
-import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2 } from 'lucide-react';
+import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2, Copy, RefreshCw, Inbox } from 'lucide-react';
 
 
 // Profile update schema (username is read-only)
@@ -53,6 +53,120 @@ const clearDataSchema = z.object({
 });
 
 type ClearDataFormValues = z.infer<typeof clearDataSchema>;
+
+// Receipt Email Section Component
+function ReceiptEmailSection() {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+
+  const { data: receiptEmailData, isLoading } = useQuery<{ receiptEmail: string; receiptEmailId: string }>({
+    queryKey: ['/api/user/receipt-email'],
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/user/receipt-email/regenerate");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to regenerate email');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/user/receipt-email'] });
+      toast({
+        title: "Email address regenerated",
+        description: "Your new receipt email address is ready to use.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to regenerate",
+        description: error.message || "Please try again later.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleCopy = async () => {
+    if (receiptEmailData?.receiptEmail) {
+      try {
+        await navigator.clipboard.writeText(receiptEmailData.receiptEmail);
+        setCopied(true);
+        toast({
+          title: "Copied!",
+          description: "Receipt email address copied to clipboard.",
+        });
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        toast({
+          title: "Copy failed",
+          description: "Please copy the address manually.",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-4 border rounded-none animate-pulse">
+        <div className="h-4 bg-gray-200 rounded w-1/3 mb-2"></div>
+        <div className="h-8 bg-gray-200 rounded w-full"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border rounded-none p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <Inbox className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="font-medium">Email-to-Receipt</p>
+          <p className="text-sm text-gray-600 mb-3">
+            Forward or send receipt emails to this address to automatically import them to your account.
+          </p>
+          
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex-1 bg-gray-50 border rounded-none px-3 py-2 text-sm font-mono break-all">
+              {receiptEmailData?.receiptEmail || 'Loading...'}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCopy}
+                disabled={!receiptEmailData?.receiptEmail}
+                className="flex-shrink-0"
+                data-testid="button-copy-receipt-email"
+              >
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                <span className="ml-1 sm:hidden md:inline">{copied ? 'Copied' : 'Copy'}</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => regenerateMutation.mutate()}
+                disabled={regenerateMutation.isPending}
+                className="flex-shrink-0"
+                data-testid="button-regenerate-receipt-email"
+              >
+                <RefreshCw className={`h-4 w-4 ${regenerateMutation.isPending ? 'animate-spin' : ''}`} />
+                <span className="ml-1 sm:hidden md:inline">New</span>
+              </Button>
+            </div>
+          </div>
+          
+          <p className="text-xs text-gray-500 mt-2">
+            Regenerating creates a new address and disables the old one.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Clear Data Dialog Component
 function ClearDataDialog({ user }: { user: any }) {
@@ -668,6 +782,8 @@ export default function ProfilePage() {
         <Section title="Account Settings" description="Customize your account preferences and categories">
           <ContentCard>
             <div className="space-y-4">
+              <ReceiptEmailSection />
+              
               <Button
                 variant="outline"
                 className="w-full justify-between p-4 h-auto"

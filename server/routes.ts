@@ -361,6 +361,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ===== USER ENDPOINTS =====
   
+  // Get user's receipt email address for email-to-receipt forwarding
+  app.get("/api/user/receipt-email", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    
+    try {
+      const userId = getUserId(req);
+      const { inboundEmailService } = await import('./inbound-email-service');
+      
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { receiptEmailId: true },
+      });
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      let receiptEmailId = user.receiptEmailId;
+      
+      // Generate a new ID if user doesn't have one
+      if (!receiptEmailId) {
+        receiptEmailId = inboundEmailService.generateReceiptEmailId();
+        await db
+          .update(users)
+          .set({ receiptEmailId })
+          .where(eq(users.id, userId));
+      }
+      
+      const receiptEmail = `${receiptEmailId}@receipts.simpleslips.co.za`;
+      
+      res.json({
+        receiptEmail,
+        receiptEmailId,
+      });
+    } catch (error: any) {
+      log(`Error getting receipt email: ${error.message}`, 'api');
+      res.status(500).json({ error: "Failed to get receipt email" });
+    }
+  });
+
+  // Regenerate user's receipt email address
+  app.post("/api/user/receipt-email/regenerate", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    
+    try {
+      const userId = getUserId(req);
+      const { inboundEmailService } = await import('./inbound-email-service');
+      
+      // Generate a new unique ID
+      const receiptEmailId = inboundEmailService.generateReceiptEmailId();
+      
+      await db
+        .update(users)
+        .set({ receiptEmailId })
+        .where(eq(users.id, userId));
+      
+      const receiptEmail = `${receiptEmailId}@receipts.simpleslips.co.za`;
+      
+      log(`User ${userId} regenerated receipt email to: ${receiptEmail}`, 'api');
+      
+      res.json({
+        receiptEmail,
+        receiptEmailId,
+        message: "Receipt email address regenerated successfully",
+      });
+    } catch (error: any) {
+      log(`Error regenerating receipt email: ${error.message}`, 'api');
+      res.status(500).json({ error: "Failed to regenerate receipt email" });
+    }
+  });
+
   // Update user profile
   app.patch("/api/user/:id", async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);

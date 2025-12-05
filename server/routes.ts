@@ -3298,7 +3298,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // SendGrid Inbound Parse webhook for receiving receipt emails
-  app.post("/api/webhooks/inbound-email", multer().any(), async (req, res) => {
+  // Configure multer with higher limits for email content
+  const inboundEmailUpload = multer({
+    limits: {
+      fieldSize: 50 * 1024 * 1024, // 50MB for text fields (email body can be large)
+      fileSize: 25 * 1024 * 1024,  // 25MB per file
+      files: 10,                    // Max 10 attachments
+    }
+  });
+  app.post("/api/webhooks/inbound-email", inboundEmailUpload.any(), async (req, res) => {
     try {
       log('Received inbound email webhook', 'inbound-email');
       

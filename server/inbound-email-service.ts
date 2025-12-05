@@ -43,8 +43,25 @@ export class InboundEmailService {
   }
 
   extractReceiptEmailId(toAddress: string): string | null {
-    const match = toAddress.match(/^([a-z0-9]+)@/i);
-    return match ? match[1].toLowerCase() : null;
+    // Handle various email formats:
+    // 1. Simple: e0e73ae6c369@receipts.simpleslips.app
+    // 2. With display name: Display Name <e0e73ae6c369@receipts.simpleslips.app>
+    // 3. Outlook format: "e0e73ae6c369@receipts.simpleslips.app"<e0e73ae6c369@receipts.simpleslips.app>
+    // 4. Multiple recipients separated by comma
+    
+    // First, try to extract email from angle brackets (most common format from email clients)
+    const angleBracketMatch = toAddress.match(/<([^>]+)>/);
+    const emailPart = angleBracketMatch ? angleBracketMatch[1] : toAddress;
+    
+    // Now extract the local part (before @) from the email
+    const emailMatch = emailPart.match(/([a-z0-9]+)@receipts\.simpleslips\.(app|co\.za)/i);
+    if (emailMatch) {
+      return emailMatch[1].toLowerCase();
+    }
+    
+    // Fallback: try to find any alphanumeric string followed by @ at the start
+    const simpleMatch = emailPart.match(/^([a-z0-9]+)@/i);
+    return simpleMatch ? simpleMatch[1].toLowerCase() : null;
   }
 
   isValidImageType(contentType: string): boolean {

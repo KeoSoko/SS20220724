@@ -103,7 +103,7 @@ export const users = pgTable("users", {
   tokenVersion: integer("token_version").default(1).notNull(), // Token version for invalidating JWT tokens
   promoCodeUsed: text("promo_code_used"), // Promo code used during signup
   trialEndDate: timestamp("trial_end_date"), // When trial period ends
-  receiptEmailId: text("receipt_email_id").unique(), // Unique ID for email-to-receipt forwarding (e.g., abc123@receipts.simpleslips.co.za)
+  receiptEmailId: text("receipt_email_id").unique(), // Unique ID for email-to-receipt forwarding (e.g., abc123@receipts.simpleslips.app)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at"),
 });

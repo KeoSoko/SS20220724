@@ -29,7 +29,7 @@ interface AttachmentInfo {
 }
 
 export class InboundEmailService {
-  private receiptEmailDomain = 'receipts.simpleslips.co.za';
+  private receiptEmailDomain = 'receipts.simpleslips.app';
 
   generateReceiptEmailId(): string {
     return crypto.randomBytes(6).toString('hex').toLowerCase();
@@ -210,7 +210,7 @@ export class InboundEmailService {
         const categorization = await aiCategorizationService.categorizeReceipt(
           storeName,
           items || [],
-          parseFloat(total)
+          total || '0'
         );
         category = categorization.category;
         log(`AI categorized as: ${category}`, 'inbound-email');

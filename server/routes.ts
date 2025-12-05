@@ -392,7 +392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(users.id, userId));
       }
       
-      const receiptEmail = `${receiptEmailId}@receipts.simpleslips.co.za`;
+      const receiptEmail = `${receiptEmailId}@receipts.simpleslips.app`;
       
       res.json({
         receiptEmail,
@@ -420,7 +420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({ receiptEmailId })
         .where(eq(users.id, userId));
       
-      const receiptEmail = `${receiptEmailId}@receipts.simpleslips.co.za`;
+      const receiptEmail = `${receiptEmailId}@receipts.simpleslips.app`;
       
       log(`User ${userId} regenerated receipt email to: ${receiptEmail}`, 'api');
       

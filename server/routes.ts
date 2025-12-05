@@ -3312,6 +3312,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const { inboundEmailService } = await import('./inbound-email-service');
       
+      // Debug: Log all body fields
+      log(`Body fields: ${Object.keys(req.body).join(', ')}`, 'inbound-email');
+      log(`Attachments count from body: ${req.body.attachments || '0'}`, 'inbound-email');
+      log(`Attachment-info: ${req.body['attachment-info'] || 'none'}`, 'inbound-email');
+      log(`Files received: ${req.files ? (Array.isArray(req.files) ? req.files.length : Object.keys(req.files).length) : 0}`, 'inbound-email');
+      
       // SendGrid Inbound Parse sends data as multipart form
       const emailData = {
         to: req.body.to || '',
@@ -3329,6 +3335,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const attachments = new Map<string, { content: Buffer; contentType: string; filename: string }>();
       
       if (req.files && Array.isArray(req.files)) {
+        log(`Processing ${req.files.length} files from multer`, 'inbound-email');
         for (const file of req.files) {
           attachments.set(file.fieldname, {
             content: file.buffer,
@@ -3337,6 +3344,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           log(`Attachment: ${file.fieldname} - ${file.mimetype} (${file.size} bytes)`, 'inbound-email');
         }
+      } else {
+        log(`No files array from multer. req.files type: ${typeof req.files}`, 'inbound-email');
       }
       
       // Process the inbound email

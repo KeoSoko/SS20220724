@@ -39,7 +39,7 @@ The system is built as a full-stack TypeScript application within a monorepo str
 - **Email & Smart Reminders**: GPT-4o powered email drafting for quotations and invoices, smart subject lines, SendGrid delivery with PDF attachments, and an email verification system. Automated payment reminder system with progressive cadencing and urgency escalation.
 - **Receipt Management**: Includes smart filters (date range, amount range, vendor), multi-receipt continuous scanning mode, and batch gallery import with visual queues and progress tracking.
 - **Recurring Expense System**: Detects and manages recurring expenses through pattern recognition and predictive analysis.
-- **Subscription Management**: Complete system with 30-day free trials and monthly subscriptions (R49).
+- **Subscription Management**: Complete system with 30-day free trials, monthly subscriptions (R49), and yearly subscriptions (R530/year - 10% discount). Features a billing period toggle with savings highlight.
 - **Custom Category Management**: Allows users to create and filter receipts by custom categories.
 - **Expense Categories**: 24 preset categories optimized for the South African market.
 

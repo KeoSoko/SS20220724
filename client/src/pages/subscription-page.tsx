@@ -778,7 +778,7 @@ export function SubscriptionPage() {
                 </div>
               ) : (
                 <div className="text-center py-6">
-                  <Receipt className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <CreditCard className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                   <p className="text-gray-600">No payments yet</p>
                 </div>
               )}

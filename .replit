@@ -34,46 +34,6 @@ externalPort = 3002
 localPort = 8085
 externalPort = 3003
 
-[[ports]]
-localPort = 33967
-externalPort = 5000
-
-[[ports]]
-localPort = 40909
-externalPort = 8008
-
-[[ports]]
-localPort = 41871
-externalPort = 8080
-
-[[ports]]
-localPort = 43061
-externalPort = 8000
-
-[[ports]]
-localPort = 43185
-externalPort = 8099
-
-[[ports]]
-localPort = 43983
-externalPort = 9000
-
-[[ports]]
-localPort = 44349
-externalPort = 5173
-
-[[ports]]
-localPort = 44889
-externalPort = 6800
-
-[[ports]]
-localPort = 45581
-externalPort = 6000
-
-[[ports]]
-localPort = 46177
-externalPort = 4200
-
 [workflows]
 runButton = "Start application"
 
@@ -102,4 +62,4 @@ args = "npm run dev"
 waitForPort = 5000
 
 [agent]
-integrations = ["javascript_stripe==1.0.0"]
+integrations = ["javascript_stripe:1.0.0"]

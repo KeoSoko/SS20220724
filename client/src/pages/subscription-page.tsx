@@ -6,7 +6,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Crown, Calendar, CreditCard, Check, X, AlertCircle, Smartphone, Receipt, ArrowRight } from 'lucide-react';
+import { Loader2, Crown, Calendar, CreditCard, Check, X, AlertCircle, Smartphone, Receipt, ArrowRight, Sparkles } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { PageLayout } from '@/components/page-layout';
 import { ContentCard } from '@/components/design-system';
@@ -62,6 +64,7 @@ export function SubscriptionPage() {
   const [isIOSAvailable, setIsIOSAvailable] = useState(false);
   const [isIOSPurchasing, setIsIOSPurchasing] = useState(false);
   const [isIOSPWA, setIsIOSPWA] = useState(false);
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>('monthly');
 
   // Detect PWA environment and iOS capability
   useEffect(() => {
@@ -495,46 +498,102 @@ export function SubscriptionPage() {
 
         {/* Available Plans */}
         {plans.length > 0 ? (
-          <div className="grid md:grid-cols-2 gap-6">
-            {plans.map((plan) => (
-              <Card key={plan.id} className={subscription?.planId === plan.id ? 'ring-2 ring-primary' : ''}>
-                <CardHeader>
-                  <CardTitle>{plan.displayName || plan.name}</CardTitle>
-                  <CardDescription>{plan.description}</CardDescription>
-                  <div className="text-3xl font-bold">
-                    {formatCurrency(plan.price)} {/* formatCurrency already handles cents conversion */}
-                    <span className="text-sm font-normal text-muted-foreground">
-                      /{plan.billingPeriod === 'trial' ? 'trial' : 'month'}
-                    </span>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-2">
-                    {plan.features.map((feature, index) => (
-                      <li key={index} className="flex items-center gap-2">
-                        <Check className="h-4 w-4 text-green-500" />
-                        <span className="text-sm">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-                <CardFooter>
-                  {subscription?.planId === plan.id ? (
-                    <Badge variant="default" className="w-full justify-center">
-                      Current Plan
-                    </Badge>
-                  ) : (
-                    <Button
-                      className="w-full"
-                      onClick={() => handleSubscribe(plan)}
-                      variant={plan.price === 0 ? "outline" : "default"}
+          <div className="space-y-6">
+            {/* Billing Period Toggle */}
+            <Card className="bg-gradient-to-r from-primary/5 to-primary/10">
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center space-y-4">
+                  <h3 className="text-lg font-semibold">Choose Your Billing Cycle</h3>
+                  <div className="flex items-center space-x-4">
+                    <Label 
+                      htmlFor="billing-toggle" 
+                      className={`text-sm font-medium cursor-pointer ${billingPeriod === 'monthly' ? 'text-primary' : 'text-muted-foreground'}`}
                     >
-                      {plan.price === 0 ? 'Trial Auto-Started' : 'Subscribe'}
-                    </Button>
-                  )}
-                </CardFooter>
-              </Card>
-            ))}
+                      Monthly
+                    </Label>
+                    <Switch
+                      id="billing-toggle"
+                      checked={billingPeriod === 'yearly'}
+                      onCheckedChange={(checked) => setBillingPeriod(checked ? 'yearly' : 'monthly')}
+                      data-testid="switch-billing-period"
+                    />
+                    <div className="flex items-center gap-2">
+                      <Label 
+                        htmlFor="billing-toggle" 
+                        className={`text-sm font-medium cursor-pointer ${billingPeriod === 'yearly' ? 'text-primary' : 'text-muted-foreground'}`}
+                      >
+                        Yearly
+                      </Label>
+                      <Badge variant="default" className="bg-green-600 text-white">
+                        <Sparkles className="h-3 w-3 mr-1" />
+                        Save 10%
+                      </Badge>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground text-center">
+                    {billingPeriod === 'yearly' 
+                      ? 'Pay R530/year and save R58 compared to monthly billing' 
+                      : 'R49/month - flexible billing, cancel anytime'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Display Selected Plan */}
+            {(() => {
+              const selectedBillingPlan = plans.find(p => p.billingPeriod === billingPeriod);
+              if (!selectedBillingPlan) return null;
+              
+              return (
+                <Card className={subscription?.planId === selectedBillingPlan.id ? 'ring-2 ring-primary' : ''}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>{selectedBillingPlan.displayName || selectedBillingPlan.name}</CardTitle>
+                      {billingPeriod === 'yearly' && (
+                        <Badge variant="default" className="bg-green-600">Best Value</Badge>
+                      )}
+                    </div>
+                    <CardDescription>{selectedBillingPlan.description}</CardDescription>
+                    <div className="text-3xl font-bold">
+                      {formatCurrency(selectedBillingPlan.price)}
+                      <span className="text-sm font-normal text-muted-foreground">
+                        /{selectedBillingPlan.billingPeriod === 'yearly' ? 'year' : 'month'}
+                      </span>
+                    </div>
+                    {billingPeriod === 'yearly' && (
+                      <p className="text-sm text-green-600">
+                        That's only R44.17/month - Save R58 annually!
+                      </p>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {selectedBillingPlan.features.map((feature, index) => (
+                        <li key={index} className="flex items-center gap-2">
+                          <Check className="h-4 w-4 text-green-500" />
+                          <span className="text-sm">{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                  <CardFooter>
+                    {subscription?.planId === selectedBillingPlan.id ? (
+                      <Badge variant="default" className="w-full justify-center py-2">
+                        Current Plan
+                      </Badge>
+                    ) : (
+                      <Button
+                        className="w-full"
+                        onClick={() => handleSubscribe(selectedBillingPlan)}
+                        data-testid="button-subscribe"
+                      >
+                        Subscribe Now
+                      </Button>
+                    )}
+                  </CardFooter>
+                </Card>
+              );
+            })()}
           </div>
         ) : (
           <Card>

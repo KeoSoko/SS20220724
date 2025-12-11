@@ -6,6 +6,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, CreditCard, Shield, Globe } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
+// Paystack plan codes
+const PAYSTACK_PLAN_CODES = {
+  monthly: 'PLN_8l8p7v1mergg804',
+  yearly: 'PLN_k9q25ilwueuz17j',
+};
+
 interface PaystackBillingProps {
   plan: {
     id: number;
@@ -13,6 +19,7 @@ interface PaystackBillingProps {
     displayName: string;
     price: number;
     currency: string;
+    billingPeriod: string;
   };
   userEmail: string;
   onPaymentSuccess?: (reference: string) => void;
@@ -36,24 +43,30 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
       return;
     }
 
+    // Determine Paystack plan code based on billing period
+    const isYearly = plan.billingPeriod === 'yearly';
+    const paystackPlanCode = isYearly ? PAYSTACK_PLAN_CODES.yearly : PAYSTACK_PLAN_CODES.monthly;
+    const priceDisplay = isYearly ? 'R530 yearly' : 'R49 monthly';
+
     const handler = (window as any).PaystackPop.setup({
       key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
       email: userEmail,
       amount: plan.price, // Price is already in cents from database
       currency: 'ZAR',
-      plan: 'PLN_8l8p7v1mergg804', // Paystack recurring subscription plan code (LIVE)
+      plan: paystackPlanCode,
       ref: `ss_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       metadata: {
         plan_id: plan.id,
         plan_name: plan.name,
         user_email: userEmail,
-        subscription_type: 'recurring'
+        subscription_type: 'recurring',
+        billing_period: plan.billingPeriod
       },
       callback: function(response: any) {
         setIsProcessing(false);
         toast({
           title: "Subscription Activated",
-          description: "Your recurring subscription has been activated! You'll be charged R49 monthly.",
+          description: `Your recurring subscription has been activated! You'll be charged ${priceDisplay}.`,
         });
         onPaymentSuccess?.(response.reference);
       },
@@ -76,12 +89,21 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
     handler.openIframe();
   };
 
+  // Format price display based on billing period
+  const isYearly = plan.billingPeriod === 'yearly';
+  const priceAmount = isYearly ? 'R530.00' : 'R49.00';
+  const pricePeriod = isYearly ? '/year' : '/month';
+  const recurringDescription = isYearly 
+    ? "You'll be charged R530 automatically every year." 
+    : "You'll be charged R49 automatically every month.";
+
   return (
     <Card className="border-primary/20">
       <CardHeader>
         <div className="flex items-center gap-2 mb-2">
           <Globe className="h-5 w-5 text-primary" />
           <Badge variant="secondary">Web Payment</Badge>
+          {isYearly && <Badge variant="default" className="bg-green-600">Save 10%</Badge>}
         </div>
         <CardTitle className="text-lg">Subscribe with Paystack</CardTitle>
         <CardDescription>
@@ -93,10 +115,13 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
           <div className="flex justify-between items-center">
             <span className="font-medium">{plan.displayName}</span>
             <span className="text-2xl font-bold">
-              R49.00
-              <span className="text-sm font-normal text-muted-foreground">/month</span>
+              {priceAmount}
+              <span className="text-sm font-normal text-muted-foreground">{pricePeriod}</span>
             </span>
           </div>
+          {isYearly && (
+            <p className="text-sm text-green-600 mt-1">Save R58 compared to monthly billing</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -116,7 +141,7 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
 
         <Alert>
           <AlertDescription className="text-sm">
-            <strong>Recurring Subscription:</strong> You'll be charged R49 automatically every month.
+            <strong>Recurring Subscription:</strong> {recurringDescription}
             Your subscription will activate immediately after successful payment. You can cancel anytime from your account settings.
           </AlertDescription>
         </Alert>
@@ -126,6 +151,7 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
           className="w-full" 
           onClick={initializePaystackPayment}
           disabled={isProcessing}
+          data-testid="button-paystack-subscribe"
         >
           {isProcessing ? (
             <>
@@ -135,7 +161,7 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
           ) : (
             <>
               <CreditCard className="h-4 w-4 mr-2" />
-              Pay R49.00 with Paystack
+              Pay {priceAmount} with Paystack
             </>
           )}
         </Button>

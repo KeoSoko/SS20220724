@@ -69,15 +69,89 @@ export async function seedSubscriptionPlans() {
       isActive: true
     });
 
+    // Create Premium Yearly Plan
+    const premiumYearlyPlan = await storage.createSubscriptionPlan({
+      name: 'premium_yearly',
+      displayName: 'Premium Yearly',
+      description: 'Full access to all Simple Slips features for R530/year - Save 10%!',
+      price: 53000, // R530.00 in cents
+      currency: 'ZAR',
+      billingPeriod: 'yearly',
+      trialDays: 0,
+      googlePlayProductId: 'simple_slips_premium_yearly',
+      features: [
+        'Unlimited receipt scanning',
+        'AI-powered categorization',
+        'Smart search & analytics', 
+        'Tax insights & deductions',
+        'Budget tracking & alerts',
+        'Export to PDF & CSV',
+        'Cloud storage & sync',
+        'Priority customer support',
+        'Advanced tax reports',
+        'Business expense tracking',
+        '10% annual savings'
+      ],
+      isActive: true
+    });
+
     log(`Successfully created subscription plans:`, 'billing');
     log(`- Free Trial: ${freeTrialPlan.id}`, 'billing');
     log(`- Premium Monthly: ${premiumMonthlyPlan.id}`, 'billing');
+    log(`- Premium Yearly: ${premiumYearlyPlan.id}`, 'billing');
 
-    return { freeTrialPlan, premiumMonthlyPlan };
+    return { freeTrialPlan, premiumMonthlyPlan, premiumYearlyPlan };
 
   } catch (error) {
     log(`Error seeding subscription plans: ${error}`, 'billing');
     throw error;
+  }
+}
+
+/**
+ * Add yearly plan if it doesn't exist (for existing databases)
+ */
+export async function ensureYearlyPlanExists() {
+  try {
+    if (!storage.createSubscriptionPlan || !storage.getSubscriptionPlans) {
+      return;
+    }
+
+    const existingPlans = await storage.getSubscriptionPlans();
+    const hasYearlyPlan = existingPlans?.some(plan => plan.name === 'premium_yearly');
+
+    if (!hasYearlyPlan) {
+      log('Adding yearly subscription plan...', 'billing');
+      
+      const yearlyPlan = await storage.createSubscriptionPlan({
+        name: 'premium_yearly',
+        displayName: 'Premium Yearly',
+        description: 'Full access to all Simple Slips features for R530/year - Save 10%!',
+        price: 53000, // R530.00 in cents
+        currency: 'ZAR',
+        billingPeriod: 'yearly',
+        trialDays: 0,
+        googlePlayProductId: 'simple_slips_premium_yearly',
+        features: [
+          'Unlimited receipt scanning',
+          'AI-powered categorization',
+          'Smart search & analytics', 
+          'Tax insights & deductions',
+          'Budget tracking & alerts',
+          'Export to PDF & CSV',
+          'Cloud storage & sync',
+          'Priority customer support',
+          'Advanced tax reports',
+          'Business expense tracking',
+          '10% annual savings'
+        ],
+        isActive: true
+      });
+
+      log(`Added yearly subscription plan: ${yearlyPlan.id}`, 'billing');
+    }
+  } catch (error) {
+    log(`Error ensuring yearly plan exists: ${error}`, 'billing');
   }
 }
 
@@ -87,6 +161,7 @@ export async function seedSubscriptionPlans() {
 export async function initializeSubscriptionPlans() {
   try {
     await seedSubscriptionPlans();
+    await ensureYearlyPlanExists(); // Add yearly plan to existing databases
     log('Subscription plans initialization complete', 'billing');
   } catch (error) {
     log(`Failed to initialize subscription plans: ${error}`, 'billing');

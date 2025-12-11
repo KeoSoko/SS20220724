@@ -742,7 +742,7 @@ function HomePage() {
                           <CardContent className="overflow-hidden p-4 pl-[40px] pr-[40px] pt-[24px] pb-[24px]">
                             <div className="flex items-center space-x-3">
                               <div className="w-10 h-10 bg-orange-100 rounded-none flex items-center justify-center shrink-0">
-                                <Calendar className="w-5 h-5 text-orange-600" />
+                                <CalendarIcon className="w-5 h-5 text-orange-600" />
                               </div>
                               <div className="min-w-0 flex-1">
                                 <p className="text-xs font-medium text-gray-600 uppercase tracking-wide truncate">Recent Activity</p>

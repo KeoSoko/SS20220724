@@ -161,7 +161,7 @@ export default function SplashScreen() {
         <SplashLogo />
         
         <h1 className="text-center text-xl tracking-wide mt-8 font-medium text-gray-800">
-          Admin
+          Receipts & admin, sorted.
         </h1>
       </div>
     </div>

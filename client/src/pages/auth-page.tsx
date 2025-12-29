@@ -411,7 +411,7 @@ export default function AuthPage() {
               className="h-16"
             />
           </div>
-          <p className="text-gray-600">Where receipts go to live their best life.</p>
+          <p className="text-gray-600">Because admin should actually stay done.</p>
         </div>
 
         {/* Back button */}

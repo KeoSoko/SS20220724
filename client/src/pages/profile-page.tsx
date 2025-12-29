@@ -23,7 +23,9 @@ import { PageLayout } from '@/components/page-layout';
 import { ContentCard, Section, StatusBadge } from '@/components/design-system';
 // import { StorageMonitor } from '@/components/storage-monitor';
 import { useToast } from '@/hooks/use-toast';
-import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2, Copy, RefreshCw, Inbox } from 'lucide-react';
+import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2, Copy, RefreshCw, Inbox, MessageCircle, HelpCircle, Send } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 // Profile update schema (username is read-only)
@@ -53,6 +55,14 @@ const clearDataSchema = z.object({
 });
 
 type ClearDataFormValues = z.infer<typeof clearDataSchema>;
+
+// Support request schema
+const supportRequestSchema = z.object({
+  subject: z.string().min(1, "Please select a subject"),
+  message: z.string().min(10, "Please provide more details (at least 10 characters)").max(5000, "Message is too long"),
+});
+
+type SupportRequestFormValues = z.infer<typeof supportRequestSchema>;
 
 // Receipt Email Section Component
 function ReceiptEmailSection() {
@@ -165,6 +175,169 @@ function ReceiptEmailSection() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Contact Support Dialog Component
+function ContactSupportDialog() {
+  const { toast } = useToast();
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const supportForm = useForm<SupportRequestFormValues>({
+    resolver: zodResolver(supportRequestSchema),
+    defaultValues: {
+      subject: "",
+      message: "",
+    },
+  });
+
+  const supportMutation = useMutation({
+    mutationFn: async (data: SupportRequestFormValues) => {
+      const response = await apiRequest("POST", "/api/support/request", data);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to send support request');
+      }
+      
+      return response.json();
+    },
+    onSuccess: (result) => {
+      toast({
+        title: "Message sent",
+        description: result.message || "We'll get back to you soon!",
+      });
+      setIsOpen(false);
+      supportForm.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to send",
+        description: error.message || "Please try again later.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onSubmit = (data: SupportRequestFormValues) => {
+    supportMutation.mutate(data);
+  };
+
+  const subjectOptions = [
+    { value: "General Question", label: "General Question" },
+    { value: "Technical Issue", label: "Technical Issue / Bug Report" },
+    { value: "Subscription & Billing", label: "Subscription & Billing" },
+    { value: "Feature Request", label: "Feature Request" },
+    { value: "Account Help", label: "Account Help" },
+    { value: "Other", label: "Other" },
+  ];
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="outline"
+          className="w-full justify-between p-4 h-auto"
+          data-testid="button-contact-support"
+        >
+          <div className="flex items-start gap-3 flex-1">
+            <HelpCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="text-left flex-1 min-w-0">
+              <p className="font-medium">Contact Support</p>
+              <p className="text-sm text-gray-600 break-words whitespace-normal">Get help with any questions or issues</p>
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MessageCircle className="h-5 w-5 text-blue-600" />
+            Contact Support
+          </DialogTitle>
+          <DialogDescription>
+            Send us a message and we'll get back to you as soon as possible.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <Form {...supportForm}>
+          <form onSubmit={supportForm.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={supportForm.control}
+              name="subject"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Subject</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-support-subject">
+                        <SelectValue placeholder="Select a topic" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {subjectOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={supportForm.control}
+              name="message"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Message</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Describe your question or issue..."
+                      className="min-h-[120px] resize-none"
+                      data-testid="textarea-support-message"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <DialogFooter className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsOpen(false)}
+                disabled={supportMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={supportMutation.isPending}
+                data-testid="button-send-support"
+              >
+                {supportMutation.isPending ? (
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-4 animate-spin rounded-none border-2 border-white border-t-transparent" />
+                    Sending...
+                  </div>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4 mr-2" />
+                    Send Message
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -813,6 +986,8 @@ export default function ProfilePage() {
                 </div>
                 <ChevronRight className="h-4 w-4" />
               </Button>
+              
+              <ContactSupportDialog />
             </div>
           </ContentCard>
         </Section>

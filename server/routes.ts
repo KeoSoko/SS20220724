@@ -516,6 +516,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userEmail = user[0].email;
       const username = user[0].fullName || user[0].username;
       
+      if (!userEmail) {
+        return res.status(400).json({ error: "No email address on your account. Please add an email first." });
+      }
+      
       // Send support email
       const { emailService } = await import('./email-service');
       const sent = await emailService.sendSupportRequest(

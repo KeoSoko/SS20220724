@@ -485,6 +485,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Submit support request
+  app.post("/api/support/request", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    
+    try {
+      const userId = getUserId(req);
+      const { subject, message } = req.body;
+      
+      // Validate input
+      if (!subject || typeof subject !== 'string' || subject.trim().length === 0) {
+        return res.status(400).json({ error: "Subject is required" });
+      }
+      if (!message || typeof message !== 'string' || message.trim().length === 0) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+      if (message.trim().length < 10) {
+        return res.status(400).json({ error: "Please provide more details in your message (at least 10 characters)" });
+      }
+      if (message.trim().length > 5000) {
+        return res.status(400).json({ error: "Message is too long (max 5000 characters)" });
+      }
+      
+      // Get user details
+      const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!user[0]) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const userEmail = user[0].email;
+      const username = user[0].fullName || user[0].username;
+      
+      // Send support email
+      const { emailService } = await import('./email-service');
+      const sent = await emailService.sendSupportRequest(
+        userEmail,
+        username,
+        subject.trim(),
+        message.trim(),
+        userId
+      );
+      
+      if (!sent) {
+        log(`Failed to send support request from user ${userId}`, 'api');
+        return res.status(500).json({ error: "Failed to send support request. Please try again later." });
+      }
+      
+      log(`Support request sent from user ${userId}: ${subject}`, 'api');
+      res.json({ 
+        success: true, 
+        message: "Your support request has been sent. We'll get back to you soon!" 
+      });
+    } catch (error: any) {
+      console.error("Error submitting support request:", error);
+      res.status(500).json({ error: "Failed to submit support request" });
+    }
+  });
+
   // Upload profile picture
   app.post("/api/profile/picture", async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);

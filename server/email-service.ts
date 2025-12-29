@@ -1136,6 +1136,89 @@ Need help? Reply to this email and our support team will assist you.
       return false;
     }
   }
+
+  /**
+   * Send support request email to support team
+   */
+  async sendSupportRequest(
+    userEmail: string,
+    username: string,
+    subject: string,
+    message: string,
+    userId: number
+  ): Promise<boolean> {
+    if (!process.env.SENDGRID_API_KEY) {
+      console.error("Cannot send support request - SENDGRID_API_KEY not configured");
+      return false;
+    }
+
+    try {
+      const supportEmail = 'support@simpleslips.co.za';
+      
+      await mailService.send({
+        to: supportEmail,
+        from: {
+          email: this.fromEmail,
+          name: 'Simple Slips Support Bot'
+        },
+        replyTo: {
+          email: userEmail,
+          name: username
+        },
+        subject: `[Support Request] ${subject}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #0073AA; margin: 0;">Simple Slips</h1>
+              <p style="color: #666; font-size: 16px;">Support Request</p>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+              <h3 style="color: #333; margin-top: 0;">User Details</h3>
+              <p style="margin: 5px 0;"><strong>Username:</strong> ${username}</p>
+              <p style="margin: 5px 0;"><strong>Email:</strong> ${userEmail}</p>
+              <p style="margin: 5px 0;"><strong>User ID:</strong> ${userId}</p>
+            </div>
+            
+            <div style="background: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 6px;">
+              <h3 style="color: #333; margin-top: 0;">Subject: ${subject}</h3>
+              <div style="white-space: pre-wrap; color: #333; line-height: 1.6;">
+${message}
+              </div>
+            </div>
+            
+            <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+            <p style="color: #999; font-size: 12px;">
+              This support request was submitted from Simple Slips app. Reply directly to this email to respond to the user.
+            </p>
+          </div>
+        `,
+        text: `
+Simple Slips Support Request
+
+User Details:
+- Username: ${username}
+- Email: ${userEmail}
+- User ID: ${userId}
+
+Subject: ${subject}
+
+Message:
+${message}
+
+---
+Reply directly to this email to respond to the user.
+        `
+      });
+
+      console.log(`[EMAIL] Support request sent from ${userEmail}: ${subject}`);
+      return true;
+
+    } catch (error: any) {
+      console.error(`[EMAIL] Failed to send support request: ${error.message}`);
+      return false;
+    }
+  }
 }
 
 export const emailService = new EmailService();

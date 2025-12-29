@@ -23,9 +23,11 @@ import { PageLayout } from '@/components/page-layout';
 import { ContentCard, Section, StatusBadge } from '@/components/design-system';
 // import { StorageMonitor } from '@/components/storage-monitor';
 import { useToast } from '@/hooks/use-toast';
-import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2, Copy, RefreshCw, Inbox, MessageCircle, HelpCircle, Send } from 'lucide-react';
+import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2, Copy, RefreshCw, Inbox, MessageCircle, HelpCircle, Send, Camera, Monitor, Smartphone } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 
 
 // Profile update schema (username is read-only)
@@ -60,9 +62,42 @@ type ClearDataFormValues = z.infer<typeof clearDataSchema>;
 const supportRequestSchema = z.object({
   subject: z.string().min(1, "Please select a subject"),
   message: z.string().min(10, "Please provide more details (at least 10 characters)").max(5000, "Message is too long"),
+  contactPreference: z.enum(["email", "phone"]).default("email"),
+  phoneNumber: z.string().optional(),
 });
 
 type SupportRequestFormValues = z.infer<typeof supportRequestSchema>;
+
+// Helper function to get device/browser info
+function getDeviceInfo() {
+  const ua = navigator.userAgent;
+  
+  // Detect OS
+  let os = "Unknown";
+  if (/Windows/i.test(ua)) os = "Windows";
+  else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Android/i.test(ua)) os = "Android";
+  else if (/Mac OS/i.test(ua)) os = "macOS";
+  else if (/Linux/i.test(ua)) os = "Linux";
+  
+  // Detect Browser
+  let browser = "Unknown";
+  if (/Chrome/i.test(ua) && !/Edg/i.test(ua)) browser = "Chrome";
+  else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = "Safari";
+  else if (/Firefox/i.test(ua)) browser = "Firefox";
+  else if (/Edg/i.test(ua)) browser = "Edge";
+  else if (/Opera|OPR/i.test(ua)) browser = "Opera";
+  
+  // Detect device type
+  let deviceType = "Desktop";
+  if (/Mobile/i.test(ua)) deviceType = "Mobile";
+  else if (/Tablet|iPad/i.test(ua)) deviceType = "Tablet";
+  
+  // App version (from meta tag or fallback)
+  const appVersion = "1.0.0";
+  
+  return { os, browser, deviceType, appVersion, userAgent: ua };
+}
 
 // Receipt Email Section Component
 function ReceiptEmailSection() {
@@ -181,19 +216,35 @@ function ReceiptEmailSection() {
 // Contact Support Dialog Component
 function ContactSupportDialog() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [screenshotName, setScreenshotName] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  
+  const deviceInfo = getDeviceInfo();
   
   const supportForm = useForm<SupportRequestFormValues>({
     resolver: zodResolver(supportRequestSchema),
     defaultValues: {
       subject: "",
       message: "",
+      contactPreference: "email",
+      phoneNumber: user?.phoneNumber || "",
     },
   });
 
+  const contactPreference = supportForm.watch("contactPreference");
+
   const supportMutation = useMutation({
     mutationFn: async (data: SupportRequestFormValues) => {
-      const response = await apiRequest("POST", "/api/support/request", data);
+      const payload = {
+        ...data,
+        deviceInfo,
+        screenshot: screenshot || undefined,
+      };
+      
+      const response = await apiRequest("POST", "/api/support/request", payload);
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -209,6 +260,8 @@ function ContactSupportDialog() {
       });
       setIsOpen(false);
       supportForm.reset();
+      setScreenshot(null);
+      setScreenshotName(null);
     },
     onError: (error: any) => {
       toast({
@@ -220,7 +273,53 @@ function ContactSupportDialog() {
   });
 
   const onSubmit = (data: SupportRequestFormValues) => {
+    if (data.contactPreference === "phone" && !data.phoneNumber) {
+      toast({
+        title: "Phone number required",
+        description: "Please enter your phone number for a callback.",
+        variant: "destructive",
+      });
+      return;
+    }
     supportMutation.mutate(data);
+  };
+
+  const handleScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please select an image under 5MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Invalid file type",
+        description: "Please select an image file.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setScreenshot(event.target?.result as string);
+      setScreenshotName(file.name);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeScreenshot = () => {
+    setScreenshot(null);
+    setScreenshotName(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const subjectOptions = [
@@ -250,7 +349,7 @@ function ContactSupportDialog() {
           <ChevronRight className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageCircle className="h-5 w-5 text-blue-600" />
@@ -297,7 +396,7 @@ function ContactSupportDialog() {
                   <FormControl>
                     <Textarea
                       placeholder="Describe your question or issue..."
-                      className="min-h-[120px] resize-none"
+                      className="min-h-[100px] resize-none"
                       data-testid="textarea-support-message"
                       {...field}
                     />
@@ -306,8 +405,127 @@ function ContactSupportDialog() {
                 </FormItem>
               )}
             />
+
+            {/* Screenshot Upload */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Screenshot (optional)</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleScreenshotUpload}
+                className="hidden"
+                data-testid="input-screenshot"
+              />
+              {!screenshot ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full"
+                  data-testid="button-upload-screenshot"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  Attach Screenshot
+                </Button>
+              ) : (
+                <div className="flex items-center gap-2 p-2 border rounded-none bg-gray-50">
+                  <img
+                    src={screenshot}
+                    alt="Screenshot preview"
+                    className="h-12 w-12 object-cover rounded-none"
+                  />
+                  <span className="flex-1 text-sm truncate">{screenshotName}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={removeScreenshot}
+                    data-testid="button-remove-screenshot"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Contact Preference */}
+            <FormField
+              control={supportForm.control}
+              name="contactPreference"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>How should we contact you?</FormLabel>
+                  <FormControl>
+                    <RadioGroup
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      className="flex flex-col space-y-2"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="email" id="contact-email" data-testid="radio-contact-email" />
+                        <Label htmlFor="contact-email" className="flex items-center gap-2 cursor-pointer">
+                          <Mail className="h-4 w-4" />
+                          Email (recommended)
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="phone" id="contact-phone" data-testid="radio-contact-phone" />
+                        <Label htmlFor="contact-phone" className="flex items-center gap-2 cursor-pointer">
+                          <Phone className="h-4 w-4" />
+                          Phone callback
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
+            {/* Phone Number Field (shown when phone selected) */}
+            {contactPreference === "phone" && (
+              <FormField
+                control={supportForm.control}
+                name="phoneNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone Number</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="e.g., 082 123 4567"
+                        data-testid="input-callback-phone"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {/* Device Info (read-only display) */}
+            <div className="bg-gray-50 p-3 rounded-none border text-xs text-gray-600 space-y-1">
+              <div className="flex items-center gap-2 mb-2">
+                {deviceInfo.deviceType === "Mobile" ? (
+                  <Smartphone className="h-3 w-3" />
+                ) : (
+                  <Monitor className="h-3 w-3" />
+                )}
+                <span className="font-medium">Device Info (auto-detected)</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <span>Device:</span>
+                <span>{deviceInfo.deviceType}</span>
+                <span>OS:</span>
+                <span>{deviceInfo.os}</span>
+                <span>Browser:</span>
+                <span>{deviceInfo.browser}</span>
+                <span>App Version:</span>
+                <span>{deviceInfo.appVersion}</span>
+              </div>
+            </div>
             
-            <DialogFooter className="flex gap-2">
+            <DialogFooter className="flex gap-2 pt-2">
               <Button
                 type="button"
                 variant="outline"

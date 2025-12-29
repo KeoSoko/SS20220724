@@ -491,7 +491,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const userId = getUserId(req);
-      const { subject, message } = req.body;
+      const { subject, message, deviceInfo, screenshot, contactPreference, phoneNumber } = req.body;
       
       // Validate input
       if (!subject || typeof subject !== 'string' || subject.trim().length === 0) {
@@ -507,6 +507,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Message is too long (max 5000 characters)" });
       }
       
+      // Validate phone number if phone callback requested
+      if (contactPreference === 'phone' && (!phoneNumber || phoneNumber.trim().length === 0)) {
+        return res.status(400).json({ error: "Phone number is required for phone callback" });
+      }
+      
       // Get user details
       const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
       if (!user[0]) {
@@ -520,14 +525,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "No email address on your account. Please add an email first." });
       }
       
-      // Send support email
+      // Send support email with enhanced details
       const { emailService } = await import('./email-service');
       const sent = await emailService.sendSupportRequest(
         userEmail,
         username,
         subject.trim(),
         message.trim(),
-        userId
+        userId,
+        {
+          deviceInfo: deviceInfo || null,
+          screenshot: screenshot || null,
+          contactPreference: contactPreference || 'email',
+          phoneNumber: phoneNumber?.trim() || null
+        }
       );
       
       if (!sent) {

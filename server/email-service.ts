@@ -1145,7 +1145,19 @@ Need help? Reply to this email and our support team will assist you.
     username: string,
     subject: string,
     message: string,
-    userId: number
+    userId: number,
+    additionalInfo?: {
+      deviceInfo?: {
+        os: string;
+        browser: string;
+        deviceType: string;
+        appVersion: string;
+        userAgent?: string;
+      } | null;
+      screenshot?: string | null;
+      contactPreference?: 'email' | 'phone';
+      phoneNumber?: string | null;
+    }
   ): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
       console.error("Cannot send support request - SENDGRID_API_KEY not configured");
@@ -1154,6 +1166,55 @@ Need help? Reply to this email and our support team will assist you.
 
     try {
       const supportEmail = 'support@simpleslips.co.za';
+      
+      // Build device info section
+      const deviceInfoHtml = additionalInfo?.deviceInfo ? `
+        <div style="background: #e8f4f8; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+          <h3 style="color: #333; margin-top: 0; font-size: 14px;">Device Information</h3>
+          <p style="margin: 5px 0; font-size: 13px;"><strong>Device:</strong> ${additionalInfo.deviceInfo.deviceType}</p>
+          <p style="margin: 5px 0; font-size: 13px;"><strong>OS:</strong> ${additionalInfo.deviceInfo.os}</p>
+          <p style="margin: 5px 0; font-size: 13px;"><strong>Browser:</strong> ${additionalInfo.deviceInfo.browser}</p>
+          <p style="margin: 5px 0; font-size: 13px;"><strong>App Version:</strong> ${additionalInfo.deviceInfo.appVersion}</p>
+        </div>
+      ` : '';
+      
+      // Build contact preference section
+      const contactPreference = additionalInfo?.contactPreference || 'email';
+      const contactInfoHtml = `
+        <div style="background: ${contactPreference === 'phone' ? '#fff3cd' : '#d4edda'}; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+          <h3 style="color: #333; margin-top: 0; font-size: 14px;">Contact Preference</h3>
+          <p style="margin: 5px 0; font-size: 13px;">
+            <strong>Preferred Method:</strong> ${contactPreference === 'phone' ? 'Phone Callback' : 'Email'}
+          </p>
+          ${contactPreference === 'phone' && additionalInfo?.phoneNumber ? `
+            <p style="margin: 5px 0; font-size: 13px;"><strong>Phone Number:</strong> ${additionalInfo.phoneNumber}</p>
+          ` : ''}
+        </div>
+      `;
+      
+      // Build screenshot section if provided
+      const screenshotHtml = additionalInfo?.screenshot ? `
+        <div style="background: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 20px;">
+          <h3 style="color: #333; margin-top: 0;">Attached Screenshot</h3>
+          <img src="${additionalInfo.screenshot}" alt="User Screenshot" style="max-width: 100%; height: auto; border: 1px solid #eee;" />
+        </div>
+      ` : '';
+      
+      // Build attachments array for SendGrid
+      const attachments: Array<{ content: string; filename: string; type: string; disposition: string }> = [];
+      if (additionalInfo?.screenshot) {
+        // Extract base64 data from data URL
+        const matches = additionalInfo.screenshot.match(/^data:image\/(\w+);base64,(.+)$/);
+        if (matches) {
+          const [, ext, base64Data] = matches;
+          attachments.push({
+            content: base64Data,
+            filename: `screenshot.${ext}`,
+            type: `image/${ext}`,
+            disposition: 'attachment'
+          });
+        }
+      }
       
       await mailService.send({
         to: supportEmail,
@@ -1166,6 +1227,7 @@ Need help? Reply to this email and our support team will assist you.
           name: username
         },
         subject: `[Support Request] ${subject}`,
+        attachments: attachments.length > 0 ? attachments : undefined,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="text-align: center; margin-bottom: 30px;">
@@ -1180,12 +1242,17 @@ Need help? Reply to this email and our support team will assist you.
               <p style="margin: 5px 0;"><strong>User ID:</strong> ${userId}</p>
             </div>
             
-            <div style="background: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 6px;">
+            ${contactInfoHtml}
+            ${deviceInfoHtml}
+            
+            <div style="background: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 20px;">
               <h3 style="color: #333; margin-top: 0;">Subject: ${subject}</h3>
               <div style="white-space: pre-wrap; color: #333; line-height: 1.6;">
 ${message}
               </div>
             </div>
+            
+            ${screenshotHtml}
             
             <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
             <p style="color: #999; font-size: 12px;">
@@ -1201,10 +1268,20 @@ User Details:
 - Email: ${userEmail}
 - User ID: ${userId}
 
+Contact Preference: ${contactPreference === 'phone' ? `Phone Callback (${additionalInfo?.phoneNumber || 'No number provided'})` : 'Email'}
+
+${additionalInfo?.deviceInfo ? `Device Information:
+- Device: ${additionalInfo.deviceInfo.deviceType}
+- OS: ${additionalInfo.deviceInfo.os}
+- Browser: ${additionalInfo.deviceInfo.browser}
+- App Version: ${additionalInfo.deviceInfo.appVersion}
+` : ''}
 Subject: ${subject}
 
 Message:
 ${message}
+
+${additionalInfo?.screenshot ? '[Screenshot attached]' : ''}
 
 ---
 Reply directly to this email to respond to the user.

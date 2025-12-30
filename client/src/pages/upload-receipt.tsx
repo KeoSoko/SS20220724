@@ -1623,8 +1623,8 @@ export default function UploadReceipt() {
                     />
                   </div>
                   
-                  {/* Date & Total - 2 column layout */}
-                  <div className="grid grid-cols-2 gap-4 items-end">
+                  {/* Date & Total - stacked on mobile, side by side on larger screens */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="date">Date</Label>
                       <Input

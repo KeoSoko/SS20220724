@@ -1,31 +1,13 @@
-import { createCanvas } from 'canvas';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { fromBuffer, FromBufferOptions } from 'pdf2pic';
 import { log } from './vite';
-
-class NodeCanvasFactory {
-  create(width: number, height: number) {
-    const canvas = createCanvas(width, height);
-    const context = canvas.getContext('2d');
-    return {
-      canvas,
-      context,
-    };
-  }
-
-  reset(canvasAndContext: any, width: number, height: number) {
-    canvasAndContext.canvas.width = width;
-    canvasAndContext.canvas.height = height;
-  }
-
-  destroy(canvasAndContext: any) {
-    canvasAndContext.canvas.width = 0;
-    canvasAndContext.canvas.height = 0;
-    canvasAndContext.canvas = null;
-    canvasAndContext.context = null;
-  }
-}
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 export async function convertPdfToImage(pdfData: Buffer | string): Promise<string> {
+  const tempDir = os.tmpdir();
+  let tempPdfPath: string | null = null;
+  
   try {
     log('Starting PDF to image conversion...', 'pdf-converter');
     
@@ -42,54 +24,44 @@ export async function convertPdfToImage(pdfData: Buffer | string): Promise<strin
       pdfBuffer = pdfData;
     }
     
-    const uint8Array = new Uint8Array(pdfBuffer);
-    
-    const loadingTask = pdfjsLib.getDocument({
-      data: uint8Array,
-      useSystemFonts: true,
-      disableFontFace: true,
-    });
-    
-    const pdfDocument = await loadingTask.promise;
-    log(`PDF loaded successfully. Pages: ${pdfDocument.numPages}`, 'pdf-converter');
-    
-    const page = await pdfDocument.getPage(1);
-    
-    const scale = 2.0;
-    const viewport = page.getViewport({ scale });
-    
-    const canvasFactory = new NodeCanvasFactory();
-    const canvasAndContext = canvasFactory.create(
-      Math.floor(viewport.width),
-      Math.floor(viewport.height)
-    );
-    
-    const renderContext = {
-      canvasContext: canvasAndContext.context,
-      viewport,
-      canvasFactory,
-      canvas: canvasAndContext.canvas,
+    const options: FromBufferOptions = {
+      density: 150,
+      savePath: tempDir,
+      saveFilename: `pdf_conversion_${Date.now()}`,
+      format: 'jpeg',
+      width: 1200,
+      height: 1600,
+      preserveAspectRatio: true,
     };
     
-    await page.render(renderContext as any).promise;
-    log(`Page rendered: ${viewport.width}x${viewport.height}`, 'pdf-converter');
+    const convert = fromBuffer(pdfBuffer, options);
     
-    const jpegDataUrl = canvasAndContext.canvas.toDataURL('image/jpeg', 0.9);
+    const result = await convert(1, { responseType: 'base64' });
     
-    canvasFactory.destroy(canvasAndContext);
+    if (!result || !result.base64) {
+      throw new Error('PDF conversion returned empty result');
+    }
     
-    log('PDF converted to JPEG successfully', 'pdf-converter');
-    return jpegDataUrl;
+    log(`PDF converted successfully: ${result.width}x${result.height}`, 'pdf-converter');
+    
+    return `data:image/jpeg;base64,${result.base64}`;
     
   } catch (error: any) {
     log(`PDF conversion error: ${error.message}`, 'pdf-converter');
     throw new Error(`Failed to convert PDF to image: ${error.message}`);
+  } finally {
+    if (tempPdfPath && fs.existsSync(tempPdfPath)) {
+      try {
+        fs.unlinkSync(tempPdfPath);
+      } catch (e) {
+      }
+    }
   }
 }
 
 export function isPdfData(data: string): boolean {
   return data.startsWith('data:application/pdf;base64,') || 
-         data.startsWith('JVBERi0'); // Raw base64 PDF starts with %PDF
+         data.startsWith('JVBERi0');
 }
 
 export function isPdfBuffer(buffer: Buffer): boolean {

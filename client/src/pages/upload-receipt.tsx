@@ -1624,7 +1624,7 @@ export default function UploadReceipt() {
                   </div>
                   
                   {/* Date & Total - 2 column layout */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4 items-end">
                     <div className="space-y-2">
                       <Label htmlFor="date">Date</Label>
                       <Input
@@ -1634,6 +1634,8 @@ export default function UploadReceipt() {
                         onChange={(e) => setDate(e.target.value)}
                         required
                         disabled={isScanning}
+                        className="h-10 w-full"
+                        data-testid="input-date"
                       />
                     </div>
                     
@@ -1646,6 +1648,8 @@ export default function UploadReceipt() {
                         placeholder="0.00"
                         required
                         disabled={isScanning}
+                        className="h-10"
+                        data-testid="input-total"
                       />
                     </div>
                   </div>

@@ -8,6 +8,7 @@ import { imagePreprocessor } from "./image-preprocessing";
 import { emailService } from "./email-service";
 import { log } from "./vite";
 import crypto from "crypto";
+import { convertPdfToImage, isPdfBuffer } from "./pdf-converter";
 
 interface InboundEmailData {
   to: string;
@@ -203,9 +204,15 @@ export class InboundEmailService {
 
       let imageBase64: string;
 
-      if (attachment.contentType === 'application/pdf') {
-        log('PDF attachment detected - will process directly with OCR', 'inbound-email');
-        imageBase64 = `data:application/pdf;base64,${attachment.content.toString('base64')}`;
+      if (attachment.contentType === 'application/pdf' || isPdfBuffer(attachment.content)) {
+        log('PDF attachment detected - converting to image...', 'inbound-email');
+        try {
+          imageBase64 = await convertPdfToImage(attachment.content);
+          log('PDF successfully converted to image', 'inbound-email');
+        } catch (pdfError: any) {
+          log(`PDF conversion failed: ${pdfError.message}`, 'inbound-email');
+          throw new Error(`Failed to process PDF: ${pdfError.message}`);
+        }
       } else {
         const rawBase64 = `data:${attachment.contentType};base64,${attachment.content.toString('base64')}`;
         imageBase64 = await imagePreprocessor.enhanceImage(rawBase64);

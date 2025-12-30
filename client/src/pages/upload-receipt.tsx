@@ -1454,13 +1454,13 @@ export default function UploadReceipt() {
             <CardContent className="pt-6">
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="receipt">Receipt Image</Label>
+                  <Label htmlFor="receipt">Receipt Image or PDF</Label>
                   {/* Single file input */}
                   <Input
                     id="receipt"
                     name="receipt"
                     type="file"
-                    accept="image/jpeg,image/jpg,image/png,image/webp,image/*"
+                    accept="image/jpeg,image/jpg,image/png,image/webp,image/*,application/pdf,.pdf"
                     onChange={handleFileChange}
                     className="hidden"
                   />
@@ -1469,7 +1469,7 @@ export default function UploadReceipt() {
                     id="receipt-batch"
                     name="receipt-batch"
                     type="file"
-                    accept="image/jpeg,image/jpg,image/png,image/webp,image/*"
+                    accept="image/jpeg,image/jpg,image/png,image/webp,image/*,application/pdf,.pdf"
                     multiple
                     onChange={handleBatchFileSelect}
                     className="hidden"
@@ -1496,8 +1496,8 @@ export default function UploadReceipt() {
                         >
                           <div className="flex flex-col items-center space-y-2">
                             <FileImage className="h-10 w-10 mb-2 text-primary" />
-                            <span className="font-medium">Upload Image</span>
-                            <span className="text-xs text-gray-500">Choose one photo</span>
+                            <span className="font-medium">Upload File</span>
+                            <span className="text-xs text-gray-500">Image or PDF</span>
                           </div>
                         </EnhancedButton>
                       </motion.div>

@@ -52,6 +52,7 @@ import { smartReminderService } from "./smart-reminder-service";
 import { profitLossService } from "./profit-loss-service";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
 import { log } from "./vite";
+import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { and, asc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import multer from "multer";
 import { scrypt, timingSafeEqual } from 'crypto';
@@ -196,7 +197,7 @@ async function handlePaystackPaymentFailed(data: any) {
 }
 
 // Security validation utilities
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp'];
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'application/pdf'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_STRING_LENGTH = 1000;
 const MAX_NOTES_LENGTH = 5000;
@@ -224,7 +225,7 @@ function validateImageData(imageData: string): { isValid: boolean; error?: strin
   
   // Validate MIME type
   if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
-    return { isValid: false, error: 'Unsupported image type. Use JPEG, PNG, or BMP' };
+    return { isValid: false, error: 'Unsupported file type. Use JPEG, PNG, BMP, or PDF' };
   }
 
   // Validate base64 and size
@@ -1094,11 +1095,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Step 0: Convert PDF to image if needed
+      let processableImageData = imageData;
+      if (isPdfData(imageData)) {
+        try {
+          log('PDF detected - converting to image...', 'api');
+          processableImageData = await convertPdfToImage(imageData);
+          log('PDF successfully converted to image', 'api');
+        } catch (pdfError: any) {
+          log(`PDF conversion failed: ${pdfError.message}`, 'api');
+          return res.status(400).json({
+            error: "Failed to process PDF file. Please try a different file or upload an image instead."
+          });
+        }
+      }
+
       // Step 1: Enhance image quality for better OCR accuracy
-      let enhancedImageData = imageData;
+      let enhancedImageData = processableImageData;
       try {
         log('Enhancing image before OCR...', 'api');
-        enhancedImageData = await imagePreprocessor.enhanceImage(imageData);
+        enhancedImageData = await imagePreprocessor.enhanceImage(processableImageData);
         log('Image enhancement complete', 'api');
       } catch (error) {
         log(`Image enhancement failed, using original: ${error}`, 'api');
@@ -1146,10 +1162,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         receiptData.category = "other";
       }
 
-      // Return the extracted data
+      // Return the extracted data (use converted image for PDFs)
       res.json({
         ...receiptData,
-        imageData
+        imageData: processableImageData
       });
     } catch (error: any) {
       const errorMessage = error.message || "Failed to scan receipt";

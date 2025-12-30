@@ -1634,7 +1634,7 @@ export default function UploadReceipt() {
                         onChange={(e) => setDate(e.target.value)}
                         required
                         disabled={isScanning}
-                        className="h-10 w-full"
+                        className="h-10 w-full text-left [&::-webkit-datetime-edit]:text-left [&::-webkit-date-and-time-value]:text-left"
                         data-testid="input-date"
                       />
                     </div>

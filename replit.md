@@ -26,6 +26,7 @@ The system is built as a full-stack TypeScript application within a monorepo str
 - **Billing System**: Uses Paystack for recurring subscriptions, allowing for better revenue retention and cross-platform compatibility, bypassing app store commissions.
 - **Account Management**: Includes robust account deletion functionality with password verification, complete data cleanup, and GDPR-compliant security.
 - **Image Handling**: Session storage preserves receipt images and form data during navigation for a seamless user experience. Original receipts are deleted upon splitting.
+- **PDF Support**: PDF receipts uploaded via scan or email are automatically converted to JPEG images using pdf2pic (ghostscript/graphicsmagick). This ensures consistent display across all devices and maintains compatibility with image-based OCR processing.
 - **Promo Code System**: Supports promotional codes for extended trial periods during user signup.
 - **Tax Deductible System**: Functionality for tracking and displaying tax-deductible amounts.
 - **Email System**: Comprehensive email tracking system (delivered, bounced, opened, clicked) with SendGrid webhooks. Professional HTML email templates for quotations and invoices with branding and dynamic content.

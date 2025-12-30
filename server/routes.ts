@@ -249,7 +249,7 @@ function validateImageData(imageData: string): { isValid: boolean; error?: strin
 }
 
 function validateImageHeader(buffer: Buffer, mimeType: string): boolean {
-  // Check magic bytes for common image formats
+  // Check magic bytes for common image formats and PDF
   if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
     return buffer[0] === 0xFF && buffer[1] === 0xD8;
   }
@@ -258,6 +258,10 @@ function validateImageHeader(buffer: Buffer, mimeType: string): boolean {
   }
   if (mimeType === 'image/bmp') {
     return buffer[0] === 0x42 && buffer[1] === 0x4D;
+  }
+  // PDF magic bytes: %PDF (0x25 0x50 0x44 0x46)
+  if (mimeType === 'application/pdf') {
+    return buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
   }
   return false;
 }

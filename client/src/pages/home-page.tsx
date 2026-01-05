@@ -552,8 +552,8 @@ function HomePage() {
 
         {/* Main Content */}
         <div className="bg-white rounded-none shadow-sm border border-gray-200 overflow-hidden">
-          {/* Bulk Operations Toolbar */}
-          {bulkMode && (
+          {/* Bulk Operations Toolbar - Desktop only */}
+          {bulkMode && !isMobile && (
             <div className="p-6 bg-blue-50 border-b border-blue-200">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div className="text-sm font-medium text-blue-900">
@@ -1236,52 +1236,48 @@ function HomePage() {
       {/* Bulk Select Action Bar - Mobile */}
       {isMobile && bulkMode && (
         <motion.div 
-          className="fixed bottom-[72px] left-0 right-0 z-10 px-4 py-3 bg-white border-t border-gray-200"
+          className="fixed bottom-[72px] left-0 right-0 z-20 px-3 py-2 bg-white border-t border-gray-200 shadow-lg"
           initial={{ y: 100 }}
           animate={{ y: 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
         >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <Button 
                 variant="ghost" 
-                size="sm" 
+                className="h-11 px-3 min-w-[44px]"
                 onClick={() => {
                   setBulkMode(false);
                   setSelectedReceipts(new Set());
                 }}
                 data-testid="button-cancel-selection"
               >
-                <X className="h-4 w-4 mr-1" />
-                Cancel
+                <X className="h-5 w-5" />
               </Button>
-              <span className="text-sm font-medium text-gray-700">
-                {selectedReceipts.size} selected
+              <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                {selectedReceipts.size}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
-                size="sm"
+                className="h-11 px-3 text-xs min-w-[44px]"
                 onClick={selectAllReceipts}
                 data-testid="button-select-all"
               >
-                Select All
+                All
               </Button>
               <Button 
                 variant="destructive"
-                size="sm"
+                className="h-11 px-4 min-w-[44px]"
                 onClick={() => bulkDeleteMutation.mutate(Array.from(selectedReceipts))}
                 disabled={selectedReceipts.size === 0 || bulkDeleteMutation.isPending}
                 data-testid="button-delete-selected"
               >
                 {bulkDeleteMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
-                  <>
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Delete
-                  </>
+                  <Trash2 className="h-5 w-5" />
                 )}
               </Button>
             </div>

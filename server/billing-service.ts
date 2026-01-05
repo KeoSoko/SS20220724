@@ -585,10 +585,6 @@ export class BillingService {
 
       // Check if user already has a subscription
       const existingSubscription = await this.getUserSubscription(userId);
-      
-      if (existingSubscription && existingSubscription.status === 'active') {
-        throw new Error('User already has an active subscription');
-      }
 
       const now = new Date();
       const nextBillingDate = new Date();
@@ -598,20 +594,35 @@ export class BillingService {
       let subscription: UserSubscription;
       
       if (existingSubscription) {
-        // Update existing subscription
+        // Handle renewal payment OR reactivation of existing subscription
+        const isRenewal = existingSubscription.status === 'active';
+        
         if (!storage.updateUserSubscription) {
           throw new Error('User subscription updates not supported by current storage');
         }
+        
+        // Update subscription with new billing dates and payment info
         await storage.updateUserSubscription(existingSubscription.id, {
           status: 'active',
-          subscriptionStartDate: now,
+          subscriptionStartDate: isRenewal ? existingSubscription.subscriptionStartDate : now,
           nextBillingDate,
           totalPaid: (existingSubscription.totalPaid || 0) + plan.price,
           lastPaymentDate: now,
           paystackReference: transactionReference,
           paystackCustomerCode: transactionData.customer?.customer_code
         });
-        subscription = { ...existingSubscription, status: 'active' as const };
+        
+        subscription = { 
+          ...existingSubscription, 
+          status: 'active' as const,
+          nextBillingDate,
+          lastPaymentDate: now,
+          totalPaid: (existingSubscription.totalPaid || 0) + plan.price
+        };
+        
+        if (isRenewal) {
+          log(`Processed subscription RENEWAL for user ${userId}, next billing: ${nextBillingDate.toISOString()}`, 'billing');
+        }
       } else {
         // Create new subscription
         const subscriptionData: InsertUserSubscription = {

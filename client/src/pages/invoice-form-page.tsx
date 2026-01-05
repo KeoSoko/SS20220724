@@ -15,7 +15,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useRoute, useLocation } from "wouter";
+import { useRoute, useLocation, Link } from "wouter";
 import { Plus, Trash2, Save, Send, Mail } from "lucide-react";
 import { format } from "date-fns";
 import type { Client, Invoice, LineItem, BusinessProfile, Quotation } from "@shared/schema";
@@ -409,23 +409,36 @@ export default function InvoiceFormPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Client *</FormLabel>
-                        <Select
-                          value={field.value?.toString()}
-                          onValueChange={(value) => field.onChange(parseInt(value))}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-client">
-                              <SelectValue placeholder="Select client" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {clients.map((client) => (
-                              <SelectItem key={client.id} value={client.id.toString()}>
-                                {client.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex gap-2">
+                          <Select
+                            value={field.value?.toString()}
+                            onValueChange={(value) => field.onChange(parseInt(value))}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-client" className="flex-1">
+                                <SelectValue placeholder="Select client" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {clients.length === 0 ? (
+                                <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                                  No clients yet. Add your first client.
+                                </div>
+                              ) : (
+                                clients.map((client) => (
+                                  <SelectItem key={client.id} value={client.id.toString()}>
+                                    {client.name}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <Link href="/clients">
+                            <Button type="button" variant="outline" size="icon" title="Add new client" data-testid="button-add-new-client">
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}

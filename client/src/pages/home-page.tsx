@@ -880,7 +880,65 @@ function HomePage() {
                     </CardContent>
                   </Card>
                 </div>
-                
+
+                {/* Top Stores This Month */}
+                <Card className="hover:shadow-lg transition-shadow">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Store className="w-5 h-5 text-primary" />
+                      <h3 className="font-semibold text-gray-900">Top Stores This Month</h3>
+                    </div>
+                    <div className="space-y-3">
+                      {(() => {
+                        const currentMonth = new Date().getMonth();
+                        const currentYear = new Date().getFullYear();
+                        const thisMonthReceipts = receipts.filter(r => {
+                          const receiptDate = new Date(r.date);
+                          return receiptDate.getMonth() === currentMonth && receiptDate.getFullYear() === currentYear;
+                        });
+                        
+                        const vendorStats = thisMonthReceipts.reduce((acc, receipt) => {
+                          const store = receipt.storeName || 'Unknown';
+                          if (!acc[store]) {
+                            acc[store] = { visits: 0, total: 0 };
+                          }
+                          acc[store].visits += 1;
+                          acc[store].total += parseFloat(receipt.total || '0');
+                          return acc;
+                        }, {} as Record<string, { visits: number; total: number }>);
+                        
+                        const topVendors = Object.entries(vendorStats)
+                          .sort(([, a], [, b]) => b.total - a.total)
+                          .slice(0, 3);
+                        
+                        if (topVendors.length === 0) {
+                          return (
+                            <p className="text-sm text-gray-500 text-center py-4">
+                              No receipts this month yet
+                            </p>
+                          );
+                        }
+                        
+                        return topVendors.map(([store, stats], index) => (
+                          <div 
+                            key={store} 
+                            className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                            data-testid={`top-vendor-${index}`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="text-sm font-medium text-gray-400 w-4">{index + 1}</span>
+                              <span className="text-sm font-medium text-gray-900 truncate">{store}</span>
+                            </div>
+                            <div className="flex items-center gap-4 flex-shrink-0">
+                              <span className="text-xs text-gray-500">{stats.visits} {stats.visits === 1 ? 'visit' : 'visits'}</span>
+                              <span className="text-sm font-semibold text-primary">R{stats.total.toFixed(0)}</span>
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </CardContent>
+                </Card>
 
               </TabsContent>
 

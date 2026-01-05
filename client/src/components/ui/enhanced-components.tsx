@@ -239,11 +239,43 @@ interface EnhancedReceiptCardProps {
     source?: string | null;
   };
   onClick?: () => void;
+  onLongPress?: () => void;
   className?: string;
 }
 
-export function EnhancedReceiptCard({ receipt, onClick, className, showCategory = true }: EnhancedReceiptCardProps & { showCategory?: boolean }) {
+export function EnhancedReceiptCard({ receipt, onClick, onLongPress, className, showCategory = true }: EnhancedReceiptCardProps & { showCategory?: boolean }) {
   const confidence = getConfidenceLevel(receipt.confidenceScore);
+  const longPressTimer = React.useRef<NodeJS.Timeout | null>(null);
+  const isLongPress = React.useRef(false);
+  
+  const handleTouchStart = () => {
+    isLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      isLongPress.current = true;
+      if (onLongPress) {
+        onLongPress();
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+      }
+    }, 500);
+  };
+  
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+    }
+  };
+  
+  const handleClick = (e: React.MouseEvent) => {
+    if (isLongPress.current) {
+      e.preventDefault();
+      return;
+    }
+    if (onClick) {
+      onClick();
+    }
+  };
   
   return (
     <motion.div
@@ -259,7 +291,13 @@ export function EnhancedReceiptCard({ receipt, onClick, className, showCategory 
           "bg-white rounded-none shadow-sm hover:shadow-md",
           className
         )}
-        onClick={onClick}
+        onClick={handleClick}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onMouseDown={handleTouchStart}
+        onMouseUp={handleTouchEnd}
+        onMouseLeave={handleTouchEnd}
         data-testid={`receipt-card-${receipt.id}`}
       >
         <div className="flex items-start gap-3">

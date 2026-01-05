@@ -1177,7 +1177,25 @@ function HomePage() {
                                   category: receipt.category || 'other',
                                   confidenceScore: receipt.confidenceScore
                                 }}
-                                onClick={() => !bulkMode && (window.location.href = `/receipt/${receipt.id}`)}
+                                onClick={() => {
+                                  if (bulkMode) {
+                                    const newSelected = new Set(selectedReceipts);
+                                    if (selectedReceipts.has(receipt.id)) {
+                                      newSelected.delete(receipt.id);
+                                    } else {
+                                      newSelected.add(receipt.id);
+                                    }
+                                    setSelectedReceipts(newSelected);
+                                  } else {
+                                    window.location.href = `/receipt/${receipt.id}`;
+                                  }
+                                }}
+                                onLongPress={() => {
+                                  if (!bulkMode) {
+                                    setBulkMode(true);
+                                    setSelectedReceipts(new Set([receipt.id]));
+                                  }
+                                }}
                                 className={bulkMode && selectedReceipts.has(receipt.id) ? 'bg-blue-50 border-blue-200' : ''}
                               />
                             </div>

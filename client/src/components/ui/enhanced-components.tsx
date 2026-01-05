@@ -89,7 +89,7 @@ EnhancedButton.displayName = "EnhancedButton";
 
 // Category icon mapping with consistent styling - South African expense categories
 const getCategoryIcon = (category: string) => {
-  const iconClass = "h-5 w-5";
+  const iconClass = "h-4 w-4";
   const cat = category.toLowerCase();
   
   // Groceries & Food
@@ -301,7 +301,7 @@ export function EnhancedReceiptCard({ receipt, onClick, onLongPress, className, 
         data-testid={`receipt-card-${receipt.id}`}
       >
         <div className="flex items-start gap-3">
-          <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-primary/10 to-primary/5 rounded-none flex items-center justify-center group-hover:from-primary/20 group-hover:to-primary/10 transition-colors">
+          <div className="flex-shrink-0 w-7 h-7 bg-gradient-to-br from-primary/10 to-primary/5 rounded-none flex items-center justify-center group-hover:from-primary/20 group-hover:to-primary/10 transition-colors">
             {getCategoryIcon(receipt.category)}
           </div>
           

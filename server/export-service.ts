@@ -527,7 +527,7 @@ export class ExportService {
 
       // Quotation title
       doc.setFontSize(24);
-      doc.setTextColor(0, 115, 170); // Simple Slips blue
+      doc.setTextColor(0, 0, 0); // Black for professional look
       doc.text('QUOTATION', 15, yPos);
       yPos += 15;
 
@@ -542,7 +542,7 @@ export class ExportService {
 
       // Client details
       doc.setFontSize(12);
-      doc.setTextColor(0, 115, 170);
+      doc.setTextColor(0, 0, 0);
       doc.text('Bill To:', 15, yPos);
       yPos += 7;
       doc.setFontSize(10);
@@ -577,7 +577,7 @@ export class ExportService {
         body: tableData,
         startY: yPos,
         theme: 'striped',
-        headStyles: { fillColor: [0, 115, 170] },
+        headStyles: { fillColor: [0, 0, 0] },
         styles: { fontSize: 10 },
         columnStyles: {
           0: { cellWidth: 'auto' },  // Description - takes remaining space
@@ -590,31 +590,31 @@ export class ExportService {
       yPos = (doc as any).lastAutoTable.finalY + 10;
 
       // Calculate totals
-      const subtotal = lineItems.reduce((sum, item) => sum + parseFloat(item.total), 0);
-      const vatRate = businessProfile.isVatRegistered ? 0.15 : 0;
-      const vatAmount = subtotal * vatRate;
-      const total = subtotal + vatAmount;
+      const subtotalQuote = lineItems.reduce((sum, item) => sum + parseFloat(item.total), 0);
+      const vatRateQuote = businessProfile.isVatRegistered ? 0.15 : 0;
+      const vatAmountQuote = subtotalQuote * vatRateQuote;
+      const totalQuote = subtotalQuote + vatAmountQuote;
 
       // Totals section - aligned with the Total column
       // The Total column ends at pageWidth - 15 (table margin) - 35 (column width) = pageWidth - 50
-      const totalsLabelX = pageWidth - 85;
-      const totalsValueX = pageWidth - 15;
+      const totalsLabelXQuote = pageWidth - 85;
+      const totalsValueXQuote = pageWidth - 15;
       
       doc.setFontSize(10);
-      doc.text('Subtotal:', totalsLabelX, yPos);
-      doc.text(`R ${subtotal.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
+      doc.text('Subtotal:', totalsLabelXQuote, yPos);
+      doc.text(`R ${subtotalQuote.toFixed(2)}`, totalsValueXQuote, yPos, { align: 'right' });
       yPos += 7;
 
       if (businessProfile.isVatRegistered) {
-        doc.text('VAT (15%):', totalsLabelX, yPos);
-        doc.text(`R ${vatAmount.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
+        doc.text('VAT (15%):', totalsLabelXQuote, yPos);
+        doc.text(`R ${vatAmountQuote.toFixed(2)}`, totalsValueXQuote, yPos, { align: 'right' });
         yPos += 7;
       }
 
       doc.setFontSize(12);
       doc.setFont(undefined, 'bold');
-      doc.text('Total:', totalsLabelX, yPos);
-      doc.text(`R ${total.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
+      doc.text('Total:', totalsLabelXQuote, yPos);
+      doc.text(`R ${totalQuote.toFixed(2)}`, totalsValueXQuote, yPos, { align: 'right' });
       yPos += 15;
 
       // Terms and conditions
@@ -680,7 +680,7 @@ export class ExportService {
 
       // Invoice title
       doc.setFontSize(24);
-      doc.setTextColor(0, 115, 170);
+      doc.setTextColor(0, 0, 0);
       doc.text('INVOICE', 15, yPos);
       yPos += 15;
 
@@ -695,7 +695,7 @@ export class ExportService {
 
       // Client details
       doc.setFontSize(12);
-      doc.setTextColor(0, 115, 170);
+      doc.setTextColor(0, 0, 0);
       doc.text('Bill To:', 15, yPos);
       yPos += 7;
       doc.setFontSize(10);
@@ -730,7 +730,7 @@ export class ExportService {
         body: tableData,
         startY: yPos,
         theme: 'striped',
-        headStyles: { fillColor: [0, 115, 170] },
+        headStyles: { fillColor: [0, 0, 0] },
         styles: { fontSize: 10 },
         columnStyles: {
           0: { cellWidth: 'auto' },  // Description - takes remaining space
@@ -743,12 +743,12 @@ export class ExportService {
       yPos = (doc as any).lastAutoTable.finalY + 10;
 
       // Calculate totals
-      const subtotal = lineItems.reduce((sum, item) => sum + parseFloat(item.total), 0);
-      const vatRate = businessProfile.isVatRegistered ? 0.15 : 0;
-      const vatAmount = subtotal * vatRate;
-      const total = subtotal + vatAmount;
+      const subtotalInv = lineItems.reduce((sum, item) => sum + parseFloat(item.total), 0);
+      const vatRateInv = businessProfile.isVatRegistered ? 0.15 : 0;
+      const vatAmountInv = subtotalInv * vatRateInv;
+      const totalInv = subtotalInv + vatAmountInv;
       const amountPaid = parseFloat(invoice.amountPaid);
-      const balance = total - amountPaid;
+      const balance = totalInv - amountPaid;
 
       // Totals section - aligned with the Total column
       const totalsLabelX = pageWidth - 85;
@@ -756,19 +756,19 @@ export class ExportService {
       
       doc.setFontSize(10);
       doc.text('Subtotal:', totalsLabelX, yPos);
-      doc.text(`R ${subtotal.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
+      doc.text(`R ${subtotalInv.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
       yPos += 7;
 
       if (businessProfile.isVatRegistered) {
         doc.text('VAT (15%):', totalsLabelX, yPos);
-        doc.text(`R ${vatAmount.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
+        doc.text(`R ${vatAmountInv.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
         yPos += 7;
       }
 
       doc.setFontSize(12);
       doc.setFont(undefined, 'bold');
       doc.text('Total:', totalsLabelX, yPos);
-      doc.text(`R ${total.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
+      doc.text(`R ${totalInv.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
       yPos += 7;
 
       if (amountPaid > 0) {
@@ -792,7 +792,7 @@ export class ExportService {
         yPos += 5;
         doc.setFont(undefined, 'normal');
         doc.setFontSize(12);
-        doc.setTextColor(0, 115, 170);
+        doc.setTextColor(0, 0, 0);
         doc.text('Payment History:', 15, yPos);
         yPos += 7;
 
@@ -818,7 +818,7 @@ export class ExportService {
       if (businessProfile.bankName) {
         yPos += 5;
         doc.setFontSize(12);
-        doc.setTextColor(0, 115, 170);
+        doc.setTextColor(0, 0, 0);
         doc.text('Banking Details:', 15, yPos);
         yPos += 7;
         doc.setFontSize(10);

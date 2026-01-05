@@ -721,67 +721,56 @@ export function SubscriptionPage() {
           </div>
         )}
 
-        {/* Recent Payment History */}
-        {subscription && (
+        {/* Recent Payment History - only show when payments exist */}
+        {subscription && transactions.length > 0 && (
           <div className="mt-8">
             <ContentCard>
               <h3 className="text-lg font-semibold mb-4">Recent Payments</h3>
-              {transactionsLoading ? (
-                <div className="flex justify-center py-4">
-                  <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" />
-                </div>
-              ) : transactions.length > 0 ? (
-                <div className="space-y-3">
-                  {transactions.slice(0, 3).map((transaction) => (
-                    <div key={transaction.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                          <Receipt className="w-4 h-4 text-green-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium">{formatCurrency(transaction.amount, transaction.currency)}</p>
-                          <p className="text-sm text-gray-600">{formatDate(transaction.createdAt)}</p>
-                        </div>
+              <div className="space-y-3">
+                {transactions.slice(0, 3).map((transaction) => (
+                  <div key={transaction.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                        <Receipt className="w-4 h-4 text-green-600" />
                       </div>
-                      <div className="text-right">
-                        <Badge variant="default" className="bg-green-100 text-green-800">
-                          {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
-                        </Badge>
-                        <p className="text-xs text-gray-500 mt-1 capitalize">
-                          {transaction.paymentMethod?.replace('_', ' ') || 'Unknown'}
-                        </p>
+                      <div>
+                        <p className="font-medium">{formatCurrency(transaction.amount, transaction.currency)}</p>
+                        <p className="text-sm text-gray-600">{formatDate(transaction.createdAt)}</p>
                       </div>
                     </div>
-                  ))}
-                  
-                  {transactions.length > 3 && (
-                    <div className="text-center pt-2">
-                      <Link href="/payment-history">
-                        <Button variant="outline" size="sm">
-                          View All {transactions.length} Payments
-                          <ArrowRight className="w-4 h-4 ml-2" />
-                        </Button>
-                      </Link>
+                    <div className="text-right">
+                      <Badge variant="default" className="bg-green-100 text-green-800">
+                        {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
+                      </Badge>
+                      <p className="text-xs text-gray-500 mt-1 capitalize">
+                        {transaction.paymentMethod?.replace('_', ' ') || 'Unknown'}
+                      </p>
                     </div>
-                  )}
-                  
-                  {transactions.length <= 3 && transactions.length > 0 && (
-                    <div className="text-center pt-2">
-                      <Link href="/payment-history">
-                        <Button variant="outline" size="sm">
-                          View Payment History
-                          <ArrowRight className="w-4 h-4 ml-2" />
-                        </Button>
-                      </Link>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <CreditCard className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-600">No payments yet</p>
-                </div>
-              )}
+                  </div>
+                ))}
+                
+                {transactions.length > 3 && (
+                  <div className="text-center pt-2">
+                    <Link href="/payment-history">
+                      <Button variant="outline" size="sm">
+                        View All {transactions.length} Payments
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+                
+                {transactions.length <= 3 && transactions.length > 0 && (
+                  <div className="text-center pt-2">
+                    <Link href="/payment-history">
+                      <Button variant="outline" size="sm">
+                        View Payment History
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
             </ContentCard>
           </div>
         )}

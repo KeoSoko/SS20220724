@@ -606,40 +606,6 @@ export function SubscriptionPage() {
           </Card>
         )}
 
-        {/* Payment History */}
-        {transactions.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CreditCard className="h-5 w-5" />
-                Payment History
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {transactions.slice(0, 5).map((transaction) => (
-                  <div
-                    key={transaction.id}
-                    className="flex items-center justify-between p-3 border rounded-lg"
-                  >
-                    <div>
-                      <p className="font-medium">
-                        {formatCurrency(transaction.amount, transaction.currency)}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {formatDate(transaction.createdAt)} • {transaction.paymentMethod}
-                      </p>
-                    </div>
-                    <Badge variant={transaction.status === 'completed' ? 'default' : 'secondary'}>
-                      {transaction.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         {/* Trial Information & Mobile App CTA */}
         {!subscription && (
           <div className="space-y-4">

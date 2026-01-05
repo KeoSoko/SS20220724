@@ -72,10 +72,30 @@ export function BudgetManager() {
   });
 
   const categories = [
-    'groceries', 'dining', 'transportation', 'telecommunications', 'utilities', 
-    'municipal_services', 'rent', 'healthcare', 'insurance', 'banking_fees',
-    'automotive', 'domestic_services', 'entertainment', 'travel', 'education', 
-    'shopping', 'personal_care', 'gifts', 'other'
+    { value: 'groceries', label: 'Groceries' },
+    { value: 'electricity_water', label: 'Electricity & Water' },
+    { value: 'municipal_rates_taxes', label: 'Municipal Rates & Taxes' },
+    { value: 'rent_bond', label: 'Rent / Bond' },
+    { value: 'domestic_help_home_services', label: 'Domestic Help & Home Services' },
+    { value: 'home_maintenance', label: 'Home Maintenance' },
+    { value: 'transport_public_taxi', label: 'Transport (Public/Taxi)' },
+    { value: 'fuel', label: 'Fuel' },
+    { value: 'vehicle_maintenance_licensing', label: 'Vehicle Maintenance & Licensing' },
+    { value: 'airtime_data_internet', label: 'Airtime, Data & Internet' },
+    { value: 'subscriptions', label: 'Subscriptions' },
+    { value: 'insurance', label: 'Insurance' },
+    { value: 'pharmacy_medication', label: 'Pharmacy & Medication' },
+    { value: 'education_courses', label: 'Education & Courses' },
+    { value: 'dining_takeaways', label: 'Dining & Takeaways' },
+    { value: 'entertainment', label: 'Entertainment' },
+    { value: 'travel_accommodation', label: 'Travel & Accommodation' },
+    { value: 'clothing_shopping', label: 'Clothing & Shopping' },
+    { value: 'personal_care_beauty', label: 'Personal Care & Beauty' },
+    { value: 'gifts_celebrations', label: 'Gifts & Celebrations' },
+    { value: 'donations_tithes', label: 'Donations & Tithes' },
+    { value: 'family_support_remittances', label: 'Family Support & Remittances' },
+    { value: 'load_shedding_costs', label: 'Load Shedding Costs' },
+    { value: 'other', label: 'Other' }
   ];
 
   const handleCreateBudget = async () => {
@@ -276,8 +296,8 @@ export function BudgetManager() {
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map(cat => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                      <SelectItem key={cat.value} value={cat.value}>
+                        {cat.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -341,8 +361,8 @@ export function BudgetManager() {
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map(cat => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                      <SelectItem key={cat.value} value={cat.value}>
+                        {cat.label}
                       </SelectItem>
                     ))}
                   </SelectContent>

@@ -1210,8 +1210,8 @@ function HomePage() {
           </div>
         </div>
       </div>
-      {/* Enhanced Mobile Scan Receipt Button */}
-      {isMobile && (
+      {/* Enhanced Mobile Scan Receipt Button - Hidden in bulk mode */}
+      {isMobile && !bulkMode && (
         <motion.div 
           className="fixed bottom-[72px] left-0 right-0 z-10 px-4 py-3 bg-white border-t border-gray-200"
           initial={{ y: 100 }}
@@ -1232,14 +1232,73 @@ function HomePage() {
           </Link>
         </motion.div>
       )}
+      
+      {/* Bulk Select Action Bar - Mobile */}
+      {isMobile && bulkMode && (
+        <motion.div 
+          className="fixed bottom-[72px] left-0 right-0 z-10 px-4 py-3 bg-white border-t border-gray-200"
+          initial={{ y: 100 }}
+          animate={{ y: 0 }}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => {
+                  setBulkMode(false);
+                  setSelectedReceipts(new Set());
+                }}
+                data-testid="button-cancel-selection"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Cancel
+              </Button>
+              <span className="text-sm font-medium text-gray-700">
+                {selectedReceipts.size} selected
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={selectAllReceipts}
+                data-testid="button-select-all"
+              >
+                Select All
+              </Button>
+              <Button 
+                variant="destructive"
+                size="sm"
+                onClick={() => bulkDeleteMutation.mutate(Array.from(selectedReceipts))}
+                disabled={selectedReceipts.size === 0 || bulkDeleteMutation.isPending}
+                data-testid="button-delete-selected"
+              >
+                {bulkDeleteMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+      
       {/* Mobile Navigation */}
       {isMobile && <MobileBottomNav />}
       
-      {/* Tax Information Bot - Updated positioning */}
-      <TaxAIAssistant 
-        isOpen={isTaxAIOpen} 
-        onToggle={setIsTaxAIOpen} 
-      />
+      {/* Tax Information Bot - Hidden in bulk mode */}
+      {!bulkMode && (
+        <TaxAIAssistant 
+          isOpen={isTaxAIOpen} 
+          onToggle={setIsTaxAIOpen} 
+        />
+      )}
     </div>
   );
 }

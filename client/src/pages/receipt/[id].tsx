@@ -475,12 +475,14 @@ export default function ReceiptDetail() {
       <div className="max-w-3xl mx-auto">
         {/* Top navigation and actions */}
         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-          <Button variant="outline" onClick={() => setLocation("/home")}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
+          {!isEditing && (
+            <Button variant="outline" onClick={() => setLocation("/home")}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+          )}
 
-          <div className="flex flex-wrap gap-2">
+          <div className={`flex flex-wrap gap-2 ${isEditing ? 'w-full justify-between' : ''}`}>
             {!isEditing ? (
               <>
                 <Button 

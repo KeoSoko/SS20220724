@@ -4686,8 +4686,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate PDF
       const pdfBuffer = await exportService.exportQuotationToPDF(quotation, client, items, businessProfile);
 
-      // Send email with custom subject and body
-      const emailSent = await emailService.sendQuotationWithCustomMessage(
+      // Send email with custom subject and body (includes retry logic)
+      const emailResult = await emailService.sendQuotationWithCustomMessage(
         quotation, 
         client, 
         businessProfile, 
@@ -4697,8 +4697,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         body
       );
 
-      if (!emailSent) {
-        return res.status(500).json({ error: "Failed to send email" });
+      if (!emailResult.success) {
+        return res.status(500).json({ 
+          error: emailResult.error || "Failed to send email",
+          errorType: emailResult.errorType
+        });
       }
 
       // Update quotation status and sentAt timestamp
@@ -5295,8 +5298,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate PDF
       const pdfBuffer = await exportService.exportInvoiceToPDF(invoice, client, items, payments, businessProfile);
 
-      // Send email with custom subject and body if provided
-      const emailSent = await emailService.sendInvoice(
+      // Send email with custom subject and body if provided (includes retry logic)
+      const emailResult = await emailService.sendInvoice(
         invoice, 
         client, 
         businessProfile, 
@@ -5306,8 +5309,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         body
       );
 
-      if (!emailSent) {
-        return res.status(500).json({ error: "Failed to send email" });
+      if (!emailResult.success) {
+        return res.status(500).json({ 
+          error: emailResult.error || "Failed to send email",
+          errorType: emailResult.errorType
+        });
       }
 
       // Update invoice sentAt timestamp
@@ -5519,8 +5525,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate PDF
       const pdfBuffer = await exportService.exportInvoiceToPDF(invoice, client, items, payments, businessProfile);
 
-      // Send reminder email with custom subject/body if provided
-      const emailSent = await emailService.sendInvoice(
+      // Send reminder email with custom subject/body if provided (includes retry logic)
+      const emailResult = await emailService.sendInvoice(
         invoice, 
         client, 
         businessProfile, 
@@ -5530,8 +5536,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         body      // Custom body from edited form
       );
 
-      if (!emailSent) {
-        return res.status(500).json({ error: "Failed to send email" });
+      if (!emailResult.success) {
+        return res.status(500).json({ 
+          error: emailResult.error || "Failed to send email",
+          errorType: emailResult.errorType
+        });
       }
 
       // Mark reminder as sent
@@ -5654,8 +5663,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate PDF
       const pdfBuffer = await exportService.exportInvoiceToPDF(invoice, client, items, payments, businessProfile);
 
-      // Send pre-due reminder email with custom subject/body if provided
-      const emailSent = await emailService.sendInvoice(
+      // Send pre-due reminder email with custom subject/body if provided (includes retry logic)
+      const emailResult = await emailService.sendInvoice(
         invoice, 
         client, 
         businessProfile, 
@@ -5665,8 +5674,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         body      // Custom body from edited form
       );
 
-      if (!emailSent) {
-        return res.status(500).json({ error: "Failed to send email" });
+      if (!emailResult.success) {
+        return res.status(500).json({ 
+          error: emailResult.error || "Failed to send email",
+          errorType: emailResult.errorType
+        });
       }
 
       // Mark pre-due reminder as sent

@@ -11,6 +11,42 @@ if (process.env.SENDGRID_API_KEY) {
   mailService.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
+// Custom error types for better error handling
+export class EmailError extends Error {
+  constructor(
+    message: string,
+    public readonly errorType: 'pdf_generation' | 'sendgrid_api' | 'validation' | 'unknown',
+    public readonly originalError?: Error
+  ) {
+    super(message);
+    this.name = 'EmailError';
+  }
+}
+
+// Retry utility with exponential backoff
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  options: { maxRetries?: number; delayMs?: number; operationName?: string } = {}
+): Promise<T> {
+  const { maxRetries = 2, delayMs = 1000, operationName = 'operation' } = options;
+  let lastError: Error | undefined;
+  
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      if (attempt <= maxRetries) {
+        console.log(`[EMAIL] ${operationName} failed (attempt ${attempt}/${maxRetries + 1}), retrying in ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs * attempt)); // Exponential backoff
+      }
+    }
+  }
+  
+  throw lastError;
+}
+
 export class EmailService {
   private fromEmail = 'notifications@simpleslips.co.za';
   private appUrl = process.env.APP_URL || 'https://simpleslips.app';
@@ -619,6 +655,7 @@ Create a backup: ${this.appUrl}/settings
 
   /**
    * Send quotation with custom subject and message using HTML template
+   * Includes automatic retry logic and detailed error handling
    */
   async sendQuotationWithCustomMessage(
     quotation: Quotation,
@@ -628,15 +665,20 @@ Create a backup: ${this.appUrl}/settings
     pdfBuffer: Buffer,
     subject: string,
     aiGeneratedMessage: string
-  ): Promise<boolean> {
+  ): Promise<{ success: boolean; error?: string; errorType?: 'pdf_generation' | 'sendgrid_api' | 'validation' | 'unknown' }> {
     if (!process.env.SENDGRID_API_KEY) {
       console.error("Cannot send quotation - SENDGRID_API_KEY not configured");
-      return false;
+      return { success: false, error: "Email service not configured", errorType: 'validation' };
     }
 
     if (!client.email) {
       console.error("Cannot send quotation - client has no email address");
-      return false;
+      return { success: false, error: "Client has no email address", errorType: 'validation' };
+    }
+
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      console.error("Cannot send quotation - PDF not generated");
+      return { success: false, error: "Failed to generate PDF attachment", errorType: 'pdf_generation' };
     }
 
     try {
@@ -660,40 +702,67 @@ Create a backup: ${this.appUrl}/settings
         aiGeneratedMessage
       );
 
-      await mailService.send({
-        to: client.email,
-        from: {
-          email: this.fromEmail,
-          name: 'Simple Slips Notifications'
+      // Use retry logic for SendGrid API calls
+      await withRetry(
+        async () => {
+          await mailService.send({
+            to: client.email,
+            from: {
+              email: this.fromEmail,
+              name: 'Simple Slips Notifications'
+            },
+            replyTo: businessProfile?.email ? {
+              email: businessProfile.email,
+              name: businessName
+            } : undefined,
+            subject: subject,
+            html: htmlBody,
+            text: textBody,
+            attachments: [
+              {
+                content: pdfBuffer.toString('base64'),
+                filename: `Quotation-${quotation.quotationNumber}.pdf`,
+                type: 'application/pdf',
+                disposition: 'attachment'
+              }
+            ]
+          });
         },
-        replyTo: businessProfile?.email ? {
-          email: businessProfile.email,
-          name: businessName
-        } : undefined,
-        subject: subject,
-        html: htmlBody,
-        text: textBody,
-        attachments: [
-          {
-            content: pdfBuffer.toString('base64'),
-            filename: `Quotation-${quotation.quotationNumber}.pdf`,
-            type: 'application/pdf',
-            disposition: 'attachment'
-          }
-        ]
-      });
+        { maxRetries: 2, delayMs: 1000, operationName: `Send quotation ${quotation.quotationNumber}` }
+      );
 
       console.log(`[EMAIL] Quotation ${quotation.quotationNumber} sent to ${client.email}`);
-      return true;
+      return { success: true };
 
     } catch (error) {
-      console.error('Failed to send quotation email:', error);
-      return false;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[EMAIL] Failed to send quotation ${quotation.quotationNumber}:`, errorMessage);
+      
+      // Determine error type from error message
+      let errorType: 'sendgrid_api' | 'unknown' = 'unknown';
+      let userFriendlyMessage = 'Failed to send email. Please try again.';
+      
+      if (errorMessage.includes('401') || errorMessage.includes('403')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Email service authentication failed. Please contact support.';
+      } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Too many emails sent. Please wait a moment and try again.';
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Email service timed out. Please try again.';
+      } else if (errorMessage.includes('Invalid') || errorMessage.includes('email')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Invalid email address. Please check the client email.';
+      }
+      
+      return { success: false, error: userFriendlyMessage, errorType };
     }
   }
 
   /**
    * Send quotation to client via email with PDF attachment
+   * Includes automatic retry logic and detailed error handling
    */
   async sendQuotation(
     quotation: Quotation,
@@ -701,15 +770,20 @@ Create a backup: ${this.appUrl}/settings
     businessProfile: BusinessProfile | null,
     lineItems: LineItem[],
     pdfBuffer: Buffer
-  ): Promise<boolean> {
+  ): Promise<{ success: boolean; error?: string; errorType?: 'pdf_generation' | 'sendgrid_api' | 'validation' | 'unknown' }> {
     if (!process.env.SENDGRID_API_KEY) {
       console.error("Cannot send quotation - SENDGRID_API_KEY not configured");
-      return false;
+      return { success: false, error: "Email service not configured", errorType: 'validation' };
     }
 
     if (!client.email) {
       console.error("Cannot send quotation - client has no email address");
-      return false;
+      return { success: false, error: "Client has no email address", errorType: 'validation' };
+    }
+
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      console.error("Cannot send quotation - PDF not generated");
+      return { success: false, error: "Failed to generate PDF attachment", errorType: 'pdf_generation' };
     }
 
     try {
@@ -723,7 +797,7 @@ Create a backup: ${this.appUrl}/settings
         total: `R ${parseFloat(quotation.total).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
         businessName,
         expiryDate: new Date(quotation.expiryDate),
-        isNewClient: false, // Could enhance with client history check
+        isNewClient: false,
       };
 
       const [subject, aiMessage] = await Promise.all([
@@ -784,39 +858,66 @@ ${aiMessage}
         </div>
       `;
 
-      await mailService.send({
-        to: client.email,
-        from: {
-          email: this.fromEmail,
-          name: 'Simple Slips Notifications'
+      // Use retry logic for SendGrid API calls
+      await withRetry(
+        async () => {
+          await mailService.send({
+            to: client.email,
+            from: {
+              email: this.fromEmail,
+              name: 'Simple Slips Notifications'
+            },
+            replyTo: businessProfile?.email ? {
+              email: businessProfile.email,
+              name: businessName
+            } : undefined,
+            subject: subject,
+            html: emailBody,
+            attachments: [
+              {
+                content: pdfBuffer.toString('base64'),
+                filename: `Quotation-${quotation.quotationNumber}.pdf`,
+                type: 'application/pdf',
+                disposition: 'attachment'
+              }
+            ]
+          });
         },
-        replyTo: businessProfile?.email ? {
-          email: businessProfile.email,
-          name: businessName
-        } : undefined,
-        subject: subject,
-        html: emailBody,
-        attachments: [
-          {
-            content: pdfBuffer.toString('base64'),
-            filename: `Quotation-${quotation.quotationNumber}.pdf`,
-            type: 'application/pdf',
-            disposition: 'attachment'
-          }
-        ]
-      });
+        { maxRetries: 2, delayMs: 1000, operationName: `Send quotation ${quotation.quotationNumber}` }
+      );
 
       console.log(`[EMAIL] Quotation ${quotation.quotationNumber} sent to ${client.email}`);
-      return true;
+      return { success: true };
 
     } catch (error) {
-      console.error('Failed to send quotation email:', error);
-      return false;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[EMAIL] Failed to send quotation ${quotation.quotationNumber}:`, errorMessage);
+      
+      // Determine error type from error message
+      let errorType: 'sendgrid_api' | 'unknown' = 'unknown';
+      let userFriendlyMessage = 'Failed to send email. Please try again.';
+      
+      if (errorMessage.includes('401') || errorMessage.includes('403')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Email service authentication failed. Please contact support.';
+      } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Too many emails sent. Please wait a moment and try again.';
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Email service timed out. Please try again.';
+      } else if (errorMessage.includes('Invalid') || errorMessage.includes('email')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Invalid email address. Please check the client email.';
+      }
+      
+      return { success: false, error: userFriendlyMessage, errorType };
     }
   }
 
   /**
    * Send invoice to client via email with PDF attachment
+   * Includes automatic retry logic and detailed error handling
    */
   async sendInvoice(
     invoice: Invoice,
@@ -826,15 +927,20 @@ ${aiMessage}
     pdfBuffer: Buffer,
     customSubject?: string,
     customBody?: string
-  ): Promise<boolean> {
+  ): Promise<{ success: boolean; error?: string; errorType?: 'pdf_generation' | 'sendgrid_api' | 'validation' | 'unknown' }> {
     if (!process.env.SENDGRID_API_KEY) {
       console.error("Cannot send invoice - SENDGRID_API_KEY not configured");
-      return false;
+      return { success: false, error: "Email service not configured", errorType: 'validation' };
     }
 
     if (!client.email) {
       console.error("Cannot send invoice - client has no email address");
-      return false;
+      return { success: false, error: "Client has no email address", errorType: 'validation' };
+    }
+
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      console.error("Cannot send invoice - PDF not generated");
+      return { success: false, error: "Failed to generate PDF attachment", errorType: 'pdf_generation' };
     }
 
     try {
@@ -861,7 +967,7 @@ ${aiMessage}
           dueDate: new Date(invoice.dueDate),
           amountPaid: `R ${parseFloat(invoice.amountPaid).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
           amountOutstanding: `R ${parseFloat(balance).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
-          isNewClient: false, // Could enhance with client history check
+          isNewClient: false,
         };
 
         [subject, aiMessage] = await Promise.all([
@@ -887,35 +993,61 @@ ${aiMessage}
         aiMessage
       );
 
-      await mailService.send({
-        to: client.email,
-        from: {
-          email: this.fromEmail,
-          name: 'Simple Slips Notifications'
+      // Use retry logic for SendGrid API calls
+      await withRetry(
+        async () => {
+          await mailService.send({
+            to: client.email,
+            from: {
+              email: this.fromEmail,
+              name: 'Simple Slips Notifications'
+            },
+            replyTo: businessProfile?.email ? {
+              email: businessProfile.email,
+              name: businessName
+            } : undefined,
+            subject: subject,
+            html: emailBody,
+            text: textBody,
+            attachments: [
+              {
+                content: pdfBuffer.toString('base64'),
+                filename: `Invoice-${invoice.invoiceNumber}.pdf`,
+                type: 'application/pdf',
+                disposition: 'attachment'
+              }
+            ]
+          });
         },
-        replyTo: businessProfile?.email ? {
-          email: businessProfile.email,
-          name: businessName
-        } : undefined,
-        subject: subject,
-        html: emailBody,
-        text: textBody,
-        attachments: [
-          {
-            content: pdfBuffer.toString('base64'),
-            filename: `Invoice-${invoice.invoiceNumber}.pdf`,
-            type: 'application/pdf',
-            disposition: 'attachment'
-          }
-        ]
-      });
+        { maxRetries: 2, delayMs: 1000, operationName: `Send invoice ${invoice.invoiceNumber}` }
+      );
 
       console.log(`[EMAIL] Invoice ${invoice.invoiceNumber} sent to ${client.email}`);
-      return true;
+      return { success: true };
 
     } catch (error) {
-      console.error('Failed to send invoice email:', error);
-      return false;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[EMAIL] Failed to send invoice ${invoice.invoiceNumber}:`, errorMessage);
+      
+      // Determine error type from error message
+      let errorType: 'sendgrid_api' | 'unknown' = 'unknown';
+      let userFriendlyMessage = 'Failed to send email. Please try again.';
+      
+      if (errorMessage.includes('401') || errorMessage.includes('403')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Email service authentication failed. Please contact support.';
+      } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Too many emails sent. Please wait a moment and try again.';
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Email service timed out. Please try again.';
+      } else if (errorMessage.includes('Invalid') || errorMessage.includes('email')) {
+        errorType = 'sendgrid_api';
+        userFriendlyMessage = 'Invalid email address. Please check the client email.';
+      }
+      
+      return { success: false, error: userFriendlyMessage, errorType };
     }
   }
 

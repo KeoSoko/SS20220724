@@ -4,6 +4,29 @@ import type { Receipt, Budget } from '../shared/schema.js';
 import { storage } from './storage.js';
 import { azureStorage } from './azure-storage.js';
 
+/**
+ * Sanitize text for PDF generation - replaces problematic Unicode characters
+ * with ASCII equivalents to prevent rendering issues in jsPDF
+ */
+function sanitizeTextForPDF(text: string | null | undefined): string {
+  if (!text) return '';
+  return text
+    .replace(/–/g, '-')  // en-dash to hyphen
+    .replace(/—/g, '-')  // em-dash to hyphen
+    .replace(/'/g, "'")  // smart single quote
+    .replace(/'/g, "'")  // smart single quote
+    .replace(/"/g, '"')  // smart double quote
+    .replace(/"/g, '"')  // smart double quote
+    .replace(/…/g, '...') // ellipsis
+    .replace(/•/g, '-')  // bullet point
+    .replace(/[\u2000-\u200F]/g, ' ') // various Unicode spaces
+    .replace(/[\u2018-\u201F]/g, "'") // various quote marks
+    .replace(/[^\x00-\x7F]/g, (char) => {
+      // For any remaining non-ASCII, try to keep or replace with ?
+      return char.normalize('NFD').replace(/[\u0300-\u036f]/g, '') || '?';
+    });
+}
+
 export class ExportService {
   /**
    * Convert Simple Slips SVG logo to base64 PNG for PDF embedding
@@ -486,6 +509,10 @@ export class ExportService {
    * Export quotation to PDF
    */
   async exportQuotationToPDF(quotation: any, client: any, lineItems: any[], businessProfile: any): Promise<Buffer> {
+    console.log(`[PDF] Starting quotation PDF export for ${quotation?.quotationNumber}`);
+    console.log(`[PDF] Client: ${client?.name}, Business: ${businessProfile?.companyName}`);
+    console.log(`[PDF] Line items count: ${lineItems?.length}`);
+    
     try {
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.width;
@@ -494,15 +521,27 @@ export class ExportService {
       // Add business logo if available
       if (businessProfile.logoUrl) {
         try {
-          // Fetch and convert logo to base64
-          const response = await fetch(businessProfile.logoUrl);
-          const arrayBuffer = await response.arrayBuffer();
-          const base64 = Buffer.from(arrayBuffer).toString('base64');
-          const mimeType = response.headers.get('content-type') || 'image/png';
-          const logoData = `data:${mimeType};base64,${base64}`;
-          doc.addImage(logoData, 'PNG', 15, yPos, 40, 40);
-        } catch (error) {
-          console.error('Failed to load business logo:', error);
+          // Fetch with timeout to prevent hanging
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+          
+          const response = await fetch(businessProfile.logoUrl, { 
+            signal: controller.signal 
+          });
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            const base64 = Buffer.from(arrayBuffer).toString('base64');
+            const mimeType = response.headers.get('content-type') || 'image/png';
+            const logoData = `data:${mimeType};base64,${base64}`;
+            doc.addImage(logoData, 'PNG', 15, yPos, 40, 40);
+          } else {
+            console.error(`[PDF] Logo fetch failed with status ${response.status}`);
+          }
+        } catch (error: any) {
+          // Don't let logo issues break the entire PDF
+          console.error('[PDF] Failed to load business logo (continuing without it):', error.message || error);
         }
       }
 
@@ -564,9 +603,9 @@ export class ExportService {
 
       yPos += (clientText.length * 5) + 10;
 
-      // Line items table
+      // Line items table - sanitize descriptions for PDF compatibility
       const tableData = lineItems.map(item => [
-        item.description,
+        sanitizeTextForPDF(item.description),
         item.quantity.toString(),
         `R ${parseFloat(item.unitPrice).toFixed(2)}`,
         `R ${parseFloat(item.total).toFixed(2)}`
@@ -625,14 +664,16 @@ export class ExportService {
         yPos += 5;
         doc.setFontSize(9);
         doc.setTextColor(80, 80, 80);
-        const splitTerms = doc.splitTextToSize(quotation.terms, pageWidth - 30);
+        const sanitizedTerms = sanitizeTextForPDF(quotation.terms);
+        const splitTerms = doc.splitTextToSize(sanitizedTerms, pageWidth - 30);
         doc.text(splitTerms, 15, yPos);
       }
 
       return Buffer.from(doc.output('arraybuffer'));
-    } catch (error) {
-      console.error('Failed to export quotation to PDF:', error);
-      throw new Error('Quotation export failed');
+    } catch (error: any) {
+      console.error('[PDF] Failed to export quotation to PDF:', error.message || error);
+      console.error('[PDF] Stack trace:', error.stack);
+      throw new Error(`Quotation export failed: ${error.message || 'Unknown error'}`);
     }
   }
 
@@ -648,14 +689,27 @@ export class ExportService {
       // Add business logo if available
       if (businessProfile.logoUrl) {
         try {
-          const response = await fetch(businessProfile.logoUrl);
-          const arrayBuffer = await response.arrayBuffer();
-          const base64 = Buffer.from(arrayBuffer).toString('base64');
-          const mimeType = response.headers.get('content-type') || 'image/png';
-          const logoData = `data:${mimeType};base64,${base64}`;
-          doc.addImage(logoData, 'PNG', 15, yPos, 40, 40);
-        } catch (error) {
-          console.error('Failed to load business logo:', error);
+          // Fetch with timeout to prevent hanging
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+          
+          const response = await fetch(businessProfile.logoUrl, { 
+            signal: controller.signal 
+          });
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            const base64 = Buffer.from(arrayBuffer).toString('base64');
+            const mimeType = response.headers.get('content-type') || 'image/png';
+            const logoData = `data:${mimeType};base64,${base64}`;
+            doc.addImage(logoData, 'PNG', 15, yPos, 40, 40);
+          } else {
+            console.error(`[PDF] Invoice logo fetch failed with status ${response.status}`);
+          }
+        } catch (error: any) {
+          // Don't let logo issues break the entire PDF
+          console.error('[PDF] Failed to load invoice business logo (continuing without it):', error.message || error);
         }
       }
 
@@ -717,9 +771,9 @@ export class ExportService {
 
       yPos += (clientText.length * 5) + 10;
 
-      // Line items table
+      // Line items table - sanitize descriptions for PDF compatibility
       const tableData = lineItems.map(item => [
-        item.description,
+        sanitizeTextForPDF(item.description),
         item.quantity.toString(),
         `R ${parseFloat(item.unitPrice).toFixed(2)}`,
         `R ${parseFloat(item.total).toFixed(2)}`
@@ -846,7 +900,8 @@ export class ExportService {
         yPos += 5;
         doc.setFontSize(9);
         doc.setTextColor(80, 80, 80);
-        const splitTerms = doc.splitTextToSize(invoice.terms, pageWidth - 30);
+        const sanitizedTerms = sanitizeTextForPDF(invoice.terms);
+        const splitTerms = doc.splitTextToSize(sanitizedTerms, pageWidth - 30);
         doc.text(splitTerms, 15, yPos);
       }
 

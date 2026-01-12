@@ -612,14 +612,14 @@ export class ExportService {
       }
 
       doc.setFontSize(12);
-      doc.setFont(undefined, 'bold');
+      doc.setFont('helvetica', 'bold');
       doc.text('Total:', totalsLabelXQuote, yPos);
       doc.text(`R ${totalQuote.toFixed(2)}`, totalsValueXQuote, yPos, { align: 'right' });
       yPos += 15;
 
       // Terms and conditions
       if (quotation.terms) {
-        doc.setFont(undefined, 'normal');
+        doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
         doc.text('Terms & Conditions:', 15, yPos);
         yPos += 5;
@@ -766,19 +766,19 @@ export class ExportService {
       }
 
       doc.setFontSize(12);
-      doc.setFont(undefined, 'bold');
+      doc.setFont('helvetica', 'bold');
       doc.text('Total:', totalsLabelX, yPos);
       doc.text(`R ${totalInv.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
       yPos += 7;
 
       if (amountPaid > 0) {
-        doc.setFont(undefined, 'normal');
+        doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
         doc.text('Amount Paid:', totalsLabelX, yPos);
         doc.text(`R ${amountPaid.toFixed(2)}`, totalsValueX, yPos, { align: 'right' });
         yPos += 7;
 
-        doc.setFont(undefined, 'bold');
+        doc.setFont('helvetica', 'bold');
         doc.setFontSize(12);
         doc.setTextColor(balance > 0 ? 200 : 0, balance > 0 ? 0 : 128, 0);
         doc.text('Balance Due:', totalsLabelX, yPos);
@@ -790,7 +790,7 @@ export class ExportService {
       // Payment details
       if (payments && payments.length > 0) {
         yPos += 5;
-        doc.setFont(undefined, 'normal');
+        doc.setFont('helvetica', 'normal');
         doc.setFontSize(12);
         doc.setTextColor(0, 0, 0);
         doc.text('Payment History:', 15, yPos);
@@ -840,7 +840,7 @@ export class ExportService {
       // Terms and conditions
       if (invoice.terms) {
         yPos += 5;
-        doc.setFont(undefined, 'normal');
+        doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
         doc.text('Terms & Conditions:', 15, yPos);
         yPos += 5;

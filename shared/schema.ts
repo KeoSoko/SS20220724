@@ -150,6 +150,9 @@ export const receipts = pgTable("receipts", {
   isTaxDeductible: boolean("is_tax_deductible").default(false),
   taxCategory: text("tax_category"), // For tax reporting purposes
   
+  // Duplicate detection
+  isPotentialDuplicate: boolean("is_potential_duplicate").default(false), // Flag for potential duplicate receipts
+  
   // Source tracking
   source: text("source").default("scan"), // 'scan', 'email', 'gallery', 'manual'
   sourceEmailId: integer("source_email_id"), // Reference to emailReceipts if imported via email

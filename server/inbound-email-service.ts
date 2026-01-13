@@ -9,6 +9,7 @@ import { emailService } from "./email-service";
 import { log } from "./vite";
 import crypto from "crypto";
 import { convertPdfToImage, isPdfBuffer } from "./pdf-converter";
+import { storage } from "./storage";
 
 interface InboundEmailData {
   to: string;
@@ -256,13 +257,31 @@ export class InboundEmailService {
         log(`Azure upload failed, storing locally: ${uploadError.message}`, 'inbound-email');
       }
 
+      // Check for potential duplicates before saving
+      let isPotentialDuplicate = false;
+      const receiptDate = date ? new Date(date) : new Date();
+      const receiptTotal = total || '0.00';
+      const receiptStoreName = storeName || 'Unknown Store';
+
+      try {
+        if (storage.findDuplicateReceipts) {
+          const duplicates = await storage.findDuplicateReceipts(userId, receiptStoreName, receiptDate, receiptTotal);
+          if (duplicates.length > 0) {
+            isPotentialDuplicate = true;
+            log(`Found ${duplicates.length} potential duplicate(s) for emailed receipt: ${receiptStoreName}, ${receiptTotal}`, 'inbound-email');
+          }
+        }
+      } catch (dupError: any) {
+        log(`Duplicate check failed, proceeding anyway: ${dupError.message}`, 'inbound-email');
+      }
+
       const [receipt] = await db
         .insert(receipts)
         .values({
           userId,
-          storeName: storeName || 'Unknown Store',
-          date: date ? new Date(date) : new Date(),
-          total: total || '0.00',
+          storeName: receiptStoreName,
+          date: receiptDate,
+          total: receiptTotal,
           items: items || [],
           category: category as any,
           confidenceScore: confidenceScore || null,
@@ -272,10 +291,11 @@ export class InboundEmailService {
           source: 'email',
           sourceEmailId: emailReceiptId,
           processedAt: new Date(),
+          isPotentialDuplicate,
         })
         .returning();
 
-      log(`Created receipt ${receipt.id} from email attachment`, 'inbound-email');
+      log(`Created receipt ${receipt.id} from email attachment${isPotentialDuplicate ? ' (flagged as potential duplicate)' : ''}`, 'inbound-email');
 
       return { success: true, receiptId: receipt.id };
 

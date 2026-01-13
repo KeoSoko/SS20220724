@@ -734,6 +734,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Check for duplicate receipts before saving
+  app.post("/api/receipts/check-duplicate", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const { storeName, date, total } = req.body;
+
+      if (!storeName || !date || !total) {
+        return res.status(400).json({ error: "Missing required fields: storeName, date, total" });
+      }
+
+      const receiptDate = new Date(date);
+      if (isNaN(receiptDate.getTime())) {
+        return res.status(400).json({ error: "Invalid date format" });
+      }
+
+      if (storage.findDuplicateReceipts) {
+        const duplicates = await storage.findDuplicateReceipts(userId, storeName, receiptDate, total);
+        res.json({ 
+          hasDuplicates: duplicates.length > 0,
+          duplicates: duplicates.map(d => ({
+            id: d.id,
+            storeName: d.storeName,
+            date: d.date,
+            total: d.total,
+            category: d.category
+          }))
+        });
+      } else {
+        res.json({ hasDuplicates: false, duplicates: [] });
+      }
+    } catch (error) {
+      log(`Error checking for duplicate receipts: ${error}`, "api");
+      res.status(500).json({ error: "Failed to check for duplicates" });
+    }
+  });
+
   // Create a new receipt
   app.post("/api/receipts", checkFeatureAccess('receipt_upload'), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);

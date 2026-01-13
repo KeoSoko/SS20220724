@@ -766,6 +766,37 @@ export class DatabaseStorage implements IStorage {
     }
   }
   
+  async findDuplicateReceipts(userId: number, storeName: string, date: Date, total: string): Promise<Receipt[]> {
+    try {
+      const normalizedStoreName = storeName.toLowerCase().trim();
+      const normalizedTotal = parseFloat(total.replace(/[^0-9.-]/g, '')) || 0;
+      
+      // Get all receipts for user and filter in memory for flexible matching
+      const userReceipts = await db.select().from(receipts).where(eq(receipts.userId, userId));
+      
+      const targetDate = new Date(date);
+      targetDate.setHours(0, 0, 0, 0);
+      
+      const duplicates = userReceipts.filter(r => {
+        const receiptDate = new Date(r.date);
+        receiptDate.setHours(0, 0, 0, 0);
+        const receiptTotal = parseFloat(r.total.replace(/[^0-9.-]/g, '')) || 0;
+        
+        const storeMatch = r.storeName.toLowerCase().trim() === normalizedStoreName;
+        const dateMatch = receiptDate.getTime() === targetDate.getTime();
+        const totalMatch = Math.abs(receiptTotal - normalizedTotal) < 0.01;
+        
+        return storeMatch && dateMatch && totalMatch;
+      });
+      
+      log(`Found ${duplicates.length} potential duplicate receipts for store: ${storeName}, date: ${date}, total: ${total}`, 'db');
+      return duplicates;
+    } catch (error) {
+      log(`Error in findDuplicateReceipts: ${error}`, 'db');
+      return [];
+    }
+  }
+  
   // Tag methods
   async getTagsByUser(userId: number): Promise<Tag[]> {
     return db.select().from(tags).where(eq(tags.userId, userId));

@@ -56,6 +56,7 @@ export interface IStorage {
   createReceipt(receipt: InsertReceipt): Promise<Receipt>;
   updateReceipt(id: number, updates: Partial<InsertReceipt>): Promise<Receipt | undefined>;
   deleteReceipt(id: number): Promise<void>;
+  findDuplicateReceipts?(userId: number, storeName: string, date: Date, total: string): Promise<Receipt[]>;
   
   // Tag methods
   getTagsByUser(userId: number): Promise<Tag[]>;
@@ -524,6 +525,26 @@ export class MemStorage implements IStorage {
     
     relationsToDelete.forEach(key => {
       this.receiptTagRelations.delete(key);
+    });
+  }
+
+  async findDuplicateReceipts(userId: number, storeName: string, date: Date, total: string): Promise<Receipt[]> {
+    const receipts = Array.from(this.receipts.values()).filter(r => r.userId === userId);
+    const normalizedStoreName = storeName.toLowerCase().trim();
+    const normalizedTotal = parseFloat(total.replace(/[^0-9.-]/g, '')) || 0;
+    const targetDate = new Date(date);
+    targetDate.setHours(0, 0, 0, 0);
+    
+    return receipts.filter(r => {
+      const receiptDate = new Date(r.date);
+      receiptDate.setHours(0, 0, 0, 0);
+      const receiptTotal = parseFloat(r.total.replace(/[^0-9.-]/g, '')) || 0;
+      
+      const storeMatch = r.storeName.toLowerCase().trim() === normalizedStoreName;
+      const dateMatch = receiptDate.getTime() === targetDate.getTime();
+      const totalMatch = Math.abs(receiptTotal - normalizedTotal) < 0.01;
+      
+      return storeMatch && dateMatch && totalMatch;
     });
   }
 

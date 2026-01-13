@@ -794,7 +794,9 @@ export default function ReceiptsPage() {
                         total: parseFloat(receipt.total),
                         date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
                         category: receipt.category || 'other',
-                        confidenceScore: receipt.confidenceScore
+                        confidenceScore: receipt.confidenceScore,
+                        source: receipt.source,
+                        isPotentialDuplicate: receipt.isPotentialDuplicate
                       }}
                       onClick={() => handleReceiptClick(receipt.id)}
                     />

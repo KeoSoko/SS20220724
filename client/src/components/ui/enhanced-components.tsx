@@ -36,7 +36,8 @@ import {
   Users2,
   BatteryCharging,
   MoreHorizontal,
-  Mail
+  Mail,
+  Copy
 } from "lucide-react";
 
 // Enhanced Button with proper feedback states
@@ -237,6 +238,7 @@ interface EnhancedReceiptCardProps {
     category: string;
     confidenceScore?: string | null;
     source?: string | null;
+    isPotentialDuplicate?: boolean | null;
   };
   onClick?: () => void;
   onLongPress?: () => void;
@@ -323,6 +325,16 @@ export function EnhancedReceiptCard({ receipt, onClick, onLongPress, className, 
                     >
                       <Mail className="h-2.5 w-2.5" />
                       <span className="hidden sm:inline">via Email</span>
+                    </Badge>
+                  )}
+                  {receipt.isPotentialDuplicate && (
+                    <Badge 
+                      variant="outline" 
+                      className="text-[10px] px-1.5 py-0 h-4 flex items-center gap-0.5 bg-orange-50 text-orange-700 border-orange-200"
+                      data-testid={`receipt-duplicate-${receipt.id}`}
+                    >
+                      <Copy className="h-2.5 w-2.5" />
+                      <span className="hidden sm:inline">Duplicate?</span>
                     </Badge>
                   )}
                   {confidence.level && (

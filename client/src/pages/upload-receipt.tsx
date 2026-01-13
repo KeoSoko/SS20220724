@@ -8,10 +8,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useOfflineSync } from "@/hooks/use-offline-sync";
-import { AlertCircle, Camera, CheckCircle2, Loader2, Upload, FileImage, Plus, Settings } from "lucide-react";
+import { AlertCircle, Camera, CheckCircle2, Loader2, Upload, FileImage, Plus, Settings, Copy } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/use-auth";
 import { EXPENSE_CATEGORIES, ExpenseCategory } from "@shared/schema";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +95,19 @@ export default function UploadReceipt() {
   // Additional receipt properties for better UX
   const [isRecurring, setIsRecurring] = useState(false);
   const [isTaxDeductible, setIsTaxDeductible] = useState(false);
+
+  // Duplicate detection states
+  interface DuplicateReceipt {
+    id: number;
+    storeName: string;
+    date: string;
+    total: string;
+    category: string;
+  }
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const [duplicateReceipts, setDuplicateReceipts] = useState<DuplicateReceipt[]>([]);
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
+  const [pendingContinuousMode, setPendingContinuousMode] = useState(false);
 
   // Session storage key for preserving form state
   const FORM_STATE_KEY = 'upload_receipt_form_state';
@@ -166,18 +189,7 @@ export default function UploadReceipt() {
   // Handle "Save & Scan Another" action
   const handleSaveAndScanAnother = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!storeName || !date || !total) {
-      toast({
-        title: "Missing information",
-        description: "Please fill in store name, date, and total amount.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    setContinuousMode(true);
-    uploadMutation.mutate();
+    checkForDuplicates(true);
   };
 
   // Handle batch file selection (multiple gallery images)
@@ -1249,11 +1261,8 @@ export default function UploadReceipt() {
     }
   };
 
-  // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Check if form is valid before attempting to save
+  // Check for duplicate receipts before saving
+  const checkForDuplicates = async (isContinuousMode: boolean = false) => {
     if (!storeName || !date || !total) {
       toast({
         title: "Missing information",
@@ -1262,8 +1271,71 @@ export default function UploadReceipt() {
       });
       return;
     }
-    
+
+    // Skip duplicate check if offline
+    if (!isOnline) {
+      if (isContinuousMode) {
+        setContinuousMode(true);
+      }
+      uploadMutation.mutate();
+      return;
+    }
+
+    setIsCheckingDuplicate(true);
+    setPendingContinuousMode(isContinuousMode);
+
+    try {
+      const response = await apiRequest("POST", "/api/receipts/check-duplicate", {
+        storeName,
+        date,
+        total,
+      });
+
+      const data = await response.json();
+
+      if (data.hasDuplicates && data.duplicates.length > 0) {
+        setDuplicateReceipts(data.duplicates);
+        setShowDuplicateDialog(true);
+      } else {
+        // No duplicates, proceed with save
+        if (isContinuousMode) {
+          setContinuousMode(true);
+        }
+        uploadMutation.mutate();
+      }
+    } catch (error) {
+      console.error("Error checking for duplicates:", error);
+      // On error, proceed with save anyway
+      if (isContinuousMode) {
+        setContinuousMode(true);
+      }
+      uploadMutation.mutate();
+    } finally {
+      setIsCheckingDuplicate(false);
+    }
+  };
+
+  // Handle proceeding with save despite duplicate
+  const handleProceedWithSave = () => {
+    setShowDuplicateDialog(false);
+    setDuplicateReceipts([]);
+    if (pendingContinuousMode) {
+      setContinuousMode(true);
+    }
     uploadMutation.mutate();
+  };
+
+  // Handle canceling save due to duplicate
+  const handleCancelDuplicateSave = () => {
+    setShowDuplicateDialog(false);
+    setDuplicateReceipts([]);
+    setPendingContinuousMode(false);
+  };
+
+  // Handle form submission
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    checkForDuplicates(false);
   };
 
   // Camera permission prompt
@@ -1783,7 +1855,7 @@ export default function UploadReceipt() {
                   <EnhancedButton 
                     variant="default"
                     onClick={handleSaveAndScanAnother}
-                    disabled={isScanning || uploadMutation.isPending || !storeName || !date || !total}
+                    disabled={isScanning || uploadMutation.isPending || isCheckingDuplicate || !storeName || !date || !total}
                     className="min-w-[120px] bg-secondary hover:bg-secondary/80"
                     data-testid="button-save-scan-another"
                   >
@@ -1805,11 +1877,16 @@ export default function UploadReceipt() {
                   variant="primary"
                   isPrimary={true}
                   onClick={handleSubmit}
-                  disabled={isScanning || uploadMutation.isPending || !storeName || !date || !total}
+                  disabled={isScanning || uploadMutation.isPending || isCheckingDuplicate || !storeName || !date || !total}
                   className="min-w-[120px]"
                   data-testid="button-save-receipt"
                 >
-                  {uploadMutation.isPending && !continuousMode ? (
+                  {isCheckingDuplicate ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Checking...
+                    </>
+                  ) : uploadMutation.isPending && !continuousMode ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Saving...
@@ -1831,6 +1908,47 @@ export default function UploadReceipt() {
       {newReceiptId && (
         <RecurringExpenseDetector receiptId={newReceiptId} />
       )}
+
+      {/* Duplicate Receipt Warning Dialog */}
+      <AlertDialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Copy className="h-5 w-5 text-orange-500" />
+              Potential Duplicate Receipt
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  We found {duplicateReceipts.length} existing receipt{duplicateReceipts.length > 1 ? 's' : ''} with the same store, date, and amount:
+                </p>
+                <div className="bg-orange-50 border border-orange-200 rounded-md p-3 space-y-2">
+                  {duplicateReceipts.map((dup) => (
+                    <div key={dup.id} className="text-sm">
+                      <span className="font-medium">{dup.storeName}</span>
+                      <span className="text-gray-500"> - </span>
+                      <span>R{parseFloat(dup.total).toFixed(2)}</span>
+                      <span className="text-gray-500"> on </span>
+                      <span>{new Date(dup.date).toLocaleDateString()}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-sm text-gray-600">
+                  Do you still want to save this receipt?
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDuplicateSave}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleProceedWithSave}>
+              Save Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

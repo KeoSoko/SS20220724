@@ -48,10 +48,13 @@ async function throwIfResNotOk(res: Response) {
         throw error;
       }
       
-      // Create structured error object like our auth hook does
-      const error = new Error(errorData.message || errorData.error || `${res.status}: ${res.statusText}`);
+      // Create structured error object - prefer userMessage for display
+      // userMessage is the simplified version meant for end users
+      const displayMessage = errorData.userMessage || errorData.message || errorData.error || `${res.status}: ${res.statusText}`;
+      const error = new Error(displayMessage);
       (error as any).status = res.status;
       (error as any).errorType = errorData.error;
+      (error as any).userMessage = errorData.userMessage;
       (error as any).originalMessage = errorData.message || errorData.error;
       (error as any).responseData = errorData;
       throw error;

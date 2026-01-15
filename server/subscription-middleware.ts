@@ -95,9 +95,10 @@ export function requireSubscription() {
       
       if (!subscriptionStatus.hasActiveSubscription) {
         return res.status(403).json({ 
-          error: 'Active subscription required',
+          error: 'Subscription required',
           subscriptionStatus,
-          message: 'This feature requires an active subscription. Please upgrade your plan.'
+          message: 'Your free trial has ended. Subscribe to continue using Simple Slips and access all your receipts.',
+          userMessage: 'Your free trial has ended. Please subscribe to continue.'
         });
       }
 
@@ -106,7 +107,11 @@ export function requireSubscription() {
       next();
     } catch (error) {
       console.error('Error in requireSubscription middleware:', error);
-      return res.status(500).json({ error: 'Failed to check subscription status' });
+      return res.status(500).json({ 
+        error: 'Connection issue',
+        message: 'We couldn\'t verify your subscription. Please check your internet connection and try again.',
+        userMessage: 'Unable to load your data. Please try again.'
+      });
     }
   };
 }
@@ -131,13 +136,18 @@ export function checkFeatureAccess(feature: 'receipt_upload' | 'ai_categorizatio
 
       // No free tier - users must subscribe after trial ends
       return res.status(403).json({
-        error: 'Active subscription required',
+        error: 'Subscription required',
         subscriptionStatus,
-        message: 'Your trial has ended. Please subscribe to continue using premium features.'
+        message: 'Your free trial has ended. Subscribe to continue using Simple Slips.',
+        userMessage: 'Your free trial has ended. Please subscribe to continue.'
       });
     } catch (error) {
       console.error('Error in checkFeatureAccess middleware:', error);
-      return res.status(500).json({ error: 'Failed to check feature access' });
+      return res.status(500).json({ 
+        error: 'Connection issue',
+        message: 'We couldn\'t load this feature. Please check your internet connection and try again.',
+        userMessage: 'Unable to load this feature. Please try again.'
+      });
     }
   };
 }

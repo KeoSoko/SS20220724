@@ -714,7 +714,22 @@ export class BillingService {
         return !hasExpired;
       }
 
-      return subscription.status === 'active';
+      // Active subscriptions have access
+      if (subscription.status === 'active') {
+        return true;
+      }
+
+      // Cancelled subscriptions still have access until next billing date
+      if (subscription.status === 'cancelled' && subscription.nextBillingDate) {
+        const now = new Date();
+        const nextBilling = new Date(subscription.nextBillingDate);
+        if (now < nextBilling) {
+          log(`User ${userId} has cancelled subscription but still has access until ${nextBilling}`, 'billing');
+          return true;
+        }
+      }
+
+      return false;
     } catch (error) {
       log(`Error checking active subscription for user ${userId}: ${error}`, 'billing');
       return false;
@@ -760,7 +775,7 @@ export class BillingService {
         trialDaysRemaining = Math.max(0, Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
       }
 
-      if (subscription.status === 'active' && subscription.nextBillingDate) {
+      if ((subscription.status === 'active' || subscription.status === 'cancelled') && subscription.nextBillingDate) {
         const now = new Date();
         const nextBilling = subscription.nextBillingDate;
         daysUntilBilling = Math.max(0, Math.ceil((nextBilling.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));

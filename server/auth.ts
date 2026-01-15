@@ -677,12 +677,28 @@ export function setupAuth(app: Express) {
       // Validate input
       const { username, password, email, fullName, promoCode } = req.body;
       
-      if (!username || !password) {
-        return res.status(400).json({ error: "Username and password are required" });
+      if (!username) {
+        return res.status(400).json({ 
+          error: "Username required",
+          message: "Please choose a username for your account.",
+          userMessage: "Please enter a username."
+        });
+      }
+      
+      if (!password) {
+        return res.status(400).json({ 
+          error: "Password required",
+          message: "Please create a password for your account.",
+          userMessage: "Please enter a password."
+        });
       }
       
       if (!email) {
-        return res.status(400).json({ error: "Email is required for account verification" });
+        return res.status(400).json({ 
+          error: "Email required",
+          message: "We need your email address to send you important account notifications and to help you recover your account if needed.",
+          userMessage: "Please enter your email address."
+        });
       }
       
       // Check if user already exists
@@ -886,7 +902,11 @@ export function setupAuth(app: Express) {
       // Check if username exists first
       const username = req.body.username;
       if (!username) {
-        return res.status(400).json({ error: "Username is required" });
+        return res.status(400).json({ 
+          error: "Username required",
+          message: "Please enter your username or email address to sign in.",
+          userMessage: "Please enter your username or email."
+        });
       }
       
       // Check for special headers
@@ -916,7 +936,11 @@ export function setupAuth(app: Express) {
       // If user not found, just return generic message
       if (!user) {
         log(`User not found: ${username}`, 'auth');
-        return res.status(401).json({ error: "Invalid username or password" });
+        return res.status(401).json({ 
+          error: "Login failed",
+          message: "The username/email or password you entered is incorrect. Please check your details and try again.",
+          userMessage: "Incorrect username or password. Please try again."
+        });
       }
       
       // Check if account is locked
@@ -924,8 +948,10 @@ export function setupAuth(app: Express) {
         const lockExpiresIn = Math.ceil((new Date(user.accountLockedUntil).getTime() - Date.now()) / 60000); // minutes
         log(`Account locked for user ${username}, expires in ${lockExpiresIn} minutes`, 'auth');
         return res.status(401).json({ 
-          error: "Account locked", 
-          message: `Too many failed login attempts. Account is locked for ${lockExpiresIn} more minutes.` 
+          error: "Account temporarily locked", 
+          message: `For your security, your account has been temporarily locked after too many failed login attempts. Please wait ${lockExpiresIn} minutes and try again.`,
+          userMessage: `Account locked. Please try again in ${lockExpiresIn} minutes.`,
+          lockExpiresIn
         });
       }
       
@@ -967,13 +993,19 @@ export function setupAuth(app: Express) {
           if (failedAttempts >= 5 && lockUntil) {
             const lockExpiresIn = Math.ceil((lockUntil.getTime() - Date.now()) / 60000); // minutes
             return res.status(401).json({ 
-              error: "Account locked", 
-              message: `Too many failed login attempts. Account is locked for ${lockExpiresIn} more minutes.` 
+              error: "Account temporarily locked", 
+              message: `For your security, your account has been temporarily locked after too many failed login attempts. Please wait ${lockExpiresIn} minutes and try again.`,
+              userMessage: `Account locked. Please try again in ${lockExpiresIn} minutes.`,
+              lockExpiresIn
             });
           }
         }
         
-        return res.status(401).json({ error: "Invalid username or password" });
+        return res.status(401).json({ 
+          error: "Login failed",
+          message: "The password you entered is incorrect. Please try again or use 'Forgot password' to reset it.",
+          userMessage: "Incorrect password. Please try again."
+        });
       }
       
       // Successfully authenticated

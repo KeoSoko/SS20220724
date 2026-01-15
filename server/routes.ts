@@ -367,6 +367,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Set up passport authentication (includes JWT auth middleware)
   setupAuth(app);
 
+  // ===== HEALTH CHECK ENDPOINT =====
+  // Required for Replit deployment health checks - must not require authentication
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() });
+  });
+  
+  app.head("/api/health", (_req, res) => {
+    res.status(200).end();
+  });
+
   // ===== USER ENDPOINTS =====
   
   // Get user's receipt email address for email-to-receipt forwarding

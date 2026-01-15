@@ -1,0 +1,42 @@
+t/src/App.tsx, /home/runner/workspace/client/src/components/TaxAIAssistant.tsx, /home/runner/workspace/client/src/hooks/use-auth.tsx, /home/runner/workspace/client/src/hooks/use-offline-sync.ts, /home/runner/workspace/client/src/hooks/use-recurring-analysis.ts, /home/runner/workspace/client/src/hooks/use-subscription.ts, /home/runner/workspace/client/src/pages/business-hub-page.tsx, /home/runner/workspace/client/src/pages/business-profile-page.tsx, /home/runner/workspace/client/src/pages/categories-page.tsx, /home/runner/workspace/client/src/pages/clients-page.tsx, /home/runner/workspace/client/src/pages/home-page.tsx, /home/runner/workspace/client/src/pages/invoice-form-page.tsx, /home/runner/workspace/client/src/pages/invoices-page.tsx, /home/runner/workspace/client/src/pages/profile-page.tsx, /home/runner/workspace/client/src/pages/quotation-form-page.tsx, /home/runner/workspace/client/src/pages/quotations-page.tsx, /home/runner/workspace/client/src/pages/receipt/[id].tsx, /home/runner/workspace/client/src/pages/receipts-page.tsx, /home/runner/workspace/client/src/pages/recurring-expenses.tsx, /home/runner/workspace/client/src/pages/storage-dashboard.tsx, /home/runner/workspace/client/src/pages/subscription-page.tsx, /home/runner/workspace/client/src/pages/upload-receipt.tsx, /home/runner/workspace/client/src/pages/verify-email-page.tsx, dynamic import will not move module into another chunk.
+
+
+computing gzip size...
+
+../dist/public/index.html                              4.94 kB │ gzip:   1.64 kB
+
+../dist/public/assets/index-CMoir_j3.css              96.99 kB │ gzip:  16.23 kB
+
+../dist/public/assets/purify.es-CQJ0hv7W.js           21.82 kB │ gzip:   8.54 kB
+
+../dist/public/assets/index.es-BqPg-HaY.js           159.28 kB │ gzip:  53.21 kB
+
+../dist/public/assets/html2canvas.esm-BfxBtG_O.js    202.29 kB │ gzip:  47.69 kB
+../dist/public/assets/index-DXy5IT0s.js            1,712.42 kB │ gzip: 497.34 kB
+
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+✓ built in 11.62s
+
+
+  dist/index.js  644.9kb
+
+⚡ Done in 65ms
+
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 11.7.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.7.0
+npm notice To update run: npm install -g npm@11.7.0
+npm notice
+
+2026-01-15T17:39:27Z info: Pushing pid1 binary layer...
+2026-01-15T17:39:31Z info: Created pid1 binary layer
+2026-01-15T17:39:31Z info: Pushing Repl layer...
+2026-01-15T17:39:31Z info: Pushing hosting layer...
+2026-01-15T17:39:31Z info: Retrieved cached nix layer
+2026-01-15T17:39:33Z info: Created hosting layer
+Deployment timed out. Check the Logs tab for more details. - 2026-01-15T17:47:53.690Z

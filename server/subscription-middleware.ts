@@ -38,6 +38,23 @@ export async function getSubscriptionStatus(userId: number): Promise<Subscriptio
       };
     }
 
+    // Check if subscription was cancelled but user still has paid time remaining
+    // This allows users to access the app until their paid period ends
+    if (subscription.status === 'cancelled' && subscription.nextBillingDate) {
+      const nextBilling = new Date(subscription.nextBillingDate);
+      if (now < nextBilling) {
+        console.log(`[getSubscriptionStatus] User ${userId} has cancelled subscription but still has access until ${nextBilling}`);
+        return {
+          hasActiveSubscription: true,
+          isInTrial: false,
+          subscriptionType: 'premium',
+          subscriptionPlatform: subscription.googlePlayPurchaseToken ? 'google_play' : 
+                             subscription.paystackReference ? 'paystack' : 
+                             subscription.appleReceiptData ? 'apple' : 'paystack'
+        };
+      }
+    }
+
     // Check if user is in trial period
     if (subscription.status === 'trial' && subscription.trialEndDate) {
       const trialEnd = new Date(subscription.trialEndDate);

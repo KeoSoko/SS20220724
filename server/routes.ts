@@ -3097,16 +3097,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { password, confirmationText } = req.body;
       
       // Validate required fields
-      if (!password || !confirmationText) {
+      if (!password) {
         return res.status(400).json({ 
-          error: "Password and confirmation text are required" 
+          error: "Password required",
+          message: "Please enter your password to confirm account deletion.",
+          userMessage: "Please enter your password to confirm."
+        });
+      }
+      
+      if (!confirmationText) {
+        return res.status(400).json({ 
+          error: "Confirmation required",
+          message: "Please type 'DELETE MY ACCOUNT' to confirm you want to delete your account.",
+          userMessage: "Please type 'DELETE MY ACCOUNT' in the confirmation box."
         });
       }
       
       // Verify confirmation text
       if (confirmationText !== "DELETE MY ACCOUNT") {
         return res.status(400).json({ 
-          error: "Confirmation text must be exactly 'DELETE MY ACCOUNT'" 
+          error: "Confirmation text incorrect",
+          message: "Please type exactly 'DELETE MY ACCOUNT' (in capital letters) to confirm.",
+          userMessage: "Please type exactly 'DELETE MY ACCOUNT' to confirm."
         });
       }
       
@@ -3119,7 +3131,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Verify password using the same custom hashing system as auth
       const isPasswordValid = await comparePasswordsForDeletion(password, user.password);
       if (!isPasswordValid) {
-        return res.status(403).json({ error: "Invalid password" });
+        return res.status(403).json({ 
+          error: "Incorrect password",
+          message: "The password you entered is incorrect. Please try again.",
+          userMessage: "The password you entered is incorrect."
+        });
       }
       
       log(`Starting account deletion process for user ${userId}`, "api");
@@ -3230,16 +3246,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { password, confirmationText } = req.body;
       
       // Validate required fields
-      if (!password || !confirmationText) {
+      if (!password) {
         return res.status(400).json({ 
-          error: "Password and confirmation text are required" 
+          error: "Password required",
+          message: "Please enter your password to confirm clearing your data.",
+          userMessage: "Please enter your password to confirm."
+        });
+      }
+      
+      if (!confirmationText) {
+        return res.status(400).json({ 
+          error: "Confirmation required",
+          message: "Please type 'CLEAR ALL MY DATA' to confirm you want to clear all your receipts and data.",
+          userMessage: "Please type 'CLEAR ALL MY DATA' in the confirmation box."
         });
       }
       
       // Validate confirmation text
       if (confirmationText.trim() !== "CLEAR ALL MY DATA") {
         return res.status(400).json({ 
-          error: "Confirmation text must be exactly 'CLEAR ALL MY DATA'" 
+          error: "Confirmation text incorrect",
+          message: "Please type exactly 'CLEAR ALL MY DATA' (in capital letters) to confirm.",
+          userMessage: "Please type exactly 'CLEAR ALL MY DATA' to confirm."
         });
       }
       
@@ -3252,7 +3280,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Verify password using the same custom hashing system as auth
       const isPasswordValid = await comparePasswordsForDeletion(password, user.password);
       if (!isPasswordValid) {
-        return res.status(403).json({ error: "Invalid password" });
+        return res.status(403).json({ 
+          error: "Incorrect password",
+          message: "The password you entered is incorrect. Please try again.",
+          userMessage: "The password you entered is incorrect."
+        });
       }
       
       log(`Starting data clearing process for user ${userId}`, "api");

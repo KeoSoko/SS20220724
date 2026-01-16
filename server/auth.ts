@@ -924,9 +924,14 @@ export function setupAuth(app: Express) {
       } else {
         // Check if input looks like an email (contains @)
         if (username.includes('@')) {
-          console.log(`[AUTH] Input appears to be email, looking up by email: ${username}`);
-          const users = await storage.findUsersByEmail?.(username);
-          user = users?.[0]; // Take first matching user
+          const normalizedEmail = username.toLowerCase().trim();
+          console.log(`[AUTH] Input appears to be email, looking up by email: "${normalizedEmail}" (original: "${username}")`);
+          const foundUsers = await storage.findUsersByEmail?.(normalizedEmail);
+          console.log(`[AUTH] Email lookup result: found ${foundUsers?.length || 0} users`);
+          user = foundUsers?.[0]; // Take first matching user
+          if (user) {
+            console.log(`[AUTH] Found user by email: ${user.username} (ID: ${user.id})`);
+          }
         } else {
           console.log(`[AUTH] Input appears to be username, looking up by username: ${username}`);
           user = await storage.getUserByUsername(username);

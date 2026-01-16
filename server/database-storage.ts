@@ -146,7 +146,12 @@ export class DatabaseStorage implements IStorage {
 
   // Authentication security methods
   async findUsersByEmail(email: string): Promise<User[]> {
-    const result = await db.select().from(users).where(eq(users.email, email));
+    // Case-insensitive email lookup
+    const normalizedEmail = email.toLowerCase().trim();
+    const result = await db.select().from(users).where(
+      sql`LOWER(${users.email}) = ${normalizedEmail}`
+    );
+    console.log(`[DB] findUsersByEmail: searching for "${normalizedEmail}", found ${result.length} users`);
     return result;
   }
 

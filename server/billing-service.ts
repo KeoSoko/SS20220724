@@ -410,9 +410,11 @@ export class BillingService {
         currency: plan.currency,
         status: 'completed',
         paymentMethod: 'google_play',
-        googlePlayPurchaseToken: purchase.purchaseToken,
-        googlePlayOrderId: purchase.orderId,
-        googlePlayReceiptData: purchase,
+        platform: 'google_play',
+        platformTransactionId: purchase.purchaseToken,
+        platformOrderId: purchase.orderId,
+        platformSubscriptionId: purchase.subscriptionId || null,
+        metadata: JSON.stringify(purchase),
         description: `${plan.displayName} subscription`,
         failureReason: null,
         refundReason: null,
@@ -679,18 +681,21 @@ export class BillingService {
         amount: plan.price,
         currency: 'ZAR',
         status: 'completed',
+        paymentMethod: 'card',
         platform: 'paystack',
         platformTransactionId: transactionReference,
         platformOrderId: transactionData.reference,
         platformSubscriptionId: transactionData.subscription?.subscription_code || transactionData.plan?.plan_code || 'PLN_8l8p7v1mergg804',
-        createdAt: now,
         metadata: JSON.stringify({
           customerCode: transactionData.customer?.customer_code,
           authorizationCode: transactionData.authorization?.authorization_code,
           planCode: transactionData.plan?.plan_code,
           subscriptionCode: transactionData.subscription?.subscription_code,
           recurring: true
-        })
+        }),
+        description: `${plan.displayName || plan.name} subscription`,
+        failureReason: null,
+        refundReason: null,
       };
 
       if (!storage.createPaymentTransaction) {
@@ -947,14 +952,15 @@ export class BillingService {
         amount: premiumPlan.price,
         currency: 'ZAR',
         status: 'completed',
+        paymentMethod: 'other',
         platform: 'apple',
         platformTransactionId: receiptData.transactionId,
         platformOrderId: receiptData.originalTransactionId,
         platformSubscriptionId: receiptData.productId,
-        metadata: {
+        metadata: JSON.stringify({
           receiptData: receiptData.receiptData,
           environment: verification.environment
-        },
+        }),
         description: `Apple App Store subscription: ${premiumPlan.displayName}`,
         failureReason: null,
         refundReason: null,
@@ -1032,8 +1038,8 @@ export class BillingService {
         log(`[CRITICAL] Billing event logging not supported: ${eventType} for user ${userId}`, 'billing');
         
         // Send critical alert - billing events must be logged
-        if (this.emailService) {
-          await this.emailService.sendEmail(
+        if (emailService) {
+          await emailService.sendEmail(
             process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
             'Critical: Billing Event Logging Failed',
             `Unable to log billing event: ${eventType} for user ${userId}. Storage not available.`
@@ -1061,8 +1067,8 @@ export class BillingService {
         // Final failure - alert admin
         log(`[CRITICAL] Failed to log billing event after 3 retries: ${eventType} for user ${userId}`, 'billing');
         
-        if (this.emailService) {
-          await this.emailService.sendEmail(
+        if (emailService) {
+          await emailService.sendEmail(
             process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
             'Critical: Billing Event Logging Failed After Retries',
             `Failed to log billing event: ${eventType} for user ${userId} after 3 retry attempts. Error: ${errorMessage}`
@@ -1099,16 +1105,16 @@ export class BillingService {
     if (operation.includes('payment') || operation.includes('subscription')) {
       try {
         const user = await storage.getUser(userId);
-        if (user?.email && this.emailService) {
+        if (user?.email && emailService) {
           // Notify user about billing issue
-          await this.emailService.sendEmail(
+          await emailService.sendEmail(
             user.email,
             'Billing Issue with Your Simple Slips Subscription',
             `We encountered an issue processing your ${operation}. Our team has been notified and will resolve this shortly. If you have questions, please contact support@simpleslips.co.za with reference: ${errorId}`
           );
 
           // Notify admin
-          await this.emailService.sendEmail(
+          await emailService.sendEmail(
             process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
             `Critical Billing Error: ${operation}`,
             `Error ID: ${errorId}\nUser: ${user.email} (ID: ${userId})\nOperation: ${operation}\nError: ${errorMessage}\nContext: ${JSON.stringify(context, null, 2)}`

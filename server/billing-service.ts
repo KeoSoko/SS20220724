@@ -575,12 +575,20 @@ export class BillingService {
       }
 
       const transactionData = verification.subscription;
+      
+      // Detect monthly vs yearly based on amount (R530/53000 kobo = yearly, R49/4900 kobo = monthly)
+      const paymentAmount = transactionData.amount || 0;
+      const isYearly = paymentAmount >= 50000; // R500+ is yearly
+      const planName = isYearly ? 'premium_yearly' : 'premium_monthly';
+      const subscriptionTier = isYearly ? 'yearly' : 'monthly';
+      
+      log(`Detected plan type: ${planName} (amount: ${paymentAmount}, isYearly: ${isYearly})`, 'billing');
 
       // Get subscription plan
       const plans = await this.getSubscriptionPlans();
-      const plan = plans.find(p => p.name === 'premium_monthly');
+      const plan = plans.find(p => p.name === planName) || plans.find(p => p.name === 'premium_monthly');
       if (!plan) {
-        throw new Error('Premium monthly plan not found');
+        throw new Error('Premium plan not found');
       }
 
       // Check if user already has a subscription
@@ -588,7 +596,11 @@ export class BillingService {
 
       const now = new Date();
       const nextBillingDate = new Date();
-      nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
+      if (isYearly) {
+        nextBillingDate.setFullYear(nextBillingDate.getFullYear() + 1);
+      } else {
+        nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
+      }
 
       // Create or update subscription
       let subscription: UserSubscription;
@@ -647,6 +659,18 @@ export class BillingService {
           throw new Error('User subscriptions not supported by current storage');
         }
         subscription = await storage.createUserSubscription(subscriptionData);
+      }
+
+      // CRITICAL: Also update the users table for subscription access checks
+      // The app checks users.subscription_tier and users.subscription_expires_at for access
+      if (storage.updateUser) {
+        await storage.updateUser(userId, {
+          subscriptionTier: subscriptionTier,
+          subscriptionExpiresAt: nextBillingDate
+        } as any);
+        log(`Updated users table: subscription_tier=${subscriptionTier}, expires_at=${nextBillingDate.toISOString()}`, 'billing');
+      } else {
+        log(`WARNING: Could not update users table - storage.updateUser not available`, 'billing');
       }
 
       // Record payment transaction

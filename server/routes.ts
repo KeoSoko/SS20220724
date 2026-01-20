@@ -196,6 +196,72 @@ async function handlePaystackPaymentFailed(data: any) {
   }
 }
 
+async function handlePaystackInvoicePaid(data: any) {
+  try {
+    log(`Paystack invoice event received: ${JSON.stringify(data)}`, 'billing');
+    
+    // Invoice events contain subscription renewal data
+    const customerEmail = data.customer?.email || data.subscription?.customer?.email;
+    const status = data.status || data.paid;
+    
+    // Only process paid invoices
+    if (status !== 'success' && status !== true && status !== 'paid') {
+      log(`Invoice not paid, status: ${status}`, 'billing');
+      return;
+    }
+    
+    if (!customerEmail) {
+      log(`No customer email found in invoice data`, 'billing');
+      return;
+    }
+
+    const users = await storage.findUsersByEmail?.(customerEmail);
+    const user = users?.[0];
+    
+    if (!user) {
+      log(`No user found with email ${customerEmail} for invoice payment`, 'billing');
+      return;
+    }
+
+    // Calculate next billing date (1 month from now for monthly, 1 year for yearly)
+    const amount = data.amount || 0;
+    const isYearly = amount >= 50000; // R500+ is yearly
+    const nextBillingDate = new Date();
+    if (isYearly) {
+      nextBillingDate.setFullYear(nextBillingDate.getFullYear() + 1);
+    } else {
+      nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
+    }
+    const subscriptionTier = isYearly ? 'yearly' : 'monthly';
+
+    // Update the users table
+    if (storage.updateUser) {
+      await storage.updateUser(user.id, {
+        subscriptionTier: subscriptionTier,
+        subscriptionExpiresAt: nextBillingDate
+      } as any);
+      log(`Updated users table for renewal: user ${user.id}, tier=${subscriptionTier}, expires=${nextBillingDate.toISOString()}`, 'billing');
+    }
+
+    // Update user_subscriptions table
+    if (storage.updateUserSubscription) {
+      const subscription = await storage.getUserSubscription?.(user.id);
+      if (subscription) {
+        await storage.updateUserSubscription(subscription.id, {
+          status: 'active',
+          nextBillingDate,
+          lastPaymentDate: new Date()
+        });
+        log(`Updated user_subscriptions for renewal: user ${user.id}`, 'billing');
+      }
+    }
+
+    log(`Successfully processed subscription RENEWAL for user ${user.id} (${customerEmail}), next billing: ${nextBillingDate.toISOString()}`, 'billing');
+  } catch (error) {
+    log(`Error handling Paystack invoice paid: ${error}`, 'billing');
+  }
+}
+
 // Security validation utilities
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'application/pdf'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -2988,6 +3054,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           break;
         case 'invoice.payment_failed':
           await handlePaystackPaymentFailed(data);
+          break;
+        case 'invoice.update':
+        case 'invoice.create':
+          // Handle subscription renewal payments
+          await handlePaystackInvoicePaid(data);
+          break;
+        case 'subscription.not_renew':
+          log(`Subscription will not renew: ${data.subscription_code}`, 'billing');
           break;
         default:
           log(`Unhandled Paystack webhook event: ${event}`, 'billing');

@@ -12,11 +12,11 @@ import { azureStorage } from './azure-storage.js';
 async function compressLogoForPDF(imageBuffer: Buffer): Promise<string> {
   try {
     const compressedBuffer = await sharp(imageBuffer)
-      .resize(400, 400, { // Max 400x400 px for good quality logos
+      .resize(600, 600, { // Max 600x600 px for high quality logos
         fit: 'inside',
         withoutEnlargement: true
       })
-      .png({ compressionLevel: 6, quality: 90 }) // High quality PNG compression
+      .png({ compressionLevel: 4 }) // Minimal compression for best quality
       .toBuffer();
     
     return `data:image/png;base64,${compressedBuffer.toString('base64')}`;

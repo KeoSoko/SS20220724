@@ -12,14 +12,14 @@ import { azureStorage } from './azure-storage.js';
 async function compressLogoForPDF(imageBuffer: Buffer): Promise<string> {
   try {
     const compressedBuffer = await sharp(imageBuffer)
-      .resize(200, 200, { // Max 200x200 px for logos
+      .resize(400, 400, { // Max 400x400 px for good quality logos
         fit: 'inside',
         withoutEnlargement: true
       })
-      .jpeg({ quality: 70 }) // Compress to JPEG
+      .png({ compressionLevel: 6, quality: 90 }) // High quality PNG compression
       .toBuffer();
     
-    return `data:image/jpeg;base64,${compressedBuffer.toString('base64')}`;
+    return `data:image/png;base64,${compressedBuffer.toString('base64')}`;
   } catch (error: any) {
     console.error('[PDF] Failed to compress logo:', error.message);
     // Return original as fallback
@@ -558,7 +558,7 @@ export class ExportService {
             const imageBuffer = Buffer.from(arrayBuffer);
             // Compress logo to reduce PDF size for email attachments
             const compressedLogoData = await compressLogoForPDF(imageBuffer);
-            doc.addImage(compressedLogoData, 'JPEG', 15, yPos, 40, 40);
+            doc.addImage(compressedLogoData, 'PNG', 15, yPos, 40, 40);
           } else {
             console.error(`[PDF] Logo fetch failed with status ${response.status}`);
           }
@@ -726,7 +726,7 @@ export class ExportService {
             const imageBuffer = Buffer.from(arrayBuffer);
             // Compress logo to reduce PDF size for email attachments
             const compressedLogoData = await compressLogoForPDF(imageBuffer);
-            doc.addImage(compressedLogoData, 'JPEG', 15, yPos, 40, 40);
+            doc.addImage(compressedLogoData, 'PNG', 15, yPos, 40, 40);
           } else {
             console.error(`[PDF] Invoice logo fetch failed with status ${response.status}`);
           }

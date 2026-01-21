@@ -326,6 +326,7 @@ export default function BusinessProfilePage() {
                       {isUploadingLogo || uploadLogoMutation.isPending ? "Uploading..." : logoPreview ? "Change Logo" : "Upload Logo"}
                     </Button>
                     <p className="text-xs text-gray-500">PNG, JPG or WEBP. Max 5MB.</p>
+                    <p className="text-xs text-amber-600">Recommended: 600x600 pixels or smaller for best email delivery.</p>
                   </div>
                 </div>
               </CardContent>

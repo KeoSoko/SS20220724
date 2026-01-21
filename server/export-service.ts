@@ -1,8 +1,31 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import sharp from 'sharp';
 import type { Receipt, Budget } from '../shared/schema.js';
 import { storage } from './storage.js';
 import { azureStorage } from './azure-storage.js';
+
+/**
+ * Compress and resize logo image to reduce PDF size for email attachments
+ * Returns a smaller base64-encoded JPEG image
+ */
+async function compressLogoForPDF(imageBuffer: Buffer): Promise<string> {
+  try {
+    const compressedBuffer = await sharp(imageBuffer)
+      .resize(200, 200, { // Max 200x200 px for logos
+        fit: 'inside',
+        withoutEnlargement: true
+      })
+      .jpeg({ quality: 70 }) // Compress to JPEG
+      .toBuffer();
+    
+    return `data:image/jpeg;base64,${compressedBuffer.toString('base64')}`;
+  } catch (error: any) {
+    console.error('[PDF] Failed to compress logo:', error.message);
+    // Return original as fallback
+    return `data:image/png;base64,${imageBuffer.toString('base64')}`;
+  }
+}
 
 /**
  * Sanitize text for PDF generation - replaces problematic Unicode characters
@@ -518,7 +541,7 @@ export class ExportService {
       const pageWidth = doc.internal.pageSize.width;
       let yPos = 20;
 
-      // Add business logo if available
+      // Add business logo if available (compressed for email attachments)
       if (businessProfile.logoUrl) {
         try {
           // Fetch with timeout to prevent hanging
@@ -532,10 +555,10 @@ export class ExportService {
           
           if (response.ok) {
             const arrayBuffer = await response.arrayBuffer();
-            const base64 = Buffer.from(arrayBuffer).toString('base64');
-            const mimeType = response.headers.get('content-type') || 'image/png';
-            const logoData = `data:${mimeType};base64,${base64}`;
-            doc.addImage(logoData, 'PNG', 15, yPos, 40, 40);
+            const imageBuffer = Buffer.from(arrayBuffer);
+            // Compress logo to reduce PDF size for email attachments
+            const compressedLogoData = await compressLogoForPDF(imageBuffer);
+            doc.addImage(compressedLogoData, 'JPEG', 15, yPos, 40, 40);
           } else {
             console.error(`[PDF] Logo fetch failed with status ${response.status}`);
           }
@@ -686,7 +709,7 @@ export class ExportService {
       const pageWidth = doc.internal.pageSize.width;
       let yPos = 20;
 
-      // Add business logo if available
+      // Add business logo if available (compressed for email attachments)
       if (businessProfile.logoUrl) {
         try {
           // Fetch with timeout to prevent hanging
@@ -700,10 +723,10 @@ export class ExportService {
           
           if (response.ok) {
             const arrayBuffer = await response.arrayBuffer();
-            const base64 = Buffer.from(arrayBuffer).toString('base64');
-            const mimeType = response.headers.get('content-type') || 'image/png';
-            const logoData = `data:${mimeType};base64,${base64}`;
-            doc.addImage(logoData, 'PNG', 15, yPos, 40, 40);
+            const imageBuffer = Buffer.from(arrayBuffer);
+            // Compress logo to reduce PDF size for email attachments
+            const compressedLogoData = await compressLogoForPDF(imageBuffer);
+            doc.addImage(compressedLogoData, 'JPEG', 15, yPos, 40, 40);
           } else {
             console.error(`[PDF] Invoice logo fetch failed with status ${response.status}`);
           }

@@ -1107,6 +1107,36 @@ export class BillingService {
   }
 
   /**
+   * Record billing event (public method for webhook handlers)
+   * Supports null userId for cases where user resolution failed
+   * TEMPORARY LEGACY FALLBACK SUPPORT:
+   * Remove null userId support once all pre-2026-01-22 subscriptions have renewed
+   */
+  async recordBillingEvent(
+    userId: number | null, 
+    eventType: string, 
+    eventData: any
+  ): Promise<void> {
+    try {
+      const billingEventData: InsertBillingEvent = {
+        userId: userId,
+        eventType,
+        eventData: {
+          ...eventData,
+          timestamp: new Date().toISOString(),
+          userAgent: eventData.userAgent || 'webhook',
+        },
+        processed: true,
+      };
+
+      await db.insert(billingEvents).values(billingEventData);
+      log(`Billing event recorded: ${eventType} for user ${userId || 'unknown'}`, 'billing');
+    } catch (error) {
+      log(`Failed to record billing event ${eventType}: ${error}`, 'billing');
+    }
+  }
+
+  /**
    * Log billing event for auditing with enhanced error handling
    */
   private async logBillingEvent(userId: number, eventType: string, eventData: any, retryCount: number = 0): Promise<void> {

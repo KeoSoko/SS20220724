@@ -101,6 +101,11 @@ export class DatabaseStorage implements IStorage {
     return exactMatch ? user : undefined;
   }
   
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    return result.length > 0 ? result[0] : undefined;
+  }
+  
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values({
       username: insertUser.username,

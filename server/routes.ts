@@ -91,23 +91,54 @@ async function handlePaystackChargeSuccess(data: any) {
   try {
     log(`Processing Paystack charge success: ${data.reference}`, 'billing');
     
-    // MANDATORY: User lookup by metadata.user_id only (no email matching)
-    const userId = data.metadata?.user_id;
-    if (!userId) {
-      log(`CRITICAL: No user_id in Paystack metadata for charge: ${data.reference}. Email: ${data.customer?.email}`, 'billing');
-      return;
+    let user: any = null;
+    let usedLegacyFallback = false;
+    
+    // PRIMARY: User lookup by metadata.user_id (canonical path)
+    const metadataUserId = data.metadata?.user_id;
+    if (metadataUserId) {
+      user = await storage.getUser(metadataUserId);
+      if (!user) {
+        log(`CRITICAL: User ID ${metadataUserId} from metadata not found in database for charge: ${data.reference}`, 'billing');
+        await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
+          reference: data.reference,
+          reason: 'metadata_user_id_not_found',
+          metadata_user_id: metadataUserId
+        });
+        return;
+      }
+    } else {
+      // TEMPORARY LEGACY FALLBACK:
+      // Remove once all pre-2026-01-22 subscriptions have renewed
+      const customerEmail = data.customer?.email;
+      if (customerEmail) {
+        user = await storage.getUserByEmail(customerEmail);
+        if (user) {
+          usedLegacyFallback = true;
+          log(`WARNING: Legacy webhook processed for charge ${data.reference}. User ${user.id} resolved via email: ${customerEmail}`, 'billing');
+          await billingService.recordBillingEvent(user.id, 'legacy_paystack_webhook_processed', {
+            reference: data.reference,
+            email: customerEmail,
+            reason: 'missing_metadata_user_id'
+          });
+        }
+      }
     }
-
-    // Verify user exists
-    const user = await storage.getUser(userId);
+    
+    // FAILURE MODE: No user resolved by either method
     if (!user) {
-      log(`CRITICAL: User ID ${userId} from metadata not found in database for charge: ${data.reference}`, 'billing');
+      log(`CRITICAL: Cannot resolve user for charge ${data.reference}. No metadata.user_id and no matching email.`, 'billing');
+      await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
+        reference: data.reference,
+        email: data.customer?.email || 'none',
+        reason: 'no_user_id_and_no_matching_email'
+      });
       return;
     }
 
     // Process the subscription using the billing service
-    await billingService.processPaystackSubscription(userId, data.reference);
-    log(`Successfully activated subscription for user ${userId} via webhook`, 'billing');
+    await billingService.processPaystackSubscription(user.id, data.reference);
+    log(`Successfully activated subscription for user ${user.id} via webhook${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
   } catch (error) {
     log(`Error handling Paystack charge success: ${error}`, 'billing');
   }
@@ -126,22 +157,56 @@ async function handlePaystackSubscriptionDisable(data: any) {
   try {
     log(`Paystack subscription disabled: ${data.subscription_code}`, 'billing');
     
-    // MANDATORY: User lookup by metadata.user_id only (no email matching)
-    const userId = data.metadata?.user_id;
-    if (!userId) {
-      log(`No user_id in metadata for disabled subscription: ${data.subscription_code}. Logging only.`, 'billing');
-      return;
+    let user: any = null;
+    let usedLegacyFallback = false;
+    
+    // PRIMARY: User lookup by metadata.user_id (canonical path)
+    const metadataUserId = data.metadata?.user_id;
+    if (metadataUserId) {
+      user = await storage.getUser(metadataUserId);
+      if (!user) {
+        log(`User ID ${metadataUserId} not found for disabled subscription: ${data.subscription_code}`, 'billing');
+        await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
+          subscription_code: data.subscription_code,
+          reason: 'metadata_user_id_not_found',
+          metadata_user_id: metadataUserId
+        });
+        return;
+      }
+    } else {
+      // TEMPORARY LEGACY FALLBACK:
+      // Remove once all pre-2026-01-22 subscriptions have renewed
+      const customerEmail = data.customer?.email;
+      if (customerEmail) {
+        user = await storage.getUserByEmail(customerEmail);
+        if (user) {
+          usedLegacyFallback = true;
+          log(`WARNING: Legacy webhook processed for subscription disable ${data.subscription_code}. User ${user.id} resolved via email: ${customerEmail}`, 'billing');
+          await billingService.recordBillingEvent(user.id, 'legacy_paystack_webhook_processed', {
+            subscription_code: data.subscription_code,
+            email: customerEmail,
+            reason: 'missing_metadata_user_id',
+            event_type: 'subscription.disable'
+          });
+        }
+      }
     }
-
-    const user = await storage.getUser(userId);
+    
+    // FAILURE MODE: No user resolved - log but don't fail silently
     if (!user) {
-      log(`User ID ${userId} not found for disabled subscription: ${data.subscription_code}`, 'billing');
+      log(`Cannot resolve user for subscription disable ${data.subscription_code}. Logging only.`, 'billing');
+      await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
+        subscription_code: data.subscription_code,
+        email: data.customer?.email || 'none',
+        reason: 'no_user_id_and_no_matching_email',
+        event_type: 'subscription.disable'
+      });
       return;
     }
 
     // Cancel the user's subscription
-    await billingService.cancelSubscription(userId);
-    log(`Successfully cancelled subscription for user ${userId} via Paystack webhook`, 'billing');
+    await billingService.cancelSubscription(user.id);
+    log(`Successfully cancelled subscription for user ${user.id} via Paystack webhook${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
 
     // Send notification email about cancelled subscription
     if (user.email) {
@@ -161,22 +226,57 @@ async function handlePaystackPaymentFailed(data: any) {
   try {
     log(`Paystack payment failed: ${data.reference}`, 'billing');
     
-    // MANDATORY: User lookup by metadata.user_id only (no email matching)
-    const userId = data.metadata?.user_id;
-    if (!userId) {
-      log(`No user_id in metadata for failed payment: ${data.reference}. Logging only.`, 'billing');
-      return;
+    let user: any = null;
+    let usedLegacyFallback = false;
+    
+    // PRIMARY: User lookup by metadata.user_id (canonical path)
+    const metadataUserId = data.metadata?.user_id;
+    if (metadataUserId) {
+      user = await storage.getUser(metadataUserId);
+      if (!user) {
+        log(`User ID ${metadataUserId} not found for failed payment: ${data.reference}`, 'billing');
+        await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
+          reference: data.reference,
+          reason: 'metadata_user_id_not_found',
+          metadata_user_id: metadataUserId,
+          event_type: 'charge.failed'
+        });
+        return;
+      }
+    } else {
+      // TEMPORARY LEGACY FALLBACK:
+      // Remove once all pre-2026-01-22 subscriptions have renewed
+      const customerEmail = data.customer?.email;
+      if (customerEmail) {
+        user = await storage.getUserByEmail(customerEmail);
+        if (user) {
+          usedLegacyFallback = true;
+          log(`WARNING: Legacy webhook processed for failed payment ${data.reference}. User ${user.id} resolved via email: ${customerEmail}`, 'billing');
+          await billingService.recordBillingEvent(user.id, 'legacy_paystack_webhook_processed', {
+            reference: data.reference,
+            email: customerEmail,
+            reason: 'missing_metadata_user_id',
+            event_type: 'charge.failed'
+          });
+        }
+      }
     }
-
-    const user = await storage.getUser(userId);
+    
+    // FAILURE MODE: No user resolved - log but don't fail silently
     if (!user) {
-      log(`User ID ${userId} not found for failed payment: ${data.reference}`, 'billing');
+      log(`Cannot resolve user for failed payment ${data.reference}. Logging only.`, 'billing');
+      await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
+        reference: data.reference,
+        email: data.customer?.email || 'none',
+        reason: 'no_user_id_and_no_matching_email',
+        event_type: 'charge.failed'
+      });
       return;
     }
 
     // Log billing event for failed payment
     await billingService.recordPaymentFailure(
-      userId,
+      user.id,
       data.reference,
       data.gateway_response || 'Payment failed',
       data.amount,
@@ -192,7 +292,7 @@ async function handlePaystackPaymentFailed(data: any) {
         'payment_failed',
         `${failureReason}. Please update your payment method to ensure uninterrupted service.`
       );
-      log(`Payment failure notification sent to user ${userId}`, 'billing');
+      log(`Payment failure notification sent to user ${user.id}${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
     }
   } catch (error) {
     log(`Error handling Paystack payment failed: ${error}`, 'billing');

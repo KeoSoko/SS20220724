@@ -1,0 +1,179 @@
+You are working on the Simple Slips production codebase.
+
+The app uses:
+
+Paystack
+
+Webhooks as the single source of truth
+
+Node / Express backend
+
+Postgres database
+
+Recent changes have:
+
+Added metadata.user_id to new Paystack transactions
+
+Enforced webhook-only subscription activation
+
+Added database idempotency and constraints
+
+⚠️ CRITICAL SAFETY RULES
+
+DO NOT refactor unrelated code
+
+DO NOT rename routes, services, or files
+
+DO NOT weaken existing fixes
+
+DO NOT remove webhook-first logic
+
+Changes must be minimal, explicit, and reversible
+
+PROBLEM TO SOLVE
+
+Users who subscribed before <TODAY’S DATE> may have automatic Paystack renewal webhooks that do NOT include metadata.user_id.
+
+Without backward compatibility:
+
+Renewal payments may succeed
+
+But subscriptions may not be extended
+
+This must be fixed without re-introducing email-based bugs.
+
+OBJECTIVE
+
+Add a temporary, controlled legacy fallback for Paystack webhooks that:
+
+Preserves new metadata.user_id logic as PRIMARY
+
+Allows legacy renewals to succeed safely
+
+Provides visibility when fallback is used
+
+Can be removed later with confidence
+
+REQUIRED IMPLEMENTATION (EXACT)
+1️⃣ PRIMARY USER MATCHING (MANDATORY)
+
+In all Paystack webhook handlers:
+
+FIRST attempt to resolve the user using:
+
+data.metadata.user_id
+
+
+If present, use this path ONLY
+
+This is the canonical and preferred logic
+
+2️⃣ LEGACY FALLBACK (CONTROLLED & TEMPORARY)
+
+If and ONLY if metadata.user_id is missing:
+
+Attempt a SECONDARY lookup using:
+
+data.customer.email
+
+
+This fallback must:
+
+Be clearly marked as LEGACY
+
+Be wrapped in explicit conditional logic
+
+Never override or replace the primary path
+
+Example intent (do not copy verbatim):
+
+if (metadata.user_id exists) → use it
+else if (customer.email exists) → legacy fallback
+else → fail safely
+
+3️⃣ VISIBILITY & AUDITABILITY (NON-NEGOTIABLE)
+
+Every time the legacy fallback is used:
+
+Log a WARNING indicating:
+
+Legacy webhook processed
+
+Paystack reference
+
+User ID resolved via email
+
+Create a billing_event record with:
+
+event_type: "legacy_paystack_webhook_processed"
+event_data: {
+  reference,
+  email,
+  reason: "missing_metadata_user_id"
+}
+
+
+This is required for migration tracking.
+
+4️⃣ FAILURE MODE (NO SILENT DROPS)
+
+If:
+
+metadata.user_id is missing
+
+AND email is missing or does not match a user
+
+Then:
+
+DO NOT process the subscription
+
+Log a clear error
+
+Create a billing_event with:
+
+event_type: "paystack_webhook_failed_user_resolution"
+
+
+This ensures admins can intervene.
+
+5️⃣ EXPLICIT TEMPORARY MARKER
+
+Add a clear inline comment near the fallback logic:
+
+// TEMPORARY LEGACY FALLBACK:
+// Remove once all pre-<TODAY’S DATE> subscriptions have renewed
+
+
+This is intentional and must remain.
+
+STRICT NON-GOALS (DO NOT DO)
+
+❌ Do NOT reintroduce email matching as default
+❌ Do NOT change database constraints
+❌ Do NOT modify subscription logic elsewhere
+❌ Do NOT add frontend logic
+❌ Do NOT refactor billingService or storage layers
+
+SUCCESS CRITERIA
+
+After this change:
+
+New subscriptions use metadata.user_id only
+
+Legacy renewals continue to work
+
+Every legacy fallback is visible and auditable
+
+No silent payment → subscription failures occur
+
+Existing fixes remain intact
+
+OUTPUT REQUIREMENTS
+
+Show only the minimal diffs
+
+Explain why each change exists
+
+Confirm no unrelated files were modified
+
+Do not proceed unless all requirements above are satisfied.

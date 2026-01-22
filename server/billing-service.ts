@@ -5,12 +5,18 @@ import {
   PaymentTransaction,
   InsertUserSubscription,
   InsertPaymentTransaction,
-  InsertBillingEvent
+  InsertBillingEvent,
+  userSubscriptions,
+  paymentTransactions,
+  billingEvents,
+  users
 } from "@shared/schema";
 import { log } from "./vite";
 import Paystack from "paystack";
 import * as crypto from "crypto";
 import { emailService } from "./email-service";
+import { db } from "./db";
+import { eq, sql } from "drizzle-orm";
 
 export interface GooglePlayPurchase {
   purchaseToken: string;
@@ -564,237 +570,248 @@ export class BillingService {
 
   /**
    * Process Paystack subscription payment
+   * ATOMIC: All database writes wrapped in a single transaction with rollback on failure
    */
   async processPaystackSubscription(userId: number, transactionReference: string): Promise<UserSubscription> {
+    log(`Processing Paystack subscription for user ${userId}, reference: ${transactionReference}`, 'billing');
+
+    // Verify the transaction BEFORE starting the transaction
+    const verification = await this.verifyPaystackTransaction(transactionReference);
+    
+    if (!verification.valid) {
+      throw new Error(`Payment verification failed: ${verification.error}`);
+    }
+
+    const transactionData = verification.subscription;
+    
+    // Detect monthly vs yearly based on amount (R530/53000 kobo = yearly, R49/4900 kobo = monthly)
+    const paymentAmount = transactionData.amount || 0;
+    const isYearly = paymentAmount >= 50000; // R500+ is yearly
+    const planName = isYearly ? 'premium_yearly' : 'premium_monthly';
+    const subscriptionTier = isYearly ? 'yearly' : 'monthly';
+    
+    log(`Detected plan type: ${planName} (amount: ${paymentAmount}, isYearly: ${isYearly})`, 'billing');
+
+    // Get subscription plan
+    const plans = await this.getSubscriptionPlans();
+    const plan = plans.find(p => p.name === planName) || plans.find(p => p.name === 'premium_monthly');
+    if (!plan) {
+      throw new Error('Premium plan not found');
+    }
+
+    const now = new Date();
+    const nextBillingDate = new Date();
+    if (isYearly) {
+      nextBillingDate.setFullYear(nextBillingDate.getFullYear() + 1);
+    } else {
+      nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
+    }
+
     try {
-      log(`Processing Paystack subscription for user ${userId}, reference: ${transactionReference}`, 'billing');
+      // ATOMIC TRANSACTION: All database writes in a single transaction
+      const result = await db.transaction(async (tx) => {
+        // Check for duplicate transaction using the UNIQUE constraint
+        const existingPayment = await tx
+          .select()
+          .from(paymentTransactions)
+          .where(sql`${paymentTransactions.platform} = 'paystack' AND ${paymentTransactions.platformTransactionId} = ${transactionReference}`)
+          .limit(1);
 
-      // Verify the transaction
-      const verification = await this.verifyPaystackTransaction(transactionReference);
-      
-      if (!verification.valid) {
-        throw new Error(`Payment verification failed: ${verification.error}`);
-      }
-
-      const transactionData = verification.subscription;
-      
-      // Detect monthly vs yearly based on amount (R530/53000 kobo = yearly, R49/4900 kobo = monthly)
-      const paymentAmount = transactionData.amount || 0;
-      const isYearly = paymentAmount >= 50000; // R500+ is yearly
-      const planName = isYearly ? 'premium_yearly' : 'premium_monthly';
-      const subscriptionTier = isYearly ? 'yearly' : 'monthly';
-      
-      log(`Detected plan type: ${planName} (amount: ${paymentAmount}, isYearly: ${isYearly})`, 'billing');
-
-      // Get subscription plan
-      const plans = await this.getSubscriptionPlans();
-      const plan = plans.find(p => p.name === planName) || plans.find(p => p.name === 'premium_monthly');
-      if (!plan) {
-        throw new Error('Premium plan not found');
-      }
-
-      // Check if user already has a subscription
-      const existingSubscription = await this.getUserSubscription(userId);
-
-      const now = new Date();
-      const nextBillingDate = new Date();
-      if (isYearly) {
-        nextBillingDate.setFullYear(nextBillingDate.getFullYear() + 1);
-      } else {
-        nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
-      }
-
-      // GUARD: Prevent duplicate payments - check if this exact transaction was already processed
-      if (existingSubscription && existingSubscription.paystackReference === transactionReference) {
-        log(`Transaction ${transactionReference} already processed for user ${userId}, skipping duplicate`, 'billing');
-        
-        // ALERT: Notify admin of blocked duplicate payment
-        const user = await storage.getUser(userId);
-        if (emailService) {
-          await emailService.sendEmail(
-            process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
-            '⚠️ DUPLICATE PAYMENT BLOCKED',
-            `A duplicate payment attempt was blocked:\n\n` +
-            `User: ${user?.email || 'Unknown'} (ID: ${userId})\n` +
-            `Transaction Ref: ${transactionReference}\n` +
-            `Existing Sub ID: ${existingSubscription.id}\n` +
-            `Status: ${existingSubscription.status}\n` +
-            `Next Billing: ${existingSubscription.nextBillingDate?.toISOString()}\n\n` +
-            `Action: No double-charge occurred. The user was NOT charged again.`
-          );
-        }
-        
-        return existingSubscription;
-      }
-
-      // GUARD: Check if user already has an active subscription with time remaining (at least 7 days)
-      // to prevent accidental double-charges
-      if (existingSubscription && existingSubscription.status === 'active' && existingSubscription.nextBillingDate) {
-        const daysRemaining = Math.ceil((new Date(existingSubscription.nextBillingDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        if (daysRemaining > 7) {
-          log(`User ${userId} already has active subscription with ${daysRemaining} days remaining - this may be a duplicate payment`, 'billing');
+        if (existingPayment.length > 0) {
+          log(`Transaction ${transactionReference} already exists in payment_transactions, skipping duplicate`, 'billing');
           
-          // ALERT: Notify admin - Paystack already charged, this might need refund
+          // Notify admin of blocked duplicate
           const user = await storage.getUser(userId);
           if (emailService) {
             await emailService.sendEmail(
               process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
-              '🚨 POSSIBLE DOUBLE-CHARGE - CHECK PAYSTACK',
-              `A user with an active subscription was charged again:\n\n` +
+              '⚠️ DUPLICATE WEBHOOK IGNORED',
+              `A duplicate Paystack webhook was safely ignored:\n\n` +
               `User: ${user?.email || 'Unknown'} (ID: ${userId})\n` +
               `Transaction Ref: ${transactionReference}\n` +
-              `Amount: R${amountInKobo / 100}\n` +
-              `Days Remaining Before Payment: ${daysRemaining}\n` +
-              `Next Billing Date: ${existingSubscription.nextBillingDate.toISOString()}\n\n` +
-              `⚠️ PAYSTACK ALREADY CHARGED THE CUSTOMER.\n` +
-              `Please check Paystack dashboard and consider refunding if this was a duplicate.`
+              `Action: No changes made. Idempotency constraint worked.`
             );
           }
+          
+          // Return existing subscription
+          const existingSub = await tx
+            .select()
+            .from(userSubscriptions)
+            .where(eq(userSubscriptions.userId, userId))
+            .limit(1);
+          
+          if (existingSub.length > 0) {
+            return existingSub[0] as UserSubscription;
+          }
+          throw new Error('Duplicate transaction but no subscription found');
         }
-      }
 
-      // Create or update subscription
-      let subscription: UserSubscription;
-      
-      if (existingSubscription) {
-        // Handle renewal payment OR reactivation of existing subscription
-        const isRenewal = existingSubscription.status === 'active';
-        
-        if (!storage.updateUserSubscription) {
-          throw new Error('User subscription updates not supported by current storage');
-        }
-        
-        // Update subscription with new billing dates and payment info
-        await storage.updateUserSubscription(existingSubscription.id, {
-          status: 'active',
-          subscriptionStartDate: isRenewal ? existingSubscription.subscriptionStartDate : now,
-          nextBillingDate,
-          totalPaid: (existingSubscription.totalPaid || 0) + plan.price,
-          lastPaymentDate: now,
-          paystackReference: transactionReference,
-          paystackCustomerCode: transactionData.customer?.customer_code
-        });
-        
-        subscription = { 
-          ...existingSubscription, 
-          status: 'active' as const,
-          nextBillingDate,
-          lastPaymentDate: now,
-          totalPaid: (existingSubscription.totalPaid || 0) + plan.price
-        };
-        
-        if (isRenewal) {
-          log(`Processed subscription RENEWAL for user ${userId}, next billing: ${nextBillingDate.toISOString()}`, 'billing');
-        }
-      } else {
-        // Create new subscription
-        const subscriptionData: InsertUserSubscription = {
-          userId,
-          planId: plan.id,
-          status: 'active',
-          trialStartDate: null,
-          trialEndDate: null,
-          subscriptionStartDate: now,
-          nextBillingDate,
-          cancelledAt: null,
-          googlePlayPurchaseToken: null,
-          googlePlayOrderId: null,
-          googlePlaySubscriptionId: null,
-          paystackReference: transactionReference,
-          paystackCustomerCode: transactionData.customer?.customer_code,
-          totalPaid: plan.price,
-          lastPaymentDate: now,
-        };
+        // Check if user already has a subscription (UPSERT semantics)
+        const existingSubscription = await tx
+          .select()
+          .from(userSubscriptions)
+          .where(eq(userSubscriptions.userId, userId))
+          .limit(1);
 
-        if (!storage.createUserSubscription) {
-          throw new Error('User subscriptions not supported by current storage');
-        }
-        subscription = await storage.createUserSubscription(subscriptionData);
-      }
-
-      // CRITICAL: Also update the users table for subscription access checks
-      // The app checks users.subscription_tier and users.subscription_expires_at for access
-      try {
-        if (storage.updateUser) {
-          await storage.updateUser(userId, {
-            subscriptionTier: subscriptionTier,
-            subscriptionExpiresAt: nextBillingDate
-          } as any);
-          log(`Updated users table: subscription_tier=${subscriptionTier}, expires_at=${nextBillingDate.toISOString()}`, 'billing');
+        let subscription: UserSubscription;
+        
+        if (existingSubscription.length > 0) {
+          // UPDATE existing subscription
+          const existing = existingSubscription[0];
+          const isRenewal = existing.status === 'active';
+          
+          const [updated] = await tx
+            .update(userSubscriptions)
+            .set({
+              status: 'active',
+              planId: plan.id,
+              subscriptionStartDate: isRenewal ? existing.subscriptionStartDate : now,
+              nextBillingDate,
+              totalPaid: (existing.totalPaid || 0) + plan.price,
+              lastPaymentDate: now,
+              paystackReference: transactionReference,
+              paystackCustomerCode: transactionData.customer?.customer_code,
+              updatedAt: now
+            })
+            .where(eq(userSubscriptions.userId, userId))
+            .returning();
+          
+          subscription = updated as UserSubscription;
+          
+          if (isRenewal) {
+            log(`Processed subscription RENEWAL for user ${userId}, next billing: ${nextBillingDate.toISOString()}`, 'billing');
+          }
         } else {
-          throw new Error('storage.updateUser not available');
+          // INSERT new subscription (UNIQUE userId constraint handles race conditions)
+          const [created] = await tx
+            .insert(userSubscriptions)
+            .values({
+              userId,
+              planId: plan.id,
+              status: 'active',
+              trialStartDate: null,
+              trialEndDate: null,
+              subscriptionStartDate: now,
+              nextBillingDate,
+              cancelledAt: null,
+              googlePlayPurchaseToken: null,
+              googlePlayOrderId: null,
+              googlePlaySubscriptionId: null,
+              paystackReference: transactionReference,
+              paystackCustomerCode: transactionData.customer?.customer_code,
+              totalPaid: plan.price,
+              lastPaymentDate: now,
+            })
+            .onConflictDoUpdate({
+              target: userSubscriptions.userId,
+              set: {
+                status: 'active',
+                planId: plan.id,
+                subscriptionStartDate: now,
+                nextBillingDate,
+                totalPaid: sql`${userSubscriptions.totalPaid} + ${plan.price}`,
+                lastPaymentDate: now,
+                paystackReference: transactionReference,
+                paystackCustomerCode: transactionData.customer?.customer_code,
+                updatedAt: now
+              }
+            })
+            .returning();
+          
+          subscription = created as UserSubscription;
         }
-      } catch (userTableError) {
-        // CRITICAL ALERT: Table sync failed - user paid but may show as free!
-        log(`CRITICAL: Failed to update users table for user ${userId}: ${userTableError}`, 'billing');
+
+        // Update users table (subscription access checks)
+        await tx
+          .update(users)
+          .set({
+            subscriptionTier: subscriptionTier,
+            subscriptionExpiresAt: nextBillingDate,
+            updatedAt: now
+          } as any)
+          .where(eq(users.id, userId));
         
-        const user = await storage.getUser(userId);
-        if (emailService) {
-          await emailService.sendEmail(
-            process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
-            '🚨 CRITICAL: USER TABLE SYNC FAILED - PAID BUT SHOWING FREE',
-            `A user successfully paid but the users table failed to update:\n\n` +
-            `User: ${user?.email || 'Unknown'} (ID: ${userId})\n` +
-            `Transaction Ref: ${transactionReference}\n` +
-            `Amount: R${amountInKobo / 100}\n` +
-            `Subscription Tier: ${subscriptionTier}\n` +
-            `Next Billing: ${nextBillingDate.toISOString()}\n\n` +
-            `⚠️ THE USER WAS CHARGED BUT MAY SEE "FREE" IN THE APP.\n\n` +
-            `Immediate Action Required:\n` +
-            `Run this SQL to fix:\n` +
-            `UPDATE users SET subscription_tier = '${subscriptionTier}', subscription_expires_at = '${nextBillingDate.toISOString()}' WHERE id = ${userId};\n\n` +
-            `Error: ${userTableError}`
-          );
-        }
-      }
+        log(`Updated users table: subscription_tier=${subscriptionTier}, expires_at=${nextBillingDate.toISOString()}`, 'billing');
 
-      // Record payment transaction
-      const transactionData_: InsertPaymentTransaction = {
-        userId,
-        amount: plan.price,
-        currency: 'ZAR',
-        status: 'completed',
-        paymentMethod: 'card',
-        platform: 'paystack',
-        platformTransactionId: transactionReference,
-        platformOrderId: transactionData.reference,
-        platformSubscriptionId: transactionData.subscription?.subscription_code || transactionData.plan?.plan_code || 'PLN_8l8p7v1mergg804',
-        metadata: JSON.stringify({
-          customerCode: transactionData.customer?.customer_code,
-          authorizationCode: transactionData.authorization?.authorization_code,
-          planCode: transactionData.plan?.plan_code,
-          subscriptionCode: transactionData.subscription?.subscription_code,
-          recurring: true
-        }),
-        description: `${plan.displayName || plan.name} subscription`,
-        failureReason: null,
-        refundReason: null,
-      };
+        // Record payment transaction (UNIQUE constraint prevents duplicates)
+        await tx
+          .insert(paymentTransactions)
+          .values({
+            userId,
+            subscriptionId: subscription.id,
+            amount: plan.price,
+            currency: 'ZAR',
+            status: 'completed',
+            platform: 'paystack',
+            platformTransactionId: transactionReference,
+            platformOrderId: transactionData.reference,
+            platformSubscriptionId: transactionData.subscription?.subscription_code || transactionData.plan?.plan_code || 'PLN_8l8p7v1mergg804',
+            metadata: {
+              customerCode: transactionData.customer?.customer_code,
+              authorizationCode: transactionData.authorization?.authorization_code,
+              planCode: transactionData.plan?.plan_code,
+              subscriptionCode: transactionData.subscription?.subscription_code,
+              recurring: true
+            },
+            description: `${plan.displayName || plan.name} subscription`,
+            failureReason: null,
+            refundReason: null,
+          })
+          .onConflictDoNothing(); // Ignore if duplicate (idempotency)
 
-      if (!storage.createPaymentTransaction) {
-        throw new Error('Payment transactions not supported by current storage');
-      }
-      await storage.createPaymentTransaction(transactionData_);
+        // Log billing event
+        await tx
+          .insert(billingEvents)
+          .values({
+            userId,
+            eventType: 'subscription_activated',
+            eventData: {
+              planId: plan.id,
+              paystackReference: transactionReference,
+              customerCode: transactionData.customer?.customer_code
+            },
+            processed: true
+          });
 
-      // Log billing event
-      await this.logBillingEvent(userId, 'subscription_activated', {
-        planId: plan.id,
-        paystackReference: transactionReference,
-        customerCode: transactionData.customer?.customer_code
+        log(`Paystack subscription activated for user ${userId}, plan: ${plan.name}`, 'billing');
+        return subscription;
       });
 
-      log(`Paystack subscription activated for user ${userId}, plan: ${plan.name}`, 'billing');
-      return subscription;
+      return result;
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       log(`Error processing Paystack subscription for user ${userId}: ${errorMessage}`, 'billing');
       
-      // Log failed event
-      await this.logBillingEvent(userId, 'subscription_failed', {
-        error: errorMessage,
-        paystackReference: transactionReference
-      });
+      // Log failed event (outside transaction since it failed)
+      try {
+        await this.logBillingEvent(userId, 'subscription_failed', {
+          error: errorMessage,
+          paystackReference: transactionReference
+        });
+      } catch (logError) {
+        log(`Failed to log billing event: ${logError}`, 'billing');
+      }
+
+      // Alert admin of failure
+      try {
+        const user = await storage.getUser(userId);
+        if (emailService) {
+          await emailService.sendEmail(
+            process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
+            '🚨 SUBSCRIPTION ACTIVATION FAILED',
+            `Subscription activation failed (transaction rolled back):\n\n` +
+            `User: ${user?.email || 'Unknown'} (ID: ${userId})\n` +
+            `Transaction Ref: ${transactionReference}\n` +
+            `Amount: R${paymentAmount / 100}\n` +
+            `Error: ${errorMessage}\n\n` +
+            `⚠️ THE TRANSACTION WAS ROLLED BACK. User may have been charged by Paystack but subscription not activated.\n` +
+            `Please check Paystack dashboard and manually activate if needed.`
+          );
+        }
+      } catch (emailError) {
+        log(`Failed to send admin alert: ${emailError}`, 'billing');
+      }
 
       throw error;
     }

@@ -317,7 +317,7 @@ export const subscriptionPlans = pgTable("subscription_plans", {
 // User subscriptions tracking
 export const userSubscriptions = pgTable("user_subscriptions", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(), // UNIQUE: One subscription per user
   planId: integer("plan_id").notNull().references(() => subscriptionPlans.id),
   status: text("status").notNull().default("trial"), // "trial", "active", "expired", "cancelled", "paused"
   
@@ -379,7 +379,10 @@ export const paymentTransactions = pgTable("payment_transactions", {
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at"),
-});
+}, (table) => ({
+  // UNIQUE: Prevent duplicate payment transactions per platform
+  uniquePlatformTransaction: unique().on(table.platform, table.platformTransactionId),
+}));
 
 // Billing events for webhook handling
 export const billingEvents = pgTable("billing_events", {

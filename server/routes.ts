@@ -2935,7 +2935,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Process Paystack subscription
+  // Process Paystack subscription - READ-ONLY (verification only, no mutation)
+  // Subscription activation ONLY happens via webhook (charge.success event)
   app.post("/api/billing/paystack/subscription", async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
@@ -2947,11 +2948,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Paystack transaction reference is required" });
       }
 
-      const subscription = await billingService.processPaystackSubscription(userId, reference);
-      res.json({ subscription });
+      // VERIFY ONLY - do not mutate subscription state
+      const verification = await billingService.verifyPaystackTransaction(reference);
+      
+      if (!verification.valid) {
+        return res.status(400).json({ 
+          error: "Payment verification failed", 
+          details: verification.error 
+        });
+      }
+
+      // Return verification status and current subscription state
+      const currentSubscription = await billingService.getUserSubscription(userId);
+      
+      res.json({ 
+        verified: true,
+        transactionStatus: verification.subscription?.status,
+        message: "Payment verified. Subscription will be activated via webhook.",
+        currentSubscription: currentSubscription ? {
+          status: currentSubscription.status,
+          nextBillingDate: currentSubscription.nextBillingDate
+        } : null
+      });
     } catch (error: any) {
       log(`Error in /api/billing/paystack/subscription: ${error.message}`, 'express');
-      res.status(500).json({ error: "Failed to process Paystack subscription" });
+      res.status(500).json({ error: "Failed to verify Paystack subscription" });
     }
   });
 

@@ -1,0 +1,180 @@
+You are working on the Simple Slips production codebase.
+
+Context:
+
+Paystack payments are succeeding
+
+Subscription logic has already been fixed and stabilised
+
+Webhooks are the single source of truth
+
+Some payments were not processed because Paystack webhooks did not reach the server
+
+⚠️ ABSOLUTE SAFETY RULES
+
+DO NOT refactor existing billing logic
+
+DO NOT weaken webhook-first architecture
+
+DO NOT reintroduce frontend-based activation
+
+DO NOT remove existing idempotency or constraints
+
+DO NOT rename routes, services, or files
+
+Changes must be additive, minimal, and reversible
+
+PROBLEM TO SOLVE
+
+If Paystack webhooks:
+
+Fail to deliver
+
+Are delayed
+
+Or were never received
+
+Then:
+
+Payments can succeed
+
+But subscriptions are never created
+
+Leaving users unpaid-but-inactive
+
+The system must be resilient to missed webhooks.
+
+OBJECTIVE
+
+Add bulletproof operational safeguards so that:
+
+Webhook delivery issues are clearly visible
+
+Missed payments can be safely reconciled
+
+No payment is ever permanently lost
+
+Existing fixes remain untouched
+
+REQUIRED IMPLEMENTATION (ALL MANDATORY)
+1️⃣ WEBHOOK DELIVERY VISIBILITY
+
+Add explicit logging at the very start of the Paystack webhook route:
+
+Log:
+
+Timestamp
+
+Event type
+
+Reference
+
+Whether metadata.user_id exists
+
+This log must execute before any signature verification logic exits early.
+
+Purpose:
+
+Distinguish “webhook never arrived” from “webhook rejected”
+
+2️⃣ BILLING EVENT FOR EVERY WEBHOOK ATTEMPT
+
+For every webhook request received (even if invalid):
+
+Create a billing_event record with:
+
+event_type: "paystack_webhook_received"
+event_data: {
+  event,
+  reference,
+  has_metadata_user_id,
+  received_at
+}
+
+
+This must happen before subscription processing.
+
+3️⃣ ADMIN PAYMENT RECONCILIATION ENDPOINT (CRITICAL)
+
+Add a new admin-only endpoint:
+
+POST /api/admin/payments/reconcile
+
+
+Input:
+
+{
+  reference: string
+}
+
+
+Behaviour:
+
+Verify the transaction with Paystack
+
+If payment is valid and completed:
+
+Call the existing processPaystackSubscription method
+
+Respect all existing idempotency rules
+
+Log a billing_event:
+
+event_type: "manual_payment_reconciliation"
+
+
+This endpoint must:
+
+Be safe to call multiple times
+
+Never create duplicates
+
+Never downgrade users
+
+4️⃣ SAFETY CHECK: PREVENT DOUBLE PROCESSING
+
+Before reconciliation:
+
+Check if a payment_transaction already exists for the reference
+
+If yes:
+
+Log and return success without reprocessing
+
+This preserves idempotency.
+
+5️⃣ NO CHANGES TO EXISTING LOGIC
+
+Explicitly confirm that you do NOT:
+
+Modify processPaystackSubscription internals
+
+Modify subscription tier logic
+
+Modify database constraints
+
+Modify frontend payment flows
+
+This task is operational hardening only.
+
+SUCCESS CRITERIA
+
+After implementation:
+
+If a webhook is missed → admin can reconcile payment safely
+
+If Paystack is temporarily unreachable → no permanent damage
+
+If webhook delivery is misconfigured → logs make this obvious
+
+No refunds are required due to silent failures
+
+OUTPUT REQUIREMENTS
+
+Show only minimal diffs
+
+Explain why each addition exists
+
+Confirm no unrelated code was changed
+
+Do not proceed unless every requirement above is satisfied.

@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { log } from "./vite";
+import { billingService } from "./billing-service";
 
 /**
  * Seed subscription plans for Simple Slips
@@ -162,6 +163,11 @@ export async function initializeSubscriptionPlans() {
   try {
     await seedSubscriptionPlans();
     await ensureYearlyPlanExists(); // Add yearly plan to existing databases
+    
+    // OPERATIONAL HARDENING: Start orphaned payment monitoring
+    // Checks every 5 minutes for payments that didn't create subscriptions
+    billingService.startOrphanedPaymentMonitoring(5);
+    
     log('Subscription plans initialization complete', 'billing');
   } catch (error) {
     log(`Failed to initialize subscription plans: ${error}`, 'billing');

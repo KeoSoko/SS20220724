@@ -1245,6 +1245,184 @@ export class BillingService {
       }
     }
   }
+
+  /**
+   * OPERATIONAL HARDENING: Detect orphaned payments
+   * Finds payments that were received but didn't create subscriptions
+   * Uses a grace period to avoid false alarms from webhook delays
+   */
+  async detectOrphanedPayments(gracePeriodMinutes: number = 5): Promise<Array<{
+    userId: number | null;
+    reference: string;
+    amount: number;
+    paymentTime: string;
+    minutesSincePayment: number;
+  }>> {
+    try {
+      const gracePeriodMs = gracePeriodMinutes * 60 * 1000;
+      const cutoffTime = new Date(Date.now() - gracePeriodMs);
+      
+      // Find charge.success events that are older than grace period
+      const recentPaymentEvents = await db.select()
+        .from(billingEvents)
+        .where(sql`
+          event_type = 'paystack_webhook_received' 
+          AND event_data->>'event' = 'charge.success'
+          AND created_at < ${cutoffTime}
+          AND created_at > ${new Date(Date.now() - 24 * 60 * 60 * 1000)}
+        `)
+        .orderBy(billingEvents.createdAt);
+
+      const orphanedPayments: Array<{
+        userId: number | null;
+        reference: string;
+        amount: number;
+        paymentTime: string;
+        minutesSincePayment: number;
+      }> = [];
+
+      for (const event of recentPaymentEvents) {
+        const eventData = event.eventData as any;
+        const reference = eventData?.reference;
+        
+        if (!reference) continue;
+
+        // Check if this payment was already processed
+        const existingPayment = await db.select()
+          .from(paymentTransactions)
+          .where(sql`metadata->>'reference' = ${reference} OR platform_transaction_id = ${reference}`)
+          .limit(1);
+
+        if (existingPayment.length === 0) {
+          // Check if there's an "already alerted" billing event for this reference
+          const alreadyAlerted = await db.select()
+            .from(billingEvents)
+            .where(sql`
+              event_type = 'orphaned_payment_alert' 
+              AND event_data->>'reference' = ${reference}
+            `)
+            .limit(1);
+
+          if (alreadyAlerted.length === 0) {
+            const minutesSincePayment = Math.round(
+              (Date.now() - new Date(eventData?.received_at || event.createdAt).getTime()) / 60000
+            );
+
+            orphanedPayments.push({
+              userId: event.userId,
+              reference,
+              amount: 0, // Will be fetched if needed
+              paymentTime: eventData?.received_at || event.createdAt?.toISOString() || 'unknown',
+              minutesSincePayment
+            });
+          }
+        }
+      }
+
+      return orphanedPayments;
+    } catch (error) {
+      log(`[ORPHAN_DETECT] Error detecting orphaned payments: ${error}`, 'billing');
+      return [];
+    }
+  }
+
+  /**
+   * OPERATIONAL HARDENING: Send calm, actionable alert for orphaned payment
+   * No stack traces, no red sirens - just actionable info
+   */
+  async sendOrphanedPaymentAlert(orphanedPayment: {
+    userId: number | null;
+    reference: string;
+    amount: number;
+    paymentTime: string;
+    minutesSincePayment: number;
+  }): Promise<void> {
+    try {
+      const { userId, reference, paymentTime, minutesSincePayment } = orphanedPayment;
+
+      // Record that we're alerting for this payment (prevent duplicate alerts)
+      await this.recordBillingEvent(userId, 'orphaned_payment_alert', {
+        reference,
+        payment_time: paymentTime,
+        minutes_since_payment: minutesSincePayment,
+        alerted_at: new Date().toISOString()
+      });
+
+      // Verify with Paystack to get payment details
+      let amount = 0;
+      let customerEmail = 'unknown';
+      try {
+        const verification = await this.verifyPaystackTransaction(reference);
+        if (verification.valid && verification.subscription) {
+          amount = verification.subscription.amount || 0;
+          customerEmail = verification.subscription.customer?.email || 'unknown';
+        }
+      } catch (e) {
+        log(`[ORPHAN_ALERT] Could not verify transaction ${reference}`, 'billing');
+      }
+
+      const alertMessage = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAYMENT NEEDS ATTENTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+A payment was received but no subscription was created.
+
+Details:
+• User ID: ${userId || 'Not identified'}
+• Customer Email: ${customerEmail}
+• Paystack Reference: ${reference}
+• Payment Amount: R${(amount / 100).toFixed(2)}
+• Time Since Payment: ${minutesSincePayment} minutes
+
+To Fix:
+POST /api/admin/payments/reconcile
+Body: { "reference": "${reference}" }
+
+This will safely verify the payment with Paystack and create the subscription if valid.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+
+      log(`[ORPHAN_ALERT] ${alertMessage}`, 'billing');
+
+      // Send email notification to admin
+      if (emailService) {
+        await emailService.sendEmail(
+          process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
+          'Simple Slips: Payment Needs Attention',
+          alertMessage
+        );
+      }
+
+    } catch (error) {
+      log(`[ORPHAN_ALERT] Error sending alert: ${error}`, 'billing');
+    }
+  }
+
+  /**
+   * OPERATIONAL HARDENING: Start orphaned payment monitoring
+   * Runs every 5 minutes to detect and alert on missed payments
+   */
+  startOrphanedPaymentMonitoring(intervalMinutes: number = 5): void {
+    log(`[ORPHAN_MONITOR] Starting orphaned payment monitoring (every ${intervalMinutes} minutes)`, 'billing');
+    
+    setInterval(async () => {
+      try {
+        const orphanedPayments = await this.detectOrphanedPayments(5); // 5-min grace period
+        
+        if (orphanedPayments.length > 0) {
+          log(`[ORPHAN_MONITOR] Found ${orphanedPayments.length} orphaned payment(s)`, 'billing');
+          
+          for (const payment of orphanedPayments) {
+            await this.sendOrphanedPaymentAlert(payment);
+          }
+        }
+      } catch (error) {
+        log(`[ORPHAN_MONITOR] Error in monitoring cycle: ${error}`, 'billing');
+      }
+    }, intervalMinutes * 60 * 1000);
+  }
 }
 
 // Export singleton instance

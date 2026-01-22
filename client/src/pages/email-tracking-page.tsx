@@ -3,8 +3,31 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertCircle, CheckCircle, Mail, MailWarning, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertCircle, CheckCircle, Mail, MailWarning, TrendingDown, TrendingUp, CreditCard, Users, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+
+interface SubscriptionHealth {
+  healthy: boolean;
+  duplicateSubscriptions: Array<{ userId: number; count: number }>;
+  totalActiveSubscriptions: number;
+  subscriptions: Array<{
+    userId: number;
+    username: string;
+    email: string;
+    status: string;
+    planId: number;
+    nextBillingDate: string | null;
+    daysRemaining: number;
+    paystackReference: string | null;
+    lastPaymentDate: string | null;
+    totalPaid: number;
+  }>;
+  recentPaymentEvents: Array<{
+    userId: number;
+    createdAt: string;
+    eventData: any;
+  }>;
+}
 
 export default function EmailTrackingPage() {
   // Fetch email stats
@@ -29,6 +52,11 @@ export default function EmailTrackingPage() {
   // Fetch problematic emails
   const { data: problematicEmails, isLoading: problematicLoading } = useQuery<any[]>({
     queryKey: ['/api/admin/problematic-emails'],
+  });
+
+  // Fetch subscription health
+  const { data: subscriptionHealth, isLoading: subscriptionLoading } = useQuery<SubscriptionHealth>({
+    queryKey: ['/api/admin/subscription-health'],
   });
 
   const getEventIcon = (eventType: string) => {
@@ -182,6 +210,109 @@ export default function EmailTrackingPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Subscription Health Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CreditCard className="h-5 w-5" />
+            Subscription Health Monitor
+          </CardTitle>
+          <CardDescription>Monitor active subscriptions and detect payment issues</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {subscriptionLoading ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : subscriptionHealth ? (
+            <div className="space-y-6">
+              {/* Health Status */}
+              <div className="flex items-center gap-4">
+                <div className={`p-3 rounded-lg ${subscriptionHealth.healthy ? 'bg-green-100' : 'bg-red-100'}`}>
+                  {subscriptionHealth.healthy ? (
+                    <CheckCircle className="h-8 w-8 text-green-600" />
+                  ) : (
+                    <AlertTriangle className="h-8 w-8 text-red-600" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg">
+                    {subscriptionHealth.healthy ? 'All Systems Healthy' : 'Issues Detected'}
+                  </h3>
+                  <p className="text-muted-foreground">
+                    {subscriptionHealth.totalActiveSubscriptions} active subscriptions
+                  </p>
+                </div>
+              </div>
+
+              {/* Duplicate Subscriptions Warning */}
+              {subscriptionHealth.duplicateSubscriptions.length > 0 && (
+                <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle className="h-5 w-5 text-red-600" />
+                    <span className="font-semibold text-red-800">Duplicate Subscriptions Detected!</span>
+                  </div>
+                  <ul className="text-sm text-red-700 space-y-1">
+                    {subscriptionHealth.duplicateSubscriptions.map((dup, idx) => (
+                      <li key={idx}>User ID {dup.userId} has {dup.count} active subscriptions</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Active Subscriptions Table */}
+              {subscriptionHealth.subscriptions.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2 flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Active Subscribers
+                  </h4>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>User</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Days Left</TableHead>
+                        <TableHead>Total Paid</TableHead>
+                        <TableHead>Last Payment</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {subscriptionHealth.subscriptions.map((sub) => (
+                        <TableRow key={sub.userId}>
+                          <TableCell className="font-medium">{sub.username}</TableCell>
+                          <TableCell className="text-sm">{sub.email}</TableCell>
+                          <TableCell>
+                            <Badge variant={sub.daysRemaining < 7 ? 'destructive' : 'default'}>
+                              {sub.daysRemaining} days
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-green-600 font-medium">
+                            R{(sub.totalPaid / 100).toFixed(0)}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {sub.lastPaymentDate 
+                              ? formatDistanceToNow(new Date(sub.lastPaymentDate), { addSuffix: true })
+                              : 'N/A'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Unable to load subscription data</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Recent Events */}
       <Card>

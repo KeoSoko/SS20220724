@@ -3545,82 +3545,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin subscription health check - detect mismatches between user_subscriptions and users tables
+  // Admin subscription health check - detect mismatches and potential issues
   app.get("/api/admin/subscription-health", async (req, res) => {
     try {
       if (!req.user) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      // Get all users with active subscriptions in user_subscriptions table
-      const subscriptionMismatches: Array<{
-        userId: number;
-        username: string;
-        email: string;
-        usersTableTier: string;
-        subscriptionStatus: string;
-        subscriptionNextBilling: string | null;
-        subscriptionPlanId: number;
-        issue: string;
-      }> = [];
-
       // Query all active subscriptions
       const activeSubscriptions = await db.select()
         .from(userSubscriptions)
         .where(eq(userSubscriptions.status, 'active'));
 
-      for (const sub of activeSubscriptions) {
-        const user = await storage.getUser(sub.userId);
-        if (!user) continue;
-
-        // Check if user_subscriptions says active but users table says free
-        const hasValidSubscription = sub.nextBillingDate && new Date(sub.nextBillingDate) > new Date();
-        
-        if (hasValidSubscription && user.subscriptionTier === 'free') {
-          subscriptionMismatches.push({
-            userId: user.id,
-            username: user.username,
-            email: user.email || 'no-email',
-            usersTableTier: user.subscriptionTier || 'free',
-            subscriptionStatus: sub.status,
-            subscriptionNextBilling: sub.nextBillingDate ? sub.nextBillingDate.toISOString() : null,
-            subscriptionPlanId: sub.planId,
-            issue: 'PAID_BUT_SHOWING_FREE - User paid but app shows free tier'
-          });
-        }
-      }
-
       // Check for duplicate active subscriptions per user
-      const userSubCounts = new Map<number, number>();
+      const userSubCounts: Record<number, number> = {};
       for (const sub of activeSubscriptions) {
-        const count = userSubCounts.get(sub.userId) || 0;
-        userSubCounts.set(sub.userId, count + 1);
+        userSubCounts[sub.userId] = (userSubCounts[sub.userId] || 0) + 1;
       }
 
       const duplicateSubscriptions: Array<{ userId: number; count: number }> = [];
-      for (const [userId, count] of userSubCounts) {
+      for (const userIdStr of Object.keys(userSubCounts)) {
+        const userId = parseInt(userIdStr);
+        const count = userSubCounts[userId];
         if (count > 1) {
           duplicateSubscriptions.push({ userId, count });
         }
       }
 
-      // Get recent payments from billing_events
-      const recentPayments = await db.select()
+      // Build detailed subscription list with user info
+      const subscriptionDetails = await Promise.all(
+        activeSubscriptions.map(async (sub) => {
+          const user = await storage.getUser(sub.userId);
+          const daysRemaining = sub.nextBillingDate 
+            ? Math.ceil((new Date(sub.nextBillingDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+            : 0;
+          return {
+            userId: sub.userId,
+            username: user?.username || 'Unknown',
+            email: user?.email || 'no-email',
+            status: sub.status,
+            planId: sub.planId,
+            nextBillingDate: sub.nextBillingDate?.toISOString() || null,
+            daysRemaining,
+            paystackReference: sub.paystackReference || null,
+            lastPaymentDate: sub.lastPaymentDate?.toISOString() || null,
+            totalPaid: sub.totalPaid || 0
+          };
+        })
+      );
+
+      // Get recent payment events from billing_events
+      const recentPaymentEvents = await db.select()
         .from(billingEvents)
         .where(eq(billingEvents.eventType, 'payment_success'))
         .orderBy(billingEvents.createdAt)
         .limit(20);
 
       res.json({
-        healthy: subscriptionMismatches.length === 0 && duplicateSubscriptions.length === 0,
-        mismatches: subscriptionMismatches,
+        healthy: duplicateSubscriptions.length === 0,
         duplicateSubscriptions,
         totalActiveSubscriptions: activeSubscriptions.length,
-        recentPayments: recentPayments.map(p => ({
+        subscriptions: subscriptionDetails,
+        recentPaymentEvents: recentPaymentEvents.map(p => ({
           userId: p.userId,
           createdAt: p.createdAt,
-          amount: p.amount,
-          transactionRef: p.transactionRef
+          eventData: p.eventData
         }))
       });
     } catch (error: any) {

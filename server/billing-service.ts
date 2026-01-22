@@ -714,14 +714,38 @@ export class BillingService {
 
       // CRITICAL: Also update the users table for subscription access checks
       // The app checks users.subscription_tier and users.subscription_expires_at for access
-      if (storage.updateUser) {
-        await storage.updateUser(userId, {
-          subscriptionTier: subscriptionTier,
-          subscriptionExpiresAt: nextBillingDate
-        } as any);
-        log(`Updated users table: subscription_tier=${subscriptionTier}, expires_at=${nextBillingDate.toISOString()}`, 'billing');
-      } else {
-        log(`WARNING: Could not update users table - storage.updateUser not available`, 'billing');
+      try {
+        if (storage.updateUser) {
+          await storage.updateUser(userId, {
+            subscriptionTier: subscriptionTier,
+            subscriptionExpiresAt: nextBillingDate
+          } as any);
+          log(`Updated users table: subscription_tier=${subscriptionTier}, expires_at=${nextBillingDate.toISOString()}`, 'billing');
+        } else {
+          throw new Error('storage.updateUser not available');
+        }
+      } catch (userTableError) {
+        // CRITICAL ALERT: Table sync failed - user paid but may show as free!
+        log(`CRITICAL: Failed to update users table for user ${userId}: ${userTableError}`, 'billing');
+        
+        const user = await storage.getUser(userId);
+        if (emailService) {
+          await emailService.sendEmail(
+            process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
+            '🚨 CRITICAL: USER TABLE SYNC FAILED - PAID BUT SHOWING FREE',
+            `A user successfully paid but the users table failed to update:\n\n` +
+            `User: ${user?.email || 'Unknown'} (ID: ${userId})\n` +
+            `Transaction Ref: ${transactionReference}\n` +
+            `Amount: R${amountInKobo / 100}\n` +
+            `Subscription Tier: ${subscriptionTier}\n` +
+            `Next Billing: ${nextBillingDate.toISOString()}\n\n` +
+            `⚠️ THE USER WAS CHARGED BUT MAY SEE "FREE" IN THE APP.\n\n` +
+            `Immediate Action Required:\n` +
+            `Run this SQL to fix:\n` +
+            `UPDATE users SET subscription_tier = '${subscriptionTier}', subscription_expires_at = '${nextBillingDate.toISOString()}' WHERE id = ${userId};\n\n` +
+            `Error: ${userTableError}`
+          );
+        }
       }
 
       // Record payment transaction

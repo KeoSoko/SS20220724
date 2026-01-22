@@ -604,6 +604,22 @@ export class BillingService {
         nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
       }
 
+      // GUARD: Prevent duplicate payments - check if this exact transaction was already processed
+      if (existingSubscription && existingSubscription.paystackReference === transactionReference) {
+        log(`Transaction ${transactionReference} already processed for user ${userId}, skipping duplicate`, 'billing');
+        return existingSubscription;
+      }
+
+      // GUARD: Check if user already has an active subscription with time remaining (at least 7 days)
+      // to prevent accidental double-charges
+      if (existingSubscription && existingSubscription.status === 'active' && existingSubscription.nextBillingDate) {
+        const daysRemaining = Math.ceil((new Date(existingSubscription.nextBillingDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysRemaining > 7) {
+          log(`User ${userId} already has active subscription with ${daysRemaining} days remaining - this may be a duplicate payment`, 'billing');
+          // Still process but log warning - Paystack already charged the card
+        }
+      }
+
       // Create or update subscription
       let subscription: UserSubscription;
       

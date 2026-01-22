@@ -243,11 +243,24 @@ export function SubscriptionPage() {
           variant: "default",
         });
         return;
-      } else {
-        // Set selected plan and show payment options
-        setSelectedPlan(plan);
-        setShowPaymentOptions(true);
       }
+      
+      // GUARD: Prevent duplicate subscriptions if user already has active subscription with remaining time
+      if (subscription?.status === 'active' && subscription?.nextBillingDate) {
+        const daysRemaining = Math.ceil((new Date(subscription.nextBillingDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        if (daysRemaining > 0) {
+          toast({
+            title: "Already Subscribed",
+            description: `You already have an active subscription valid for ${daysRemaining} more days. No need to pay again!`,
+            variant: "default",
+          });
+          return;
+        }
+      }
+      
+      // Set selected plan and show payment options
+      setSelectedPlan(plan);
+      setShowPaymentOptions(true);
     } catch (error) {
       toast({
         title: "Error",

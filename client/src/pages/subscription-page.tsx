@@ -672,7 +672,7 @@ export function SubscriptionPage() {
                   <p className="text-muted-foreground">{selectedPlan.description}</p>
                 </div>
 
-                <div className="grid lg:grid-cols-3 md:grid-cols-2 gap-6">
+                <div className="grid lg:grid-cols-2 gap-6">
                   {/* Paystack Payment Option */}
                   <PaystackBilling
                     plan={selectedPlan}
@@ -689,12 +689,14 @@ export function SubscriptionPage() {
                   />
 
                   {/* Simplified Payment Message - Paystack for Everyone */}
-                  <Alert className="border-primary/20">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      <strong>Simple Payment:</strong> All users can subscribe using Paystack above - works on web, Android, and iOS. No app store required!
-                    </AlertDescription>
-                  </Alert>
+                  <div className="flex items-start">
+                    <Alert className="border-primary/20 h-fit">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        <strong>Simple Payment:</strong> All users can subscribe using Paystack above - works on web, Android, and iOS. No app store required!
+                      </AlertDescription>
+                    </Alert>
+                  </div>
                 </div>
               </div>
             </div>

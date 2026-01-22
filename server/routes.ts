@@ -29,6 +29,7 @@ import {
   invoicePayments,
   userSubscriptions,
   billingEvents,
+  paymentTransactions,
   Client,
   Invoice,
   Quotation,
@@ -3123,16 +3124,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Paystack webhook endpoint - NO AUTHENTICATION REQUIRED (called by Paystack servers)
   app.post("/api/billing/paystack/webhook", async (req, res) => {
+    // OPERATIONAL HARDENING: Log webhook arrival BEFORE any verification
+    // This distinguishes "webhook never arrived" from "webhook rejected"
+    const webhookReceivedAt = new Date().toISOString();
+    const { event, data } = req.body || {};
+    const reference = data?.reference || 'unknown';
+    const hasMetadataUserId = !!data?.metadata?.user_id;
+    
+    log(`[WEBHOOK_ARRIVAL] timestamp=${webhookReceivedAt} event=${event || 'missing'} reference=${reference} has_metadata_user_id=${hasMetadataUserId}`, 'billing');
+    
+    // OPERATIONAL HARDENING: Record billing event for every webhook attempt (even invalid ones)
+    try {
+      await billingService.recordBillingEvent(null, 'paystack_webhook_received', {
+        event: event || 'missing',
+        reference,
+        has_metadata_user_id: hasMetadataUserId,
+        received_at: webhookReceivedAt,
+        signature_present: !!req.headers['x-paystack-signature']
+      });
+    } catch (eventError: any) {
+      log(`Failed to record webhook arrival event: ${eventError.message}`, 'billing');
+    }
+
     try {
       const hash = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY || '').update(JSON.stringify(req.body)).digest('hex');
       
       // Verify webhook signature for security
       if (hash !== req.headers['x-paystack-signature']) {
-        log('Invalid Paystack webhook signature', 'billing');
+        log(`[WEBHOOK_REJECTED] Invalid signature for reference=${reference} event=${event}`, 'billing');
         return res.status(400).json({ error: 'Invalid signature' });
       }
 
-      const { event, data } = req.body;
       log(`Paystack webhook received: ${event}`, 'billing');
 
       // Handle different webhook events
@@ -3707,6 +3729,136 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error in /api/admin/subscription-health: ${error.message}`, 'billing');
       res.status(500).json({ error: "Failed to check subscription health" });
+    }
+  });
+
+  // OPERATIONAL HARDENING: Admin payment reconciliation endpoint
+  // Safely reconcile missed webhook payments - idempotent and safe to call multiple times
+  app.post("/api/admin/payments/reconcile", async (req, res) => {
+    try {
+      // Require admin authentication
+      if (!req.user) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const { reference } = req.body;
+      
+      if (!reference || typeof reference !== 'string') {
+        return res.status(400).json({ error: "Missing or invalid reference" });
+      }
+
+      log(`[ADMIN_RECONCILE] Starting reconciliation for reference: ${reference}`, 'billing');
+
+      // SAFETY CHECK: Check if payment was already processed
+      const existingPayment = await db.select()
+        .from(paymentTransactions)
+        .where(sql`metadata->>'reference' = ${reference} OR platform_transaction_id = ${reference}`)
+        .limit(1);
+
+      if (existingPayment.length > 0) {
+        log(`[ADMIN_RECONCILE] Payment ${reference} already processed - no action needed`, 'billing');
+        
+        // Record the reconciliation attempt
+        await billingService.recordBillingEvent(
+          existingPayment[0].userId, 
+          'manual_reconciliation_skipped',
+          { reference, reason: 'already_processed', existing_transaction_id: existingPayment[0].id }
+        );
+
+        return res.json({ 
+          success: true, 
+          message: "Payment already processed",
+          already_processed: true,
+          transaction_id: existingPayment[0].id
+        });
+      }
+
+      // Verify the transaction with Paystack
+      const verification = await billingService.verifyPaystackTransaction(reference);
+      
+      if (!verification.valid) {
+        log(`[ADMIN_RECONCILE] Verification failed for ${reference}: ${verification.error}`, 'billing');
+        
+        await billingService.recordBillingEvent(null, 'manual_reconciliation_failed', {
+          reference,
+          reason: 'verification_failed',
+          error: verification.error
+        });
+
+        return res.status(400).json({ 
+          error: "Payment verification failed", 
+          details: verification.error 
+        });
+      }
+
+      // Extract user ID from the transaction metadata
+      const userId = verification.subscription?.metadata?.user_id;
+      
+      if (!userId) {
+        log(`[ADMIN_RECONCILE] No user_id in metadata for ${reference}`, 'billing');
+        
+        await billingService.recordBillingEvent(null, 'manual_reconciliation_failed', {
+          reference,
+          reason: 'no_user_id_in_metadata'
+        });
+
+        return res.status(400).json({ 
+          error: "Cannot reconcile - no user_id in payment metadata" 
+        });
+      }
+
+      // Verify user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        log(`[ADMIN_RECONCILE] User ${userId} not found for reference ${reference}`, 'billing');
+        
+        await billingService.recordBillingEvent(null, 'manual_reconciliation_failed', {
+          reference,
+          reason: 'user_not_found',
+          metadata_user_id: userId
+        });
+
+        return res.status(400).json({ error: "User not found" });
+      }
+
+      // Process the subscription using existing method (respects all idempotency rules)
+      const subscription = await billingService.processPaystackSubscription(userId, reference);
+
+      // Record successful reconciliation
+      await billingService.recordBillingEvent(userId, 'manual_payment_reconciliation', {
+        reference,
+        subscription_id: subscription.id,
+        plan_id: subscription.planId,
+        status: subscription.status,
+        reconciled_at: new Date().toISOString()
+      });
+
+      log(`[ADMIN_RECONCILE] Successfully reconciled payment ${reference} for user ${userId}`, 'billing');
+
+      res.json({
+        success: true,
+        message: "Payment reconciled successfully",
+        subscription: {
+          id: subscription.id,
+          userId: subscription.userId,
+          planId: subscription.planId,
+          status: subscription.status,
+          nextBillingDate: subscription.nextBillingDate
+        }
+      });
+
+    } catch (error: any) {
+      log(`[ADMIN_RECONCILE] Error: ${error.message}`, 'billing');
+      
+      // Record failure event
+      try {
+        await billingService.recordBillingEvent(null, 'manual_reconciliation_error', {
+          reference: req.body?.reference,
+          error: error.message
+        });
+      } catch (e) {}
+
+      res.status(500).json({ error: "Reconciliation failed", details: error.message });
     }
   });
 

@@ -3035,8 +3035,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Process Paystack subscription - READ-ONLY (verification only, no mutation)
-  // Subscription activation ONLY happens via webhook (charge.success event)
+  // Process Paystack subscription - Verifies and activates if webhook hasn't processed it yet
+  // Primary activation is via webhook, but this provides a fallback safety net
   app.post("/api/billing/paystack/subscription", async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
@@ -3048,7 +3048,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Paystack transaction reference is required" });
       }
 
-      // VERIFY ONLY - do not mutate subscription state
+      // Verify the transaction with Paystack
       const verification = await billingService.verifyPaystackTransaction(reference);
       
       if (!verification.valid) {
@@ -3058,16 +3058,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Return verification status and current subscription state
+      // Check current subscription status
       const currentSubscription = await billingService.getUserSubscription(userId);
+      
+      // FALLBACK ACTIVATION: If payment is verified but subscription is not active,
+      // activate it now. This handles cases where webhooks fail or are delayed.
+      let activated = false;
+      if (verification.valid && verification.subscription?.status === 'success') {
+        const needsActivation = !currentSubscription || 
+                                currentSubscription.status !== 'active' ||
+                                currentSubscription.paystackReference !== reference;
+        
+        if (needsActivation) {
+          try {
+            await billingService.processPaystackSubscription(userId, reference);
+            activated = true;
+            log(`Fallback activation: Subscription activated for user ${userId} via verification endpoint`, 'billing');
+          } catch (activationError: any) {
+            // If activation fails due to duplicate, that's OK - webhook already processed it
+            if (!activationError.message?.includes('duplicate') && !activationError.message?.includes('conflict')) {
+              log(`Fallback activation failed for user ${userId}: ${activationError.message}`, 'billing');
+            }
+          }
+        }
+      }
+
+      // Get updated subscription status
+      const updatedSubscription = await billingService.getUserSubscription(userId);
       
       res.json({ 
         verified: true,
+        activated: activated,
         transactionStatus: verification.subscription?.status,
-        message: "Payment verified. Subscription will be activated via webhook.",
-        currentSubscription: currentSubscription ? {
-          status: currentSubscription.status,
-          nextBillingDate: currentSubscription.nextBillingDate
+        message: activated ? "Payment verified and subscription activated." : "Payment verified. Subscription is active.",
+        currentSubscription: updatedSubscription ? {
+          status: updatedSubscription.status,
+          nextBillingDate: updatedSubscription.nextBillingDate
         } : null
       });
     } catch (error: any) {

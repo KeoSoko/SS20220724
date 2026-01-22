@@ -590,7 +590,7 @@ export function SubscriptionPage() {
                     </ul>
                   </CardContent>
                   <CardFooter>
-                    {subscription?.planId === selectedBillingPlan.id ? (
+                    {subscription?.planId === selectedBillingPlan.id && subscription?.status === 'active' ? (
                       <Badge variant="default" className="w-full justify-center py-2">
                         Current Plan
                       </Badge>
@@ -600,7 +600,7 @@ export function SubscriptionPage() {
                         onClick={() => handleSubscribe(selectedBillingPlan)}
                         data-testid="button-subscribe"
                       >
-                        Subscribe Now
+                        {subscription?.status === 'cancelled' ? 'Resubscribe Now' : 'Subscribe Now'}
                       </Button>
                     )}
                   </CardFooter>

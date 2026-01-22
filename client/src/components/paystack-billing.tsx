@@ -21,12 +21,13 @@ interface PaystackBillingProps {
     currency: string;
     billingPeriod: string;
   };
+  userId: number;
   userEmail: string;
   onPaymentSuccess?: (reference: string) => void;
   onPaymentError?: (error: any) => void;
 }
 
-export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentError }: PaystackBillingProps) {
+export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onPaymentError }: PaystackBillingProps) {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -56,6 +57,7 @@ export function PaystackBilling({ plan, userEmail, onPaymentSuccess, onPaymentEr
       plan: paystackPlanCode,
       ref: `ss_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       metadata: {
+        user_id: userId,
         plan_id: plan.id,
         plan_name: plan.name,
         user_email: userEmail,

@@ -91,18 +91,23 @@ async function handlePaystackChargeSuccess(data: any) {
   try {
     log(`Processing Paystack charge success: ${data.reference}`, 'billing');
     
-    // Find user by email or transaction reference
-    const users = await storage.findUsersByEmail?.(data.customer?.email || '');
-    const user = users?.[0];
-    
+    // MANDATORY: User lookup by metadata.user_id only (no email matching)
+    const userId = data.metadata?.user_id;
+    if (!userId) {
+      log(`CRITICAL: No user_id in Paystack metadata for charge: ${data.reference}. Email: ${data.customer?.email}`, 'billing');
+      return;
+    }
+
+    // Verify user exists
+    const user = await storage.getUser(userId);
     if (!user) {
-      log(`No user found for Paystack charge: ${data.customer?.email}`, 'billing');
+      log(`CRITICAL: User ID ${userId} from metadata not found in database for charge: ${data.reference}`, 'billing');
       return;
     }
 
     // Process the subscription using the billing service
-    await billingService.processPaystackSubscription(user.id, data.reference);
-    log(`Successfully activated subscription for user ${user.id} via webhook`, 'billing');
+    await billingService.processPaystackSubscription(userId, data.reference);
+    log(`Successfully activated subscription for user ${userId} via webhook`, 'billing');
   } catch (error) {
     log(`Error handling Paystack charge success: ${error}`, 'billing');
   }
@@ -121,24 +126,22 @@ async function handlePaystackSubscriptionDisable(data: any) {
   try {
     log(`Paystack subscription disabled: ${data.subscription_code}`, 'billing');
     
-    // Find user by email from the customer data
-    const customerEmail = data.customer?.email;
-    if (!customerEmail) {
-      log(`No customer email found for disabled subscription: ${data.subscription_code}`, 'billing');
+    // MANDATORY: User lookup by metadata.user_id only (no email matching)
+    const userId = data.metadata?.user_id;
+    if (!userId) {
+      log(`No user_id in metadata for disabled subscription: ${data.subscription_code}. Logging only.`, 'billing');
       return;
     }
 
-    const users = await storage.findUsersByEmail?.(customerEmail);
-    const user = users?.[0];
-    
+    const user = await storage.getUser(userId);
     if (!user) {
-      log(`No user found with email ${customerEmail} for disabled subscription`, 'billing');
+      log(`User ID ${userId} not found for disabled subscription: ${data.subscription_code}`, 'billing');
       return;
     }
 
     // Cancel the user's subscription
-    await billingService.cancelSubscription(user.id);
-    log(`Successfully cancelled subscription for user ${user.id} (${customerEmail}) via Paystack webhook`, 'billing');
+    await billingService.cancelSubscription(userId);
+    log(`Successfully cancelled subscription for user ${userId} via Paystack webhook`, 'billing');
 
     // Send notification email about cancelled subscription
     if (user.email) {
@@ -158,24 +161,22 @@ async function handlePaystackPaymentFailed(data: any) {
   try {
     log(`Paystack payment failed: ${data.reference}`, 'billing');
     
-    // Find user by email
-    const customerEmail = data.customer?.email;
-    if (!customerEmail) {
-      log(`No customer email found for failed payment: ${data.reference}`, 'billing');
+    // MANDATORY: User lookup by metadata.user_id only (no email matching)
+    const userId = data.metadata?.user_id;
+    if (!userId) {
+      log(`No user_id in metadata for failed payment: ${data.reference}. Logging only.`, 'billing');
       return;
     }
 
-    const users = await storage.findUsersByEmail?.(customerEmail);
-    const user = users?.[0];
-    
+    const user = await storage.getUser(userId);
     if (!user) {
-      log(`No user found with email ${customerEmail} for failed payment`, 'billing');
+      log(`User ID ${userId} not found for failed payment: ${data.reference}`, 'billing');
       return;
     }
 
     // Log billing event for failed payment
     await billingService.recordPaymentFailure(
-      user.id,
+      userId,
       data.reference,
       data.gateway_response || 'Payment failed',
       data.amount,
@@ -191,7 +192,7 @@ async function handlePaystackPaymentFailed(data: any) {
         'payment_failed',
         `${failureReason}. Please update your payment method to ensure uninterrupted service.`
       );
-      log(`Payment failure notification sent to user ${user.id} (${customerEmail})`, 'billing');
+      log(`Payment failure notification sent to user ${userId}`, 'billing');
     }
   } catch (error) {
     log(`Error handling Paystack payment failed: ${error}`, 'billing');
@@ -200,67 +201,11 @@ async function handlePaystackPaymentFailed(data: any) {
 
 async function handlePaystackInvoicePaid(data: any) {
   try {
-    log(`Paystack invoice event received: ${JSON.stringify(data)}`, 'billing');
-    
-    // Invoice events contain subscription renewal data
-    const customerEmail = data.customer?.email || data.subscription?.customer?.email;
-    const status = data.status || data.paid;
-    
-    // Only process paid invoices
-    if (status !== 'success' && status !== true && status !== 'paid') {
-      log(`Invoice not paid, status: ${status}`, 'billing');
-      return;
-    }
-    
-    if (!customerEmail) {
-      log(`No customer email found in invoice data`, 'billing');
-      return;
-    }
-
-    const users = await storage.findUsersByEmail?.(customerEmail);
-    const user = users?.[0];
-    
-    if (!user) {
-      log(`No user found with email ${customerEmail} for invoice payment`, 'billing');
-      return;
-    }
-
-    // Calculate next billing date (1 month from now for monthly, 1 year for yearly)
-    const amount = data.amount || 0;
-    const isYearly = amount >= 50000; // R500+ is yearly
-    const nextBillingDate = new Date();
-    if (isYearly) {
-      nextBillingDate.setFullYear(nextBillingDate.getFullYear() + 1);
-    } else {
-      nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
-    }
-    const subscriptionTier = isYearly ? 'yearly' : 'monthly';
-
-    // Update the users table
-    if (storage.updateUser) {
-      await storage.updateUser(user.id, {
-        subscriptionTier: subscriptionTier,
-        subscriptionExpiresAt: nextBillingDate
-      } as any);
-      log(`Updated users table for renewal: user ${user.id}, tier=${subscriptionTier}, expires=${nextBillingDate.toISOString()}`, 'billing');
-    }
-
-    // Update user_subscriptions table
-    if (storage.updateUserSubscription) {
-      const subscription = await storage.getUserSubscription?.(user.id);
-      if (subscription) {
-        await storage.updateUserSubscription(subscription.id, {
-          status: 'active',
-          nextBillingDate,
-          lastPaymentDate: new Date()
-        });
-        log(`Updated user_subscriptions for renewal: user ${user.id}`, 'billing');
-      }
-    }
-
-    log(`Successfully processed subscription RENEWAL for user ${user.id} (${customerEmail}), next billing: ${nextBillingDate.toISOString()}`, 'billing');
+    log(`Paystack invoice event received (logging only - no subscription mutation): ${JSON.stringify(data)}`, 'billing');
+    // NOTE: Invoice events do NOT activate/renew subscriptions. Only charge.success does.
+    // This handler is for logging/monitoring purposes only.
   } catch (error) {
-    log(`Error handling Paystack invoice paid: ${error}`, 'billing');
+    log(`Error handling Paystack invoice event: ${error}`, 'billing');
   }
 }
 

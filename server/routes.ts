@@ -27,6 +27,8 @@ import {
   invoices,
   lineItems,
   invoicePayments,
+  userSubscriptions,
+  billingEvents,
   Client,
   Invoice,
   Quotation,
@@ -3540,6 +3542,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error in /api/admin/problematic-emails: ${error.message}`, 'email');
       res.status(500).json({ error: "Failed to get problematic emails" });
+    }
+  });
+
+  // Admin subscription health check - detect mismatches between user_subscriptions and users tables
+  app.get("/api/admin/subscription-health", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      // Get all users with active subscriptions in user_subscriptions table
+      const subscriptionMismatches: Array<{
+        userId: number;
+        username: string;
+        email: string;
+        usersTableTier: string;
+        subscriptionStatus: string;
+        subscriptionNextBilling: string | null;
+        subscriptionPlanId: number;
+        issue: string;
+      }> = [];
+
+      // Query all active subscriptions
+      const activeSubscriptions = await db.select()
+        .from(userSubscriptions)
+        .where(eq(userSubscriptions.status, 'active'));
+
+      for (const sub of activeSubscriptions) {
+        const user = await storage.getUser(sub.userId);
+        if (!user) continue;
+
+        // Check if user_subscriptions says active but users table says free
+        const hasValidSubscription = sub.nextBillingDate && new Date(sub.nextBillingDate) > new Date();
+        
+        if (hasValidSubscription && user.subscriptionTier === 'free') {
+          subscriptionMismatches.push({
+            userId: user.id,
+            username: user.username,
+            email: user.email || 'no-email',
+            usersTableTier: user.subscriptionTier || 'free',
+            subscriptionStatus: sub.status,
+            subscriptionNextBilling: sub.nextBillingDate ? sub.nextBillingDate.toISOString() : null,
+            subscriptionPlanId: sub.planId,
+            issue: 'PAID_BUT_SHOWING_FREE - User paid but app shows free tier'
+          });
+        }
+      }
+
+      // Check for duplicate active subscriptions per user
+      const userSubCounts = new Map<number, number>();
+      for (const sub of activeSubscriptions) {
+        const count = userSubCounts.get(sub.userId) || 0;
+        userSubCounts.set(sub.userId, count + 1);
+      }
+
+      const duplicateSubscriptions: Array<{ userId: number; count: number }> = [];
+      for (const [userId, count] of userSubCounts) {
+        if (count > 1) {
+          duplicateSubscriptions.push({ userId, count });
+        }
+      }
+
+      // Get recent payments from billing_events
+      const recentPayments = await db.select()
+        .from(billingEvents)
+        .where(eq(billingEvents.eventType, 'payment_success'))
+        .orderBy(billingEvents.createdAt)
+        .limit(20);
+
+      res.json({
+        healthy: subscriptionMismatches.length === 0 && duplicateSubscriptions.length === 0,
+        mismatches: subscriptionMismatches,
+        duplicateSubscriptions,
+        totalActiveSubscriptions: activeSubscriptions.length,
+        recentPayments: recentPayments.map(p => ({
+          userId: p.userId,
+          createdAt: p.createdAt,
+          amount: p.amount,
+          transactionRef: p.transactionRef
+        }))
+      });
+    } catch (error: any) {
+      log(`Error in /api/admin/subscription-health: ${error.message}`, 'billing');
+      res.status(500).json({ error: "Failed to check subscription health" });
     }
   });
 

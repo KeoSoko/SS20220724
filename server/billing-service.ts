@@ -607,6 +607,23 @@ export class BillingService {
       // GUARD: Prevent duplicate payments - check if this exact transaction was already processed
       if (existingSubscription && existingSubscription.paystackReference === transactionReference) {
         log(`Transaction ${transactionReference} already processed for user ${userId}, skipping duplicate`, 'billing');
+        
+        // ALERT: Notify admin of blocked duplicate payment
+        const user = await storage.getUser(userId);
+        if (emailService) {
+          await emailService.sendEmail(
+            process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
+            '⚠️ DUPLICATE PAYMENT BLOCKED',
+            `A duplicate payment attempt was blocked:\n\n` +
+            `User: ${user?.email || 'Unknown'} (ID: ${userId})\n` +
+            `Transaction Ref: ${transactionReference}\n` +
+            `Existing Sub ID: ${existingSubscription.id}\n` +
+            `Status: ${existingSubscription.status}\n` +
+            `Next Billing: ${existingSubscription.nextBillingDate?.toISOString()}\n\n` +
+            `Action: No double-charge occurred. The user was NOT charged again.`
+          );
+        }
+        
         return existingSubscription;
       }
 
@@ -616,7 +633,23 @@ export class BillingService {
         const daysRemaining = Math.ceil((new Date(existingSubscription.nextBillingDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         if (daysRemaining > 7) {
           log(`User ${userId} already has active subscription with ${daysRemaining} days remaining - this may be a duplicate payment`, 'billing');
-          // Still process but log warning - Paystack already charged the card
+          
+          // ALERT: Notify admin - Paystack already charged, this might need refund
+          const user = await storage.getUser(userId);
+          if (emailService) {
+            await emailService.sendEmail(
+              process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
+              '🚨 POSSIBLE DOUBLE-CHARGE - CHECK PAYSTACK',
+              `A user with an active subscription was charged again:\n\n` +
+              `User: ${user?.email || 'Unknown'} (ID: ${userId})\n` +
+              `Transaction Ref: ${transactionReference}\n` +
+              `Amount: R${amountInKobo / 100}\n` +
+              `Days Remaining Before Payment: ${daysRemaining}\n` +
+              `Next Billing Date: ${existingSubscription.nextBillingDate.toISOString()}\n\n` +
+              `⚠️ PAYSTACK ALREADY CHARGED THE CUSTOMER.\n` +
+              `Please check Paystack dashboard and consider refunding if this was a duplicate.`
+            );
+          }
         }
       }
 

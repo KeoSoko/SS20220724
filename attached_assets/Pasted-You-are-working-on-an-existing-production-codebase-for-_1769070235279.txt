@@ -1,0 +1,166 @@
+You are working on an existing production codebase for Simple Slips.
+
+The app uses:
+
+Paystack for payments
+
+Webhooks for payment confirmation
+
+Node/Express backend
+
+Postgres database
+
+There is a known issue where:
+
+Payments succeed on Paystack
+
+But subscriptions are not reliably created or upgraded
+
+This happens inconsistently (“works sometimes”)
+
+⚠️ CRITICAL INSTRUCTIONS
+
+DO NOT refactor unrelated code
+
+DO NOT rename files, routes, or services
+
+DO NOT change existing logic unless explicitly instructed
+
+DO NOT remove existing functionality unless stated
+
+Changes must be minimal, surgical, and isolated
+
+OBJECTIVE
+
+Fix Paystack subscription reliability by enforcing:
+
+A single source of truth (webhook only)
+
+Reliable user identification (no email matching)
+
+Database-level idempotency
+
+Deterministic subscription state
+
+REQUIRED CHANGES (DO ALL, NOTHING MORE)
+1️⃣ PAYSTACK METADATA (USER IDENTIFICATION)
+
+Ensure that when a Paystack transaction is initialized, the following metadata is always included:
+
+{
+  "user_id": <authenticated user id>
+}
+
+
+This metadata must be persisted and retrievable inside Paystack webhook payloads.
+
+2️⃣ WEBHOOK USER LOOKUP (MANDATORY)
+
+Update the Paystack webhook handlers so that:
+
+User lookup is done ONLY using metadata.user_id
+
+Email-based lookup must NOT be used
+
+If metadata.user_id is missing, log an error and exit safely
+
+❌ Do not use:
+
+findUsersByEmail(...)
+
+3️⃣ SINGLE SUBSCRIPTION ENTRY POINT
+
+Subscription activation and upgrades must happen ONLY inside the Paystack webhook handler.
+
+The authenticated route:
+
+POST /api/billing/paystack/subscription
+
+
+must NOT activate subscriptions.
+
+It may:
+
+Verify transaction status
+
+Return informational responses
+
+But it must not mutate subscription state.
+
+4️⃣ IDEMPOTENCY (DATABASE-ENFORCED)
+
+Add database-level safeguards:
+
+payment_transactions
+UNIQUE (platform, platformTransactionId)
+
+user_subscriptions
+UNIQUE (user_id)
+
+
+Update writes to:
+
+Use UPSERT semantics where needed
+
+Safely ignore duplicate Paystack webhook retries
+
+5️⃣ PAYSTACK EVENT HANDLING (REDUCE SCOPE)
+
+Only the following webhook event should activate or renew subscriptions:
+
+charge.success
+
+
+Other events may be logged but must not update subscription state.
+
+6️⃣ ATOMIC DATABASE WRITES
+
+In processPaystackSubscription:
+
+Wrap the following operations in a single database transaction:
+
+Create or update user_subscriptions
+
+Update users.subscriptionTier and subscriptionExpiresAt
+
+Insert into payment_transactions
+
+If any step fails:
+
+Roll back all changes
+
+Log the failure clearly
+
+7️⃣ PRESERVE EXISTING ARCHITECTURE
+
+Keep existing services, storage layer, and schemas
+
+Only add constraints or minimal helpers
+
+No rewrites, no abstractions, no framework changes
+
+SUCCESS CRITERIA
+
+After changes:
+
+Every successful Paystack payment results in exactly one subscription update
+
+Webhook retries are safe and idempotent
+
+No user is matched by email
+
+UI reflects subscription state after refresh
+
+No existing non-billing functionality is broken
+
+OUTPUT FORMAT
+
+For each change:
+
+Show the exact code diff
+
+Explain why this change is required
+
+Confirm no unrelated files were modified
+
+Do not proceed until all steps above are satisfied.

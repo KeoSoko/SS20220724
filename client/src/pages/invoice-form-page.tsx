@@ -16,7 +16,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useRoute, useLocation, Link } from "wouter";
-import { Plus, Trash2, Save, Send, Mail } from "lucide-react";
+import { Plus, Trash2, Save, Send, Mail, Building2, ArrowRight } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { format } from "date-fns";
 import type { Client, Invoice, LineItem, BusinessProfile, Quotation } from "@shared/schema";
 
@@ -395,6 +396,31 @@ export default function InvoiceFormPage() {
         showBackButton={true}
       >
       <div className="p-6">
+        {/* Business Profile Missing Prompt */}
+        {!businessProfile && (
+          <Card className="mb-6 border-amber-200 bg-amber-50">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-amber-100 rounded-lg">
+                  <Building2 className="h-6 w-6 text-amber-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-amber-900 mb-1">Business Profile Required</h3>
+                  <p className="text-amber-700 text-sm mb-3">
+                    Set up your business profile to include your company details, logo, and banking information on invoices.
+                  </p>
+                  <Link href="/business-profile">
+                    <Button className="bg-amber-600 hover:bg-amber-700 text-white">
+                      Set Up Business Profile
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Form {...form}>
           <form className="space-y-6">
             <Card>

@@ -1,0 +1,160 @@
+🔍 SIMPLE SLIPS — PAYSTACK SUBSCRIPTION STATE DEBUG (INSPECTION ONLY)
+⚠️ CRITICAL RULES
+
+DO NOT modify any code
+
+DO NOT suggest fixes
+
+DO NOT refactor
+
+DO NOT add logging
+
+DO NOT change database data
+
+DO NOT “clean up” anything
+
+This task is READ-ONLY INSPECTION.
+
+CONTEXT
+
+A brand new test user successfully paid R49 via Paystack,
+but the UI still shows Trial instead of Paid.
+
+We need to determine exactly where the state transition failed:
+
+Webhook
+
+Verification route
+
+Billing service
+
+Frontend sync
+
+OBJECTIVE
+
+Output conclusive evidence showing whether:
+
+The Paystack webhook reached the backend
+
+The payment was verified
+
+The subscription upgrade logic executed
+
+The UI is reading the correct source of truth
+
+REQUIRED OUTPUT (PASTE RAW RESULTS)
+1️⃣ TEST USER IDENTIFICATION
+
+Provide:
+
+User ID
+
+Email
+
+CreatedAt timestamp
+
+2️⃣ BILLING EVENTS (MOST IMPORTANT)
+
+Query and paste results:
+
+SELECT *
+FROM billing_events
+WHERE user_id = <TEST_USER_ID>
+ORDER BY created_at DESC;
+
+
+Include all rows, including:
+
+paystack_webhook_received
+
+subscription_activated
+
+subscription_failed
+
+webhook failure events
+
+3️⃣ USER SUBSCRIPTION ROW
+
+Paste exact row from:
+
+SELECT
+  status,
+  trial_start_date,
+  trial_end_date,
+  subscription_start_date,
+  next_billing_date,
+  paystack_reference,
+  paystack_customer_code,
+  updated_at
+FROM user_subscriptions
+WHERE user_id = <TEST_USER_ID>;
+
+4️⃣ PAYMENT TRANSACTIONS
+
+Paste results from:
+
+SELECT
+  id,
+  amount,
+  status,
+  platform,
+  platform_transaction_id,
+  platform_subscription_id,
+  created_at
+FROM payment_transactions
+WHERE user_id = <TEST_USER_ID>
+ORDER BY created_at DESC;
+
+5️⃣ PAYSTACK FLOW CONFIRMATION (YES / NO ONLY)
+
+Answer explicitly:
+
+Did the frontend call
+POST /api/billing/paystack/subscription
+after payment success?
+YES or NO
+
+If YES:
+
+Paste the route handler code
+
+Paste the frontend call location
+
+6️⃣ UI SUBSCRIPTION SOURCE OF TRUTH
+
+Paste exact frontend code that determines whether the UI shows:
+
+Trial
+
+Paid
+
+Expired
+
+Specifically:
+
+Where subscription status is fetched
+
+Which field(s) are checked
+(user.subscriptionTier, user_subscriptions.status, etc.)
+
+OUTPUT FORMAT
+
+Raw SQL results
+
+Raw code blocks
+
+No commentary
+
+No explanations
+
+Group under headings 1–6 exactly
+
+SUCCESS CONDITION
+
+The output must allow a binary determination of:
+
+❌ Webhook never arrived
+
+🟡 Webhook arrived but upgrade failed
+
+🔵 Upgrade succeeded but UI is stale / wrong

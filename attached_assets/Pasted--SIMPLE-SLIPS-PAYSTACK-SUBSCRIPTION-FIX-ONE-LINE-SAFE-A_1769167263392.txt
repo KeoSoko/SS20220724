@@ -1,0 +1,112 @@
+🛠️ SIMPLE SLIPS — PAYSTACK SUBSCRIPTION FIX (ONE-LINE, SAFE)
+⚠️ ABSOLUTE RULES
+
+Modify only what is explicitly instructed
+
+Do not refactor
+
+Do not change schema
+
+Do not change billing logic
+
+Do not add new flows
+
+Do not touch frontend code
+
+This is a single-cause, single-fix change
+
+CONTEXT
+
+A Paystack payment succeeds, but the subscription remains in trial.
+
+Root cause (confirmed by logs):
+
+null value in column "payment_method" of relation "payment_transactions"
+violates not-null constraint
+
+
+This error occurs inside processPaystackSubscription() when inserting into
+payment_transactions.
+
+OBJECTIVE
+
+Ensure all Paystack payment transactions correctly populate
+payment_method so the database insert succeeds and the subscription upgrade completes.
+
+REQUIRED CHANGE (MANDATORY)
+1️⃣ Locate this function
+
+File: server/billing-service.ts
+Function: processPaystackSubscription(userId, transactionReference)
+
+Find where InsertPaymentTransaction is constructed and passed to:
+
+storage.createPaymentTransaction(...)
+
+2️⃣ Apply the ONE-LINE FIX
+
+Add the following field to the transaction object:
+
+paymentMethod: 'card',
+
+
+This field must be non-null and applies to all Paystack card payments.
+
+3️⃣ DO NOT CHANGE ANYTHING ELSE
+
+Specifically:
+
+❌ Do NOT rename fields
+
+❌ Do NOT touch idempotency logic
+
+❌ Do NOT wrap in try/catch
+
+❌ Do NOT change status logic
+
+❌ Do NOT add conditionals
+
+❌ Do NOT modify database schema
+
+SUCCESS CRITERIA
+
+After this change:
+
+payment_transactions insert succeeds
+
+processPaystackSubscription() completes fully
+
+user_subscriptions.status updates from trial → active
+
+UI shows Premium
+
+No duplicate transactions
+
+No regression to existing users
+
+POST-FIX VERIFICATION (DO NOT SKIP)
+
+After applying the fix:
+
+Re-run reconciliation for the failed test payment:
+
+POST /api/admin/payments/reconcile
+
+
+Confirm:
+
+A row exists in payment_transactions
+
+payment_method = 'card'
+
+Subscription status = active
+
+OUTPUT REQUIREMENTS
+
+Return:
+
+The exact code diff
+
+Confirmation that only one file was modified
+
+Confirmation that no other logic was changed

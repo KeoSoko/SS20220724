@@ -743,6 +743,7 @@ export class BillingService {
             currency: 'ZAR',
             status: 'completed',
             platform: 'paystack',
+            paymentMethod: 'card',
             platformTransactionId: transactionReference,
             platformOrderId: transactionData.reference,
             platformSubscriptionId: transactionData.subscription?.subscription_code || transactionData.plan?.plan_code || 'PLN_8l8p7v1mergg804',

@@ -434,14 +434,16 @@ export function setupAuth(app: Express) {
         const baseUrl = 'https://simpleslips.app';
         const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
         
+        const authFromEmail = process.env.AUTH_FROM_EMAIL || 'support@simpleslips.co.za';
+        
         const msg = {
           to: email,
           from: {
-            email: 'support@simpleslips.co.za',
+            email: authFromEmail,
             name: 'Simple Slips Support'
           },
           replyTo: {
-            email: 'support@simpleslips.co.za',
+            email: authFromEmail,
             name: 'Simple Slips Support Team'
           },
           subject: 'Password Reset - Simple Slips',

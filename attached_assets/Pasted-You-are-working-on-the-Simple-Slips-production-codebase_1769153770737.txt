@@ -1,0 +1,113 @@
+You are working on the Simple Slips production codebase.
+
+Context:
+
+Business emails (quotes, invoices) must continue using:
+
+notifications@simpleslips.co.za
+
+
+Account-related emails (email verification + password reset) must instead use:
+
+hello@simpleslips.co.za
+
+
+hello@simpleslips.co.za is a verified sender in SendGrid and is an alias of admin@simpleslips.co.za
+
+⚠️ ABSOLUTE RULES
+
+DO NOT refactor EmailService
+
+DO NOT change any non-auth email behaviour
+
+DO NOT rename files, classes, or methods
+
+DO NOT change SendGrid templates
+
+DO NOT touch receipt ingestion or billing emails
+
+Changes must be minimal, additive, and reversible
+
+OBJECTIVE
+
+Ensure that:
+
+Email verification emails
+
+Password reset emails
+
+are sent only from:
+
+hello@simpleslips.co.za
+
+
+while all other emails remain unchanged.
+
+REQUIRED IMPLEMENTATION (EXACT)
+1️⃣ ADD ENV VARIABLE SUPPORT
+
+Introduce a new environment variable:
+
+AUTH_FROM_EMAIL=hello@simpleslips.co.za
+
+
+Do NOT hardcode this value.
+
+2️⃣ EMAIL VERIFICATION SENDER (MANDATORY)
+
+In sendEmailVerification():
+
+Change the from.email field so that:
+
+It uses process.env.AUTH_FROM_EMAIL if present
+
+Falls back to the existing default sender otherwise
+
+This change must affect only this method.
+
+3️⃣ PASSWORD RESET SENDER (MANDATORY)
+
+In the password reset email method:
+
+Apply the same sender logic as email verification
+
+Use AUTH_FROM_EMAIL as primary sender
+
+Do NOT duplicate code unnecessarily
+
+4️⃣ NON-GOALS (DO NOT DO)
+
+❌ Do NOT change:
+
+Business email senders
+
+notifications@simpleslips.co.za
+ usage
+
+Email templates
+
+Verification tokens
+
+Signup logic
+
+SUCCESS CRITERIA
+
+After this change:
+
+Signup verification emails come from hello@simpleslips.co.za
+
+Password reset emails come from hello@simpleslips.co.za
+
+Quotes and invoices still come from notifications@simpleslips.co.za
+
+No other email behaviour is altered
+
+OUTPUT REQUIREMENTS
+
+Show only the minimal code diff
+
+Clearly state which methods were modified
+
+Confirm no unrelated logic was changed
+
+Do not proceed unless all requirements are met.

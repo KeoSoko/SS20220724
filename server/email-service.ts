@@ -63,10 +63,12 @@ export class EmailService {
     try {
       const verificationUrl = `${this.appUrl}/verify-email?token=${verificationToken}`;
       
+      const authFromEmail = process.env.AUTH_FROM_EMAIL || this.fromEmail;
+      
       const emailData = {
         to: email,
         from: {
-          email: this.fromEmail,
+          email: authFromEmail,
           name: 'Simple Slips Support'
         },
         replyTo: {

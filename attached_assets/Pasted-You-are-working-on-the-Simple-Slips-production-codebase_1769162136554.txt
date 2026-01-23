@@ -1,0 +1,122 @@
+You are working on the Simple Slips production codebase.
+
+⚠️ IMPORTANT
+
+DO NOT change any code
+
+DO NOT refactor anything
+
+DO NOT suggest fixes
+
+DO NOT optimise
+
+This task is inspection only
+
+I need to understand exactly when and how the 30-day free trial is started, so a safe recovery flow can be designed for users who verify late.
+
+OBJECTIVE
+
+Output all code paths and data structures related to:
+
+Trial start
+
+Trial end
+
+Email verification
+
+User access gating
+
+This information will be used to design a one-time trial restart on email verification for affected users.
+
+REQUIRED OUTPUT (PASTE FULL CODE)
+1️⃣ EMAIL VERIFICATION HANDLER
+
+Paste the full backend code that runs when a user clicks the email verification link, including:
+
+Route or controller
+
+Token validation
+
+Where isEmailVerified is set
+
+Any logic that runs immediately after verification
+
+2️⃣ TRIAL INITIALISATION LOGIC
+
+Paste all code where:
+
+trialStartDate is set
+
+trialEndDate is set
+
+Trial duration (30 days) is calculated
+
+Include:
+
+Signup flow
+
+Verification flow
+
+Any background job or helper function
+
+3️⃣ USER ACCESS CHECKS
+
+Paste the code that determines whether a user:
+
+Has access to the app
+
+Is considered “on trial”
+
+Is blocked due to expired trial
+
+This includes:
+
+Middleware
+
+Guards
+
+Feature access checks
+
+4️⃣ DATABASE FIELDS (READ-ONLY)
+
+Paste the current schema definitions for:
+
+users table
+
+Any trial-related fields
+
+Specifically confirm:
+
+trialStartDate
+
+trialEndDate
+
+Defaults and nullability
+
+5️⃣ SUBSCRIPTION INTERACTION (IF ANY)
+
+Paste any code where:
+
+Trial logic interacts with subscriptions
+
+Trial converts to paid
+
+Trial is bypassed
+
+NON-GOALS (DO NOT DO)
+
+❌ Do NOT add trial logic
+❌ Do NOT restart trials
+❌ Do NOT change billing
+❌ Do NOT modify verification
+❌ Do NOT introduce new fields
+
+OUTPUT FORMAT
+
+Paste raw code only
+
+Group output under headings 1–5
+
+No commentary or explanations
+
+This inspection output will be used to design a safe, one-time trial restart flow for users who verify after delayed email delivery

@@ -325,6 +325,7 @@ export const userSubscriptions = pgTable("user_subscriptions", {
   // Trial tracking
   trialStartDate: timestamp("trial_start_date"),
   trialEndDate: timestamp("trial_end_date"),
+  trialRestartedAt: timestamp("trial_restarted_at"), // One-time trial restart after late email verification
   
   // Subscription tracking
   subscriptionStartDate: timestamp("subscription_start_date"),

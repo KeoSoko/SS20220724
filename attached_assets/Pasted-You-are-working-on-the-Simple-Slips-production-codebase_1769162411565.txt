@@ -1,0 +1,132 @@
+You are working on the Simple Slips production codebase.
+
+Context:
+
+Free trial currently starts at signup
+
+Some users could not verify email due to delivery issues
+
+These users burned trial time without access
+
+⚠️ ABSOLUTE RULES
+
+DO NOT change signup logic
+
+DO NOT change billing logic
+
+DO NOT change Paystack flows
+
+DO NOT add background jobs
+
+DO NOT restart trials automatically elsewhere
+
+Changes must be minimal, additive, and auditable
+
+OBJECTIVE
+
+Restart the 30-day free trial exactly once
+for users who verify their email after delayed delivery,
+restoring the original promise fairly.
+
+REQUIRED IMPLEMENTATION (ALL MANDATORY)
+1️⃣ DATABASE CHANGE (MINIMAL)
+
+Add a nullable timestamp to user_subscriptions:
+
+trialRestartedAt TIMESTAMP NULL
+
+
+This is used to guarantee one-time restart only.
+
+2️⃣ MODIFY EMAIL VERIFICATION HANDLER ONLY
+
+In /api/verify-email:
+
+After marking the email as verified:
+
+Load the user’s subscription
+
+Apply the trial restart logic inline
+
+3️⃣ TRIAL RESTART CONDITIONS (STRICT)
+
+Restart the trial ONLY IF ALL ARE TRUE:
+
+Subscription exists
+
+subscription.status === 'trial'
+
+trialRestartedAt IS NULL
+
+Trial has expired OR has less than 7 days remaining
+
+4️⃣ TRIAL RESTART ACTION
+
+If conditions pass:
+
+Set:
+
+trialStartDate = NOW()
+trialEndDate = NOW() + INTERVAL '30 days'
+trialRestartedAt = NOW()
+
+
+Do NOT create a new subscription
+
+Do NOT change planId
+
+Do NOT affect paid users
+
+5️⃣ AUDIT LOGGING (MANDATORY)
+
+Log a billing event:
+
+event_type: "trial_restarted_after_verification"
+event_data: {
+  userId,
+  previousTrialEndDate,
+  newTrialEndDate
+}
+
+NON-GOALS (DO NOT DO)
+
+❌ Do NOT restart trial for:
+
+Paid users
+
+Active subscriptions
+
+Users who already restarted once
+
+❌ Do NOT move trial start to verification globally
+❌ Do NOT backfill old users automatically
+
+SUCCESS CRITERIA
+
+After implementation:
+
+Late-verifying users receive a fresh 30-day trial
+
+Trial restart happens once per user
+
+No billing side effects
+
+No abuse vector
+
+Full audit trail exists
+
+OUTPUT REQUIREMENTS
+
+Show minimal diffs only
+
+Clearly list:
+
+Files modified
+
+New field added
+
+Guard conditions
+
+Confirm no unrelated logic was changed
+
+Do not proceed unless every rule above is satisfied.

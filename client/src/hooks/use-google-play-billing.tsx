@@ -59,6 +59,7 @@ export function useGooglePlayBilling(): UseGooglePlayBillingReturn {
         description: "Your premium subscription is now active!",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
     },
     onError: (error: any) => {
       toast({

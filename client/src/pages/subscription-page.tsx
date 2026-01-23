@@ -108,6 +108,7 @@ export function SubscriptionPage() {
         description: "Your Simple Slips Premium subscription is now active.",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
       setIsIOSPurchasing(false);
       setShowPaymentOptions(false);
     };
@@ -129,6 +130,7 @@ export function SubscriptionPage() {
         description: `${event.detail.count} purchase(s) restored from iOS.`,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
     };
 
     window.addEventListener('simple-slips-subscription-activated', handleSubscriptionActivated as EventListener);
@@ -186,6 +188,7 @@ export function SubscriptionPage() {
         description: "Your subscription has been cancelled. You'll continue to have access until the end of your billing period.",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
     },
     onError: (error: any) => {
       toast({
@@ -395,6 +398,7 @@ export function SubscriptionPage() {
         description: "Your premium subscription is now active!",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
       setShowPaymentOptions(false);
     },
     onError: (error: any) => {
@@ -415,6 +419,7 @@ export function SubscriptionPage() {
         description: "Your premium subscription is now active!",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
       setShowPaymentOptions(false);
     },
     onError: (error: any) => {

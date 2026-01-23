@@ -1,0 +1,113 @@
+You are working on the Simple Slips production codebase.
+
+Context:
+
+User signup completes successfully
+
+User record is created with isEmailVerified = false
+
+Verification email is expected via SendGrid
+
+In production, no verification email is received
+
+⚠️ IMPORTANT INSTRUCTIONS
+
+DO NOT refactor or change any logic
+
+DO NOT “fix” anything yet
+
+DO NOT optimise or restructure code
+
+I am debugging an email delivery issue
+
+I need visibility, not changes.
+
+OBJECTIVE
+
+Output all code paths involved in signup email verification so the issue can be diagnosed.
+
+REQUIRED OUTPUT (PASTE FULL CODE)
+1️⃣ SIGNUP FLOW
+
+Paste the full backend code for:
+
+The signup / registration route or controller
+
+Where the user record is created
+
+Where isEmailVerified is set
+
+Any conditional logic around email sending
+
+2️⃣ EMAIL VERIFICATION TOKEN LOGIC
+
+Paste the full code responsible for:
+
+Generating the email verification token
+
+Storing it (DB field, expiry, etc.)
+
+Constructing the verification URL
+
+Include:
+
+Base URL used (env variable)
+
+Token expiry logic
+
+3️⃣ SENDGRID EMAIL SENDING CODE
+
+Paste the full function(s) that:
+
+Initialise SendGrid
+
+Send the verification email
+
+Handle SendGrid responses or errors
+
+Explicitly show:
+
+How the SendGrid API key is loaded
+
+What from email address is used
+
+Whether SendGrid errors are caught or swallowed
+
+4️⃣ ENVIRONMENT VARIABLES (NAMES ONLY)
+
+List (do NOT paste values):
+
+SENDGRID_API_KEY
+
+SENDGRID_FROM_EMAIL (or equivalent)
+
+APP_BASE_URL / FRONTEND_URL / SITE_URL
+
+Any feature flags related to email sending
+
+5️⃣ LOGGING & ERROR HANDLING
+
+Show:
+
+Any logs around email sending
+
+Any try/catch blocks that could suppress SendGrid errors
+
+Any conditions where email sending is skipped silently
+
+NON-GOALS (DO NOT DO)
+
+❌ Do NOT add fallback email logic
+❌ Do NOT change SendGrid configuration
+❌ Do NOT resend emails
+❌ Do NOT modify signup behaviour
+
+OUTPUT FORMAT
+
+Paste raw code only
+
+Group by section headers (1–5)
+
+No explanations or summaries
+
+This output will be used to diagnose why verification emails are not delivered in production.

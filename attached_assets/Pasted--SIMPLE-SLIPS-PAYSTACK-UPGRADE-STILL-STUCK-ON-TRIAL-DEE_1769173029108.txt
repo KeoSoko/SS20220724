@@ -1,0 +1,188 @@
+🔍 SIMPLE SLIPS — PAYSTACK UPGRADE STILL STUCK ON TRIAL (DEEP INSPECTION)
+🚨 ABSOLUTE RULES
+
+DO NOT change code
+
+DO NOT suggest fixes
+
+DO NOT refactor
+
+DO NOT add logs
+
+DO NOT run SQL mutations
+
+DO NOT “clean up” anything
+
+This task is READ-ONLY DIAGNOSIS.
+
+CONTEXT
+
+Paystack payment succeeds
+
+paymentMethod: 'card' fix has been applied
+
+Reconciliation has been run
+
+UI still shows Trial
+
+Subscription does not flip to active
+
+This means one of the final state transitions is still broken.
+
+OBJECTIVE
+
+Determine exactly which step is failing between:
+
+processPaystackSubscription()
+
+updateUserSubscription()
+
+/api/subscription/status
+
+Frontend cache / query mismatch
+
+No speculation. Only evidence.
+
+REQUIRED OUTPUT (PASTE RAW CODE + RAW RESULTS)
+1️⃣ FULL processPaystackSubscription FUNCTION (MANDATORY)
+
+Paste the entire function, not excerpts.
+
+File:
+
+server/billing-service.ts
+
+
+Function:
+
+async processPaystackSubscription(...)
+
+
+We need to see:
+
+Transaction boundaries
+
+Error handling
+
+Return value
+
+Update order
+
+2️⃣ STORAGE IMPLEMENTATION FOR SUBSCRIPTIONS
+
+Paste both:
+
+Interface
+IStorage.updateUserSubscription
+IStorage.getUserSubscription
+
+Database implementation
+server/database-storage.ts
+
+
+Specifically:
+
+SQL used
+
+WHERE clause
+
+Returned values
+
+3️⃣ /api/subscription/status BACKEND ROUTE
+
+Paste the full backend handler that responds to:
+
+GET /api/subscription/status
+
+
+We must confirm:
+
+Which table it reads
+
+Whether it joins users + subscriptions
+
+Whether it uses cached user data
+
+4️⃣ FRONTEND QUERY INVALIDATION LOGIC
+
+Paste all frontend code that runs after payment success:
+
+Mutation success handler
+
+invalidateQueries
+
+Any refetch() calls
+
+Any local state overrides
+
+Files likely include:
+
+subscription-page.tsx
+use-subscription.ts
+
+5️⃣ RAW DATABASE SNAPSHOT (READ-ONLY)
+
+Paste results of:
+
+SELECT
+  us.id,
+  us.user_id,
+  us.status,
+  us.trial_start_date,
+  us.trial_end_date,
+  us.subscription_start_date,
+  us.next_billing_date,
+  us.paystack_reference,
+  us.updated_at
+FROM user_subscriptions us
+WHERE us.user_id = 151;
+
+
+AND:
+
+SELECT
+  id,
+  user_id,
+  amount,
+  status,
+  payment_method,
+  platform,
+  created_at
+FROM payment_transactions
+WHERE user_id = 151;
+
+6️⃣ CONFIRM TRANSACTION RESULT (YES / NO)
+
+Answer explicitly:
+
+Did processPaystackSubscription() throw an error?
+
+Did it return successfully?
+
+Did reconciliation endpoint return HTTP 200?
+
+Answer as:
+
+YES / NO
+
+OUTPUT FORMAT
+
+Raw code blocks
+
+Raw SQL output
+
+No commentary
+
+Grouped under headings 1–6 exactly
+
+SUCCESS CONDITION
+
+From this output, it must be possible to conclude one and only one of:
+
+❌ Subscription update never executed
+
+🟡 Update executed but overwritten
+
+🔵 Backend correct, frontend stale
+
+🔴 Reconciliation path skipping update

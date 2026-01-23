@@ -1,0 +1,143 @@
+ou are working on the Simple Slips production codebase.
+
+Context:
+
+Email verification delivery issues have been fixed
+
+Auth emails now send from hello@simpleslips.co.za
+
+Some users signed up earlier and never received verification emails
+
+⚠️ CRITICAL SAFETY RULES
+
+DO NOT resend emails automatically on signup
+
+DO NOT resend multiple times to the same user
+
+DO NOT spam users
+
+DO NOT modify signup, token generation, or verification logic
+
+DO NOT touch business emails (invoices, notifications)
+
+This is a one-time recovery action.
+
+OBJECTIVE
+
+Add a safe, controlled mechanism to resend verification emails to users who:
+
+Have isEmailVerified = false
+
+Have a valid emailVerificationToken
+
+Have not already been resent a verification email
+
+REQUIRED IMPLEMENTATION (EXACT)
+1️⃣ ADD A TRACKING FLAG (MINIMAL)
+
+Add a nullable boolean or timestamp field (choose ONE):
+
+verificationEmailResentAt TIMESTAMP NULL
+
+
+This is used only to prevent multiple resends.
+
+2️⃣ ADMIN-ONLY RESEND ENDPOINT
+
+Add a new admin-only endpoint:
+
+POST /api/admin/users/resend-verification
+
+
+This endpoint must:
+
+Accept an optional filter:
+
+beforeDate (ISO string)
+
+
+Select users where:
+
+isEmailVerified = false
+
+emailVerificationToken IS NOT NULL
+
+verificationEmailResentAt IS NULL
+
+createdAt < beforeDate (if provided)
+
+3️⃣ RESEND LOGIC (SAFE)
+
+For each eligible user:
+
+Reuse the existing verification token
+
+Send verification email using existing EmailService
+
+Use the auth sender (hello@simpleslips.co.za)
+
+Set verificationEmailResentAt = NOW()
+
+4️⃣ RATE & VOLUME SAFETY
+
+Implement basic safety:
+
+Hard cap: max 100 emails per request
+
+If more users exist, require multiple calls
+
+This prevents accidental mass sends.
+
+5️⃣ AUDIT LOGGING (MANDATORY)
+
+For each resend:
+
+Create a billing_event or audit record:
+
+event_type: "verification_email_resent"
+event_data: {
+  userId,
+  email,
+  resentAt
+}
+
+
+This ensures full traceability.
+
+NON-GOALS (DO NOT DO)
+
+❌ Do NOT regenerate tokens
+❌ Do NOT auto-verify users
+❌ Do NOT change verification expiry rules
+❌ Do NOT expose this endpoint publicly
+❌ Do NOT resend password reset emails
+
+SUCCESS CRITERIA
+
+After implementation:
+
+Only unverified users receive one resend
+
+No verified users are emailed
+
+No user receives multiple resends
+
+Emails use the corrected sender identity
+
+Admin has full visibility of what was resent
+
+OUTPUT REQUIREMENTS
+
+Show minimal diffs only
+
+Clearly list:
+
+Files modified
+
+New endpoint added
+
+Safeguards in place
+
+Confirm no unrelated logic was changed
+
+Do not proceed unless all rules above are satisfied.

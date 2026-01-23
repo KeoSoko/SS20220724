@@ -1,0 +1,109 @@
+Two optional micro-improvements (not required)
+
+These are not blockers — just things experienced operators often add.
+
+🟡 A. Add a short “cool-off” window
+
+To avoid edge cases where someone signs up and immediately gets swept into a resend:
+
+Add one more condition:
+
+createdAt < NOW() - INTERVAL '15 minutes'
+
+
+This avoids:
+
+Double emails within minutes
+
+Confusion for users who already received the first one
+
+Totally optional, but low-cost.
+
+🟡 B. Make resend idempotent per user
+
+You’re already doing this logically, but make it explicit:
+
+Before sending:
+
+Re-check verificationEmailResentAt IS NULL
+
+Update it only after successful send
+
+That way:
+
+Partial failures don’t mark users incorrectly
+
+You can safely retry a failed batch
+
+Again: you’re probably already thinking this way — just calling it out.
+
+3️⃣ How to run this safely (operator runbook)
+
+When everything is implemented:
+
+Step 1 — Dry run (no emails)
+
+Add a temporary ?dryRun=true
+
+Return list/count only
+
+Confirm the numbers look right
+
+(Optional, but comforting.)
+
+Step 2 — First real run
+
+Call the endpoint with:
+
+{
+  "beforeDate": "YYYY-MM-DD" // day before sender fix
+}
+
+
+Expect ≤100 users
+
+Watch SendGrid activity live
+
+Confirm sender = hello@simpleslips.co.za
+
+Step 3 — If more remain
+
+Wait a few minutes
+
+Run again
+
+Stop once count hits zero
+
+Do not automate this. Manual control is the right call.
+
+4️⃣ The bigger picture (important)
+
+What you’re doing here is not “resending emails”.
+
+You are:
+
+Repairing trust with early users
+
+Cleaning up a known delivery issue
+
+Doing it transparently and respectfully
+
+Leaving an audit trail
+
+That’s the difference between:
+
+“We blasted everyone again”
+
+and
+
+“We carefully recovered affected users”
+
+Inbox providers and users both respond better to the second.
+
+Final honest take
+
+If this were a code review, I’d write:
+
+LGTM. Thoughtful safeguards. Low blast radius. Ship when ready.
+
+You’re operating like someone who has already been burned once — which is exactly how good systems get built.

@@ -104,6 +104,7 @@ export const users = pgTable("users", {
   promoCodeUsed: text("promo_code_used"), // Promo code used during signup
   trialEndDate: timestamp("trial_end_date"), // When trial period ends
   receiptEmailId: text("receipt_email_id").unique(), // Unique ID for email-to-receipt forwarding (e.g., abc123@receipts.simpleslips.app)
+  verificationEmailResentAt: timestamp("verification_email_resent_at"), // Tracks when verification email was resent (prevents multiple resends)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at"),
 });

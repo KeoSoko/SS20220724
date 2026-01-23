@@ -1374,13 +1374,72 @@ export function setupAuth(app: Express) {
           emailVerificationToken: null
         });
         
-        // Welcome messaging is handled by the verification email template
-        
         log(`Email verified for user: ${user.id}`, 'auth');
+        
+        // ONE-TIME TRIAL RESTART FOR LATE EMAIL VERIFICATION
+        // Only applies to users on trial who haven't restarted before
+        let trialRestarted = false;
+        try {
+          if (storage.getUserSubscription) {
+            const subscription = await storage.getUserSubscription(user.id);
+            
+            if (subscription && 
+                subscription.status === 'trial' && 
+                subscription.trialRestartedAt === null &&
+                subscription.trialEndDate) {
+              
+              const now = new Date();
+              const trialEnd = new Date(subscription.trialEndDate);
+              const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+              
+              // Restart if trial expired OR has less than 7 days remaining
+              if (now >= trialEnd || trialEnd < sevenDaysFromNow) {
+                const previousTrialEndDate = subscription.trialEndDate;
+                const newTrialStartDate = now;
+                const newTrialEndDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+                
+                // Update subscription with restarted trial
+                if (storage.updateUserSubscription) {
+                  await storage.updateUserSubscription(subscription.id, {
+                    trialStartDate: newTrialStartDate,
+                    trialEndDate: newTrialEndDate,
+                    trialRestartedAt: now
+                  });
+                  
+                  // Audit log
+                  if (storage.createBillingEvent) {
+                    await storage.createBillingEvent({
+                      userId: user.id,
+                      eventType: 'trial_restarted_after_verification',
+                      eventData: {
+                        userId: user.id,
+                        previousTrialEndDate: previousTrialEndDate.toISOString(),
+                        newTrialEndDate: newTrialEndDate.toISOString(),
+                        reason: 'late_email_verification'
+                      },
+                      processed: true
+                    });
+                  }
+                  
+                  trialRestarted = true;
+                  log(`Trial restarted for user ${user.id} after late verification (was: ${previousTrialEndDate.toISOString()}, now: ${newTrialEndDate.toISOString()})`, 'billing');
+                }
+              }
+            }
+          }
+        } catch (trialError) {
+          log(`Error checking/restarting trial for user ${user.id}: ${trialError}`, 'billing');
+          // Don't fail verification if trial restart fails
+        }
+        
+        const message = trialRestarted 
+          ? "Email verified successfully! Your 30-day free trial has been restarted."
+          : "Email verified successfully! You can now sign in to your account.";
         
         return res.status(200).json({ 
           success: true, 
-          message: "Email verified successfully! You can now sign in to your account." 
+          message,
+          trialRestarted
         });
       } else {
         throw new Error("Storage implementation doesn't support updating users");

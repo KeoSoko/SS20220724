@@ -56,7 +56,7 @@ import { profitLossService } from "./profit-loss-service";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
 import { log } from "./vite";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
-import { and, asc, eq, gte, lt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lt, lte, sql, isNull, isNotNull } from "drizzle-orm";
 import multer from "multer";
 import { scrypt, timingSafeEqual } from 'crypto';
 import { promisify } from 'util';
@@ -3859,6 +3859,181 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (e) {}
 
       res.status(500).json({ error: "Reconciliation failed", details: error.message });
+    }
+  });
+
+  // ADMIN: Resend verification emails to users who never received them
+  // Safe, controlled mechanism with full audit trail
+  app.post("/api/admin/users/resend-verification", async (req, res) => {
+    try {
+      // Require admin authentication
+      if (!req.user || !req.user.isAdmin) {
+        return res.status(401).json({ error: "Admin access required" });
+      }
+
+      const { beforeDate, dryRun } = req.body;
+      const isDryRun = dryRun === true;
+      const MAX_EMAILS_PER_REQUEST = 100;
+      const COOL_OFF_MINUTES = 15;
+
+      log(`[ADMIN_RESEND] Starting resend verification (dryRun: ${isDryRun}, beforeDate: ${beforeDate || 'none'})`, 'auth');
+
+      // Build the query to find eligible users:
+      // - isEmailVerified = false
+      // - emailVerificationToken IS NOT NULL
+      // - verificationEmailResentAt IS NULL (not already resent)
+      // - createdAt < beforeDate (if provided)
+      // - createdAt < NOW() - 15 minutes (cool-off to avoid double sends for recent signups)
+      const coolOffTime = new Date(Date.now() - COOL_OFF_MINUTES * 60 * 1000);
+      
+      let eligibleUsersQuery = db.select({
+        id: users.id,
+        email: users.email,
+        username: users.username,
+        emailVerificationToken: users.emailVerificationToken,
+        createdAt: users.createdAt
+      })
+      .from(users)
+      .where(
+        and(
+          eq(users.isEmailVerified, false),
+          isNotNull(users.emailVerificationToken),
+          isNull(users.verificationEmailResentAt),
+          lt(users.createdAt, coolOffTime)
+        )
+      )
+      .limit(MAX_EMAILS_PER_REQUEST + 1); // +1 to detect if more exist
+
+      // Add beforeDate filter if provided
+      if (beforeDate) {
+        const beforeDateParsed = new Date(beforeDate);
+        if (isNaN(beforeDateParsed.getTime())) {
+          return res.status(400).json({ error: "Invalid beforeDate format" });
+        }
+        eligibleUsersQuery = db.select({
+          id: users.id,
+          email: users.email,
+          username: users.username,
+          emailVerificationToken: users.emailVerificationToken,
+          createdAt: users.createdAt
+        })
+        .from(users)
+        .where(
+          and(
+            eq(users.isEmailVerified, false),
+            isNotNull(users.emailVerificationToken),
+            isNull(users.verificationEmailResentAt),
+            lt(users.createdAt, coolOffTime),
+            lt(users.createdAt, beforeDateParsed)
+          )
+        )
+        .limit(MAX_EMAILS_PER_REQUEST + 1);
+      }
+
+      const eligibleUsers = await eligibleUsersQuery;
+      const hasMoreUsers = eligibleUsers.length > MAX_EMAILS_PER_REQUEST;
+      const usersToProcess = eligibleUsers.slice(0, MAX_EMAILS_PER_REQUEST);
+
+      log(`[ADMIN_RESEND] Found ${eligibleUsers.length} eligible users (processing up to ${MAX_EMAILS_PER_REQUEST})`, 'auth');
+
+      if (isDryRun) {
+        // Dry run - return list without sending emails
+        return res.json({
+          success: true,
+          dryRun: true,
+          message: `Found ${usersToProcess.length} eligible users`,
+          hasMoreUsers,
+          users: usersToProcess.map(u => ({
+            id: u.id,
+            email: u.email,
+            username: u.username,
+            createdAt: u.createdAt
+          }))
+        });
+      }
+
+      // Real run - send emails
+      const { EmailService } = await import('./email-service.js');
+      const emailServiceInstance = new EmailService();
+      
+      const results: Array<{ userId: number; email: string; success: boolean; error?: string }> = [];
+
+      for (const user of usersToProcess) {
+        // Re-check before sending to ensure idempotency
+        const freshUser = await db.select({
+          verificationEmailResentAt: users.verificationEmailResentAt,
+          emailVerificationToken: users.emailVerificationToken,
+          isEmailVerified: users.isEmailVerified
+        })
+        .from(users)
+        .where(eq(users.id, user.id))
+        .limit(1);
+
+        if (!freshUser[0] || 
+            freshUser[0].verificationEmailResentAt !== null || 
+            freshUser[0].isEmailVerified === true ||
+            !freshUser[0].emailVerificationToken) {
+          log(`[ADMIN_RESEND] Skipping user ${user.id} - state changed since query`, 'auth');
+          results.push({ userId: user.id, email: user.email || '', success: false, error: 'State changed' });
+          continue;
+        }
+
+        try {
+          // Send the verification email using existing token
+          const emailSent = await emailServiceInstance.sendEmailVerification(
+            user.email!,
+            user.username,
+            user.emailVerificationToken!
+          );
+
+          if (emailSent) {
+            // Update verificationEmailResentAt ONLY after successful send
+            await db.update(users)
+              .set({ verificationEmailResentAt: new Date() })
+              .where(eq(users.id, user.id));
+
+            // Record audit event
+            await db.insert(billingEvents).values({
+              userId: user.id,
+              eventType: 'verification_email_resent',
+              eventData: {
+                email: user.email,
+                resentAt: new Date().toISOString(),
+                adminId: req.user.id
+              },
+              processed: true
+            });
+
+            log(`[ADMIN_RESEND] Successfully resent verification to user ${user.id} (${user.email})`, 'auth');
+            results.push({ userId: user.id, email: user.email || '', success: true });
+          } else {
+            log(`[ADMIN_RESEND] Failed to send email to user ${user.id} (${user.email})`, 'auth');
+            results.push({ userId: user.id, email: user.email || '', success: false, error: 'Email send failed' });
+          }
+        } catch (error: any) {
+          log(`[ADMIN_RESEND] Error sending to user ${user.id}: ${error.message}`, 'auth');
+          results.push({ userId: user.id, email: user.email || '', success: false, error: error.message });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+
+      log(`[ADMIN_RESEND] Completed: ${successCount} sent, ${failCount} failed`, 'auth');
+
+      res.json({
+        success: true,
+        dryRun: false,
+        message: `Resent ${successCount} verification emails`,
+        hasMoreUsers,
+        successCount,
+        failCount,
+        results
+      });
+
+    } catch (error: any) {
+      log(`[ADMIN_RESEND] Error: ${error.message}`, 'auth');
+      res.status(500).json({ error: "Failed to resend verification emails", details: error.message });
     }
   });
 

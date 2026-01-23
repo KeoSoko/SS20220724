@@ -365,6 +365,7 @@ export const paymentTransactions = pgTable("payment_transactions", {
   currency: text("currency").default("ZAR").notNull(),
   status: text("status").notNull(), // "pending", "completed", "failed", "refunded"
   platform: text("platform").notNull(), // "google_play", "paystack", "apple", etc.
+  paymentMethod: text("payment_method").notNull(), // "card", "bank_transfer", "google_play", etc.
   
   // Platform specific transaction IDs
   platformTransactionId: text("platform_transaction_id"), // Google Play purchase token, Paystack reference, etc.

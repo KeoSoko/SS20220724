@@ -1,0 +1,139 @@
+2️⃣ REPLIT PROMPT — IMPLEMENT RECOVERY EMAIL FLOW
+
+You can paste this exactly as-is into Replit.
+
+🧭 SIMPLE SLIPS — TRIAL RECOVERY EMAIL IMPLEMENTATION
+
+Context
+We already use SendGrid via EmailService for verification and password reset emails.
+We have an admin-only Command Center and admin action logging via billing_events.
+
+This task adds a manual, admin-triggered recovery email for users stuck in trials.
+
+🛑 HARD CONSTRAINTS (DO NOT VIOLATE)
+
+❌ No marketing automation
+
+❌ No cron jobs or background workers
+
+❌ No bulk sends
+
+❌ No frontend email logic
+
+❌ No schema changes
+
+❌ No user-facing flow changes
+
+All sends must be explicit admin actions and fully auditable.
+
+🎯 OBJECTIVE
+
+Allow an admin to manually send a trial recovery email to a specific user from the Command Center.
+
+1️⃣ BACKEND: EmailService Extension
+
+Add one new method to EmailService:
+
+sendTrialRecoveryEmail(
+  email: string,
+  username: string
+): Promise<boolean>
+
+
+Requirements:
+
+Use SendGrid Dynamic Template
+
+From: hello@simpleslips.co.za
+
+Template ID: SENDGRID_TRIAL_RECOVERY_TEMPLATE_ID (env var)
+
+Pass variables: username, appUrl
+
+Return:
+
+true if SendGrid accepts (202)
+
+false on failure (log error)
+
+2️⃣ BACKEND: Admin Endpoint
+
+Add a new admin-only endpoint:
+
+POST /api/admin/users/:userId/send-recovery-email
+
+
+Behavior:
+
+Require requireAdmin
+
+Fetch user
+
+Validate:
+
+User exists
+
+User has email
+
+Call sendTrialRecoveryEmail
+
+Log action to billing_events:
+
+event_type: "admin_recovery_email_sent"
+event_data: {
+  adminUserId,
+  reason: "trial_recovery",
+  timestamp
+}
+
+
+Return success/failure JSON
+
+3️⃣ FRONTEND: Command Center Integration
+
+In the user detail panel:
+
+Add a button:
+
+📧 Send Recovery Email
+
+
+Rules:
+
+Admin-only
+
+Disabled if:
+
+No email
+
+Email already sent in last 7 days (use billing_events)
+
+On click:
+
+Confirm dialog
+
+Trigger endpoint
+
+Show toast success/failure
+
+4️⃣ SAFETY & GUARDRAILS
+
+Max 1 recovery email per user per 7 days
+
+No bulk actions
+
+No AI-triggered sends
+
+All sends logged
+
+Replies must go to a monitored inbox
+
+✅ ACCEPTANCE CRITERIA
+
+Admin can manually send recovery email to a stuck trial user
+
+Email sends via SendGrid successfully
+
+Action is logged to billing_events
+
+No impact to signup, billing, or user-facing flows

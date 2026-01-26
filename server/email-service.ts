@@ -419,6 +419,116 @@ Need help? Contact support at keo@nine28.co.za
   }
 
   /**
+   * Send trial recovery email to re-engage users stuck in trials
+   * Admin-triggered only, uses SendGrid dynamic template
+   */
+  async sendTrialRecoveryEmail(email: string, username: string): Promise<boolean> {
+    if (!process.env.SENDGRID_API_KEY) {
+      console.error("Cannot send trial recovery email - SENDGRID_API_KEY not configured");
+      return false;
+    }
+
+    const templateId = process.env.SENDGRID_TRIAL_RECOVERY_TEMPLATE_ID;
+    
+    try {
+      const fromEmail = 'hello@simpleslips.co.za';
+      
+      if (templateId) {
+        await mailService.send({
+          to: email,
+          from: {
+            email: fromEmail,
+            name: 'Simple Slips'
+          },
+          replyTo: {
+            email: 'keo@nine28.co.za',
+            name: 'Simple Slips Support Team'
+          },
+          templateId: templateId,
+          dynamicTemplateData: {
+            username: username,
+            appUrl: this.appUrl
+          }
+        });
+      } else {
+        await mailService.send({
+          to: email,
+          from: {
+            email: fromEmail,
+            name: 'Simple Slips'
+          },
+          replyTo: {
+            email: 'keo@nine28.co.za',
+            name: 'Simple Slips Support Team'
+          },
+          subject: "We noticed you haven't finished setting up Simple Slips",
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #0073AA; margin: 0;">Simple Slips</h1>
+                <p style="color: #666; font-size: 16px;">AI-Powered Financial Management</p>
+              </div>
+              
+              <h2 style="color: #333;">Hi ${username}, we miss you!</h2>
+              
+              <p>We noticed you started a free trial but haven't had a chance to fully explore Simple Slips yet. No worries - your account is still waiting for you!</p>
+              
+              <div style="background: #f0f8ff; padding: 20px; border-radius: 6px; margin: 25px 0; border-left: 4px solid #0073AA;">
+                <h3 style="color: #0073AA; margin-top: 0;">Here's what you're missing:</h3>
+                <ul style="color: #666; line-height: 1.8; margin: 0; padding-left: 20px;">
+                  <li><strong>AI Receipt Scanning</strong> - Snap a photo and let AI do the rest</li>
+                  <li><strong>Smart Categorization</strong> - Expenses automatically sorted</li>
+                  <li><strong>Tax-Ready Reports</strong> - Export for SARS in seconds</li>
+                  <li><strong>Business Hub</strong> - Professional quotes and invoices</li>
+                </ul>
+              </div>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${this.appUrl}/home" 
+                   style="background: #0073AA; color: white; padding: 14px 30px; 
+                          text-decoration: none; border-radius: 6px; display: inline-block;
+                          font-weight: bold;">
+                  Continue Your Free Trial
+                </a>
+              </div>
+              
+              <p style="color: #666;">If you have any questions or need help getting started, just reply to this email - we're here to help!</p>
+              
+              <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+              <p style="color: #999; font-size: 12px;">
+                You're receiving this because you signed up for Simple Slips. If you no longer wish to receive these emails, you can unsubscribe from your account settings.
+              </p>
+            </div>
+          `,
+          text: `
+Hi ${username}, we miss you!
+
+We noticed you started a free trial but haven't had a chance to fully explore Simple Slips yet. No worries - your account is still waiting for you!
+
+Here's what you're missing:
+- AI Receipt Scanning - Snap a photo and let AI do the rest
+- Smart Categorization - Expenses automatically sorted
+- Tax-Ready Reports - Export for SARS in seconds
+- Business Hub - Professional quotes and invoices
+
+Continue your free trial: ${this.appUrl}/home
+
+If you have any questions or need help getting started, just reply to this email - we're here to help!
+
+- The Simple Slips Team
+          `
+        });
+      }
+
+      console.log(`[EMAIL] Trial recovery email sent to ${email}`);
+      return true;
+    } catch (error) {
+      console.error('Failed to send trial recovery email:', error);
+      return false;
+    }
+  }
+
+  /**
    * Send receipt sharing notification
    */
   async sendReceiptShare(

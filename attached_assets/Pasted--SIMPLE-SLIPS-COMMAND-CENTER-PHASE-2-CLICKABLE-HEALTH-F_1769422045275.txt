@@ -1,0 +1,146 @@
+🧭 SIMPLE SLIPS — COMMAND CENTER PHASE 2 (CLICKABLE HEALTH FILTERS)
+
+Context
+The Command Center already includes a System Health panel with metric cards:
+
+Total Users
+
+Unverified Users
+
+Stuck Trials
+
+Failed Uploads (24h / 7d)
+
+Webhooks (24h)
+
+Azure Upload Failures
+
+Email Failures
+
+These metrics are currently read-only.
+
+Phase 2 goal:
+Turn health indicators into actionable entry points without adding automation, complexity, or risk.
+
+🛑 HARD CONSTRAINTS (DO NOT VIOLATE)
+
+❌ Do NOT change existing business logic
+
+❌ Do NOT add background jobs or schedulers
+
+❌ Do NOT mutate data on card click
+
+❌ Do NOT introduce AI actions
+
+❌ Do NOT refactor existing endpoints unless required
+
+❌ Do NOT expose admin data to non-admins
+
+All changes must be purely navigational / filtering.
+
+🎯 PHASE 2 OBJECTIVES
+1️⃣ CLICKABLE HEALTH CARDS (PRIMARY)
+
+Make each System Health card clickable.
+
+On click:
+
+Automatically populate the User Search / Results panel
+
+Apply a predefined filter
+
+Display the affected users immediately
+
+2️⃣ FILTER DEFINITIONS (EXACT)
+
+Implement the following mappings:
+
+Health Card	Filter Applied
+Total Users	All users
+Unverified	isEmailVerified = false
+Stuck Trials	subscription.status = 'trial' AND trialEndDate < NOW()
+Failed 24h	Users with upload or billing failures in last 24h
+Failed 7d	Users with upload or billing failures in last 7 days
+Webhooks 24h	Users with Paystack webhook failures in last 24h
+Azure Fail	Users with Azure upload failures
+Email Fail	Users with email delivery failures
+
+⚠️ Use existing tables (billing_events, receipts, emailEvents) only.
+
+3️⃣ BACKEND SUPPORT (MINIMAL)
+
+If necessary:
+
+Extend /api/admin/users/search to accept an optional filterType parameter
+
+Example:
+
+GET /api/admin/users/search?filter=unverified
+GET /api/admin/users/search?filter=stuck_trials
+
+
+Rules:
+
+One filter at a time
+
+Filters are server-defined (no freeform queries)
+
+No breaking changes to existing search behavior
+
+4️⃣ FRONTEND BEHAVIOR
+
+On card click:
+
+Set internal activeFilter
+
+Clear manual text search
+
+Fetch users with corresponding filter
+
+Display applied filter label (e.g. “Filtered: Unverified Users”)
+
+UX rules:
+
+Clicking another card replaces the filter
+
+Manual search clears the filter
+
+Filters are visible and reversible
+
+5️⃣ SAFETY & PERFORMANCE
+
+Limit results to max 50 users per filter
+
+Paginate if needed
+
+All queries must use indexed fields
+
+No N+1 query patterns
+
+🧪 VALIDATION CHECKLIST
+
+Before completion, confirm:
+
+All health cards are clickable
+
+Clicking a card never mutates data
+
+Filters return expected users
+
+Non-admin users cannot access filters
+
+Existing Command Center features remain unchanged
+
+🛑 STOP CONDITION
+
+If implementing filters requires:
+
+schema changes
+
+new background jobs
+
+AI logic
+
+cross-user joins with unbounded scans
+
+➡️ STOP and explain before proceeding.

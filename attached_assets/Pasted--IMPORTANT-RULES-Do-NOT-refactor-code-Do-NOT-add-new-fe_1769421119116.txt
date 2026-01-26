@@ -1,0 +1,158 @@
+🛑 IMPORTANT RULES
+
+❌ Do NOT refactor code
+
+❌ Do NOT add new features
+
+❌ Do NOT change schemas
+
+❌ Do NOT optimize UI
+
+❌ Do NOT introduce automation
+
+✅ Provide raw code and explanations only
+
+📦 REQUIRED OUTPUT (STEP BY STEP)
+1️⃣ ROUTES & AUTHORIZATION
+
+Provide all backend routes related to the Command Center, including:
+
+Route paths
+
+HTTP methods
+
+Middleware used
+
+Admin authorization checks
+
+Specifically show:
+
+How isAdmin is enforced
+
+What happens on unauthorized access
+
+2️⃣ DATA SOURCES USED
+
+For each Command Center endpoint, list:
+
+Tables queried (users, subscriptions, billing_events, receipts, etc.)
+
+Joins used
+
+Aggregations used for metrics
+
+Time windows (7d, 30d, all-time)
+
+We need to confirm no expensive or unsafe queries.
+
+3️⃣ USER METRICS CALCULATION
+
+Provide the exact code used to calculate:
+
+loginCount
+
+lastLogin
+
+totalReceipts
+
+receiptsLast30Days
+
+OCR usage count
+
+trial / subscription state
+
+Clarify:
+
+Are these computed dynamically or cached?
+
+Are NULL edge cases handled?
+
+4️⃣ ADMIN ACTION HANDLERS
+
+Provide full implementations for:
+
+verify_email
+
+resend_verification_email
+
+restart_trial
+
+activate_subscription
+
+cancel_subscription
+
+reconcile_payment
+
+For each:
+
+Idempotency guards
+
+Audit logging
+
+Failure handling
+
+5️⃣ AI INTEGRATION (CRITICAL)
+
+Provide:
+
+AI prompt(s) used
+
+Model name
+
+Input payload structure
+
+Output schema
+
+Any fallback logic
+
+Confirm explicitly:
+
+AI cannot execute actions
+
+AI output is advisory only
+
+AI responses are validated before display
+
+6️⃣ FRONTEND STRUCTURE
+
+Provide:
+
+/command-center page component
+
+Child components (Search, Metrics, AI panel, Timeline)
+
+Data-fetching hooks
+
+Error/loading states
+
+We need to ensure:
+
+No accidental user-facing exposure
+
+No blocking UI behavior
+
+7️⃣ AUDIT & SAFETY CHECK
+
+Confirm:
+
+All admin actions write to billing_events
+
+Admin user ID is recorded
+
+No silent failures
+
+No background jobs were added
+
+✅ FINAL CONFIRMATION REQUIRED
+
+Answer YES / NO explicitly:
+
+Can any non-admin access /command-center?
+
+Can any admin action run without confirmation?
+
+Can AI execute or trigger actions?
+
+Does any endpoint mutate data unintentionally?
+
+Is any production user flow affected?

@@ -1,0 +1,294 @@
+🧭 SIMPLE SLIPS — ADMIN /COMMAND-CENTER (AI + METRICS)
+
+Purpose:
+Create an internal Admin Command Center that gives operators instant visibility, diagnosis, and recovery controls to prevent user loss.
+
+This is an operational dashboard, not analytics for investors.
+
+🔐 AUTHORIZATION (MANDATORY)
+
+Route is admin-only
+
+User must have isAdmin = true
+
+Non-admin access → 403 Forbidden
+
+All admin actions are audited
+
+🧱 ROUTING & NAMING (IMPORTANT)
+Admin Page URL
+/command-center
+
+API Namespace
+/api/admin/...
+
+
+Use Command Center terminology consistently in:
+
+route names
+
+UI headings
+
+logs
+
+comments
+
+🧱 BACKEND — REQUIRED ENDPOINTS
+1️⃣ Admin User Search (with Metrics)
+GET /api/admin/users/search?query=
+
+
+Search by:
+
+email
+
+username
+
+userId
+
+Return summary + metrics:
+
+{
+  "id": 123,
+  "email": "user@email.com",
+  "username": "user123",
+  "createdAt": "...",
+  "lastLogin": "...",
+  "loginCount": 42,
+  "isEmailVerified": true,
+
+  "subscription": {
+    "status": "trial | active | expired | cancelled",
+    "trialEndDate": "...",
+    "nextBillingDate": "..."
+  },
+
+  "usage": {
+    "totalReceipts": 87,
+    "receiptsLast30Days": 12,
+    "lastReceiptAt": "...",
+    "ocrUsageCount": 65
+  }
+}
+
+2️⃣ Admin User Detail (Deep Dive)
+GET /api/admin/users/:userId
+
+
+Return:
+
+User record
+
+Subscription record
+
+Usage metrics
+
+Billing timeline
+
+Payment transactions
+
+Email verification state
+
+Usage metrics must include:
+
+total logins
+
+last login timestamp
+
+total receipts uploaded
+
+receipts uploaded in last 7 / 30 days
+
+OCR usage count
+
+3️⃣ Admin Recovery Actions
+POST /api/admin/users/:userId/actions
+
+
+Supported actions:
+
+verify_email
+
+resend_verification_email
+
+restart_trial
+
+activate_subscription
+
+cancel_subscription
+
+reconcile_payment
+
+Rules:
+
+All actions are idempotent
+
+All actions log to billing_events
+
+Include adminUserId and optional reason
+
+📊 SYSTEM-LEVEL METRICS (TOP OF COMMAND CENTER)
+
+Add a System Health Panel showing:
+
+Total users
+
+Unverified users
+
+Users stuck on trial > 30 days
+
+Failed subscriptions (last 24h / 7d)
+
+Failed webhooks (last 24h)
+
+OCR failures
+
+Email delivery failures
+
+These are counts only, no charts.
+
+🤖 AI FEATURES (ADVISORY ONLY)
+4️⃣ AI User Diagnosis
+POST /api/admin/ai/analyze-user
+
+
+Input:
+
+user record
+
+subscription
+
+usage metrics
+
+last 20 billing_events
+
+last 10 payment_transactions
+
+Output (JSON only):
+
+{
+  "diagnosis": "...",
+  "rootCause": "...",
+  "riskLevel": "low | medium | high",
+  "recommendedActions": [
+    {
+      "action": "restart_trial | reconcile_payment | verify_email",
+      "reason": "..."
+    }
+  ],
+  "confidence": "high"
+}
+
+
+⚠️ AI must never execute actions — advisory only.
+
+5️⃣ AI Timeline Summary
+POST /api/admin/ai/summarize-events
+
+
+Summarises recent billing + usage events into:
+
+what happened
+
+what failed
+
+current state
+
+🖥️ FRONTEND — COMMAND CENTER UI
+
+Route:
+
+/command-center
+
+
+Sections:
+
+A️⃣ Global Health Snapshot (Top)
+
+Red/Amber/Green counts
+
+Clickable filters
+
+B️⃣ User Search & Metrics Card
+
+Shows:
+
+Email / username
+
+Subscription state
+
+Login count
+
+Last login
+
+Receipt usage
+
+OCR usage
+
+C️⃣ AI Insight Panel
+
+Diagnosis
+
+Risk level
+
+Recommended actions (buttons, not auto-run)
+
+D️⃣ Event Timeline
+
+billing_events
+
+payment_transactions
+
+webhook events
+
+Chronological, readable, filterable.
+
+🧾 AUDIT & SAFETY
+
+Every admin action logs:
+
+admin user ID
+
+action
+
+timestamp
+
+reason
+
+No destructive action without confirmation
+
+No AI auto-execution
+
+🚫 CONSTRAINTS (VERY IMPORTANT)
+
+❌ No charts
+
+❌ No role system
+
+❌ No exports
+
+❌ No schema redesigns
+
+❌ No background AI automation
+
+✅ Read-only AI insights
+
+✅ Deterministic metrics
+
+✅ SUCCESS CRITERIA
+
+Admin can answer in under 30 seconds:
+
+Has this user logged in?
+
+Have they used the product?
+
+Did they upload receipts?
+
+Did they pay?
+
+Where did it break?
+
+How do I fix it now?
+
+Without logs. Without DB access. Without guessing.

@@ -441,7 +441,7 @@ Need help? Contact support at keo@nine28.co.za
             name: 'Simple Slips'
           },
           replyTo: {
-            email: 'keo@nine28.co.za',
+            email: 'admin@simpleslips.co.za',
             name: 'Simple Slips Support Team'
           },
           templateId: templateId,
@@ -458,7 +458,7 @@ Need help? Contact support at keo@nine28.co.za
             name: 'Simple Slips'
           },
           replyTo: {
-            email: 'keo@nine28.co.za',
+            email: 'admin@simpleslips.co.za',
             name: 'Simple Slips Support Team'
           },
           subject: "We noticed you haven't finished setting up Simple Slips",

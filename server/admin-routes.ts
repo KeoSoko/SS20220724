@@ -693,6 +693,75 @@ export function registerAdminRoutes(app: Express) {
   });
 
   // ========================================
+  // SEND RECOVERY EMAIL
+  // ========================================
+  app.post("/api/admin/users/:userId/send-recovery-email", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const adminUserId = req.user!.id;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: "Invalid user ID" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (!user.email) {
+        return res.status(400).json({ error: "User has no email address" });
+      }
+
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const recentRecoveryEmails = await db.select()
+        .from(billingEvents)
+        .where(
+          and(
+            eq(billingEvents.userId, userId),
+            eq(billingEvents.eventType, 'admin_recovery_email_sent'),
+            gte(billingEvents.createdAt, sevenDaysAgo)
+          )
+        )
+        .limit(1);
+
+      if (recentRecoveryEmails.length > 0) {
+        const lastSent = recentRecoveryEmails[0].createdAt;
+        return res.status(400).json({ 
+          error: "Recovery email already sent within the last 7 days",
+          lastSentAt: lastSent
+        });
+      }
+
+      const success = await emailService.sendTrialRecoveryEmail(user.email, user.username);
+
+      if (!success) {
+        return res.status(500).json({ error: "Failed to send recovery email" });
+      }
+
+      await db.insert(billingEvents).values({
+        userId,
+        eventType: 'admin_recovery_email_sent',
+        eventData: {
+          adminUserId,
+          reason: 'trial_recovery',
+          timestamp: new Date().toISOString(),
+          recipientEmail: user.email
+        }
+      });
+
+      log(`[ADMIN_ACTION] User ${adminUserId} sent recovery email to user ${userId} (${user.email})`, 'admin');
+      res.json({ 
+        success: true, 
+        message: `Recovery email sent to ${user.email}` 
+      });
+    } catch (error: any) {
+      log(`Error in /api/admin/users/:userId/send-recovery-email: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to send recovery email" });
+    }
+  });
+
+  // ========================================
   // AI USER DIAGNOSIS
   // ========================================
   app.post("/api/admin/ai/analyze-user", requireAdmin, async (req, res) => {

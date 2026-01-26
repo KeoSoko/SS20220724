@@ -448,7 +448,6 @@ Need help? Contact support at keo@nine28.co.za
         console.log(`[EMAIL] Template data:`, JSON.stringify(templateData));
         
         await mailService.send({
-          to: email,
           from: {
             email: fromEmail,
             name: 'Simple Slips'
@@ -458,7 +457,12 @@ Need help? Contact support at keo@nine28.co.za
             name: 'Simple Slips Support Team'
           },
           templateId: templateId,
-          dynamicTemplateData: templateData
+          personalizations: [
+            {
+              to: [{ email }],
+              dynamicTemplateData: templateData
+            }
+          ]
         });
       } else {
         await mailService.send({

@@ -1,0 +1,197 @@
+✅ REPLIT PROMPT — Phase 4: Email Preview + Delivery Status in Command Center
+
+Paste everything below into Replit
+
+🔧 OBJECTIVE
+
+Enhance the Admin Command Center by adding:
+
+Email Preview Mode (before sending recovery / verification emails)
+
+Email Delivery Status surfaced in the UI (sent, delivered, bounced, blocked, deferred)
+
+This must be admin-only, safe, and non-destructive.
+
+1️⃣ EMAIL PREVIEW MODE (ADMIN-ONLY)
+Backend
+
+New endpoint (NO SEND):
+
+POST /api/admin/email/preview
+
+
+Purpose:
+Generate the email content exactly as it would be sent, without sending it.
+
+Input:
+
+{
+  "template": "trial_recovery" | "verification" | "payment_failed",
+  "userId": 123
+}
+
+
+Logic:
+
+Fetch user by ID
+
+Build dynamic_template_data exactly as used in SendGrid
+
+Return:
+
+subject
+
+from
+
+to
+
+templateId
+
+resolved dynamic variables (username, appUrl, trialEndDate, etc.)
+
+Response:
+
+{
+  "subject": "You still have 30 days waiting for you",
+  "from": "hello@simpleslips.co.za",
+  "to": "user@email.com",
+  "templateId": "d-xxxxx",
+  "previewData": {
+    "username": "Keo",
+    "trialDays": 30
+  }
+}
+
+
+⚠️ Important:
+
+This endpoint must NEVER call SendGrid
+
+Pure read-only preview
+
+Frontend (Command Center)
+
+Add “Preview Email” button next to:
+
+Resend Verification
+
+Restart Trial
+
+Recovery Email
+
+UX behavior:
+
+Opens modal
+
+Shows:
+
+Subject
+
+Recipient
+
+Template name
+
+Injected variables (JSON view)
+
+Button: “Send Email”
+
+Button: “Cancel”
+
+Sending still requires a second explicit confirmation.
+
+2️⃣ EMAIL DELIVERY STATUS (VISIBLE IN UI)
+Database
+
+Add new table if not present:
+
+email_events (
+  id SERIAL PRIMARY KEY,
+  user_id INT,
+  email_type TEXT,
+  status TEXT, -- sent, delivered, bounced, blocked, deferred
+  sendgrid_message_id TEXT,
+  error TEXT,
+  created_at TIMESTAMP DEFAULT now()
+)
+
+Backend – SendGrid Hook
+
+Whenever any email is sent, log:
+
+await db.insert(emailEvents).values({
+  userId,
+  emailType: 'trial_recovery',
+  status: 'sent',
+  sendgridMessageId
+});
+
+Webhook Handler (CRITICAL)
+
+Ensure SendGrid webhook events update email_events:
+
+SendGrid Event	Status
+delivered	delivered
+bounce	bounced
+dropped	blocked
+deferred	deferred
+UI (Command Center)
+User Detail Panel
+
+Add Email Health Section:
+
+Last email sent
+
+Last delivery status
+
+Color-coded badge:
+
+🟢 Delivered
+
+🟠 Deferred
+
+🔴 Blocked / Bounced
+
+Timeline
+
+Email events appear under Email category:
+
+📧 Email delivered — Trial Recovery
+📧 Email blocked — Verification
+
+Filters (Global)
+
+Add filters:
+
+Email Failed (24h)
+
+Email Failed (7d)
+
+Never Delivered
+
+Clicking filter updates user list instantly.
+
+3️⃣ SAFETY & GUARDRAILS (MANDATORY)
+
+Preview mode cannot send
+
+AI cannot trigger email sends
+
+All sends logged to email_events
+
+Admin actions logged to billing_events
+
+Non-admin users cannot access preview endpoints
+
+Rate-limit admin email sends (e.g. 5/min)
+
+4️⃣ DONE WHEN
+
+Admin can preview any email before sending
+
+Admin can see delivery outcome per user
+
+Email failures are visible without checking SendGrid
+
+No changes to user-facing flows
+
+No silent email failures ever again

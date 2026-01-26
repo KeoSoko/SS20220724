@@ -469,7 +469,8 @@ export function registerAdminRoutes(app: Express) {
         azureFailuresResult,
         recentBillingEvents,
         recentPayments,
-        lastReceipt
+        lastReceipt,
+        recentEmailEvents
       ] = await Promise.all([
         db.select().from(userSubscriptions).where(eq(userSubscriptions.userId, userId)).limit(1),
         db.select({ count: count() }).from(receipts).where(eq(receipts.userId, userId)),
@@ -484,10 +485,26 @@ export function registerAdminRoutes(app: Express) {
         ),
         db.select().from(billingEvents).where(eq(billingEvents.userId, userId)).orderBy(desc(billingEvents.createdAt)).limit(20),
         db.select().from(paymentTransactions).where(eq(paymentTransactions.userId, userId)).orderBy(desc(paymentTransactions.createdAt)).limit(10),
-        db.select({ createdAt: receipts.createdAt }).from(receipts).where(eq(receipts.userId, userId)).orderBy(desc(receipts.createdAt)).limit(1)
+        db.select({ createdAt: receipts.createdAt }).from(receipts).where(eq(receipts.userId, userId)).orderBy(desc(receipts.createdAt)).limit(1),
+        db.select().from(emailEvents).where(eq(emailEvents.userId, userId)).orderBy(desc(emailEvents.createdAt)).limit(20)
       ]);
 
       const sub = subscription[0];
+
+      const lastDeliveredEmail = recentEmailEvents.find(e => e.eventType === 'delivered');
+      const lastFailedEmail = recentEmailEvents.find(e => 
+        e.eventType === 'bounce' || e.eventType === 'dropped' || e.eventType === 'deferred'
+      );
+      const lastEmailEvent = recentEmailEvents[0];
+
+      let emailHealthStatus: 'healthy' | 'warning' | 'failed' = 'healthy';
+      if (lastFailedEmail && lastDeliveredEmail) {
+        const failedTime = new Date(lastFailedEmail.createdAt).getTime();
+        const deliveredTime = new Date(lastDeliveredEmail.createdAt).getTime();
+        emailHealthStatus = failedTime > deliveredTime ? 'failed' : 'warning';
+      } else if (lastFailedEmail && !lastDeliveredEmail) {
+        emailHealthStatus = 'failed';
+      }
 
       res.json({
         user: {
@@ -520,6 +537,29 @@ export function registerAdminRoutes(app: Express) {
           receiptsLast30Days: recentReceipts30dResult[0]?.count || 0,
           azureUploadFailures: azureFailuresResult[0]?.count || 0,
           lastReceiptAt: lastReceipt[0]?.createdAt || null
+        },
+        emailHealth: {
+          status: emailHealthStatus,
+          lastEmailSent: lastEmailEvent ? {
+            type: lastEmailEvent.emailType,
+            status: lastEmailEvent.eventType,
+            at: lastEmailEvent.createdAt
+          } : null,
+          lastDelivered: lastDeliveredEmail ? {
+            at: lastDeliveredEmail.createdAt
+          } : null,
+          lastFailed: lastFailedEmail ? {
+            type: lastFailedEmail.eventType,
+            reason: lastFailedEmail.bounceReason || lastFailedEmail.smtpResponse,
+            at: lastFailedEmail.createdAt
+          } : null,
+          recentEvents: recentEmailEvents.slice(0, 5).map(e => ({
+            id: e.id,
+            eventType: e.eventType,
+            emailType: e.emailType,
+            bounceReason: e.bounceReason,
+            createdAt: e.createdAt
+          }))
         },
         billingEvents: recentBillingEvents.map(e => ({
           id: e.id,
@@ -758,6 +798,40 @@ export function registerAdminRoutes(app: Express) {
     } catch (error: any) {
       log(`Error in /api/admin/users/:userId/send-recovery-email: ${error.message}`, 'admin');
       res.status(500).json({ error: "Failed to send recovery email" });
+    }
+  });
+
+  // ========================================
+  // EMAIL PREVIEW (READ-ONLY - NO SENDING)
+  // ========================================
+  app.post("/api/admin/email/preview", requireAdmin, async (req, res) => {
+    try {
+      const { template, userId } = req.body;
+      
+      const validTemplates = ['trial_recovery', 'verification', 'payment_failed'];
+      if (!validTemplates.includes(template)) {
+        return res.status(400).json({ error: `Invalid template. Must be one of: ${validTemplates.join(', ')}` });
+      }
+
+      if (!userId) {
+        return res.status(400).json({ error: "User ID required" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const preview = emailService.getEmailPreview(template, {
+        email: user.email,
+        username: user.username,
+        trialEndDate: user.trialEndDate
+      });
+
+      res.json(preview);
+    } catch (error: any) {
+      log(`Error in /api/admin/email/preview: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to generate email preview" });
     }
   });
 

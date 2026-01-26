@@ -543,6 +543,78 @@ If you have any questions or need help getting started, just reply to this email
   }
 
   /**
+   * Generate email preview data without sending (admin-only)
+   * Returns the exact data that would be used in the email
+   */
+  getEmailPreview(
+    template: 'trial_recovery' | 'verification' | 'payment_failed',
+    user: { email: string | null; username: string; trialEndDate?: Date | null }
+  ): {
+    subject: string;
+    from: string;
+    to: string | null;
+    templateId: string | null;
+    templateName: string;
+    previewData: Record<string, any>;
+  } {
+    switch (template) {
+      case 'trial_recovery': {
+        const templateId = process.env.SENDGRID_TRIAL_RECOVERY_TEMPLATE_ID || null;
+        return {
+          subject: templateId 
+            ? "(Subject from SendGrid template)" 
+            : "We noticed you haven't finished setting up Simple Slips",
+          from: 'hello@simpleslips.co.za',
+          to: user.email,
+          templateId,
+          templateName: 'Trial Recovery',
+          previewData: {
+            username: user.username,
+            name: user.username,
+            first_name: user.username,
+            appUrl: this.appUrl,
+            app_url: this.appUrl,
+            loginUrl: `${this.appUrl}/auth`,
+            login_url: `${this.appUrl}/auth`
+          }
+        };
+      }
+      
+      case 'verification': {
+        const verificationToken = '[TOKEN_PLACEHOLDER]';
+        const verificationUrl = `${this.appUrl}/verify-email?token=${verificationToken}`;
+        return {
+          subject: "(Subject from SendGrid template)",
+          from: process.env.AUTH_FROM_EMAIL || this.fromEmail,
+          to: user.email,
+          templateId: 'd-f13c8e5c302e4405904fa5366443f766',
+          templateName: 'Email Verification',
+          previewData: {
+            username: user.username,
+            verificationUrl: verificationUrl,
+            appUrl: this.appUrl
+          }
+        };
+      }
+      
+      case 'payment_failed': {
+        return {
+          subject: 'Payment failed for your Simple Slips subscription',
+          from: this.fromEmail,
+          to: user.email,
+          templateId: null,
+          templateName: 'Payment Failed Notification',
+          previewData: {
+            username: user.username,
+            appUrl: this.appUrl,
+            subscriptionUrl: `${this.appUrl}/subscription`
+          }
+        };
+      }
+    }
+  }
+
+  /**
    * Send receipt sharing notification
    */
   async sendReceiptShare(
@@ -865,7 +937,7 @@ Create a backup: ${this.appUrl}/settings
       await withRetry(
         async () => {
           await mailService.send({
-            to: client.email,
+            to: client.email!,
             from: {
               email: this.fromEmail,
               name: 'Simple Slips Notifications'
@@ -1021,7 +1093,7 @@ ${aiMessage}
       await withRetry(
         async () => {
           await mailService.send({
-            to: client.email,
+            to: client.email!,
             from: {
               email: this.fromEmail,
               name: 'Simple Slips Notifications'
@@ -1156,7 +1228,7 @@ ${aiMessage}
       await withRetry(
         async () => {
           await mailService.send({
-            to: client.email,
+            to: client.email!,
             from: {
               email: this.fromEmail,
               name: 'Simple Slips Notifications'

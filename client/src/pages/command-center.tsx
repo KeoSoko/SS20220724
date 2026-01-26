@@ -29,7 +29,10 @@ import {
   FileCheck,
   ChevronDown,
   ChevronUp,
-  Circle
+  Circle,
+  Eye,
+  Send,
+  X
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -116,6 +119,38 @@ interface UserDetail {
     failureReason: string | null;
     createdAt: string;
   }>;
+  emailHealth: {
+    status: 'healthy' | 'warning' | 'failed';
+    lastEmailSent: {
+      type: string | null;
+      status: string;
+      at: string;
+    } | null;
+    lastDelivered: {
+      at: string;
+    } | null;
+    lastFailed: {
+      type: string;
+      reason: string | null;
+      at: string;
+    } | null;
+    recentEvents: Array<{
+      id: number;
+      eventType: string;
+      emailType: string | null;
+      bounceReason: string | null;
+      createdAt: string;
+    }>;
+  };
+}
+
+interface EmailPreview {
+  subject: string;
+  from: string;
+  to: string | null;
+  templateId: string | null;
+  templateName: string;
+  previewData: Record<string, any>;
 }
 
 interface AIAnalysis {
@@ -228,6 +263,8 @@ function calculateUserRisk(user: UserSearchResult): RiskLevel {
 
 const DESTRUCTIVE_ACTIONS = ['activate_subscription', 'cancel_subscription', 'restart_trial'];
 
+type EmailTemplateType = 'trial_recovery' | 'verification' | 'payment_failed';
+
 export default function CommandCenter() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
@@ -236,6 +273,8 @@ export default function CommandCenter() {
   const [confirmAction, setConfirmAction] = useState<{ action: string; reason?: string } | null>(null);
   const [confirmInput, setConfirmInput] = useState("");
   const [showOlderEvents, setShowOlderEvents] = useState(false);
+  const [emailPreview, setEmailPreview] = useState<EmailPreview | null>(null);
+  const [previewTemplate, setPreviewTemplate] = useState<EmailTemplateType | null>(null);
 
   const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery<SystemHealth>({
     queryKey: ['/api/admin/command-center/health'],
@@ -330,6 +369,30 @@ export default function CommandCenter() {
       toast({ title: "Failed to send email", description: error.message, variant: "destructive" });
     }
   });
+
+  const emailPreviewMutation = useMutation({
+    mutationFn: async ({ userId, template }: { userId: number; template: EmailTemplateType }) => {
+      const response = await apiRequest("POST", "/api/admin/email/preview", { userId, template });
+      return response.json();
+    },
+    onSuccess: (data: EmailPreview) => {
+      setEmailPreview(data);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to load preview", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const handlePreviewEmail = (template: EmailTemplateType) => {
+    if (!selectedUserId) return;
+    setPreviewTemplate(template);
+    emailPreviewMutation.mutate({ userId: selectedUserId, template });
+  };
+
+  const closeEmailPreview = () => {
+    setEmailPreview(null);
+    setPreviewTemplate(null);
+  };
 
   const handleSearch = () => {
     if (searchQuery.length >= 2) {
@@ -792,6 +855,57 @@ export default function CommandCenter() {
                   <Separator />
 
                   <div>
+                    <h4 className="font-medium mb-2 flex items-center gap-2">
+                      Email Health
+                      <Badge 
+                        variant={
+                          userDetail.emailHealth?.status === 'healthy' ? 'default' : 
+                          userDetail.emailHealth?.status === 'warning' ? 'secondary' : 
+                          'destructive'
+                        }
+                        className={
+                          userDetail.emailHealth?.status === 'healthy' ? 'bg-green-500' : 
+                          userDetail.emailHealth?.status === 'warning' ? 'bg-orange-500' : 
+                          ''
+                        }
+                      >
+                        {userDetail.emailHealth?.status === 'healthy' ? 'Delivered' : 
+                         userDetail.emailHealth?.status === 'warning' ? 'Deferred' : 
+                         userDetail.emailHealth?.status === 'failed' ? 'Blocked/Bounced' : 'Unknown'}
+                      </Badge>
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      {userDetail.emailHealth?.lastEmailSent && (
+                        <div>
+                          Last Email: <span className="text-muted-foreground">
+                            {userDetail.emailHealth.lastEmailSent.status} {formatDistanceToNow(new Date(userDetail.emailHealth.lastEmailSent.at), { addSuffix: true })}
+                          </span>
+                        </div>
+                      )}
+                      {userDetail.emailHealth?.lastDelivered && (
+                        <div>
+                          Last Delivered: <span className="text-muted-foreground">
+                            {formatDistanceToNow(new Date(userDetail.emailHealth.lastDelivered.at), { addSuffix: true })}
+                          </span>
+                        </div>
+                      )}
+                      {userDetail.emailHealth?.lastFailed && (
+                        <div className="col-span-2 text-red-500">
+                          Last Failed: {userDetail.emailHealth.lastFailed.type} 
+                          {userDetail.emailHealth.lastFailed.reason && (
+                            <span className="text-xs"> - {userDetail.emailHealth.lastFailed.reason}</span>
+                          )}
+                        </div>
+                      )}
+                      {!userDetail.emailHealth?.lastEmailSent && (
+                        <div className="col-span-2 text-muted-foreground">No email events recorded</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div>
                     <h4 className="font-medium mb-2">Quick Actions</h4>
                     <div className="flex flex-wrap gap-2">
                       {!userDetail.user.isEmailVerified && (
@@ -799,9 +913,20 @@ export default function CommandCenter() {
                           <Button size="sm" variant="outline" onClick={() => handleAction('verify_email')} disabled={actionMutation.isPending}>
                             <CheckCircle className="h-3 w-3 mr-1" /> Verify Email
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleAction('resend_verification_email')} disabled={actionMutation.isPending}>
-                            <Mail className="h-3 w-3 mr-1" /> Resend Verification
-                          </Button>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="outline" onClick={() => handleAction('resend_verification_email')} disabled={actionMutation.isPending}>
+                              <Mail className="h-3 w-3 mr-1" /> Resend Verification
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              onClick={() => handlePreviewEmail('verification')} 
+                              disabled={emailPreviewMutation.isPending}
+                              title="Preview verification email"
+                            >
+                              <Eye className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </>
                       )}
                       <Button size="sm" variant="outline" onClick={() => handleAction('restart_trial')} disabled={actionMutation.isPending}>
@@ -810,20 +935,31 @@ export default function CommandCenter() {
                       <Button size="sm" variant="outline" onClick={() => handleAction('activate_subscription')} disabled={actionMutation.isPending}>
                         <CreditCard className="h-3 w-3 mr-1" /> Activate Sub
                       </Button>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        onClick={handleSendRecoveryEmail} 
-                        disabled={!recoveryEmailStatus.canSend || recoveryEmailMutation.isPending}
-                        title={recoveryEmailStatus.reason}
-                      >
-                        {recoveryEmailMutation.isPending ? (
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                        ) : (
-                          <Mail className="h-3 w-3 mr-1" />
-                        )}
-                        Send Recovery Email
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={handleSendRecoveryEmail} 
+                          disabled={!recoveryEmailStatus.canSend || recoveryEmailMutation.isPending}
+                          title={recoveryEmailStatus.reason}
+                        >
+                          {recoveryEmailMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : (
+                            <Mail className="h-3 w-3 mr-1" />
+                          )}
+                          Send Recovery Email
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          onClick={() => handlePreviewEmail('trial_recovery')} 
+                          disabled={emailPreviewMutation.isPending}
+                          title="Preview recovery email"
+                        >
+                          <Eye className="h-3 w-3" />
+                        </Button>
+                      </div>
                       {!recoveryEmailStatus.canSend && userDetail?.user.email && (
                         <span className="text-xs text-muted-foreground self-center">
                           {recoveryEmailStatus.reason}
@@ -1152,6 +1288,89 @@ export default function CommandCenter() {
                   ) : null}
                   Execute Action
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Email Preview Modal */}
+      {emailPreview && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-lg mx-4">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Eye className="h-5 w-5 text-blue-500" />
+                  Email Preview: {emailPreview.templateName}
+                </div>
+                <Button variant="ghost" size="sm" onClick={closeEmailPreview}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </CardTitle>
+              <CardDescription>
+                This shows what will be sent. No email has been sent yet.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3 text-sm">
+                <div className="flex items-start gap-2">
+                  <span className="font-medium text-muted-foreground w-20">From:</span>
+                  <span>{emailPreview.from}</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-medium text-muted-foreground w-20">To:</span>
+                  <span>{emailPreview.to || 'No email address'}</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-medium text-muted-foreground w-20">Subject:</span>
+                  <span>{emailPreview.subject}</span>
+                </div>
+                {emailPreview.templateId && (
+                  <div className="flex items-start gap-2">
+                    <span className="font-medium text-muted-foreground w-20">Template:</span>
+                    <span className="font-mono text-xs bg-muted px-2 py-1 rounded">{emailPreview.templateId}</span>
+                  </div>
+                )}
+              </div>
+              
+              <Separator />
+              
+              <div>
+                <h4 className="font-medium mb-2">Template Variables</h4>
+                <div className="bg-muted rounded-lg p-3 font-mono text-xs overflow-x-auto">
+                  <pre>{JSON.stringify(emailPreview.previewData, null, 2)}</pre>
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <Button variant="outline" onClick={closeEmailPreview}>
+                  Cancel
+                </Button>
+                {previewTemplate === 'trial_recovery' && (
+                  <Button 
+                    onClick={() => {
+                      closeEmailPreview();
+                      handleSendRecoveryEmail();
+                    }}
+                    disabled={!recoveryEmailStatus.canSend || recoveryEmailMutation.isPending}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    Send Email
+                  </Button>
+                )}
+                {previewTemplate === 'verification' && (
+                  <Button 
+                    onClick={() => {
+                      closeEmailPreview();
+                      handleAction('resend_verification_email');
+                    }}
+                    disabled={actionMutation.isPending}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    Send Email
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

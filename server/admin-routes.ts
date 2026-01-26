@@ -125,37 +125,272 @@ export function registerAdminRoutes(app: Express) {
   });
 
   // ========================================
-  // USER SEARCH WITH METRICS
+  // USER SEARCH WITH METRICS (supports text search OR filter)
   // ========================================
   app.get("/api/admin/users/search", requireAdmin, async (req, res) => {
     try {
       const query = (req.query.query as string)?.trim();
+      const filter = (req.query.filter as string)?.trim();
       
-      if (!query) {
-        return res.status(400).json({ error: "Search query required" });
+      // Must have either query or filter
+      if (!query && !filter) {
+        return res.status(400).json({ error: "Search query or filter required" });
       }
 
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const now = new Date();
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-      const searchResults = await db.select({
-        id: users.id,
-        email: users.email,
-        username: users.username,
-        createdAt: users.createdAt,
-        lastLogin: users.lastLogin,
-        isEmailVerified: users.isEmailVerified,
-        trialEndDate: users.trialEndDate
-      })
-      .from(users)
-      .where(
-        or(
-          ilike(users.email, `%${query}%`),
-          ilike(users.username, `%${query}%`),
-          sql`CAST(${users.id} AS TEXT) = ${query}`
+      let searchResults: Array<{
+        id: number;
+        email: string | null;
+        username: string;
+        createdAt: Date;
+        lastLogin: Date | null;
+        isEmailVerified: boolean | null;
+        trialEndDate: Date | null;
+      }>;
+
+      // Filter mode - predefined filters by health card type
+      if (filter) {
+        const validFilters = ['all', 'unverified', 'stuck_trials', 'failed_24h', 'failed_7d', 'webhooks_24h', 'azure_failures', 'email_failures'];
+        if (!validFilters.includes(filter)) {
+          return res.status(400).json({ error: `Invalid filter. Must be one of: ${validFilters.join(', ')}` });
+        }
+
+        switch (filter) {
+          case 'all':
+            searchResults = await db.select({
+              id: users.id,
+              email: users.email,
+              username: users.username,
+              createdAt: users.createdAt,
+              lastLogin: users.lastLogin,
+              isEmailVerified: users.isEmailVerified,
+              trialEndDate: users.trialEndDate
+            })
+            .from(users)
+            .orderBy(desc(users.createdAt))
+            .limit(50);
+            break;
+
+          case 'unverified':
+            searchResults = await db.select({
+              id: users.id,
+              email: users.email,
+              username: users.username,
+              createdAt: users.createdAt,
+              lastLogin: users.lastLogin,
+              isEmailVerified: users.isEmailVerified,
+              trialEndDate: users.trialEndDate
+            })
+            .from(users)
+            .where(eq(users.isEmailVerified, false))
+            .orderBy(desc(users.createdAt))
+            .limit(50);
+            break;
+
+          case 'stuck_trials':
+            // Users in trial with expired trial date (more than 30 days ago)
+            searchResults = await db.select({
+              id: users.id,
+              email: users.email,
+              username: users.username,
+              createdAt: users.createdAt,
+              lastLogin: users.lastLogin,
+              isEmailVerified: users.isEmailVerified,
+              trialEndDate: users.trialEndDate
+            })
+            .from(users)
+            .where(
+              and(
+                isNotNull(users.trialEndDate),
+                lt(users.trialEndDate, thirtyDaysAgo)
+              )
+            )
+            .orderBy(desc(users.createdAt))
+            .limit(50);
+            break;
+
+          case 'failed_24h':
+            // Users with payment failures in last 24h
+            const failed24hUserIds = await db.selectDistinct({ userId: billingEvents.userId })
+              .from(billingEvents)
+              .where(
+                and(
+                  eq(billingEvents.eventType, 'payment_failed'),
+                  gte(billingEvents.createdAt, twentyFourHoursAgo)
+                )
+              )
+              .limit(50);
+            
+            if (failed24hUserIds.length === 0) {
+              searchResults = [];
+            } else {
+              searchResults = await db.select({
+                id: users.id,
+                email: users.email,
+                username: users.username,
+                createdAt: users.createdAt,
+                lastLogin: users.lastLogin,
+                isEmailVerified: users.isEmailVerified,
+                trialEndDate: users.trialEndDate
+              })
+              .from(users)
+              .where(sql`${users.id} IN (${sql.join(failed24hUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
+              .limit(50);
+            }
+            break;
+
+          case 'failed_7d':
+            // Users with payment failures in last 7 days
+            const failed7dUserIds = await db.selectDistinct({ userId: billingEvents.userId })
+              .from(billingEvents)
+              .where(
+                and(
+                  eq(billingEvents.eventType, 'payment_failed'),
+                  gte(billingEvents.createdAt, sevenDaysAgo)
+                )
+              )
+              .limit(50);
+            
+            if (failed7dUserIds.length === 0) {
+              searchResults = [];
+            } else {
+              searchResults = await db.select({
+                id: users.id,
+                email: users.email,
+                username: users.username,
+                createdAt: users.createdAt,
+                lastLogin: users.lastLogin,
+                isEmailVerified: users.isEmailVerified,
+                trialEndDate: users.trialEndDate
+              })
+              .from(users)
+              .where(sql`${users.id} IN (${sql.join(failed7dUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
+              .limit(50);
+            }
+            break;
+
+          case 'webhooks_24h':
+            // Users with webhook failures in last 24h
+            const webhook24hUserIds = await db.selectDistinct({ userId: billingEvents.userId })
+              .from(billingEvents)
+              .where(
+                and(
+                  or(
+                    eq(billingEvents.eventType, 'paystack_webhook_failed'),
+                    eq(billingEvents.eventType, 'paystack_webhook_failed_user_resolution')
+                  ),
+                  gte(billingEvents.createdAt, twentyFourHoursAgo)
+                )
+              )
+              .limit(50);
+            
+            if (webhook24hUserIds.length === 0) {
+              searchResults = [];
+            } else {
+              searchResults = await db.select({
+                id: users.id,
+                email: users.email,
+                username: users.username,
+                createdAt: users.createdAt,
+                lastLogin: users.lastLogin,
+                isEmailVerified: users.isEmailVerified,
+                trialEndDate: users.trialEndDate
+              })
+              .from(users)
+              .where(sql`${users.id} IN (${sql.join(webhook24hUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
+              .limit(50);
+            }
+            break;
+
+          case 'azure_failures':
+            // Users with Azure upload failures (blob_url starts with /uploads/)
+            const azureFailUserIds = await db.selectDistinct({ userId: receipts.userId })
+              .from(receipts)
+              .where(sql`blob_url LIKE '/uploads/%'`)
+              .limit(50);
+            
+            if (azureFailUserIds.length === 0) {
+              searchResults = [];
+            } else {
+              searchResults = await db.select({
+                id: users.id,
+                email: users.email,
+                username: users.username,
+                createdAt: users.createdAt,
+                lastLogin: users.lastLogin,
+                isEmailVerified: users.isEmailVerified,
+                trialEndDate: users.trialEndDate
+              })
+              .from(users)
+              .where(sql`${users.id} IN (${sql.join(azureFailUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
+              .limit(50);
+            }
+            break;
+
+          case 'email_failures':
+            // Users with email delivery failures in last 7 days
+            const emailFailUserIds = await db.selectDistinct({ userId: emailEvents.userId })
+              .from(emailEvents)
+              .where(
+                and(
+                  or(
+                    eq(emailEvents.eventType, 'bounce'),
+                    eq(emailEvents.eventType, 'dropped'),
+                    eq(emailEvents.eventType, 'deferred')
+                  ),
+                  gte(emailEvents.createdAt, sevenDaysAgo)
+                )
+              )
+              .limit(50);
+            
+            if (emailFailUserIds.length === 0) {
+              searchResults = [];
+            } else {
+              searchResults = await db.select({
+                id: users.id,
+                email: users.email,
+                username: users.username,
+                createdAt: users.createdAt,
+                lastLogin: users.lastLogin,
+                isEmailVerified: users.isEmailVerified,
+                trialEndDate: users.trialEndDate
+              })
+              .from(users)
+              .where(sql`${users.id} IN (${sql.join(emailFailUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
+              .limit(50);
+            }
+            break;
+
+          default:
+            searchResults = [];
+        }
+      } else {
+        // Text search mode (original behavior)
+        searchResults = await db.select({
+          id: users.id,
+          email: users.email,
+          username: users.username,
+          createdAt: users.createdAt,
+          lastLogin: users.lastLogin,
+          isEmailVerified: users.isEmailVerified,
+          trialEndDate: users.trialEndDate
+        })
+        .from(users)
+        .where(
+          or(
+            ilike(users.email, `%${query}%`),
+            ilike(users.username, `%${query}%`),
+            sql`CAST(${users.id} AS TEXT) = ${query}`
+          )
         )
-      )
-      .limit(20);
+        .limit(50);
+      }
 
+      // Enrich results with subscription and usage data
       const results = await Promise.all(searchResults.map(async (user) => {
         const [subscription, totalReceipts, recentReceipts] = await Promise.all([
           db.select().from(userSubscriptions).where(eq(userSubscriptions.userId, user.id)).limit(1),

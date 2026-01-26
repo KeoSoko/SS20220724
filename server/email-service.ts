@@ -434,6 +434,19 @@ Need help? Contact support at keo@nine28.co.za
       const fromEmail = 'hello@simpleslips.co.za';
       
       if (templateId) {
+        const templateData = {
+          username: username,
+          name: username,
+          first_name: username,
+          appUrl: this.appUrl,
+          app_url: this.appUrl,
+          loginUrl: `${this.appUrl}/auth`,
+          login_url: `${this.appUrl}/auth`
+        };
+        
+        console.log(`[EMAIL] Sending recovery email with template ${templateId}`);
+        console.log(`[EMAIL] Template data:`, JSON.stringify(templateData));
+        
         await mailService.send({
           to: email,
           from: {
@@ -445,10 +458,7 @@ Need help? Contact support at keo@nine28.co.za
             name: 'Simple Slips Support Team'
           },
           templateId: templateId,
-          dynamicTemplateData: {
-            username: username,
-            appUrl: this.appUrl
-          }
+          dynamicTemplateData: templateData
         });
       } else {
         await mailService.send({

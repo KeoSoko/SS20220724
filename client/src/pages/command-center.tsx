@@ -315,6 +315,22 @@ export default function CommandCenter() {
     }
   });
 
+  const recoveryEmailMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const response = await apiRequest("POST", `/api/admin/users/${userId}/send-recovery-email`, {});
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Email sent", description: data.message });
+      if (selectedUserId) {
+        refetchUserDetail();
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to send email", description: error.message, variant: "destructive" });
+    }
+  });
+
   const handleSearch = () => {
     if (searchQuery.length >= 2) {
       refetchSearch();
@@ -364,6 +380,37 @@ export default function CommandCenter() {
       case 'low': return 'default';
       default: return 'outline';
     }
+  };
+
+  const getRecoveryEmailStatus = () => {
+    if (!userDetail) return { canSend: false, reason: 'No user selected' };
+    if (!userDetail.user.email) return { canSend: false, reason: 'No email address' };
+    
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentRecoveryEmail = userDetail.billingEvents.find(
+      event => event.eventType === 'admin_recovery_email_sent' && new Date(event.createdAt) > sevenDaysAgo
+    );
+    
+    if (recentRecoveryEmail) {
+      return { 
+        canSend: false, 
+        reason: `Email sent ${formatDistanceToNow(new Date(recentRecoveryEmail.createdAt), { addSuffix: true })}` 
+      };
+    }
+    
+    return { canSend: true, reason: 'Ready to send' };
+  };
+
+  const recoveryEmailStatus = getRecoveryEmailStatus();
+
+  const handleSendRecoveryEmail = () => {
+    if (!selectedUserId || !recoveryEmailStatus.canSend) return;
+    
+    if (!confirm("Send a recovery email to this user? This action will be logged.")) {
+      return;
+    }
+    
+    recoveryEmailMutation.mutate(selectedUserId);
   };
 
   const getStatusBadgeColor = (status: string) => {
@@ -763,6 +810,25 @@ export default function CommandCenter() {
                       <Button size="sm" variant="outline" onClick={() => handleAction('activate_subscription')} disabled={actionMutation.isPending}>
                         <CreditCard className="h-3 w-3 mr-1" /> Activate Sub
                       </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={handleSendRecoveryEmail} 
+                        disabled={!recoveryEmailStatus.canSend || recoveryEmailMutation.isPending}
+                        title={recoveryEmailStatus.reason}
+                      >
+                        {recoveryEmailMutation.isPending ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <Mail className="h-3 w-3 mr-1" />
+                        )}
+                        Send Recovery Email
+                      </Button>
+                      {!recoveryEmailStatus.canSend && userDetail?.user.email && (
+                        <span className="text-xs text-muted-foreground self-center">
+                          {recoveryEmailStatus.reason}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

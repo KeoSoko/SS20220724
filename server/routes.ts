@@ -53,6 +53,7 @@ import { recurringExpenseService } from "./recurring-expense-service";
 import { billingService } from "./billing-service";
 import { smartReminderService } from "./smart-reminder-service";
 import { profitLossService } from "./profit-loss-service";
+import { registerAdminRoutes } from "./admin-routes";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
 import { log } from "./vite";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
@@ -480,6 +481,7 @@ const validateReceiptId = (receiptId: string): number => {
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up passport authentication (includes JWT auth middleware)
   setupAuth(app);
+  registerAdminRoutes(app);
 
   // ===== HEALTH CHECK ENDPOINT =====
   // Required for Replit deployment health checks - must not require authentication

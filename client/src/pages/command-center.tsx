@@ -132,19 +132,45 @@ interface AIEventSummary {
   needsAttention: boolean;
 }
 
+type FilterType = 'all' | 'unverified' | 'stuck_trials' | 'failed_24h' | 'failed_7d' | 'webhooks_24h' | 'azure_failures' | 'email_failures' | null;
+
+const FILTER_LABELS: Record<Exclude<FilterType, null>, string> = {
+  'all': 'All Users',
+  'unverified': 'Unverified Users',
+  'stuck_trials': 'Stuck Trials',
+  'failed_24h': 'Failed 24h',
+  'failed_7d': 'Failed 7d',
+  'webhooks_24h': 'Webhook Failures 24h',
+  'azure_failures': 'Azure Upload Failures',
+  'email_failures': 'Email Delivery Failures'
+};
+
 export default function CommandCenter() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [activeFilter, setActiveFilter] = useState<FilterType>(null);
 
   const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery<SystemHealth>({
     queryKey: ['/api/admin/command-center/health'],
   });
 
   const { data: searchResults, isLoading: searchLoading, refetch: refetchSearch } = useQuery<UserSearchResult[]>({
-    queryKey: ['/api/admin/users/search', { query: searchQuery }],
-    enabled: searchQuery.length >= 2,
+    queryKey: activeFilter 
+      ? ['/api/admin/users/search', { filter: activeFilter }]
+      : ['/api/admin/users/search', { query: searchQuery }],
+    enabled: activeFilter !== null || searchQuery.length >= 2,
   });
+
+  const handleFilterClick = (filter: FilterType) => {
+    setActiveFilter(filter);
+    setSearchQuery("");
+    setSelectedUserId(null);
+  };
+
+  const clearFilter = () => {
+    setActiveFilter(null);
+  };
 
   const { data: userDetail, isLoading: userDetailLoading, refetch: refetchUserDetail } = useQuery<UserDetail>({
     queryKey: [`/api/admin/users/${selectedUserId}`],
@@ -260,58 +286,82 @@ export default function CommandCenter() {
         </Button>
       </div>
 
-      {/* System Health Panel */}
+      {/* System Health Panel - Clickable Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-        <Card>
+        <Card 
+          className={`cursor-pointer hover:bg-muted/50 transition-colors ${activeFilter === 'all' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => handleFilterClick('all')}
+        >
           <CardContent className="p-4 text-center">
             <Users className="h-6 w-6 mx-auto mb-2 text-blue-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.totalUsers || 0}</div>
             <div className="text-xs text-muted-foreground">Total Users</div>
           </CardContent>
         </Card>
-        <Card className={health?.unverifiedUsers && health.unverifiedUsers > 0 ? "border-yellow-500" : ""}>
+        <Card 
+          className={`cursor-pointer hover:bg-muted/50 transition-colors ${health?.unverifiedUsers && health.unverifiedUsers > 0 ? "border-yellow-500" : ""} ${activeFilter === 'unverified' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => handleFilterClick('unverified')}
+        >
           <CardContent className="p-4 text-center">
             <Mail className="h-6 w-6 mx-auto mb-2 text-yellow-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.unverifiedUsers || 0}</div>
             <div className="text-xs text-muted-foreground">Unverified</div>
           </CardContent>
         </Card>
-        <Card className={health?.stuckTrialUsers && health.stuckTrialUsers > 0 ? "border-orange-500" : ""}>
+        <Card 
+          className={`cursor-pointer hover:bg-muted/50 transition-colors ${health?.stuckTrialUsers && health.stuckTrialUsers > 0 ? "border-orange-500" : ""} ${activeFilter === 'stuck_trials' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => handleFilterClick('stuck_trials')}
+        >
           <CardContent className="p-4 text-center">
             <Clock className="h-6 w-6 mx-auto mb-2 text-orange-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.stuckTrialUsers || 0}</div>
             <div className="text-xs text-muted-foreground">Stuck Trials</div>
           </CardContent>
         </Card>
-        <Card className={health?.failedSubscriptions24h && health.failedSubscriptions24h > 0 ? "border-red-500" : ""}>
+        <Card 
+          className={`cursor-pointer hover:bg-muted/50 transition-colors ${health?.failedSubscriptions24h && health.failedSubscriptions24h > 0 ? "border-red-500" : ""} ${activeFilter === 'failed_24h' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => handleFilterClick('failed_24h')}
+        >
           <CardContent className="p-4 text-center">
             <CreditCard className="h-6 w-6 mx-auto mb-2 text-red-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.failedSubscriptions24h || 0}</div>
             <div className="text-xs text-muted-foreground">Failed 24h</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card 
+          className={`cursor-pointer hover:bg-muted/50 transition-colors ${activeFilter === 'failed_7d' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => handleFilterClick('failed_7d')}
+        >
           <CardContent className="p-4 text-center">
             <CreditCard className="h-6 w-6 mx-auto mb-2 text-orange-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.failedSubscriptions7d || 0}</div>
             <div className="text-xs text-muted-foreground">Failed 7d</div>
           </CardContent>
         </Card>
-        <Card className={health?.failedWebhooks24h && health.failedWebhooks24h > 0 ? "border-red-500" : ""}>
+        <Card 
+          className={`cursor-pointer hover:bg-muted/50 transition-colors ${health?.failedWebhooks24h && health.failedWebhooks24h > 0 ? "border-red-500" : ""} ${activeFilter === 'webhooks_24h' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => handleFilterClick('webhooks_24h')}
+        >
           <CardContent className="p-4 text-center">
             <AlertTriangle className="h-6 w-6 mx-auto mb-2 text-red-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.failedWebhooks24h || 0}</div>
             <div className="text-xs text-muted-foreground">Webhooks 24h</div>
           </CardContent>
         </Card>
-        <Card className={health?.azureFailures7d && health.azureFailures7d > 0 ? "border-orange-500" : ""}>
+        <Card 
+          className={`cursor-pointer hover:bg-muted/50 transition-colors ${health?.azureFailures7d && health.azureFailures7d > 0 ? "border-orange-500" : ""} ${activeFilter === 'azure_failures' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => handleFilterClick('azure_failures')}
+        >
           <CardContent className="p-4 text-center">
             <Receipt className="h-6 w-6 mx-auto mb-2 text-orange-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.azureFailures7d || 0}</div>
             <div className="text-xs text-muted-foreground">Azure Fail 7d</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card 
+          className={`cursor-pointer hover:bg-muted/50 transition-colors ${activeFilter === 'email_failures' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => handleFilterClick('email_failures')}
+        >
           <CardContent className="p-4 text-center">
             <Mail className="h-6 w-6 mx-auto mb-2 text-purple-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.emailFailures7d || 0}</div>
@@ -329,7 +379,12 @@ export default function CommandCenter() {
             <Input
               placeholder="Search by email, username, or user ID..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (e.target.value.length > 0) {
+                  clearFilter();
+                }
+              }}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               className="flex-1"
             />
@@ -338,10 +393,23 @@ export default function CommandCenter() {
             </Button>
           </div>
 
-          {searchResults && searchResults.length > 0 && (
+          {activeFilter && (
+            <div className="mt-2 flex items-center gap-2">
+              <Badge variant="secondary" className="text-sm">
+                Filtered: {FILTER_LABELS[activeFilter]}
+              </Badge>
+              <Button variant="ghost" size="sm" onClick={clearFilter} className="h-6 px-2">
+                <XCircle className="h-3 w-3 mr-1" /> Clear
+              </Button>
+            </div>
+          )}
+
+          {(searchResults && searchResults.length > 0) && (
             <Card className="mt-4">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Search Results ({searchResults.length})</CardTitle>
+                <CardTitle className="text-sm">
+                  {activeFilter ? `${FILTER_LABELS[activeFilter]} (${searchResults.length})` : `Search Results (${searchResults.length})`}
+                </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 <ScrollArea className="h-[200px]">
@@ -376,6 +444,25 @@ export default function CommandCenter() {
                     </div>
                   ))}
                 </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+
+          {activeFilter && searchResults && searchResults.length === 0 && !searchLoading && (
+            <Card className="mt-4">
+              <CardContent className="p-6 text-center text-muted-foreground">
+                <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
+                <p>No users match the "{FILTER_LABELS[activeFilter]}" filter.</p>
+                <p className="text-sm mt-1">This is good news!</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {searchLoading && (
+            <Card className="mt-4">
+              <CardContent className="p-6 text-center">
+                <Loader2 className="h-6 w-6 mx-auto animate-spin text-muted-foreground" />
+                <p className="text-sm text-muted-foreground mt-2">Loading users...</p>
               </CardContent>
             </Card>
           )}

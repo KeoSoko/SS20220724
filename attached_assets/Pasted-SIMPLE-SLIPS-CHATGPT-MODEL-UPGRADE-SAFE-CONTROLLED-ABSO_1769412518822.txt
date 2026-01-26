@@ -1,0 +1,159 @@
+SIMPLE SLIPS — CHATGPT MODEL UPGRADE (SAFE & CONTROLLED)
+⚠️ ABSOLUTE RULES
+
+DO NOT change prompts yet
+
+DO NOT refactor conversation logic
+
+DO NOT change UI
+
+DO NOT remove existing model usage
+
+DO NOT guess model names
+
+Inspection first, then upgrade
+
+CONTEXT
+
+Simple Slips has an embedded chatbot powered by OpenAI / ChatGPT.
+
+Current state:
+
+Uses an older GPT-4 / GPT-4-Turbo / GPT-4.0 model
+
+We want to upgrade to the latest available OpenAI model
+
+Must preserve:
+
+Prompt behavior
+
+Conversation memory
+
+Cost control
+
+Response format
+
+OBJECTIVE (PHASE 1 — INSPECTION)
+
+Identify exactly:
+
+Which OpenAI SDK is used
+
+Which model is configured
+
+Where the model is defined
+
+How prompts and messages are constructed
+
+No upgrades yet.
+
+REQUIRED OUTPUT (PASTE RAW CODE)
+1️⃣ OPENAI CLIENT INITIALIZATION
+
+Paste all backend code where OpenAI is initialized, including:
+
+SDK import
+
+Client creation
+
+API key usage
+
+Any wrappers or helpers
+
+Likely files:
+
+server/openai.ts
+server/ai/*
+server/chat/*
+server/routes.ts
+
+2️⃣ CHAT COMPLETION / RESPONSES CALL
+
+Paste every place where OpenAI is called:
+
+chat.completions.create
+
+responses.create
+
+createChatCompletion
+
+Any abstraction layer
+
+Include:
+
+Model name
+
+Temperature
+
+Max tokens
+
+System prompt
+
+Message structure
+
+3️⃣ MODEL CONFIG LOCATION
+
+Confirm:
+
+Is the model name hardcoded?
+
+Is it read from ENV?
+
+Is it user-selectable?
+
+Is it different per feature?
+
+Paste that code.
+
+4️⃣ CONVERSATION MEMORY HANDLING
+
+Paste code showing:
+
+How messages are stored
+
+How previous messages are sent
+
+Any truncation logic
+
+Any summarization logic
+
+This matters for compatibility with newer models.
+
+5️⃣ STREAMING (IF USED)
+
+If streaming responses:
+
+Paste streaming handler
+
+Paste frontend consumer logic
+
+6️⃣ ENVIRONMENT VARIABLES
+
+List names only (no secrets):
+
+OPENAI_API_KEY
+
+MODEL_NAME
+
+Any AI-related flags
+
+NON-GOALS (DO NOT DO)
+
+❌ Do NOT upgrade models yet
+❌ Do NOT change prompts
+❌ Do NOT convert to agents yet
+❌ Do NOT change pricing logic
+
+SUCCESS CONDITION (PHASE 1)
+
+From this output, it must be possible to answer:
+
+What model is currently used
+
+How risky the upgrade is
+
+Whether we should do:
+
+a drop-in replacement
+
+or a compatibility wrapper

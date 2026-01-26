@@ -36,6 +36,7 @@ import { SubscriptionPage } from "@/pages/subscription-page";
 import PaymentHistory from "@/pages/payment-history";
 import { SubscriptionBanner } from "@/components/subscription-banner";
 import EmailTrackingPage from "@/pages/email-tracking-page";
+import CommandCenter from "@/pages/command-center";
 import BusinessHubPage from "@/pages/business-hub-page";
 import BusinessProfilePage from "@/pages/business-profile-page";
 import ProfitLossPage from "@/pages/profit-loss-page";
@@ -71,6 +72,7 @@ function Router() {
       <ProtectedRoute path="/subscription" component={SubscriptionPage} />
       <ProtectedRoute path="/payment-history" component={PaymentHistory} />
       <AdminRoute path="/admin/email-tracking" component={EmailTrackingPage} />
+      <AdminRoute path="/command-center" component={CommandCenter} />
       <ProtectedRoute path="/business-hub" component={BusinessHubPage} />
       <ProtectedRoute path="/business-profile" component={BusinessProfilePage} />
       <ProtectedRoute path="/profit-loss" component={ProfitLossPage} />

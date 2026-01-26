@@ -68,3 +68,4 @@ integrations = ["javascript_stripe:1.0.0"]
 
 [userenv.shared]
 AUTH_FROM_EMAIL = "hello@simpleslips.co.za"
+SENDGRID_TRIAL_RECOVERY_TEMPLATE_ID = "d-a1110d28be6d4bb2af68df618a878fb9"

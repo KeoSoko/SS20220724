@@ -142,12 +142,12 @@ export default function CommandCenter() {
   });
 
   const { data: searchResults, isLoading: searchLoading, refetch: refetchSearch } = useQuery<UserSearchResult[]>({
-    queryKey: ['/api/admin/users/search', searchQuery],
+    queryKey: ['/api/admin/users/search', { query: searchQuery }],
     enabled: searchQuery.length >= 2,
   });
 
   const { data: userDetail, isLoading: userDetailLoading, refetch: refetchUserDetail } = useQuery<UserDetail>({
-    queryKey: ['/api/admin/users', selectedUserId],
+    queryKey: [`/api/admin/users/${selectedUserId}`],
     enabled: !!selectedUserId,
   });
 

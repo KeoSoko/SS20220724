@@ -179,7 +179,7 @@ const TaxAIAssistant: React.FC<TaxAIAssistantProps> = ({ isOpen, onToggle }) => 
           data-testid="button-tax-info-bot"
         >
           <MessageCircle className="h-6 w-6 mb-1 md:h-5 md:w-5" />
-          <span className="text-[10px] font-bold leading-tight md:text-xs">TAX INFO</span>
+          <span className="text-[10px] font-bold leading-tight md:text-[9px]">TAX INFO</span>
         </Button>
       </div>
     );

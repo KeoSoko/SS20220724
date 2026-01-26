@@ -21,7 +21,8 @@ The system is built as a full-stack TypeScript application within a monorepo str
 - **Backend Technology**: Express.js with TypeScript (ESM modules).
 - **Database**: PostgreSQL with Drizzle ORM, utilizing Neon Database for serverless PostgreSQL.
 - **Authentication**: JWT tokens with Passport.js local strategy, including email verification. Session management is handled by PostgreSQL.
-- **Admin System**: Role-based access control with `isAdmin` field in users table. AdminRoute component restricts access to admin-only features like email tracking dashboard.
+- **Admin System**: Role-based access control with `isAdmin` field in users table. AdminRoute component restricts access to admin-only features like email tracking dashboard and Command Center.
+- **Admin Command Center**: Comprehensive admin dashboard at /command-center for monitoring system health (user counts, trial status, Azure failures), searching users with usage metrics, viewing detailed user activity, and AI-powered user diagnosis using GPT-4.1 for churn risk analysis and recommended recovery actions.
 - **Security**: Implements rate limiting and Zod schemas for input validation.
 - **Billing System**: Uses Paystack for recurring subscriptions, allowing for better revenue retention and cross-platform compatibility, bypassing app store commissions.
 - **Account Management**: Includes robust account deletion functionality with password verification, complete data cleanup, and GDPR-compliant security.

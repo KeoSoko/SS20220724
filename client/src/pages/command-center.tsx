@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { 
   AlertCircle, 
   CheckCircle, 
@@ -25,7 +26,10 @@ import {
   Calendar,
   XCircle,
   Play,
-  FileCheck
+  FileCheck,
+  ChevronDown,
+  ChevronUp,
+  Circle
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -145,11 +149,93 @@ const FILTER_LABELS: Record<Exclude<FilterType, null>, string> = {
   'email_failures': 'Email Delivery Failures'
 };
 
+const CARD_SUBTITLES: Record<Exclude<FilterType, null>, string> = {
+  'all': 'Total registered accounts',
+  'unverified': 'Can\'t receive emails',
+  'stuck_trials': 'Trial ended, no conversion',
+  'failed_24h': 'Urgent - may lose access',
+  'failed_7d': 'At risk of churning',
+  'webhooks_24h': 'Payment data may be stale',
+  'azure_failures': 'Upload experience broken',
+  'email_failures': 'Not receiving notifications'
+};
+
+const RECOVERY_PLAYBOOKS: Record<Exclude<FilterType, null>, { what: string; actions: string[] }> = {
+  'all': { what: 'Overview of all registered users', actions: ['Review high-risk users first', 'Check recent signups'] },
+  'unverified': { 
+    what: 'These users haven\'t verified their email. They may have typos in their address or emails are being blocked.', 
+    actions: ['Resend verification email', 'If older than 7 days, contact via alternative channel'] 
+  },
+  'stuck_trials': { 
+    what: 'Trial period ended but they didn\'t convert. Often due to payment issues or forgotten accounts.', 
+    actions: ['Restart trial if engaged user', 'Check if payment was attempted but failed'] 
+  },
+  'failed_24h': { 
+    what: 'Payment failed in the last 24 hours. User may be locked out or frustrated.', 
+    actions: ['Activate subscription manually if payment confirmed', 'Contact to resolve payment issue'] 
+  },
+  'failed_7d': { 
+    what: 'Repeated payment failures over a week. High churn risk.', 
+    actions: ['Prioritize outreach', 'Consider extending trial while resolving'] 
+  },
+  'webhooks_24h': { 
+    what: 'Paystack webhooks failed to process. Subscription state may be incorrect.', 
+    actions: ['Check Paystack dashboard for actual status', 'Manually reconcile if needed'] 
+  },
+  'azure_failures': { 
+    what: 'Receipt uploads are failing for these users. Core functionality is broken.', 
+    actions: ['Check Azure Blob Storage status', 'Verify user\'s file sizes/formats'] 
+  },
+  'email_failures': { 
+    what: 'Emails (invoices, reminders, etc.) are bouncing or failing to deliver.', 
+    actions: ['Verify email address is correct', 'Check SendGrid for bounce reasons'] 
+  }
+};
+
+type RiskLevel = 'high' | 'medium' | 'healthy';
+
+function calculateUserRisk(user: UserSearchResult): RiskLevel {
+  const now = new Date();
+  const createdAt = new Date(user.createdAt);
+  const accountAgeHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+  
+  // High risk conditions
+  if (user.subscription.status === 'expired' || user.subscription.status === 'cancelled') {
+    return 'high';
+  }
+  if (user.subscription.status === 'trial' && user.subscription.trialEndDate) {
+    const trialEnd = new Date(user.subscription.trialEndDate);
+    if (trialEnd < now) return 'high';
+  }
+  
+  // Medium risk conditions
+  if (!user.isEmailVerified && accountAgeHours > 24) {
+    return 'medium';
+  }
+  if (user.subscription.status === 'trial' && user.subscription.trialEndDate) {
+    const trialEnd = new Date(user.subscription.trialEndDate);
+    const daysLeft = (trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysLeft < 3 && daysLeft > 0) return 'medium';
+  }
+  
+  // Healthy
+  if (user.subscription.status === 'active' || (user.subscription.status === 'trial' && user.usage.totalReceipts > 0)) {
+    return 'healthy';
+  }
+  
+  return 'medium';
+}
+
+const DESTRUCTIVE_ACTIONS = ['activate_subscription', 'cancel_subscription', 'restart_trial'];
+
 export default function CommandCenter() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterType>(null);
+  const [confirmAction, setConfirmAction] = useState<{ action: string; reason?: string } | null>(null);
+  const [confirmInput, setConfirmInput] = useState("");
+  const [showOlderEvents, setShowOlderEvents] = useState(false);
 
   const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery<SystemHealth>({
     queryKey: ['/api/admin/command-center/health'],
@@ -244,11 +330,31 @@ export default function CommandCenter() {
   const handleAction = (action: string, reason?: string) => {
     if (!selectedUserId) return;
     
+    // Destructive actions require typing CONFIRM
+    if (DESTRUCTIVE_ACTIONS.includes(action)) {
+      setConfirmAction({ action, reason });
+      setConfirmInput("");
+      return;
+    }
+    
+    // Non-destructive actions use simple confirmation
     if (!confirm(`Are you sure you want to ${action.replace(/_/g, ' ')}?`)) {
       return;
     }
     
     actionMutation.mutate({ userId: selectedUserId, action, reason });
+  };
+
+  const executeConfirmedAction = () => {
+    if (!selectedUserId || !confirmAction || confirmInput !== 'CONFIRM') return;
+    actionMutation.mutate({ userId: selectedUserId, action: confirmAction.action, reason: confirmAction.reason });
+    setConfirmAction(null);
+    setConfirmInput("");
+  };
+
+  const cancelConfirmAction = () => {
+    setConfirmAction(null);
+    setConfirmInput("");
   };
 
   const getRiskBadgeColor = (risk: string) => {
@@ -286,6 +392,54 @@ export default function CommandCenter() {
         </Button>
       </div>
 
+      {/* Today's Attention Strip */}
+      {!healthLoading && health && (
+        <div className="flex flex-wrap gap-3">
+          {(health.failedSubscriptions24h > 0 || (health.stuckTrialUsers > 0 && health.unverifiedUsers > 0)) && (
+            <Alert 
+              variant="destructive" 
+              className="flex-1 min-w-[200px] cursor-pointer hover:bg-destructive/90 transition-colors"
+              onClick={() => handleFilterClick('failed_24h')}
+            >
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle className="text-sm font-medium">
+                {health.failedSubscriptions24h + health.stuckTrialUsers} users likely to churn today
+              </AlertTitle>
+              <AlertDescription className="text-xs">
+                Payment failures and stuck trials need urgent attention
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {health.emailFailures7d > 0 && (
+            <Alert 
+              className="flex-1 min-w-[200px] cursor-pointer hover:bg-orange-50 dark:hover:bg-orange-950/30 transition-colors border-orange-300"
+              onClick={() => handleFilterClick('email_failures')}
+            >
+              <Mail className="h-4 w-4 text-orange-500" />
+              <AlertTitle className="text-sm font-medium text-orange-700 dark:text-orange-400">
+                {health.emailFailures7d} users blocked by email delivery
+              </AlertTitle>
+              <AlertDescription className="text-xs text-orange-600 dark:text-orange-500">
+                These users aren't receiving notifications
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {health.failedSubscriptions24h === 0 && (
+            <Alert className="flex-1 min-w-[200px] border-green-300 bg-green-50 dark:bg-green-950/20">
+              <CheckCircle className="h-4 w-4 text-green-500" />
+              <AlertTitle className="text-sm font-medium text-green-700 dark:text-green-400">
+                Payments healthy (0 failures last 24h)
+              </AlertTitle>
+              <AlertDescription className="text-xs text-green-600 dark:text-green-500">
+                All payment processing is working normally
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
+      )}
+
       {/* System Health Panel - Clickable Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
         <Card 
@@ -295,7 +449,8 @@ export default function CommandCenter() {
           <CardContent className="p-4 text-center">
             <Users className="h-6 w-6 mx-auto mb-2 text-blue-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.totalUsers || 0}</div>
-            <div className="text-xs text-muted-foreground">Total Users</div>
+            <div className="text-xs font-medium">Total Users</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['all']}</div>
           </CardContent>
         </Card>
         <Card 
@@ -305,7 +460,8 @@ export default function CommandCenter() {
           <CardContent className="p-4 text-center">
             <Mail className="h-6 w-6 mx-auto mb-2 text-yellow-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.unverifiedUsers || 0}</div>
-            <div className="text-xs text-muted-foreground">Unverified</div>
+            <div className="text-xs font-medium">Unverified</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['unverified']}</div>
           </CardContent>
         </Card>
         <Card 
@@ -315,7 +471,8 @@ export default function CommandCenter() {
           <CardContent className="p-4 text-center">
             <Clock className="h-6 w-6 mx-auto mb-2 text-orange-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.stuckTrialUsers || 0}</div>
-            <div className="text-xs text-muted-foreground">Stuck Trials</div>
+            <div className="text-xs font-medium">Stuck Trials</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['stuck_trials']}</div>
           </CardContent>
         </Card>
         <Card 
@@ -325,7 +482,8 @@ export default function CommandCenter() {
           <CardContent className="p-4 text-center">
             <CreditCard className="h-6 w-6 mx-auto mb-2 text-red-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.failedSubscriptions24h || 0}</div>
-            <div className="text-xs text-muted-foreground">Failed 24h</div>
+            <div className="text-xs font-medium">Failed 24h</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['failed_24h']}</div>
           </CardContent>
         </Card>
         <Card 
@@ -335,7 +493,8 @@ export default function CommandCenter() {
           <CardContent className="p-4 text-center">
             <CreditCard className="h-6 w-6 mx-auto mb-2 text-orange-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.failedSubscriptions7d || 0}</div>
-            <div className="text-xs text-muted-foreground">Failed 7d</div>
+            <div className="text-xs font-medium">Failed 7d</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['failed_7d']}</div>
           </CardContent>
         </Card>
         <Card 
@@ -345,7 +504,8 @@ export default function CommandCenter() {
           <CardContent className="p-4 text-center">
             <AlertTriangle className="h-6 w-6 mx-auto mb-2 text-red-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.failedWebhooks24h || 0}</div>
-            <div className="text-xs text-muted-foreground">Webhooks 24h</div>
+            <div className="text-xs font-medium">Webhooks 24h</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['webhooks_24h']}</div>
           </CardContent>
         </Card>
         <Card 
@@ -355,7 +515,8 @@ export default function CommandCenter() {
           <CardContent className="p-4 text-center">
             <Receipt className="h-6 w-6 mx-auto mb-2 text-orange-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.azureFailures7d || 0}</div>
-            <div className="text-xs text-muted-foreground">Azure Fail 7d</div>
+            <div className="text-xs font-medium">Azure Fail 7d</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['azure_failures']}</div>
           </CardContent>
         </Card>
         <Card 
@@ -365,7 +526,8 @@ export default function CommandCenter() {
           <CardContent className="p-4 text-center">
             <Mail className="h-6 w-6 mx-auto mb-2 text-purple-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.emailFailures7d || 0}</div>
-            <div className="text-xs text-muted-foreground">Email Fail 7d</div>
+            <div className="text-xs font-medium">Email Fail 7d</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['email_failures']}</div>
           </CardContent>
         </Card>
       </div>
@@ -404,6 +566,22 @@ export default function CommandCenter() {
             </div>
           )}
 
+          {/* Recovery Playbook */}
+          {activeFilter && activeFilter !== 'all' && (
+            <Alert className="mt-4 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200">
+              <Brain className="h-4 w-4 text-blue-500" />
+              <AlertTitle className="text-sm font-medium text-blue-700 dark:text-blue-400">Recovery Guide</AlertTitle>
+              <AlertDescription className="text-xs text-blue-600 dark:text-blue-500">
+                <p className="mb-2">{RECOVERY_PLAYBOOKS[activeFilter].what}</p>
+                <ul className="list-disc list-inside space-y-1">
+                  {RECOVERY_PLAYBOOKS[activeFilter].actions.map((action, idx) => (
+                    <li key={idx}>{action}</li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
+
           {(searchResults && searchResults.length > 0) && (
             <Card className="mt-4">
               <CardHeader className="pb-2">
@@ -413,36 +591,49 @@ export default function CommandCenter() {
               </CardHeader>
               <CardContent className="p-0">
                 <ScrollArea className="h-[200px]">
-                  {searchResults.map((user) => (
-                    <div
-                      key={user.id}
-                      className={`p-3 border-b cursor-pointer hover:bg-muted transition-colors ${selectedUserId === user.id ? 'bg-muted' : ''}`}
-                      onClick={() => handleSelectUser(user.id)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium flex items-center gap-2">
-                            <User className="h-4 w-4" />
-                            {user.username}
-                            {user.isEmailVerified ? (
-                              <CheckCircle className="h-3 w-3 text-green-500" />
-                            ) : (
-                              <XCircle className="h-3 w-3 text-red-500" />
-                            )}
+                  {searchResults.map((user) => {
+                    const riskLevel = calculateUserRisk(user);
+                    return (
+                      <div
+                        key={user.id}
+                        className={`p-3 border-b cursor-pointer hover:bg-muted transition-colors ${selectedUserId === user.id ? 'bg-muted' : ''}`}
+                        onClick={() => handleSelectUser(user.id)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {/* Risk Indicator */}
+                            <Circle 
+                              className={`h-3 w-3 flex-shrink-0 ${
+                                riskLevel === 'high' ? 'fill-red-500 text-red-500' : 
+                                riskLevel === 'medium' ? 'fill-orange-400 text-orange-400' : 
+                                'fill-green-500 text-green-500'
+                              }`} 
+                            />
+                            <div>
+                              <div className="font-medium flex items-center gap-2">
+                                <User className="h-4 w-4" />
+                                {user.username}
+                                {user.isEmailVerified ? (
+                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <XCircle className="h-3 w-3 text-red-500" />
+                                )}
+                              </div>
+                              <div className="text-sm text-muted-foreground">{user.email || 'No email'}</div>
+                            </div>
                           </div>
-                          <div className="text-sm text-muted-foreground">{user.email || 'No email'}</div>
-                        </div>
-                        <div className="text-right">
-                          <Badge variant={getStatusBadgeColor(user.subscription.status)}>
-                            {user.subscription.status}
-                          </Badge>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {user.usage.totalReceipts} receipts
+                          <div className="text-right">
+                            <Badge variant={getStatusBadgeColor(user.subscription.status)}>
+                              {user.subscription.status}
+                            </Badge>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {user.usage.totalReceipts} receipts
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </ScrollArea>
               </CardContent>
             </Card>
@@ -695,58 +886,210 @@ export default function CommandCenter() {
               <Calendar className="h-5 w-5" />
               Event Timeline
             </CardTitle>
-            <CardDescription>Recent billing events and payment transactions</CardDescription>
+            <CardDescription>Recent billing events and payment transactions (last 7 days)</CardDescription>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[300px]">
-              <div className="space-y-3">
-                {[...userDetail.billingEvents, ...userDetail.paymentTransactions.map(p => ({
-                  id: `payment-${p.id}`,
-                  eventType: `payment_${p.status}`,
-                  eventData: { amount: p.amount, currency: p.currency, platform: p.platform },
-                  processed: true,
-                  processingError: p.failureReason,
-                  createdAt: p.createdAt
-                }))]
-                  .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                  .map((event, idx) => (
-                    <div key={idx} className="flex items-start gap-3 p-3 border rounded-lg">
-                      <div className={`p-2 rounded-full ${
-                        event.processingError ? 'bg-red-100' : 
-                        event.eventType.includes('success') || event.eventType.includes('completed') ? 'bg-green-100' : 
-                        'bg-gray-100'
-                      }`}>
-                        {event.processingError ? (
-                          <AlertCircle className="h-4 w-4 text-red-500" />
-                        ) : event.eventType.includes('payment') ? (
-                          <CreditCard className="h-4 w-4 text-blue-500" />
-                        ) : (
-                          <Clock className="h-4 w-4 text-gray-500" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm">{event.eventType.replace(/_/g, ' ')}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(event.createdAt), { addSuffix: true })}
-                          </span>
-                        </div>
-                        {event.eventData && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {typeof event.eventData === 'object' ? JSON.stringify(event.eventData).slice(0, 100) : event.eventData}
+            {(() => {
+              const now = new Date();
+              const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+              
+              const allEvents = [...userDetail.billingEvents, ...userDetail.paymentTransactions.map(p => ({
+                id: `payment-${p.id}`,
+                eventType: `payment_${p.status}`,
+                eventData: { amount: p.amount, currency: p.currency, platform: p.platform },
+                processed: true,
+                processingError: p.failureReason,
+                createdAt: p.createdAt
+              }))].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+              
+              const recentEvents = allEvents.filter(e => new Date(e.createdAt) >= sevenDaysAgo);
+              const olderEvents = allEvents.filter(e => new Date(e.createdAt) < sevenDaysAgo);
+              
+              const categorizeEvent = (eventType: string): 'Billing' | 'Email' | 'Uploads' | 'Admin' | 'Other' => {
+                if (eventType.includes('payment') || eventType.includes('subscription') || eventType.includes('invoice')) return 'Billing';
+                if (eventType.includes('email') || eventType.includes('verification')) return 'Email';
+                if (eventType.includes('upload') || eventType.includes('receipt') || eventType.includes('azure')) return 'Uploads';
+                if (eventType.includes('admin') || eventType.includes('action')) return 'Admin';
+                return 'Other';
+              };
+              
+              const groupedEvents = recentEvents.reduce((acc, event) => {
+                const category = categorizeEvent(event.eventType);
+                if (!acc[category]) acc[category] = [];
+                acc[category].push(event);
+                return acc;
+              }, {} as Record<string, typeof recentEvents>);
+              
+              const categoryOrder = ['Billing', 'Email', 'Uploads', 'Admin', 'Other'];
+              
+              return (
+                <>
+                  <ScrollArea className="h-[300px]">
+                    <div className="space-y-4">
+                      {categoryOrder.map(category => {
+                        const events = groupedEvents[category];
+                        if (!events || events.length === 0) return null;
+                        return (
+                          <div key={category}>
+                            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                              {category} ({events.length})
+                            </div>
+                            <div className="space-y-2">
+                              {events.map((event, idx) => (
+                                <div key={idx} className="flex items-start gap-3 p-3 border rounded-lg">
+                                  <div className={`p-2 rounded-full ${
+                                    event.processingError ? 'bg-red-100 dark:bg-red-950' : 
+                                    event.eventType.includes('success') || event.eventType.includes('completed') ? 'bg-green-100 dark:bg-green-950' : 
+                                    'bg-gray-100 dark:bg-gray-800'
+                                  }`}>
+                                    {event.processingError ? (
+                                      <AlertCircle className="h-4 w-4 text-red-500" />
+                                    ) : event.eventType.includes('payment') ? (
+                                      <CreditCard className="h-4 w-4 text-blue-500" />
+                                    ) : event.eventType.includes('email') ? (
+                                      <Mail className="h-4 w-4 text-purple-500" />
+                                    ) : (
+                                      <Clock className="h-4 w-4 text-gray-500" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-medium text-sm">{event.eventType.replace(/_/g, ' ')}</span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {formatDistanceToNow(new Date(event.createdAt), { addSuffix: true })}
+                                      </span>
+                                    </div>
+                                    {event.eventData && (
+                                      <div className="text-xs text-muted-foreground mt-1">
+                                        {typeof event.eventData === 'object' ? JSON.stringify(event.eventData).slice(0, 100) : event.eventData}
+                                      </div>
+                                    )}
+                                    {event.processingError && (
+                                      <div className="text-xs text-red-500 mt-1">Error: {event.processingError}</div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        )}
-                        {event.processingError && (
-                          <div className="text-xs text-red-500 mt-1">Error: {event.processingError}</div>
-                        )}
-                      </div>
+                        );
+                      })}
+                      
+                      {recentEvents.length === 0 && (
+                        <div className="text-center text-muted-foreground py-8">
+                          No events in the last 7 days
+                        </div>
+                      )}
                     </div>
-                  ))
-                }
-              </div>
-            </ScrollArea>
+                  </ScrollArea>
+                  
+                  {olderEvents.length > 0 && (
+                    <div className="mt-4 pt-4 border-t">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setShowOlderEvents(!showOlderEvents)}
+                        className="w-full"
+                      >
+                        {showOlderEvents ? (
+                          <>
+                            <ChevronUp className="h-4 w-4 mr-2" />
+                            Hide older events ({olderEvents.length})
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-4 w-4 mr-2" />
+                            Show older events ({olderEvents.length})
+                          </>
+                        )}
+                      </Button>
+                      
+                      {showOlderEvents && (
+                        <ScrollArea className="h-[200px] mt-2">
+                          <div className="space-y-2">
+                            {olderEvents.map((event, idx) => (
+                              <div key={idx} className="flex items-start gap-3 p-3 border rounded-lg opacity-60">
+                                <div className={`p-2 rounded-full ${
+                                  event.processingError ? 'bg-red-100 dark:bg-red-950' : 'bg-gray-100 dark:bg-gray-800'
+                                }`}>
+                                  {event.processingError ? (
+                                    <AlertCircle className="h-4 w-4 text-red-500" />
+                                  ) : (
+                                    <Clock className="h-4 w-4 text-gray-500" />
+                                  )}
+                                </div>
+                                <div className="flex-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium text-sm">{event.eventType.replace(/_/g, ' ')}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {format(new Date(event.createdAt), 'PP')}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </CardContent>
         </Card>
+      )}
+
+      {/* Safer Confirmation Dialog for Destructive Actions */}
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-orange-600">
+                <AlertTriangle className="h-5 w-5" />
+                Confirm Destructive Action
+              </CardTitle>
+              <CardDescription>
+                This will immediately affect the user's access.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 rounded-lg">
+                <p className="font-medium text-sm">Action: {confirmAction.action.replace(/_/g, ' ')}</p>
+                {confirmAction.reason && (
+                  <p className="text-xs text-muted-foreground mt-1">Reason: {confirmAction.reason}</p>
+                )}
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium">Type CONFIRM to proceed:</label>
+                <Input 
+                  value={confirmInput}
+                  onChange={(e) => setConfirmInput(e.target.value)}
+                  placeholder="Type CONFIRM"
+                  className="mt-2"
+                  autoFocus
+                />
+              </div>
+              
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={cancelConfirmAction}>
+                  Cancel
+                </Button>
+                <Button 
+                  variant="destructive"
+                  onClick={executeConfirmedAction}
+                  disabled={confirmInput !== 'CONFIRM' || actionMutation.isPending}
+                >
+                  {actionMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : null}
+                  Execute Action
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

@@ -1,0 +1,199 @@
+✅ REPLIT PROMPT — Command Center UX Smoothing & Guardrails (Phase 3)
+
+Context
+We have an existing admin-only Command Center at /command-center with backend routes already implemented.
+This task is UX refinement and guardrail hardening only.
+⚠️ Do NOT modify any user-facing flows, billing logic, Paystack logic, or core subscription behavior.
+
+🎯 Objectives
+
+Refine the Admin Command Center UX to:
+
+Reduce cognitive load
+
+Surface risk immediately
+
+Prevent accidental destructive actions
+
+Help a solo founder spot and resolve issues before users churn
+
+🧠 UX Improvements to Implement
+1️⃣ “Today’s Attention” Strip (Top of Page)
+
+Add a horizontal alert strip at the top of the Command Center that shows actionable summaries, not raw metrics.
+
+Each item must:
+
+Be derived from existing health metrics
+
+Be clickable
+
+Apply a predefined filter to the user list
+
+Example cards:
+
+🔴 X users likely to churn today
+
+🟠 X users blocked by email delivery
+
+🟢 Payments healthy (0 failures last 24h)
+
+Rules:
+
+Clicking an item applies the corresponding user filter
+
+This does NOT mutate data (read-only)
+
+2️⃣ Upgrade Health Metric Cards (Already Clickable)
+
+The existing health cards (Total Users, Unverified, Stuck Trials, Failed 24h, Failed 7d, Webhooks 24h, Azure Fail, Email Fail) must be enhanced with:
+
+Short descriptive subtitles explaining why the metric matters
+
+Clear visual selected state (ring/border already exists)
+
+Clicking a card:
+
+Clears text search
+
+Applies the correct backend filter
+
+Shows a “Filtered: [Metric Name]” badge with a clear (✕) button
+
+Do NOT add new metrics — enhance existing ones only.
+
+3️⃣ Add User Risk Indicator (Left Column)
+
+In the user list, add a single visual risk indicator per row:
+
+🔴 High risk
+
+🟠 Medium risk
+
+🟢 Healthy
+
+Risk level must be derived, not manual. Example logic:
+
+Unverified + account older than 24h → 🟠
+
+Trial expired or payment failure → 🔴
+
+Active subscription + recent activity → 🟢
+
+This is visual only — no new DB fields.
+
+4️⃣ Safer Destructive Actions (Guardrails)
+
+For destructive admin actions only:
+
+activate_subscription
+
+cancel_subscription
+
+restart_trial
+
+Upgrade confirmation dialogs:
+
+Instead of:
+
+“Are you sure?”
+
+Use:
+
+“This will immediately affect the user’s access.”
+Type CONFIRM to proceed.
+
+Rules:
+
+Only apply to destructive actions
+
+Non-destructive actions keep normal confirmation
+
+Do NOT change backend validation logic
+
+5️⃣ Timeline UX Cleanup
+
+Improve the user event timeline:
+
+Group events by category:
+
+Billing
+
+Email
+
+Uploads
+
+Admin actions
+
+Default view: Last 7 days
+
+Older events load only on explicit expand
+
+No backend changes — frontend grouping only.
+
+🛡️ Guardrails for Future You
+A. No Silent Failures
+
+Anywhere the frontend receives:
+
+upload failures
+
+webhook failures
+
+email failures
+
+Ensure:
+
+They surface visually in Command Center
+
+They increment existing health metrics
+
+No silent UI failures
+
+B. Recovery Playbooks (UI Only)
+
+For each health filter (Unverified, Stuck Trials, Email Fail, etc.), add static guidance text in the UI explaining:
+
+What this usually means
+
+Recommended recovery actions (buttons already exist)
+
+This is instructional only — no auto-execution.
+
+C. Safety Constraints
+
+❌ No background jobs
+
+❌ No schema changes
+
+❌ No mutation on card click
+
+❌ No AI auto-actions
+
+✅ AI remains advisory only
+
+✅ All admin actions must continue logging to billing_events
+
+📦 Out of Scope (DO NOT TOUCH)
+
+Paystack
+
+Subscription state logic
+
+Trial calculations
+
+User signup/login
+
+OCR / receipts pipeline
+
+Any user-facing page
+
+✅ Acceptance Criteria
+
+Admin can identify “who needs attention” in under 5 seconds
+
+Admin cannot accidentally break a user while tired
+
+No production user flow is affected
+
+Command Center feels calm, intentional, and safe

@@ -41,7 +41,7 @@ export class AIEmailAssistant {
       const prompt = this.buildPrompt(context);
       
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4.1",
         messages: [
           {
             role: "system",
@@ -72,7 +72,7 @@ export class AIEmailAssistant {
       const prompt = this.buildSubjectPrompt(context);
       
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4.1",
         messages: [
           {
             role: "system",

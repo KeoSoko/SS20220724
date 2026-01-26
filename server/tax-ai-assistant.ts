@@ -112,7 +112,7 @@ Respond in JSON format with:
 }`;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4.1",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: question }
@@ -179,7 +179,7 @@ Respond with JSON array of specific, organizational suggestions:
 ["Suggestion 1", "Suggestion 2", "Suggestion 3"]`;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4.1",
         messages: [{ role: "user", content: systemPrompt }],
         response_format: { type: "json_object" },
         temperature: 0.4,
@@ -243,7 +243,7 @@ Respond in JSON format:
 }`;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4.1",
         messages: [{ role: "user", content: systemPrompt }],
         response_format: { type: "json_object" },
         temperature: 0.3

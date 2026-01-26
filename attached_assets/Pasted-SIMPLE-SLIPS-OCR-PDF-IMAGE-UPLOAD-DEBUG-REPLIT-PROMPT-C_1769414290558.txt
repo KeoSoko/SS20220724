@@ -1,0 +1,174 @@
+SIMPLE SLIPS — OCR PDF IMAGE UPLOAD DEBUG (REPLIT PROMPT)
+CONTEXT
+
+PDF uploads are partially working:
+
+✅ PDF text is successfully read and OCR runs
+
+❌ The extracted image(s) are not being uploaded or persisted
+
+❌ Result: receipt exists logically, but no image is stored or linked
+
+We need to find where the image pipeline breaks.
+
+OBJECTIVE
+
+Identify why PDF → image extraction succeeds, but image upload/storage fails.
+
+This requires inspecting the entire PDF OCR pipeline, end-to-end.
+
+🔎 PROVIDE THE FOLLOWING CODE (NO SUMMARIES)
+1️⃣ PDF HANDLING & OCR ENTRY POINT
+
+Provide the full function(s) responsible for handling PDF uploads, including:
+
+File upload route (Express / API handler)
+
+MIME type detection (application/pdf)
+
+Branching logic between:
+
+image upload
+
+PDF upload
+
+📍 Likely files:
+
+server/ocr.ts
+
+server/upload.ts
+
+server/receipt-processing.ts
+
+or similar
+
+2️⃣ PDF → IMAGE CONVERSION LOGIC
+
+Provide the exact code that:
+
+Converts PDF pages into images
+
+Uses libraries like:
+
+pdf-lib
+
+pdfjs
+
+sharp
+
+poppler
+
+canvas
+
+pdf-to-image
+
+Produces a Buffer, Uint8Array, or temp file
+
+Include:
+
+How many pages are processed
+
+How the image output is named
+
+Where it is stored temporarily (memory vs disk)
+
+3️⃣ IMAGE UPLOAD / STORAGE FUNCTION
+
+Provide the shared image upload function used for:
+
+JPG / PNG uploads
+
+AND reused (or not) for PDF-derived images
+
+We need:
+
+Function signature
+
+Input type expected (Buffer? File? Stream?)
+
+Storage destination:
+
+local FS
+
+S3
+
+Supabase
+
+Cloudinary
+
+DB blob
+
+4️⃣ RECEIPT IMAGE LINKING LOGIC
+
+Provide the code that:
+
+Links the uploaded image to the receipt record
+
+Writes:
+
+imageUrl
+
+imagePath
+
+receiptImageId
+
+or similar
+
+Saves this to the database
+
+📍 Likely in:
+
+receipt creation service
+
+OCR result persistence
+
+storage.createReceipt(...)
+
+5️⃣ ERROR HANDLING & LOGGING
+
+Provide:
+
+Any try/catch blocks around:
+
+PDF image extraction
+
+Image upload
+
+Any logs that only log success but swallow failures
+
+Any conditional like:
+
+if (!image) return;
+
+6️⃣ CONFIRM BEHAVIOR (ANSWER YES/NO)
+
+Answer explicitly:
+
+Does image upload work for JPG/PNG? YES / NO
+
+Does PDF OCR extract text? YES / NO
+
+Are PDFs multi-page? YES / NO
+
+Is only the first page expected as image? YES / NO
+
+Is there any async await missing after image upload? YES / NO
+
+⚠️ RULES
+
+Do NOT refactor code
+
+Do NOT propose fixes yet
+
+Do NOT summarize
+
+Return raw code only
+
+One section at a time if needed
+
+SUCCESS CRITERIA
+
+After reviewing the code, we should be able to answer exactly one question:
+
+Where does the pipeline break:
+PDF → Image → Upload → DB Link

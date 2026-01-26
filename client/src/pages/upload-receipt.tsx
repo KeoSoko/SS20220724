@@ -476,6 +476,12 @@ export default function UploadReceipt() {
       setProgressValue(75);
       setScanProgress("📋 Organizing your receipt data...");
       
+      // Update imageData if scan returned converted image (e.g., PDF → JPEG conversion)
+      if (data.imageData?.startsWith('data:image/')) {
+        setImageData(data.imageData);
+        setPreviewUrl(data.imageData);
+      }
+      
       // Populate the form with the OCR results
       setStoreName(data.storeName || "");
       

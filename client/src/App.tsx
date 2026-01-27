@@ -3,6 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/hooks/use-auth";
+import { VerificationProvider } from "@/contexts/verification-context";
 import { ProtectedRoute } from "./lib/protected-route";
 import { AdminRoute } from "./lib/admin-route";
 import { MobileInstallBanner } from "@/components/mobile-install-banner";
@@ -110,10 +111,12 @@ function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <SubscriptionBanner />
-          <Router />
-          <Toaster />
-          <MobileInstallBanner />
+          <VerificationProvider>
+            <SubscriptionBanner />
+            <Router />
+            <Toaster />
+            <MobileInstallBanner />
+          </VerificationProvider>
         </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>

@@ -58,7 +58,6 @@ export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onP
         amount: plan.price, // Price is already in cents from database
         currency: 'ZAR',
         plan: paystackPlanCode,
-        channels: ['card', 'eft', 'qr', 'ussd', 'apple_pay'],
         ref: `ss_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         metadata: {
           user_id: userId,

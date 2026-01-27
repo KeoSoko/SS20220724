@@ -1,0 +1,59 @@
+With the dependency successfully installed, you can now import the library into your project:
+
+KotlinJava
+import com.paystack.android.core.Paystack;
+import com.paystack.android.ui.paymentsheet.PaymentSheet;
+Updating the interfaces
+The SDK needs to be initialized to be used, so this is the first code change we’ll be making:
+
+KotlinJava
+PaystackSdk.initialize(getApplicationContext());
+PaystackSdk.setPublicKey("pk_your-public-key");
+Paystack UI
+KotlinJava
+Paystack.builder()
+        .setPublicKey("pk_your-public-key")
+        .build();
+Unlike the former SDK, Paystack UI makes use of the builder pattern for the construction of object.
+
+Callbacks
+Callbacks are used to manage post-payment processes on the SDK side. This is how you manage the final state of the transaction.
+
+KotlinJava
+PaystackSdk.chargeCard(this, charge, new Paystack.TransactionCallback() {
+    @Override
+    public void onSuccess(Transaction transaction) {
+        Log.d("Main Activity", "Success: " + transaction.getReference());
+    }
+
+    @Override
+    public void beforeValidate(Transaction transaction) {
+        Log.d("Main Activity", "beforeValidate: " + transaction.getReference());
+    }
+
+    @Override
+    public void onError(Throwable error, Transaction transaction) {
+        Log.d("Main Activity", "onError: " + error.getLocalizedMessage());
+        Log.d("Main Activity", "onError: " + error);
+    }
+});
+Paystack UI
+KotlinJava
+private void paymentComplete(PaymentSheetResult paymentResult) {
+    String message;
+    if (paymentResult instanceof PaymentSheetResult.Cancelled) {
+        message = "Cancelled";
+    } else if (paymentResult instanceof PaymentSheetResult.Failed) {
+        PaymentSheetResult.Failed failedResult = (PaymentSheetResult.Failed) paymentResult;
+        Log.e(TAG, failedResult.getError().getMessage() != null ?
+                failedResult.getError().getMessage() : "Failed", failedResult.getError());
+        message = failedResult.getError().getMessage() != null ?
+                failedResult.getError().getMessage() : "Failed";
+    } else if (paymentResult instanceof PaymentSheetResult.Completed) {
+       Log.d("Payment successful", paymentSheetResult.paymentCompletionDetails.toString())
+        message = "Successful";
+    } else {
+        message = "";
+    }
+}
+We've replaced the TransactionCallback with the PaymentSheetResult which exposes three states: Failed, Cancelled and Completed that can be used to manage post-payment processes.

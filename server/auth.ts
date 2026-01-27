@@ -1018,14 +1018,10 @@ export function setupAuth(app: Express) {
       // Successfully authenticated
       log(`User authenticated successfully: ${user.id}`, 'auth');
       
-      // Check email verification status
+      // Note: Email verification is now a soft gate - unverified users can login
+      // but will be blocked from sensitive actions (exports, billing, sharing)
       if (!user.isEmailVerified) {
-        log(`Login blocked for unverified email: ${user.email} (user: ${user.username})`, 'auth');
-        return res.status(403).json({ 
-          error: "Email not verified", 
-          message: "Please verify your email address before signing in. Check your inbox for the verification link.",
-          needsEmailVerification: true
-        });
+        log(`User ${user.username} logged in with unverified email: ${user.email}`, 'auth');
       }
       
       // Reset failed login attempts if any

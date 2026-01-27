@@ -469,6 +469,40 @@ const getUserId = (req: Request): number => {
   return req.isAuthenticated() ? req.user!.id : req.jwtUser!.id;
 };
 
+// Get full user from either session or JWT
+const getUser = (req: Request) => {
+  return req.isAuthenticated() ? req.user : req.jwtUser;
+};
+
+/**
+ * Middleware to require email verification for sensitive actions.
+ * Returns 403 with structured error if user hasn't verified their email.
+ * Non-blocking: allows login and basic app usage, but gates sensitive features.
+ * 
+ * Protected actions: exports, billing changes, sharing, tax reports
+ */
+const requireVerifiedEmail = (req: Request, res: Response, next: NextFunction) => {
+  if (!isAuthenticated(req)) {
+    return res.sendStatus(401);
+  }
+  
+  const user = getUser(req);
+  if (!user) {
+    return res.sendStatus(401);
+  }
+  
+  if (!user.isEmailVerified) {
+    log(`Blocked unverified user ${user.username} from sensitive action: ${req.path}`, 'auth');
+    return res.status(403).json({
+      error: "email_verification_required",
+      message: "Please verify your email to unlock this feature.",
+      userEmail: user.email
+    });
+  }
+  
+  next();
+};
+
 //Assumed to exist elsewhere in the codebase
 const validateReceiptId = (receiptId: string): number => {
   const id = Number(receiptId);

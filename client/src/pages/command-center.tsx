@@ -32,7 +32,8 @@ import {
   Circle,
   Eye,
   Send,
-  X
+  X,
+  Info
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -826,13 +827,38 @@ export default function CommandCenter() {
                   <div>
                     <h4 className="font-medium mb-2">Subscription</h4>
                     {userDetail.subscription ? (
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div>Status: <Badge variant={getStatusBadgeColor(userDetail.subscription.status)}>{userDetail.subscription.status}</Badge></div>
-                        <div>Total Paid: R{((userDetail.subscription.totalPaid || 0) / 100).toFixed(2)}</div>
-                        {userDetail.subscription.nextBillingDate && (
-                          <div className="col-span-2">Next Billing: {format(new Date(userDetail.subscription.nextBillingDate), 'PPP')}</div>
+                      <>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div>Status: <Badge variant={getStatusBadgeColor(userDetail.subscription.status)}>{userDetail.subscription.status}</Badge></div>
+                          <div>Total Paid: R{((userDetail.subscription.totalPaid || 0) / 100).toFixed(2)}</div>
+                          {userDetail.subscription.nextBillingDate && (
+                            <div className="col-span-2">Next Billing: {format(new Date(userDetail.subscription.nextBillingDate), 'PPP')}</div>
+                          )}
+                        </div>
+                        
+                        {/* Paystack recurring subscription info banner */}
+                        {(userDetail.subscription.status === 'active' || userDetail.subscription.status === 'trial') && 
+                         userDetail.subscription.planId && 
+                         userDetail.subscription.paystackReference && (
+                          <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                            <div className="flex items-start gap-2">
+                              <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                              <div className="text-sm">
+                                <p className="font-medium text-blue-700 dark:text-blue-400">Why QR / EFT may be unavailable</p>
+                                <p className="text-blue-600 dark:text-blue-500 mt-1">
+                                  This user is on a recurring Paystack subscription. Paystack limits some payment methods (such as QR and EFT) when a subscription plan is used, because those channels can't always support automatic renewals.
+                                </p>
+                                <p className="text-blue-600 dark:text-blue-500 mt-1">
+                                  Card and Apple Pay are prioritized to ensure uninterrupted billing.
+                                </p>
+                                <p className="text-xs text-blue-500 dark:text-blue-600 mt-2 italic">
+                                  This is expected Paystack behavior — not an error.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
                         )}
-                      </div>
+                      </>
                     ) : (
                       <div className="text-sm text-muted-foreground">No subscription record</div>
                     )}

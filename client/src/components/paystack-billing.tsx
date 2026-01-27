@@ -143,7 +143,7 @@ export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onP
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CreditCard className="h-4 w-4" />
-            <span>Pay with card, EFT, or mobile money</span>
+            <span>Pay with card or Apple Pay</span>
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Globe className="h-4 w-4" />

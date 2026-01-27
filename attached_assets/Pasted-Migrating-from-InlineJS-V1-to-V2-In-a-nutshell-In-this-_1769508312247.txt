@@ -1,0 +1,75 @@
+Migrating from InlineJS V1 to V2
+In a nutshell
+In this guide, we’ll describe how to migrate to Popup V2 so you can start harnessing more granular controls as you accept payments in your application.
+
+What's New
+Popup V2 is packed with features that help developers securely customize and gain more control of payments on their frontend applications. Some shining new features available on Popup V2 are:
+
+Support for arrow functions
+Initiate a transaction from the API and complete it with Popup
+Reduced transaction abandonment rate
+Access to transaction status
+Programmatically close Popup
+And more...
+Updating dependency
+You can install Popup V2 based on your workflow and preference:
+
+CDNNPMYarn
+<script src="https://js.paystack.co/v2/inline.js">
+If you used NPM or Yarn, kindly ensure you import the library:
+
+import PaystackPop from '@paystack/inline-js';
+Updating methods
+There are subtle differences when initializing a transaction on Popup V1 and V2. In order to ensure a smooth transition, we'll highlight the differences and show you how to update the necessary methods and params.
+
+Initialization
+With Popup V1, transactions are initialized with the PaystackPop.setup() method. Popup is then triggered by calling the openIframe() method:
+
+let paystack = PaystackPop.setup({
+  key: 'pk_domain_xxxxxxxxxx',
+  email: 'example@email.com',
+  amount: 10000
+});
+
+paystack.openIframe();
+Popup V2 provides a more intuitive interface as shown below:
+
+const paystack = new PaystackPop();
+paystack.newTransaction({
+	key: 'pk_domain_xxxxxxxxxx',
+	email: 'example@email.com',
+	amount: 10000
+});
+Callbacks
+Callbacks are used to get the state of a payment. We replaced some callback methods and introduced new ones in Popup v2.
+
+Version 1
+let paystack = PaystackPop.setup({
+  // other params
+  callback: function(transaction){
+    // Payment complete! Reference: ' + response.reference;
+  },
+  onClose: function(){
+    // user closed popup
+  }
+});
+
+paystack.openIframe();
+Version 2
+const paystack = new PaystackPop();
+paystack.newTransaction({
+  // other params
+
+  onSuccess: (transaction) => { 
+    // Payment complete! Reference: transaction.reference 
+  },
+  onCancel: () => {
+    // user closed popup
+  }
+});
+The callback() method which indicates a successful transaction has now been replaced with the onSuccess() callback. The onClose() method, which lets you know when a user closed Popup, has now been replaced with onCancel().
+
+Also notice that V2 allows you make use of arrow functions. Heck! Keep the extra key strokes for something else.
+
+Next steps
+Let's go live! Test your integration to ensure it works as expected and remove all redundant code. You can check out the InlineJS reference guide to learn about other powerful features available in Popup V2. Happy coding!

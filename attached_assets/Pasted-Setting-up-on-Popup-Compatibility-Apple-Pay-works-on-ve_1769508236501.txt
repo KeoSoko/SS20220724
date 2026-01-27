@@ -1,0 +1,96 @@
+Setting up on Popup
+Compatibility
+Apple Pay works on version 2 of our InlineJS only. If you are using version 1 follow this migration guide before proceeding.
+
+There are two ways to set up Apple Pay in your frontend application:
+
+Mounting a payment request button
+Using a pre-checkout modal
+Mounting a payment request button
+This method allows you to position the Apple Pay button in line with your design. It's a flexible method with a two-step process:
+
+Create a container
+Set up the payment request
+Create a container
+This process involves adding the HTML tags that will house the Apple Pay button as well as the button to load other payment options:
+
+HTML
+<!-- Payment request buttons, styles and event listeners will be injected to this div -->
+<div id="paystack-apple-pay"></div>
+<button id="paystack-other-channels">More payment options</button>
+You should use a div tag with a unique id for the container of the Apple Pay button. paystack-apple-pay is used in the snippet above, however, you can use any name you prefer. This id will be used to configure and load the Apple Pay button.
+
+Set up the payment request
+In order to configure the Apple Pay button, you need to pass the container id and the id for the other channels in the paymentRequest() method:
+
+Javascript
+const paystackPop = new PaystackPop();
+
+await paystackPop.paymentRequest({
+  key: 'pk_domain_xxxxx', // Replace with your public key
+  email: 'CUSTOMER_EMAIL',
+  amount: amount * 100, // the amount value is multiplied by 100 to convert to the lowest currency unit
+  currency: 'NGN', // Use NGN for Naira or USD for US Dollars
+  ref: 'YOUR_REFERENCE', // Replace with a reference you generated
+  container: 'paystack-apple-pay', // ID of div to mount payment button elements
+  loadPaystackCheckoutButton: 'paystack-other-channels', // ID of button to trigger opening Paystack checkout (optional)
+  style: { 
+    theme: 'dark', // 'light' or 'dark'
+    applePay: { 
+      margin: '10px',
+      padding: '10px',
+      width: '100%',
+      borderRadius: '5px',
+      type: 'pay', // Default value is 'pay'. See other apple pay button types here https://developer.apple.com/documentation/apple_pay_on_the_web/displaying_apple_pay_buttons_using_css
+      locale: 'en'
+    } 
+  }, // custom styles for button elements
+  onSuccess(response) {
+    // handle success
+  },
+  onError() {
+    // handle error
+  },
+  onCancel() {
+    // handle cancel
+  },
+  onElementsMount(elements) { // { applePay: true } or null
+    
+  }
+});
+
+Using a pre-checkout modal
+This method doesn't require any additional HTML elements as we do the heavy lifting for you. You can simply tie your payment button to the checkout() method:
+
+Javascript
+const paystackPop = new PaystackPop();
+
+async function payWithPaystack() {
+  await paystack.checkout({
+    key: 'pk_domain_xxxxx',
+    email: 'example@email.com',
+    amount: 10000,
+    onSuccess: (transaction) => { 
+      console.log("Transaction: ", transaction)
+    },
+    onCancel: () => {
+      console.log("Pop up closed!")
+    }
+  });
+}
+The checkout method checks if the user is on an iOS device or the Safari browser. If the user is on an Apple device, we load a pre-checkout modal that contains the Apple Pay button and a button to load other payment options. Otherwise, we simply load the checkout:
+
+Image of a pre-checkout modal on an iPhone
+Troubleshooting
+If you experience any issues with your Apple Pay integration, kindly ensure there wasn't an oversight during set up:
+
+Your server must serve all requests via HTTPS
+You've registered and verified your domain on the dashboard
+You've hosted your domain verification file in the .well-known folder in your website's root directory
+If your server requires an external server whitelisted before communication can be initiated, you will need to whitelist Apple's IP addresses.
+If all checks out and you are still having issues with your Apple Pay integration, here are some possible errors and resolution you can try out:
+
+Error	Resolution
+Apple Pay Session could not be initiated	We couldn’t initiate a web session for the payment. Kindly try again.
+Apple Pay Transaction not allowed because merchant is not enabled for international payments.	You need to check if your business is eligible for international payment. If your business is eligible, kindly follow this guide to activate international payment.
+Merchant's Category not supported for Apple Pay transactions.	For compliance reasons, only specific business categories are allowed to use Apple Pay.

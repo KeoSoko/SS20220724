@@ -95,6 +95,9 @@ export default function UploadReceipt() {
   // Additional receipt properties for better UX
   const [isRecurring, setIsRecurring] = useState(false);
   const [isTaxDeductible, setIsTaxDeductible] = useState(false);
+  
+  // PDF processing state - PDFs can't be previewed until converted on server
+  const [isPdfProcessing, setIsPdfProcessing] = useState(false);
 
   // Duplicate detection states
   interface DuplicateReceipt {
@@ -184,6 +187,7 @@ export default function UploadReceipt() {
     setProgressValue(0);
     setScanProgress("");
     setIsScanning(false);
+    setIsPdfProcessing(false);
   };
 
   // Handle "Save & Scan Another" action
@@ -480,6 +484,7 @@ export default function UploadReceipt() {
       if (data.imageData?.startsWith('data:image/')) {
         setImageData(data.imageData);
         setPreviewUrl(data.imageData);
+        setIsPdfProcessing(false); // Clear PDF processing state once we have the image
       }
       
       // Populate the form with the OCR results
@@ -1070,8 +1075,17 @@ export default function UploadReceipt() {
       setProgressValue(15);
       
       // Set optimized image data
+      // For PDFs: set imageData (needed for upload) but NOT previewUrl (can't render PDF in <img>)
+      // The converted JPEG will be set in onSuccess after server conversion
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
       setImageData(optimizedResult.dataUrl);
-      setPreviewUrl(optimizedResult.dataUrl);
+      if (isPdf) {
+        setPreviewUrl(null);
+        setIsPdfProcessing(true);
+      } else {
+        setPreviewUrl(optimizedResult.dataUrl);
+        setIsPdfProcessing(false);
+      }
       
       // Display optimization stats
       toast({
@@ -1683,6 +1697,19 @@ export default function UploadReceipt() {
                         </Badge>
                       </div>
                     )}
+                  </div>
+                )}
+                
+                {/* PDF Processing Placeholder - shown while server converts PDF to image */}
+                {isPdfProcessing && !previewUrl && (
+                  <div className="relative mb-4 border rounded-none overflow-hidden bg-muted">
+                    <div className="aspect-[3/4] w-full flex flex-col items-center justify-center gap-4">
+                      <FileImage className="h-16 w-16 text-muted-foreground" />
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-sm">Converting PDF for preview...</span>
+                      </div>
+                    </div>
                   </div>
                 )}
                 

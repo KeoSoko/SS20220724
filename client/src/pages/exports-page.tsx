@@ -10,7 +10,7 @@ import { PageLayout } from '@/components/page-layout';
 import { Section } from '@/components/design-system';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, dispatchVerificationRequiredEvent } from '@/lib/queryClient';
 
 export default function ExportsPage() {
   const [isExporting, setIsExporting] = useState(false);
@@ -76,6 +76,19 @@ export default function ExportsPage() {
           description: `Your ${type.replace('-', ' ')} has been downloaded.`,
         });
       } else {
+        // Check for email verification required error (403)
+        if (response.status === 403) {
+          try {
+            const errorData = await response.json();
+            if (errorData.error === 'email_verification_required') {
+              // Dispatch event to show verification dialog, don't show toast
+              dispatchVerificationRequiredEvent(errorData.userEmail);
+              return;
+            }
+          } catch {
+            // If JSON parsing fails, fall through to generic error
+          }
+        }
         const errorText = await response.text();
         throw new Error(`Export failed: ${response.status} - ${errorText}`);
       }
@@ -135,6 +148,19 @@ export default function ExportsPage() {
           description: `Your custom PDF report has been downloaded.`,
         });
       } else {
+        // Check for email verification required error (403)
+        if (response.status === 403) {
+          try {
+            const errorData = await response.json();
+            if (errorData.error === 'email_verification_required') {
+              // Dispatch event to show verification dialog, don't show toast
+              dispatchVerificationRequiredEvent(errorData.userEmail);
+              return;
+            }
+          } catch {
+            // If JSON parsing fails, fall through to generic error
+          }
+        }
         const errorText = await response.text();
         throw new Error(`Export failed: ${response.status} - ${errorText}`);
       }

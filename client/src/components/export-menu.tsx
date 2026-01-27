@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, dispatchVerificationRequiredEvent } from '@/lib/queryClient';
 
 export function ExportMenu() {
   const [isExporting, setIsExporting] = useState(false);
@@ -53,6 +53,19 @@ export function ExportMenu() {
       });
 
       if (!response.ok) {
+        // Check for email verification required error (403)
+        if (response.status === 403) {
+          try {
+            const errorData = await response.json();
+            if (errorData.error === 'email_verification_required') {
+              // Dispatch event to show verification dialog, don't show toast
+              dispatchVerificationRequiredEvent(errorData.userEmail);
+              return;
+            }
+          } catch {
+            // If JSON parsing fails, fall through to generic error
+          }
+        }
         throw new Error('Export failed');
       }
 

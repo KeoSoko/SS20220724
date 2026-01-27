@@ -346,11 +346,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const errorData = JSON.parse(errorText);
           // Create error with structured data for frontend error handling
-          const errorMessage = errorData.message || errorData.error || `Login failed: ${response.status} ${response.statusText}`;
+          // Use userMessage first as it's user-friendly, then message, then error
+          const errorMessage = errorData.userMessage || errorData.message || errorData.error || `Login failed: ${response.status} ${response.statusText}`;
           const error = new Error(errorMessage);
           (error as any).status = response.status;
           (error as any).errorType = errorData.error;
           (error as any).originalMessage = errorData.message;
+          (error as any).userMessage = errorData.userMessage;
           (error as any).responseData = errorData;
           (error as any).lockExpiresAt = errorData.lockExpiresAt;
           console.log("🔍 Parsed error data:", errorData);
@@ -359,6 +361,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             status: response.status, 
             errorType: errorData.error,
             originalMessage: errorData.message,
+            userMessage: errorData.userMessage,
             responseData: errorData 
           });
           throw error;

@@ -1,0 +1,99 @@
+Context:
+When uploading a PDF on the Scan Receipt page, OCR works and the receipt saves correctly, but the image preview area stays blank while processing.
+PDFs are converted to JPEGs on the backend for OCR, but the frontend does not display the converted image during scanning.
+
+Please provide the following code exactly as-is:
+1️⃣ Frontend – Scan Receipt Page
+
+File:
+client/src/pages/scan-receipt.tsx (or upload-receipt.tsx if shared)
+
+Please include:
+
+File upload handler (onChange, handleFileUpload, or similar)
+
+Where previewUrl, imageData, or equivalent state is set
+
+The JSX that renders the image preview area
+
+The code that triggers the OCR / scan API call
+
+👉 I need to see:
+
+How PDFs are detected on the frontend
+
+What is shown in the preview before, during, and after OCR
+
+2️⃣ Frontend – Scan API Call
+
+Wherever /api/receipts/scan is called (likely via useMutation or fetch):
+
+Please include:
+
+The mutation or API request code
+
+The onSuccess handler
+
+Whether data.imageData (or similar) is handled or ignored
+
+👉 I need to confirm:
+
+Whether the converted JPEG returned from the server is received
+
+Whether it is stored in state for preview rendering
+
+3️⃣ Backend – Scan Endpoint
+
+File:
+server/routes.ts
+
+Please include the entire /api/receipts/scan route:
+
+PDF detection logic
+
+convertPdfToImage() usage
+
+The response payload sent back to the frontend
+
+👉 I need to confirm:
+
+That the converted image is actually returned
+
+In what format (base64, URL, buffer, etc.)
+
+4️⃣ Backend – PDF Conversion Utility
+
+File:
+server/pdf-converter.ts (or equivalent)
+
+Please include:
+
+The full convertPdfToImage() function
+
+The return type and format
+
+5️⃣ Frontend Preview Expectations
+
+Please answer briefly:
+
+Should the preview show:
+
+⬜ While OCR is processing? YES
+
+⬜ The first page only? YES
+
+Is preview expected for PDFs the same as JPG/PNG? YES
+
+🎯 Goal of the Fix
+
+Once you provide the above, I will:
+
+Identify exactly where the converted image is dropped
+
+Ensure the frontend waits for and displays the converted JPEG
+
+Keep JPG/PNG behavior unchanged
+
+Avoid duplicate uploads or race conditions
+
+Provide a minimal, safe diff (likely 3–6 lines)

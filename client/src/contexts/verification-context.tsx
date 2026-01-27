@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 import { VerificationRequiredDialog } from "@/components/verification-required-dialog";
+import { EMAIL_VERIFICATION_REQUIRED_EVENT } from "@/lib/queryClient";
 
 interface VerificationContextType {
   showVerificationDialog: (userEmail?: string) => void;
@@ -34,6 +35,25 @@ export function VerificationProvider({ children }: VerificationProviderProps) {
     setIsDialogOpen(false);
     setUserEmail(undefined);
   }, []);
+
+  // Listen for global email verification required events from queryClient
+  useEffect(() => {
+    const handleVerificationRequired = (event: CustomEvent<{ userEmail?: string }>) => {
+      showVerificationDialog(event.detail?.userEmail);
+    };
+
+    window.addEventListener(
+      EMAIL_VERIFICATION_REQUIRED_EVENT,
+      handleVerificationRequired as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        EMAIL_VERIFICATION_REQUIRED_EVENT,
+        handleVerificationRequired as EventListener
+      );
+    };
+  }, [showVerificationDialog]);
 
   return (
     <VerificationContext.Provider

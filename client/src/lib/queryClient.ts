@@ -1,5 +1,17 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+// Custom event for email verification required errors
+// Allows global handling without coupling to React context
+export const EMAIL_VERIFICATION_REQUIRED_EVENT = "email_verification_required";
+
+export function dispatchVerificationRequiredEvent(userEmail?: string) {
+  window.dispatchEvent(
+    new CustomEvent(EMAIL_VERIFICATION_REQUIRED_EVENT, {
+      detail: { userEmail },
+    })
+  );
+}
+
 // JWT token - initialize from localStorage
 let authToken: string | null = null;
 
@@ -46,6 +58,12 @@ async function throwIfResNotOk(res: Response) {
         (error as any).offline = true;
         (error as any).responseData = errorData;
         throw error;
+      }
+      
+      // Handle email verification required errors (403 with specific error code)
+      // Dispatch global event so VerificationProvider can show dialog
+      if (res.status === 403 && errorData.error === "email_verification_required") {
+        dispatchVerificationRequiredEvent(errorData.userEmail);
       }
       
       // Create structured error object - prefer userMessage for display

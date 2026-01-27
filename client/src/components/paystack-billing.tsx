@@ -31,7 +31,7 @@ export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onP
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const initializePaystackPayment = () => {
+  const initializePaystackPayment = async () => {
     setIsProcessing(true);
 
     if (!(window as any).PaystackPop) {
@@ -49,46 +49,56 @@ export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onP
     const paystackPlanCode = isYearly ? PAYSTACK_PLAN_CODES.yearly : PAYSTACK_PLAN_CODES.monthly;
     const priceDisplay = isYearly ? 'R530 yearly' : 'R49 monthly';
 
-    const handler = (window as any).PaystackPop.setup({
-      key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-      email: userEmail,
-      amount: plan.price, // Price is already in cents from database
-      currency: 'ZAR',
-      plan: paystackPlanCode,
-      ref: `ss_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      metadata: {
-        user_id: userId,
-        plan_id: plan.id,
-        plan_name: plan.name,
-        user_email: userEmail,
-        subscription_type: 'recurring',
-        billing_period: plan.billingPeriod
-      },
-      callback: function(response: any) {
-        setIsProcessing(false);
-        toast({
-          title: "Subscription Activated",
-          description: `Your recurring subscription has been activated! You'll be charged ${priceDisplay}.`,
-        });
-        onPaymentSuccess?.(response.reference);
-      },
-      onClose: function() {
-        setIsProcessing(false);
-        // Don't show error toast for cancellation - this is expected user behavior
-        console.log('Payment window closed by user');
-      },
-      onerror: function(error: any) {
-        setIsProcessing(false);
-        toast({
-          title: "Payment Failed",
-          description: error.message || "Payment processing failed. Please try again.",
-          variant: "destructive",
-        });
-        onPaymentError?.(error);
-      }
-    });
-
-    handler.openIframe();
+    try {
+      // Use Paystack v2 checkout() method - this auto-detects iOS/Safari and shows Apple Pay
+      const paystackPop = new (window as any).PaystackPop();
+      await paystackPop.checkout({
+        key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+        email: userEmail,
+        amount: plan.price, // Price is already in cents from database
+        currency: 'ZAR',
+        plan: paystackPlanCode,
+        ref: `ss_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        metadata: {
+          user_id: userId,
+          plan_id: plan.id,
+          plan_name: plan.name,
+          user_email: userEmail,
+          subscription_type: 'recurring',
+          billing_period: plan.billingPeriod
+        },
+        onSuccess: (transaction: any) => {
+          setIsProcessing(false);
+          toast({
+            title: "Subscription Activated",
+            description: `Your recurring subscription has been activated! You'll be charged ${priceDisplay}.`,
+          });
+          onPaymentSuccess?.(transaction.reference);
+        },
+        onCancel: () => {
+          setIsProcessing(false);
+          // Don't show error toast for cancellation - this is expected user behavior
+          console.log('Payment window closed by user');
+        },
+        onError: (error: any) => {
+          setIsProcessing(false);
+          toast({
+            title: "Payment Failed",
+            description: error?.message || "Payment processing failed. Please try again.",
+            variant: "destructive",
+          });
+          onPaymentError?.(error);
+        }
+      });
+    } catch (error: any) {
+      setIsProcessing(false);
+      toast({
+        title: "Payment Error",
+        description: error?.message || "Failed to initialize payment. Please try again.",
+        variant: "destructive",
+      });
+      onPaymentError?.(error);
+    }
   };
 
   // Format price display based on billing period

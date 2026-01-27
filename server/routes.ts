@@ -3079,7 +3079,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const userId = getUserId(req);
-      const { reference } = req.body;
+      const { reference, preflight } = req.body;
+      
+      // Preflight check: Just verify email is verified (middleware already did this)
+      // Return success so client knows they can proceed with payment
+      if (preflight === true) {
+        return res.status(200).json({ 
+          success: true, 
+          message: "Email verification passed, you may proceed with payment" 
+        });
+      }
       
       if (!reference) {
         return res.status(400).json({ error: "Paystack transaction reference is required" });

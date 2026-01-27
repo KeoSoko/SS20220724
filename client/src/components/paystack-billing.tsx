@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, CreditCard, Shield, Globe } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 
 // Paystack plan codes
 const PAYSTACK_PLAN_CODES = {
@@ -41,6 +42,39 @@ export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onP
         variant: "destructive",
       });
       setIsProcessing(false);
+      return;
+    }
+
+    // Pre-flight check: Verify email before allowing payment
+    // This calls the protected subscription endpoint to check if email is verified
+    try {
+      await apiRequest('POST', '/api/billing/paystack/subscription', {
+        planId: plan.id,
+        billingPeriod: plan.billingPeriod,
+        preflight: true, // Just checking email verification, not actually subscribing
+      });
+    } catch (error: any) {
+      setIsProcessing(false);
+      // If it's an email verification error, the global handler will show the dialog
+      // Don't show toast - dialog handles the user feedback
+      // Check multiple ways the error type might be indicated
+      const isVerificationError = 
+        error?.silent === true ||
+        error?.errorType === 'email_verification_required' ||
+        error?.responseData?.error === 'email_verification_required' ||
+        error?.message?.includes('email_verification_required') ||
+        error?.message?.includes('Email verification required');
+      
+      if (isVerificationError) {
+        // Dialog is already shown by global event handler, just return silently
+        return;
+      }
+      // For other errors, show toast
+      toast({
+        title: "Payment Error",
+        description: error?.message || "Unable to initialize payment. Please try again.",
+        variant: "destructive",
+      });
       return;
     }
 

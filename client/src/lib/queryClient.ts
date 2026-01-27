@@ -62,8 +62,16 @@ async function throwIfResNotOk(res: Response) {
       
       // Handle email verification required errors (403 with specific error code)
       // Dispatch global event so VerificationProvider can show dialog
+      // Return early to prevent toast notification - dialog handles the user feedback
       if (res.status === 403 && errorData.error === "email_verification_required") {
         dispatchVerificationRequiredEvent(errorData.userEmail);
+        // Create a silent error that won't trigger toast notifications
+        const silentError = new Error("Email verification required");
+        (silentError as any).status = 403;
+        (silentError as any).errorType = "email_verification_required";
+        (silentError as any).silent = true; // Mark as silent to skip toast
+        (silentError as any).responseData = errorData;
+        throw silentError;
       }
       
       // Create structured error object - prefer userMessage for display

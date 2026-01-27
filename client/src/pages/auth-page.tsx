@@ -185,24 +185,37 @@ export default function AuthPage() {
       }
 
       // Check for account locked error (must be first check to override other patterns)
-      // Server sends: {"error":"Account locked","message":"Too many failed login attempts. Account is locked for X more minutes."}
-      if (error.errorType === "Account locked" || 
+      // Server sends: {"error":"Account temporarily locked","message":"For your security...","userMessage":"Account locked. Please try again in X minutes."}
+      const isAccountLocked = 
+          error.errorType === "Account locked" || 
+          error.errorType === "Account temporarily locked" ||
           error.responseData?.error === "Account locked" ||
-          error.message?.includes("Account locked") || 
-          error.message?.includes("account is locked") || 
-          error.message?.includes("too many failed") ||
-          error.message?.includes("Account is locked") ||
-          error.originalMessage?.includes("Too many failed") ||
-          error.originalMessage?.includes("Account is locked")) {
+          error.responseData?.error === "Account temporarily locked" ||
+          error.message?.toLowerCase().includes("account locked") || 
+          error.message?.toLowerCase().includes("account is locked") || 
+          error.message?.toLowerCase().includes("temporarily locked") ||
+          error.message?.toLowerCase().includes("too many failed") ||
+          error.originalMessage?.toLowerCase().includes("too many failed") ||
+          error.originalMessage?.toLowerCase().includes("temporarily locked") ||
+          error.userMessage?.toLowerCase().includes("account locked");
+          
+      if (isAccountLocked) {
         console.log("🔒 ACCOUNT LOCKED ERROR DETECTED:", { 
           message: error.message, 
           errorType: error.errorType, 
           responseData: error.responseData,
-          originalMessage: error.originalMessage 
+          originalMessage: error.originalMessage,
+          userMessage: error.userMessage
         });
+        
+        // Extract the time remaining from the server message if available
+        const serverMessage = error.userMessage || error.originalMessage || error.message || "";
+        const timeMatch = serverMessage.match(/(\d+)\s*minute/i);
+        const minutesRemaining = timeMatch ? parseInt(timeMatch[1]) : 15;
+        
         setErrorDetails({
           title: "Account Temporarily Locked",
-          message: error.originalMessage || error.message || "Your account has been temporarily locked due to multiple failed login attempts. Please wait 15 minutes before trying again, or use 'Forgot Password' to reset your password.",
+          message: `For your security, we've temporarily locked your account after multiple failed login attempts.\n\nPlease wait ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''} before trying again.\n\nAlternatively, you can use 'Forgot Password' below to reset your password and unlock your account immediately.`,
           type: 'general'
         });
         setShowErrorDialog(true);
@@ -210,9 +223,7 @@ export default function AuthPage() {
       }
 
       // Check for invalid credentials (comprehensive patterns) - but NOT if it's an account lock
-      if (!error.errorType?.includes("Account locked") && 
-          !error.responseData?.error?.includes("Account locked") &&
-          !error.message?.includes("Account locked") &&
+      if (!isAccountLocked &&
           (error.message?.includes("Invalid credentials") || 
            error.message?.includes("invalid username or password") || 
            error.message?.includes("Invalid username or password") ||

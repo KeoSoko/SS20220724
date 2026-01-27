@@ -2115,8 +2115,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Single receipt PDF export (uses same logic as bulk export)
-  app.post("/api/receipts/:id/export-pdf", async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
+  // Requires email verification - sensitive export action
+  app.post("/api/receipts/:id/export-pdf", requireVerifiedEmail, async (req, res) => {
 
     try {
       const receiptId = validateReceiptId(req.params.id);
@@ -2316,8 +2316,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Export Data (CSV)
-  app.get("/api/export/csv", async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
+  // Requires email verification - sensitive export action
+  app.get("/api/export/csv", requireVerifiedEmail, async (req, res) => {
     
     try {
       const options = {
@@ -2339,8 +2339,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Export Data (PDF)
-  app.get("/api/export/pdf", async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
+  // Requires email verification - sensitive export action
+  app.get("/api/export/pdf", requireVerifiedEmail, async (req, res) => {
     
     try {
       const options = {
@@ -2363,8 +2363,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Tax Report
-  app.get("/api/export/tax-report/:year", async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
+  // Requires email verification - sensitive export action
+  app.get("/api/export/tax-report/:year", requireVerifiedEmail, async (req, res) => {
     
     try {
       const year = parseInt(req.params.year);
@@ -2778,8 +2778,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Generate comprehensive audit preparation kit
-  app.post("/api/tax/audit-kit", async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
+  // Requires email verification - sensitive tax action
+  app.post("/api/tax/audit-kit", requireVerifiedEmail, async (req, res) => {
 
     try {
       const userId = getUserId(req);
@@ -2900,8 +2900,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tax/annual-pack/:taxYear", async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
+  // Requires email verification - sensitive tax action
+  app.post("/api/tax/annual-pack/:taxYear", requireVerifiedEmail, async (req, res) => {
     
     try {
       const userId = getUserId(req);
@@ -3044,8 +3044,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Process Google Play purchase
-  app.post("/api/billing/google-play/purchase", async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
+  // Requires email verification - sensitive billing action
+  app.post("/api/billing/google-play/purchase", requireVerifiedEmail, async (req, res) => {
     
     try {
       const userId = getUserId(req);
@@ -3074,8 +3074,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Process Paystack subscription - Verifies and activates if webhook hasn't processed it yet
   // Primary activation is via webhook, but this provides a fallback safety net
-  app.post("/api/billing/paystack/subscription", async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
+  // Requires email verification - sensitive billing action
+  app.post("/api/billing/paystack/subscription", requireVerifiedEmail, async (req, res) => {
     
     try {
       const userId = getUserId(req);
@@ -3241,8 +3241,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Cancel subscription
-  app.post("/api/billing/cancel", async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
+  // Requires email verification - sensitive billing action
+  app.post("/api/billing/cancel", requireVerifiedEmail, async (req, res) => {
     
     try {
       const userId = getUserId(req);
@@ -3269,8 +3269,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Process Apple App Store purchase
-  app.post("/api/billing/apple/purchase", async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
+  // Requires email verification - sensitive billing action
+  app.post("/api/billing/apple/purchase", requireVerifiedEmail, async (req, res) => {
     
     try {
       const userId = getUserId(req);

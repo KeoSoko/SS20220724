@@ -1,0 +1,112 @@
+🔧 REPLIT PROMPT — PAYSTACK CHECKOUT VERIFICATION (SAFE MODE)
+
+Goal:
+Confirm that the app has fully switched back from paymentRequest() to checkout() and that all payment channels (Apple Pay, QR, EFT, card) are available and not accidentally restricted.
+
+Please provide the following, without refactoring anything yet:
+
+1️⃣ Frontend Paystack Entry Point
+
+Show all files where Paystack is initialized or called on the frontend, including:
+
+Subscription / upgrade page
+
+Any Apple Pay–specific components
+
+Any conditional device checks (Safari / iOS detection)
+
+Specifically, I need:
+
+The exact function that is called when the user clicks “Pay / Subscribe”
+
+The full Paystack call (checkout() or paymentRequest()), including all options passed
+
+2️⃣ Confirm No paymentRequest() Is Still Active
+
+Search the entire frontend codebase and report:
+
+Any remaining references to:
+
+paymentRequest(
+
+paystack-apple-pay
+
+loadPaystackCheckoutButton
+
+If found, show the file + line numbers
+
+3️⃣ Paystack Script Version
+
+Show where Paystack is loaded:
+
+<script src="https://js.paystack.co/v2/inline.js"> or similar
+
+Confirm InlineJS v2 is being used
+
+File and location where the script is injected (index.html / layout / component)
+
+4️⃣ Checkout Configuration
+
+Show the full checkout() configuration object, including:
+
+key
+
+email
+
+amount
+
+currency
+
+channels (IMPORTANT — confirm whether this is set or omitted)
+
+onSuccess, onCancel, onClose
+
+⚠️ I specifically want to confirm:
+
+Are channels explicitly restricted?
+
+Or is Paystack allowed to auto-detect channels?
+
+5️⃣ Backend Verification (No Logic Changes)
+
+Confirm:
+
+/api/billing/paystack/subscription still handles success the same way
+
+No Apple Pay–specific branching exists on the backend
+
+No channel-based assumptions are made server-side
+
+Just show the route handler — no edits.
+
+6️⃣ Environment & Domain Sanity Check
+
+Provide:
+
+Public Paystack key in use (TEST vs LIVE — redact value)
+
+Whether Apple Pay domain verification is still enabled in dashboard
+
+Whether multiple domains are involved (e.g. .app vs .co.za)
+
+7️⃣ Final Question (Answer Explicitly)
+
+Answer YES or NO to each:
+
+Is checkout() the only Paystack entry point now?
+
+Can non-Apple users see QR / EFT?
+
+Can Apple users still see Apple Pay?
+
+Important instructions:
+
+❌ Do NOT refactor yet
+
+❌ Do NOT optimize
+
+❌ Do NOT remove Apple Pay config from dashboard
+
+✅ Only report findings
+
+✅ Highlight anything suspicious or ambiguous

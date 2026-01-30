@@ -131,6 +131,9 @@ export function registerAdminRoutes(app: Express) {
     try {
       const query = (req.query.query as string)?.trim();
       const filter = (req.query.filter as string)?.trim();
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+      const offset = (page - 1) * limit;
       
       // Must have either query or filter
       if (!query && !filter) {
@@ -151,6 +154,7 @@ export function registerAdminRoutes(app: Express) {
         isEmailVerified: boolean | null;
         trialEndDate: Date | null;
       }>;
+      let totalCount = 0;
 
       // Filter mode - predefined filters by health card type
       if (filter) {
@@ -161,6 +165,10 @@ export function registerAdminRoutes(app: Express) {
 
         switch (filter) {
           case 'all':
+            // Get total count
+            const allCountResult = await db.select({ count: count() }).from(users);
+            totalCount = allCountResult[0]?.count || 0;
+            
             searchResults = await db.select({
               id: users.id,
               email: users.email,
@@ -172,10 +180,15 @@ export function registerAdminRoutes(app: Express) {
             })
             .from(users)
             .orderBy(desc(users.createdAt))
-            .limit(50);
+            .limit(limit)
+            .offset(offset);
             break;
 
           case 'unverified':
+            // Get total count
+            const unverifiedCountResult = await db.select({ count: count() }).from(users).where(eq(users.isEmailVerified, false));
+            totalCount = unverifiedCountResult[0]?.count || 0;
+            
             searchResults = await db.select({
               id: users.id,
               email: users.email,
@@ -188,11 +201,20 @@ export function registerAdminRoutes(app: Express) {
             .from(users)
             .where(eq(users.isEmailVerified, false))
             .orderBy(desc(users.createdAt))
-            .limit(50);
+            .limit(limit)
+            .offset(offset);
             break;
 
           case 'stuck_trials':
-            // Users in trial with expired trial date (more than 30 days ago)
+            // Get total count
+            const stuckTrialsCountResult = await db.select({ count: count() }).from(users).where(
+              and(
+                isNotNull(users.trialEndDate),
+                lt(users.trialEndDate, thirtyDaysAgo)
+              )
+            );
+            totalCount = stuckTrialsCountResult[0]?.count || 0;
+            
             searchResults = await db.select({
               id: users.id,
               email: users.email,
@@ -210,11 +232,12 @@ export function registerAdminRoutes(app: Express) {
               )
             )
             .orderBy(desc(users.createdAt))
-            .limit(50);
+            .limit(limit)
+            .offset(offset);
             break;
 
           case 'failed_24h':
-            // Users with payment failures in last 24h
+            // Get all distinct user IDs with payment failures in last 24h
             const failed24hUserIds = await db.selectDistinct({ userId: billingEvents.userId })
               .from(billingEvents)
               .where(
@@ -222,8 +245,9 @@ export function registerAdminRoutes(app: Express) {
                   eq(billingEvents.eventType, 'payment_failed'),
                   gte(billingEvents.createdAt, twentyFourHoursAgo)
                 )
-              )
-              .limit(50);
+              );
+            
+            totalCount = failed24hUserIds.length;
             
             if (failed24hUserIds.length === 0) {
               searchResults = [];
@@ -239,12 +263,14 @@ export function registerAdminRoutes(app: Express) {
               })
               .from(users)
               .where(sql`${users.id} IN (${sql.join(failed24hUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
-              .limit(50);
+              .orderBy(desc(users.createdAt))
+              .limit(limit)
+              .offset(offset);
             }
             break;
 
           case 'failed_7d':
-            // Users with payment failures in last 7 days
+            // Get all distinct user IDs with payment failures in last 7 days
             const failed7dUserIds = await db.selectDistinct({ userId: billingEvents.userId })
               .from(billingEvents)
               .where(
@@ -252,8 +278,9 @@ export function registerAdminRoutes(app: Express) {
                   eq(billingEvents.eventType, 'payment_failed'),
                   gte(billingEvents.createdAt, sevenDaysAgo)
                 )
-              )
-              .limit(50);
+              );
+            
+            totalCount = failed7dUserIds.length;
             
             if (failed7dUserIds.length === 0) {
               searchResults = [];
@@ -269,12 +296,14 @@ export function registerAdminRoutes(app: Express) {
               })
               .from(users)
               .where(sql`${users.id} IN (${sql.join(failed7dUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
-              .limit(50);
+              .orderBy(desc(users.createdAt))
+              .limit(limit)
+              .offset(offset);
             }
             break;
 
           case 'webhooks_24h':
-            // Users with webhook failures in last 24h
+            // Get all distinct user IDs with webhook failures in last 24h
             const webhook24hUserIds = await db.selectDistinct({ userId: billingEvents.userId })
               .from(billingEvents)
               .where(
@@ -285,8 +314,9 @@ export function registerAdminRoutes(app: Express) {
                   ),
                   gte(billingEvents.createdAt, twentyFourHoursAgo)
                 )
-              )
-              .limit(50);
+              );
+            
+            totalCount = webhook24hUserIds.length;
             
             if (webhook24hUserIds.length === 0) {
               searchResults = [];
@@ -302,16 +332,19 @@ export function registerAdminRoutes(app: Express) {
               })
               .from(users)
               .where(sql`${users.id} IN (${sql.join(webhook24hUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
-              .limit(50);
+              .orderBy(desc(users.createdAt))
+              .limit(limit)
+              .offset(offset);
             }
             break;
 
           case 'azure_failures':
-            // Users with Azure upload failures (blob_url starts with /uploads/)
+            // Get all distinct user IDs with Azure upload failures
             const azureFailUserIds = await db.selectDistinct({ userId: receipts.userId })
               .from(receipts)
-              .where(sql`blob_url LIKE '/uploads/%'`)
-              .limit(50);
+              .where(sql`blob_url LIKE '/uploads/%'`);
+            
+            totalCount = azureFailUserIds.length;
             
             if (azureFailUserIds.length === 0) {
               searchResults = [];
@@ -327,12 +360,14 @@ export function registerAdminRoutes(app: Express) {
               })
               .from(users)
               .where(sql`${users.id} IN (${sql.join(azureFailUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
-              .limit(50);
+              .orderBy(desc(users.createdAt))
+              .limit(limit)
+              .offset(offset);
             }
             break;
 
           case 'email_failures':
-            // Users with email delivery failures in last 7 days
+            // Get all distinct user IDs with email delivery failures in last 7 days
             const emailFailUserIds = await db.selectDistinct({ userId: emailEvents.userId })
               .from(emailEvents)
               .where(
@@ -344,8 +379,9 @@ export function registerAdminRoutes(app: Express) {
                   ),
                   gte(emailEvents.createdAt, sevenDaysAgo)
                 )
-              )
-              .limit(50);
+              );
+            
+            totalCount = emailFailUserIds.length;
             
             if (emailFailUserIds.length === 0) {
               searchResults = [];
@@ -361,7 +397,9 @@ export function registerAdminRoutes(app: Express) {
               })
               .from(users)
               .where(sql`${users.id} IN (${sql.join(emailFailUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
-              .limit(50);
+              .orderBy(desc(users.createdAt))
+              .limit(limit)
+              .offset(offset);
             }
             break;
 
@@ -369,7 +407,18 @@ export function registerAdminRoutes(app: Express) {
             searchResults = [];
         }
       } else {
-        // Text search mode (original behavior)
+        // Text search mode - get count first
+        const searchCountResult = await db.select({ count: count() })
+          .from(users)
+          .where(
+            or(
+              ilike(users.email, `%${query}%`),
+              ilike(users.username, `%${query}%`),
+              sql`CAST(${users.id} AS TEXT) = ${query}`
+            )
+          );
+        totalCount = searchCountResult[0]?.count || 0;
+        
         searchResults = await db.select({
           id: users.id,
           email: users.email,
@@ -387,7 +436,9 @@ export function registerAdminRoutes(app: Express) {
             sql`CAST(${users.id} AS TEXT) = ${query}`
           )
         )
-        .limit(50);
+        .orderBy(desc(users.createdAt))
+        .limit(limit)
+        .offset(offset);
       }
 
       // Enrich results with subscription and usage data
@@ -436,7 +487,13 @@ export function registerAdminRoutes(app: Express) {
         };
       }));
 
-      res.json(results);
+      res.json({
+        users: results,
+        total: totalCount,
+        page,
+        limit,
+        totalPages: Math.ceil(totalCount / limit)
+      });
     } catch (error: any) {
       log(`Error in /api/admin/users/search: ${error.message}`, 'admin');
       res.status(500).json({ error: "Failed to search users" });

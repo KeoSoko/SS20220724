@@ -29,6 +29,8 @@ import {
   FileCheck,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Circle,
   Eye,
   Send,
@@ -68,6 +70,14 @@ interface UserSearchResult {
     lastReceiptAt: string | null;
     loginCount: number;
   };
+}
+
+interface PaginatedSearchResponse {
+  users: UserSearchResult[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 interface UserDetail {
@@ -276,26 +286,41 @@ export default function CommandCenter() {
   const [showOlderEvents, setShowOlderEvents] = useState(false);
   const [emailPreview, setEmailPreview] = useState<EmailPreview | null>(null);
   const [previewTemplate, setPreviewTemplate] = useState<EmailTemplateType | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageLimit = 50;
 
   const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery<SystemHealth>({
     queryKey: ['/api/admin/command-center/health'],
   });
 
-  const { data: searchResults, isLoading: searchLoading, refetch: refetchSearch } = useQuery<UserSearchResult[]>({
+  const { data: searchResponse, isLoading: searchLoading, refetch: refetchSearch } = useQuery<PaginatedSearchResponse>({
     queryKey: activeFilter 
-      ? ['/api/admin/users/search', { filter: activeFilter }]
-      : ['/api/admin/users/search', { query: searchQuery }],
+      ? ['/api/admin/users/search', { filter: activeFilter, page: currentPage, limit: pageLimit }]
+      : ['/api/admin/users/search', { query: searchQuery, page: currentPage, limit: pageLimit }],
     enabled: activeFilter !== null || searchQuery.length >= 2,
   });
+
+  const searchResults = searchResponse?.users || [];
+  const totalUsers = searchResponse?.total || 0;
+  const totalPages = searchResponse?.totalPages || 1;
 
   const handleFilterClick = (filter: FilterType) => {
     setActiveFilter(filter);
     setSearchQuery("");
     setSelectedUserId(null);
+    setCurrentPage(1);
   };
 
   const clearFilter = () => {
     setActiveFilter(null);
+    setCurrentPage(1);
+  };
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+      setSelectedUserId(null);
+    }
   };
 
   const { data: userDetail, isLoading: userDetailLoading, refetch: refetchUserDetail } = useQuery<UserDetail>({
@@ -696,12 +721,17 @@ export default function CommandCenter() {
           {(searchResults && searchResults.length > 0) && (
             <Card className="mt-4">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">
-                  {activeFilter ? `${FILTER_LABELS[activeFilter]} (${searchResults.length})` : `Search Results (${searchResults.length})`}
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">
+                    {activeFilter ? `${FILTER_LABELS[activeFilter]}` : `Search Results`}
+                  </CardTitle>
+                  <span className="text-xs text-muted-foreground">
+                    Showing {((currentPage - 1) * pageLimit) + 1}-{Math.min(currentPage * pageLimit, totalUsers)} of {totalUsers}
+                  </span>
+                </div>
               </CardHeader>
               <CardContent className="p-0">
-                <ScrollArea className="h-[200px]">
+                <ScrollArea className="h-[300px]">
                   {searchResults.map((user) => {
                     const riskLevel = calculateUserRisk(user);
                     return (
@@ -746,6 +776,93 @@ export default function CommandCenter() {
                     );
                   })}
                 </ScrollArea>
+                
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between p-3 border-t bg-muted/30">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => goToPage(currentPage - 1)}
+                      disabled={currentPage <= 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    
+                    <div className="flex items-center gap-1">
+                      {/* First page */}
+                      {currentPage > 2 && (
+                        <>
+                          <Button 
+                            variant={currentPage === 1 ? "default" : "ghost"} 
+                            size="sm"
+                            className="w-8 h-8 p-0"
+                            onClick={() => goToPage(1)}
+                          >
+                            1
+                          </Button>
+                          {currentPage > 3 && <span className="text-muted-foreground px-1">...</span>}
+                        </>
+                      )}
+                      
+                      {/* Pages around current */}
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum: number;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                        
+                        if (pageNum < 1 || pageNum > totalPages) return null;
+                        if (pageNum === 1 && currentPage > 2) return null;
+                        if (pageNum === totalPages && currentPage < totalPages - 1) return null;
+                        
+                        return (
+                          <Button 
+                            key={pageNum}
+                            variant={currentPage === pageNum ? "default" : "ghost"} 
+                            size="sm"
+                            className="w-8 h-8 p-0"
+                            onClick={() => goToPage(pageNum)}
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                      
+                      {/* Last page */}
+                      {currentPage < totalPages - 1 && totalPages > 5 && (
+                        <>
+                          {currentPage < totalPages - 2 && <span className="text-muted-foreground px-1">...</span>}
+                          <Button 
+                            variant={currentPage === totalPages ? "default" : "ghost"} 
+                            size="sm"
+                            className="w-8 h-8 p-0"
+                            onClick={() => goToPage(totalPages)}
+                          >
+                            {totalPages}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => goToPage(currentPage + 1)}
+                      disabled={currentPage >= totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

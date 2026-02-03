@@ -1211,7 +1211,7 @@ function HomePage() {
                 {/* Receipts List */}
                 {filteredReceipts.length === 0 ? (
                   <EnhancedEmptyState
-                    icon={<ReceiptIcon className="w-12 h-12" />}
+                    icon={<Search className="w-12 h-12 text-muted-foreground" />}
                     title="No receipts found"
                     description="Start by scanning your first receipt or adjust your search filters"
                     onAction={() => window.location.href = '/upload'}

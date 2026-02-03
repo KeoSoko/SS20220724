@@ -758,7 +758,7 @@ export default function ReceiptsPage() {
           </div>
         ) : sortedReceipts.length === 0 ? (
           <EnhancedEmptyState
-            icon={<Receipt className="w-12 h-12" />}
+            icon={<Search className="w-12 h-12 text-muted-foreground" />}
             title={
               categoryFilter === 'uncategorized' 
                 ? "No uncategorized receipts" 

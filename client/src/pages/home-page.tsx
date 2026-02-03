@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { ExpenseCategory, Receipt, EXPENSE_CATEGORIES } from "@shared/schema";
+import { getReceiptCategoryLabel } from "@/utils/receipt-category";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { 
@@ -221,7 +222,8 @@ function HomePage() {
     .filter((receipt) => {
       const matchesSearch = receipt.storeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           receipt.notes?.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = categoryFilter === "all" || receipt.category === categoryFilter;
+      const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category, receipt.notes);
+      const matchesCategory = categoryFilter === "all" || receipt.category === categoryFilter || receiptCategoryLabel === categoryFilter;
       
       // Filter by confidence score if "Needs Review" is enabled
       let matchesConfidence = true;

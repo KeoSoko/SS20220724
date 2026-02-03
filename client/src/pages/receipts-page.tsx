@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { EnhancedReceiptCard, SpacingContainer, EnhancedEmptyState } from '@/components/ui/enhanced-components';
+import { getReceiptCategoryLabel } from '@/utils/receipt-category';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -106,10 +107,11 @@ export default function ReceiptsPage() {
     
     // Category filter
     let matchesCategory = true;
+    const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category, receipt.notes);
     if (categoryFilter === 'uncategorized') {
-      matchesCategory = !receipt.category || receipt.category === 'other' || receipt.category === '';
+      matchesCategory = !receipt.category || (receipt.category === 'other' && !receipt.notes?.match(/\[Custom Category:/i)) || receipt.category === '';
     } else if (categoryFilter !== 'all') {
-      matchesCategory = receipt.category === categoryFilter;
+      matchesCategory = receipt.category === categoryFilter || receiptCategoryLabel === categoryFilter;
     }
     
     // Needs Review filter (confidence < 80%)

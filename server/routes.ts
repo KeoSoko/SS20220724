@@ -2478,13 +2478,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/export/pdf", requireVerifiedEmail, async (req, res) => {
     
     try {
+      const groupByParam = typeof req.query.groupBy === "string" ? req.query.groupBy : undefined;
       const options = {
         startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
         endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
         category: req.query.category as string,
         includeSummary: req.query.includeSummary === 'true',
         includeImages: req.query.includeImages === 'true',
-        groupBy: req.query.groupBy === 'category' ? 'category' : undefined,
+        groupBy: groupByParam === 'category' || groupByParam === 'date'
+          ? (groupByParam as 'category' | 'date')
+          : undefined,
       };
       
       const pdf = await exportService.exportReceiptsToPDF(getUserId(req), options);

@@ -1006,7 +1006,11 @@ export class BillingService {
         if (!storage.updateUserSubscription) {
           throw new Error('Subscription update not supported by current storage');
         }
-        return await storage.updateUserSubscription(existingSubscription.id, updatedSubscription);
+        const savedSubscription = await storage.updateUserSubscription(existingSubscription.id, updatedSubscription);
+        if (!savedSubscription) {
+          throw new Error('Failed to update subscription');
+        }
+        return savedSubscription;
       }
 
       // Create new subscription

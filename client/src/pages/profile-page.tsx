@@ -977,9 +977,11 @@ export default function ProfilePage() {
               </Avatar>
               <div>
                 <h3 className="text-lg font-semibold">{user?.fullName || user?.username}</h3>
-                <StatusBadge status="success" className="mt-1">
-                  Active Account
-                </StatusBadge>
+                <div className="mt-1">
+                  <StatusBadge status="success">
+                    Active Account
+                  </StatusBadge>
+                </div>
               </div>
             </div>
 

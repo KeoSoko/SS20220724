@@ -13,6 +13,8 @@ export default function KeoSokoDiagnostic() {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const { loginMutation } = useAuth();
+  const getErrorMessage = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
   
   // Tests direct login with fetch
   const testDirectLogin = async () => {
@@ -62,16 +64,17 @@ export default function KeoSokoDiagnostic() {
         });
       }
     } catch (error) {
+      const errorMessage = getErrorMessage(error);
       setResults({
         directLogin: {
           success: false,
-          error: error.message
+          error: errorMessage
         }
       });
       
       toast({
         title: "Error",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -118,16 +121,17 @@ export default function KeoSokoDiagnostic() {
         }
       );
     } catch (error) {
+      const errorMessage = getErrorMessage(error);
       setResults({
         authLogin: {
           success: false,
-          error: error.message
+          error: errorMessage
         }
       });
       
       toast({
         title: "Error",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
       setIsLoading(false);
@@ -210,16 +214,17 @@ export default function KeoSokoDiagnostic() {
         });
       }
     } catch (error) {
+      const errorMessage = getErrorMessage(error);
       setResults({
         nuclearReset: {
           success: false,
-          error: error.message
+          error: errorMessage
         }
       });
       
       toast({
         title: "Error",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

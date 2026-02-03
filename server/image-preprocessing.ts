@@ -32,15 +32,7 @@ export class ImagePreprocessor {
         // Enhance contrast
         .linear(1.2, -(128 * 1.2) + 128)
         // Sharpen for better text recognition
-        .sharpen({
-          sigma: 1.0,
-          m1: 0.5,
-          m2: 0.5,
-          x1: 2,
-          y1: 10,
-          y2: 20,
-          y3: 50
-        })
+        .sharpen(1)
         // Reduce noise while preserving edges
         .median(3)
         // Ensure image is not too large for OCR

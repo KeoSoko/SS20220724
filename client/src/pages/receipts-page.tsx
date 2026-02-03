@@ -34,6 +34,20 @@ const EXPENSE_CATEGORIES = [
   'office_supplies', 'personal_care', 'gifts', 'other'
 ];
 
+type ReceiptListItem = {
+  id: number;
+  storeName: string;
+  total: number | string;
+  date: string | Date;
+  category?: string | null;
+  description?: string | null;
+  confidence?: number | null;
+  confidenceScore?: string | null;
+  source?: string | null;
+  isPotentialDuplicate?: boolean | null;
+  notes?: string | null;
+};
+
 export default function ReceiptsPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -65,17 +79,17 @@ export default function ReceiptsPage() {
   const [bulkCategory, setBulkCategory] = useState('');
 
   // Fetch receipts
-  const { data: receipts = [], isLoading, error } = useQuery({
+  const { data: receipts = [], isLoading, error } = useQuery<ReceiptListItem[]>({
     queryKey: ['/api/receipts', { limit: 100, offset: 0 }],
   });
 
   // Get unique vendors from receipts for dropdown
   const uniqueVendors = useMemo(() => {
     const vendors = receipts
-      .map((r: any) => r.storeName)
+      .map((r) => r.storeName)
       .filter((name: string) => name && name.trim() !== '')
       .map((name: string) => name.trim());
-    return [...new Set(vendors)].sort((a, b) => a.localeCompare(b));
+    return Array.from(new Set(vendors)).sort((a, b) => a.localeCompare(b));
   }, [receipts]);
 
   // Check if any smart filters are active
@@ -99,7 +113,7 @@ export default function ReceiptsPage() {
   };
 
   // Filter receipts based on URL parameters and filters
-  const filteredReceipts = receipts.filter((receipt: any) => {
+  const filteredReceipts = receipts.filter((receipt) => {
     // Search filter
     const matchesSearch = !searchQuery || 
       receipt.storeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -136,7 +150,7 @@ export default function ReceiptsPage() {
     
     // Amount range filter
     let matchesAmountRange = true;
-    const receiptAmount = parseFloat(receipt.total) || 0;
+    const receiptAmount = Number(receipt.total) || 0;
     if (amountMin) {
       matchesAmountRange = receiptAmount >= parseFloat(amountMin);
     }
@@ -161,13 +175,14 @@ export default function ReceiptsPage() {
         bValue = new Date(b.date).getTime();
         break;
       case 'amount':
-        aValue = parseFloat(a.total);
-        bValue = parseFloat(b.total);
+        aValue = Number(a.total);
+        bValue = Number(b.total);
         break;
-      case 'store':
-        aValue = a.storeName?.toLowerCase() || '';
-        bValue = b.storeName?.toLowerCase() || '';
-        break;
+      case 'store': {
+        const aStore = a.storeName?.toLowerCase() || '';
+        const bStore = b.storeName?.toLowerCase() || '';
+        return sortOrder === 'desc' ? bStore.localeCompare(aStore) : aStore.localeCompare(bStore);
+      }
       default:
         aValue = new Date(a.date).getTime();
         bValue = new Date(b.date).getTime();
@@ -190,7 +205,7 @@ export default function ReceiptsPage() {
 
   const getPageSubtitle = () => {
     const count = sortedReceipts.length;
-    const total = sortedReceipts.reduce((sum, receipt) => sum + parseFloat(receipt.total), 0);
+    const total = sortedReceipts.reduce((sum, receipt) => sum + Number(receipt.total), 0);
     
     if (categoryFilter === 'uncategorized') {
       return `${count} receipts need categorization • R${total.toFixed(2)} total`;
@@ -224,7 +239,7 @@ export default function ReceiptsPage() {
   };
 
   const selectAll = () => {
-    const allIds = new Set(sortedReceipts.map((r: any) => r.id));
+    const allIds = new Set(sortedReceipts.map((r) => r.id));
     setSelectedReceiptIds(allIds);
   };
 
@@ -774,7 +789,7 @@ export default function ReceiptsPage() {
           />
         ) : (
           <div className="space-y-4">
-            {sortedReceipts.map((receipt: any) => (
+            {sortedReceipts.map((receipt) => (
               <motion.div
                 key={receipt.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -795,7 +810,7 @@ export default function ReceiptsPage() {
                       receipt={{
                         id: receipt.id,
                         storeName: receipt.storeName || 'Unknown Store',
-                        total: parseFloat(receipt.total),
+                        total: Number(receipt.total),
                         date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
                         category: receipt.category || 'other',
                         notes: receipt.notes,

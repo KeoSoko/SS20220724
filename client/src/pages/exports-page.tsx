@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, FileText, Archive, Calendar, CalendarRange } from 'lucide-react';
+import { Download, FileText, Receipt, Calendar, CalendarRange } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,8 +11,6 @@ import { Section } from '@/components/design-system';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { dispatchVerificationRequiredEvent } from '@/lib/queryClient';
-import { useQuery } from '@tanstack/react-query';
-import { EXPENSE_CATEGORIES } from '@shared/schema';
 
 export default function ExportsPage() {
   const [isExporting, setIsExporting] = useState(false);
@@ -27,11 +25,6 @@ export default function ExportsPage() {
   const [allowAllTimeExport, setAllowAllTimeExport] = useState(false);
   const { toast } = useToast();
   const isMobile = useIsMobile();
-
-  // Fetch user's custom categories
-  const { data: customCategories = [] } = useQuery<any[]>({
-    queryKey: ['/api/custom-categories'],
-  });
 
   const handleExport = async (type: 'backup') => {
     setIsExporting(true);
@@ -97,8 +90,9 @@ export default function ExportsPage() {
   const handleDateRangeExport = async (type: 'csv' | 'pdf' | 'tax-report') => {
     if (!startDate && !endDate && !allowAllTimeExport) {
       toast({
-        title: "One more step",
-        description: "Pick a date range or tick 'Export all receipts' to continue.",
+        title: "Select a date range",
+        description: "Please choose a start date, end date, or enable all-time export.",
+        variant: "destructive",
       });
       return;
     }

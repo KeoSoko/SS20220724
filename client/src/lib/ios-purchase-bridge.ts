@@ -45,6 +45,13 @@ declare global {
     };
     iosInAppPurchaseCapability?: boolean;
   }
+
+  interface WindowEventMap {
+    'ios-purchase-complete': CustomEvent<IOSPurchaseResult>;
+    'ios-purchase-failed': CustomEvent<{ error: string }>;
+    'ios-purchases-restored': CustomEvent<IOSPurchaseResult[]>;
+    'ios-subscription-status': CustomEvent<IOSSubscriptionStatus>;
+  }
 }
 
 class IOSPurchaseBridge {

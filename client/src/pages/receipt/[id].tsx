@@ -150,7 +150,7 @@ export default function ReceiptDetail() {
   });
 
   // Query for custom categories
-  const { data: customCategories = [], isLoading: customCategoriesLoading, error: customCategoriesError } = useQuery({
+  const { data: customCategories = [], isLoading: customCategoriesLoading, error: customCategoriesError } = useQuery<Array<{ id: number; name: string; isActive: boolean }>>({
     queryKey: ["/api/custom-categories"],
     enabled: !!user, // Only fetch when user is authenticated
   });
@@ -223,7 +223,7 @@ export default function ReceiptDetail() {
         setCustomCategory(customCategoryMatch[1]);
         setShowCustomCategory(true);
         // Remove the custom category prefix from notes
-        const cleanedNotes = receipt.notes.replace(/\[Custom Category: .*?\]\s*/, "").trim();
+        const cleanedNotes = (receipt.notes ?? "").replace(/\[Custom Category: .*?\]\s*/, "").trim();
         setEditedNotes(cleanedNotes);
       } else {
         setEditedNotes(receipt.notes || "");
@@ -554,7 +554,7 @@ export default function ReceiptDetail() {
                       setCustomCategory(customCategoryMatch[1]);
                       setShowCustomCategory(true);
                       // Remove the custom category prefix from notes
-                      const cleanedNotes = receipt.notes.replace(/\[Custom Category: .*?\]\s*/, "").trim();
+                      const cleanedNotes = (receipt.notes ?? "").replace(/\[Custom Category: .*?\]\s*/, "").trim();
                       setEditedNotes(cleanedNotes);
                     } else {
                       setEditedNotes(receipt.notes || "");
@@ -716,7 +716,7 @@ export default function ReceiptDetail() {
 
                         if (matchedCustomCategory) {
                           setEditedCategory("other");
-                          setCustomCategory(matchedCustomCategory.displayName || matchedCustomCategory.name);
+                          setCustomCategory(matchedCustomCategory.name);
                           setShowCustomCategory(true);
                           return;
                         }

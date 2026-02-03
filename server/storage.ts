@@ -19,6 +19,9 @@ import {
   InsertPromoCode,
   EmailEvent,
   InsertEmailEvent,
+  Budget,
+  ReceiptShare,
+  ExpenseCategory,
 } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
@@ -154,6 +157,8 @@ export class MemStorage implements IStorage {
   private receiptTagRelations: Map<string, { receiptId: number; tagId: number }>;
   private authTokens: Map<string, AuthToken>;
   private customCategories: Map<number, any>;
+  private budgets: Map<number, Budget>;
+  private receiptShares: Map<number, ReceiptShare>;
   
   private currentUserId: number;
   private currentReceiptId: number;
@@ -169,6 +174,8 @@ export class MemStorage implements IStorage {
     this.receiptTagRelations = new Map();
     this.authTokens = new Map();
     this.customCategories = new Map();
+    this.budgets = new Map();
+    this.receiptShares = new Map();
     
     this.currentUserId = 1;
     this.currentReceiptId = 1;
@@ -239,6 +246,7 @@ export class MemStorage implements IStorage {
       address: null,
       profilePicture: null,
       isActive: true,
+      isAdmin: false,
       lastLogin: null,
       failedLoginAttempts: 0,
       accountLockedUntil: null,
@@ -250,6 +258,10 @@ export class MemStorage implements IStorage {
       rememberMeToken: null,
       sessionTimeout: insertUser.sessionTimeout || 60, // Default 60 minutes
       tokenVersion: 1, // Initial token version
+      promoCodeUsed: null,
+      trialEndDate: null,
+      receiptEmailId: null,
+      verificationEmailResentAt: null,
       createdAt: now,
       updatedAt: null
     };
@@ -332,7 +344,7 @@ export class MemStorage implements IStorage {
   async deleteReceiptSharesByUserId(userId: number): Promise<void> {
     const sharesToDelete: number[] = [];
     this.receiptShares.forEach((share, id) => {
-      if (share.ownerId === userId || share.sharedWithId === userId) {
+      if (share.sharedByUserId === userId) {
         sharesToDelete.push(id);
       }
     });
@@ -457,7 +469,7 @@ export class MemStorage implements IStorage {
       blobName: insertReceipt.blobName || null,
       imageData: insertReceipt.imageData || null,
       
-      category: insertReceipt.category || "other",
+      category: (insertReceipt.category as ExpenseCategory) || "other",
       subcategory: insertReceipt.subcategory || null,
       tags: insertReceipt.tags || [],
       notes: insertReceipt.notes || null,
@@ -479,6 +491,13 @@ export class MemStorage implements IStorage {
       budgetCategory: insertReceipt.budgetCategory || null,
       isTaxDeductible: insertReceipt.isTaxDeductible || false,
       taxCategory: insertReceipt.taxCategory || null,
+
+      // Duplicate detection
+      isPotentialDuplicate: (insertReceipt as { isPotentialDuplicate?: boolean }).isPotentialDuplicate || false,
+ 
+      // Source tracking
+      source: (insertReceipt as { source?: string }).source || "scan",
+      sourceEmailId: (insertReceipt as { sourceEmailId?: number | null }).sourceEmailId || null,
       
       // Timestamps
       createdAt: now,
@@ -507,7 +526,7 @@ export class MemStorage implements IStorage {
     if ('blobUrl' in updates) updatedFields.blobUrl = updates.blobUrl || null;
     if ('blobName' in updates) updatedFields.blobName = updates.blobName || null;
     if ('imageData' in updates) updatedFields.imageData = updates.imageData || null;
-    if ('category' in updates) updatedFields.category = updates.category || "other";
+    if ('category' in updates) updatedFields.category = (updates.category as ExpenseCategory) || "other";
     if ('tags' in updates) updatedFields.tags = updates.tags || [];
     if ('notes' in updates) updatedFields.notes = updates.notes || null;
     if ('confidenceScore' in updates) updatedFields.confidenceScore = updates.confidenceScore || null;

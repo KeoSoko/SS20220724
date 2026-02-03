@@ -434,13 +434,14 @@ export class TaxService {
       const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
       
       if (user.length > 0 && user[0].email) {
+        const taxEstimate = settings.estimatedIncome * 0.25 * (Number(settings.taxBracket) / 100);
         await emailService.sendBudgetAlert(
           user[0].email,
-          user[0].fullName || 'Valued User',
-          'Quarterly Tax Estimate Reminder',
-          `Your quarterly tax estimate of R${settings.estimatedIncome * 0.25 * (settings.taxBracket / 100)} is due soon.`,
-          'Tax',
-          settings.estimatedIncome * 0.25 * (settings.taxBracket / 100)
+          'Quarterly Tax Estimate',
+          'tax',
+          taxEstimate,
+          taxEstimate,
+          100
         );
       }
     }

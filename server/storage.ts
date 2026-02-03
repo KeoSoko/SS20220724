@@ -19,11 +19,15 @@ import {
   InsertPromoCode,
   EmailEvent,
   InsertEmailEvent,
+  Budget,
+  ReceiptShare,
+  ExpenseCategory,
 } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import { log } from "./vite";
 import { randomBytes } from "crypto";
+import { getReportingCategory } from "./reporting-utils";
 
 const MemoryStore = createMemoryStore(session);
 
@@ -153,6 +157,8 @@ export class MemStorage implements IStorage {
   private receiptTagRelations: Map<string, { receiptId: number; tagId: number }>;
   private authTokens: Map<string, AuthToken>;
   private customCategories: Map<number, any>;
+  private budgets: Map<number, Budget>;
+  private receiptShares: Map<number, ReceiptShare>;
   
   private currentUserId: number;
   private currentReceiptId: number;
@@ -168,6 +174,8 @@ export class MemStorage implements IStorage {
     this.receiptTagRelations = new Map();
     this.authTokens = new Map();
     this.customCategories = new Map();
+    this.budgets = new Map();
+    this.receiptShares = new Map();
     
     this.currentUserId = 1;
     this.currentReceiptId = 1;
@@ -238,6 +246,7 @@ export class MemStorage implements IStorage {
       address: null,
       profilePicture: null,
       isActive: true,
+      isAdmin: false,
       lastLogin: null,
       failedLoginAttempts: 0,
       accountLockedUntil: null,
@@ -249,6 +258,10 @@ export class MemStorage implements IStorage {
       rememberMeToken: null,
       sessionTimeout: insertUser.sessionTimeout || 60, // Default 60 minutes
       tokenVersion: 1, // Initial token version
+      promoCodeUsed: null,
+      trialEndDate: null,
+      receiptEmailId: null,
+      verificationEmailResentAt: null,
       createdAt: now,
       updatedAt: null
     };
@@ -331,7 +344,7 @@ export class MemStorage implements IStorage {
   async deleteReceiptSharesByUserId(userId: number): Promise<void> {
     const sharesToDelete: number[] = [];
     this.receiptShares.forEach((share, id) => {
-      if (share.ownerId === userId || share.sharedWithId === userId) {
+      if (share.sharedByUserId === userId) {
         sharesToDelete.push(id);
       }
     });
@@ -456,7 +469,7 @@ export class MemStorage implements IStorage {
       blobName: insertReceipt.blobName || null,
       imageData: insertReceipt.imageData || null,
       
-      category: insertReceipt.category || "other",
+      category: (insertReceipt.category as ExpenseCategory) || "other",
       subcategory: insertReceipt.subcategory || null,
       tags: insertReceipt.tags || [],
       notes: insertReceipt.notes || null,
@@ -478,6 +491,13 @@ export class MemStorage implements IStorage {
       budgetCategory: insertReceipt.budgetCategory || null,
       isTaxDeductible: insertReceipt.isTaxDeductible || false,
       taxCategory: insertReceipt.taxCategory || null,
+
+      // Duplicate detection
+      isPotentialDuplicate: (insertReceipt as { isPotentialDuplicate?: boolean }).isPotentialDuplicate || false,
+ 
+      // Source tracking
+      source: (insertReceipt as { source?: string }).source || "scan",
+      sourceEmailId: (insertReceipt as { sourceEmailId?: number | null }).sourceEmailId || null,
       
       // Timestamps
       createdAt: now,
@@ -506,7 +526,7 @@ export class MemStorage implements IStorage {
     if ('blobUrl' in updates) updatedFields.blobUrl = updates.blobUrl || null;
     if ('blobName' in updates) updatedFields.blobName = updates.blobName || null;
     if ('imageData' in updates) updatedFields.imageData = updates.imageData || null;
-    if ('category' in updates) updatedFields.category = updates.category || "other";
+    if ('category' in updates) updatedFields.category = (updates.category as ExpenseCategory) || "other";
     if ('tags' in updates) updatedFields.tags = updates.tags || [];
     if ('notes' in updates) updatedFields.notes = updates.notes || null;
     if ('confidenceScore' in updates) updatedFields.confidenceScore = updates.confidenceScore || null;
@@ -673,26 +693,27 @@ export class MemStorage implements IStorage {
   async getCategorySummary(userId: number): Promise<{ category: string, count: number, total: number }[]> {
     const receipts = await this.getReceiptsByUser(userId);
     
-    // Initialize the summary with all categories (even if there are no receipts in a category)
-    const categorySummary = EXPENSE_CATEGORIES.map(cat => ({
-      category: cat,
-      count: 0,
-      total: 0
-    }));
+    const categoryMap = new Map<string, { category: string, count: number, total: number }>();
     
-    // Update the counts and totals for categories that have receipts
-    receipts.forEach(receipt => {
-      const category = receipt.category;
-      const total = parseFloat(receipt.total) || 0;
-      
-      const categoryStat = categorySummary.find(stat => stat.category === category);
-      if (categoryStat) {
-        categoryStat.count += 1;
-        categoryStat.total += total;
-      }
+    EXPENSE_CATEGORIES.forEach(category => {
+      categoryMap.set(category, { category, count: 0, total: 0 });
     });
     
-    return categorySummary;
+    receipts.forEach(receipt => {
+      const categoryLabel = getReportingCategory(receipt.category, receipt.notes);
+      const total = parseFloat(receipt.total) || 0;
+      const existing = categoryMap.get(categoryLabel) || { category: categoryLabel, count: 0, total: 0 };
+      existing.count += 1;
+      existing.total += total;
+      categoryMap.set(categoryLabel, existing);
+    });
+    
+    const customCategories = Array.from(categoryMap.values()).filter(entry => !EXPENSE_CATEGORIES.includes(entry.category as any));
+    
+    return [
+      ...EXPENSE_CATEGORIES.map(category => categoryMap.get(category)!).filter(Boolean),
+      ...customCategories.sort((a, b) => a.category.localeCompare(b.category))
+    ];
   }
 
   async getMonthlyExpenseSummary(userId: number): Promise<{ month: string, total: number }[]> {

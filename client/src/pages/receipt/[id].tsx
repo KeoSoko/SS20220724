@@ -150,7 +150,7 @@ export default function ReceiptDetail() {
   });
 
   // Query for custom categories
-  const { data: customCategories = [], isLoading: customCategoriesLoading, error: customCategoriesError } = useQuery({
+  const { data: customCategories = [], isLoading: customCategoriesLoading, error: customCategoriesError } = useQuery<Array<{ id: number; name: string; isActive: boolean }>>({
     queryKey: ["/api/custom-categories"],
     enabled: !!user, // Only fetch when user is authenticated
   });
@@ -166,6 +166,23 @@ export default function ReceiptDetail() {
       id
     });
   }, [customCategories, customCategoriesLoading, customCategoriesError, isValidId, id]);
+
+  const buildNotesWithCustomCategory = (
+    notesValue: string,
+    categoryValue: ExpenseCategory,
+    customCategoryValue: string
+  ) => {
+    const cleanedNotes = notesValue
+      ? notesValue.replace(/\[Custom Category: .*?\]\s*/i, "").trim()
+      : "";
+
+    if (categoryValue !== "other" || !customCategoryValue.trim()) {
+      return cleanedNotes || null;
+    }
+
+    const prefix = `[Custom Category: ${customCategoryValue.trim()}]`;
+    return cleanedNotes ? `${prefix} ${cleanedNotes}` : prefix;
+  };
 
 
 
@@ -206,7 +223,7 @@ export default function ReceiptDetail() {
         setCustomCategory(customCategoryMatch[1]);
         setShowCustomCategory(true);
         // Remove the custom category prefix from notes
-        const cleanedNotes = receipt.notes.replace(/\[Custom Category: .*?\]\s*/, "").trim();
+        const cleanedNotes = (receipt.notes ?? "").replace(/\[Custom Category: .*?\]\s*/, "").trim();
         setEditedNotes(cleanedNotes);
       } else {
         setEditedNotes(receipt.notes || "");
@@ -304,7 +321,7 @@ export default function ReceiptDetail() {
         date: editedDate,
         total: editedTotal,
         category: editedCategory,
-        notes: editedNotes || null,
+        notes: buildNotesWithCustomCategory(editedNotes, editedCategory, customCategory),
         
         // Advanced categorization fields
         subcategory: editedSubcategory || null,
@@ -537,7 +554,7 @@ export default function ReceiptDetail() {
                       setCustomCategory(customCategoryMatch[1]);
                       setShowCustomCategory(true);
                       // Remove the custom category prefix from notes
-                      const cleanedNotes = receipt.notes.replace(/\[Custom Category: .*?\]\s*/, "").trim();
+                      const cleanedNotes = (receipt.notes ?? "").replace(/\[Custom Category: .*?\]\s*/, "").trim();
                       setEditedNotes(cleanedNotes);
                     } else {
                       setEditedNotes(receipt.notes || "");
@@ -693,8 +710,22 @@ export default function ReceiptDetail() {
                     <Select
                       value={editedCategory}
                       onValueChange={(value) => {
+                        const matchedCustomCategory = Array.isArray(customCategories)
+                          ? customCategories.find((customCat: any) => customCat.name === value)
+                          : null;
+
+                        if (matchedCustomCategory) {
+                          setEditedCategory("other");
+                          setCustomCategory(matchedCustomCategory.name);
+                          setShowCustomCategory(true);
+                          return;
+                        }
+
                         setEditedCategory(value as ExpenseCategory);
                         setShowCustomCategory(value === "other");
+                        if (value !== "other") {
+                          setCustomCategory("");
+                        }
                       }}
                     >
                       <SelectTrigger>

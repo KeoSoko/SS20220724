@@ -1,4 +1,4 @@
-import { fromBuffer, FromBufferOptions } from 'pdf2pic';
+import { fromBuffer } from 'pdf2pic';
 import { log } from './vite';
 import path from 'path';
 import fs from 'fs';
@@ -24,7 +24,7 @@ export async function convertPdfToImage(pdfData: Buffer | string): Promise<strin
       pdfBuffer = pdfData;
     }
     
-    const options: FromBufferOptions = {
+    const options = {
       density: 150,
       savePath: tempDir,
       saveFilename: `pdf_conversion_${Date.now()}`,
@@ -42,7 +42,12 @@ export async function convertPdfToImage(pdfData: Buffer | string): Promise<strin
       throw new Error('PDF conversion returned empty result');
     }
     
-    log(`PDF converted successfully: ${result.width}x${result.height}`, 'pdf-converter');
+    const { width, height } = result as { width?: number; height?: number };
+    if (width && height) {
+      log(`PDF converted successfully: ${width}x${height}`, 'pdf-converter');
+    } else {
+      log('PDF converted successfully', 'pdf-converter');
+    }
     
     return `data:image/jpeg;base64,${result.base64}`;
     

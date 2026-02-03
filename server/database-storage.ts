@@ -45,6 +45,7 @@ import connectPg from "connect-pg-simple";
 import { log } from "./vite";
 import { randomBytes } from "crypto";
 import { IStorage } from "./storage";
+import { getReportingCategory } from "./reporting-utils";
 
 // Create PostgreSQL session store
 const PostgresSessionStore = connectPg(session);
@@ -1060,31 +1061,36 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCategorySummary(userId: number): Promise<{ category: string, count: number, total: number }[]> {
-    // Get category statistics from the database
-    const categorySummary = await db
+    const receiptsSummary = await db
       .select({
         category: receipts.category,
-        count: count(receipts.id),
-        total: sql<number>`sum(cast(${receipts.total} as float))`,
+        notes: receipts.notes,
+        total: receipts.total,
       })
       .from(receipts)
-      .where(eq(receipts.userId, userId))
-      .groupBy(receipts.category);
+      .where(eq(receipts.userId, userId));
     
-    // Create a map for quick lookups
-    const categoryMap = new Map<string, { category: string, count: number, total: number }>(
-      categorySummary.map((summary: { category: string, count: number, total: number }) => [summary.category, summary])
-    );
+    const categoryMap = new Map<string, { category: string, count: number, total: number }>();
     
-    // Ensure all categories are present even if they have no data
-    return EXPENSE_CATEGORIES.map(category => {
-      const existingData = categoryMap.get(category);
-      return {
-        category,
-        count: existingData?.count || 0,
-        total: existingData?.total || 0
-      };
+    EXPENSE_CATEGORIES.forEach(category => {
+      categoryMap.set(category, { category, count: 0, total: 0 });
     });
+    
+    receiptsSummary.forEach(receipt => {
+      const categoryLabel = getReportingCategory(receipt.category, receipt.notes);
+      const total = parseFloat(receipt.total) || 0;
+      const existing = categoryMap.get(categoryLabel) || { category: categoryLabel, count: 0, total: 0 };
+      existing.count += 1;
+      existing.total += total;
+      categoryMap.set(categoryLabel, existing);
+    });
+    
+    const customCategories = Array.from(categoryMap.values()).filter(entry => !EXPENSE_CATEGORIES.includes(entry.category as any));
+    
+    return [
+      ...EXPENSE_CATEGORIES.map(category => categoryMap.get(category)!).filter(Boolean),
+      ...customCategories.sort((a, b) => a.category.localeCompare(b.category))
+    ];
   }
   
   async getMonthlyExpenseSummary(userId: number): Promise<{ month: string, total: number }[]> {

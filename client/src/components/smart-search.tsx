@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { getReceiptCategoryLabel } from '@/utils/receipt-category';
 import { 
   EnhancedButton,
   SpacingContainer,
@@ -290,7 +291,7 @@ export function SmartSearch() {
                             {new Date(receipt.date).toLocaleDateString()}
                           </p>
                           <div className="flex gap-2 mt-2">
-                            <Badge variant="outline">{receipt.category}</Badge>
+                            <Badge variant="outline">{getReceiptCategoryLabel(receipt.category, receipt.notes)}</Badge>
                             {receipt.paymentMethod && (
                               <Badge variant="outline">{receipt.paymentMethod}</Badge>
                             )}

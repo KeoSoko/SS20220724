@@ -1,42 +1,34 @@
 import React, { useState } from 'react';
+import { useLocation } from 'wouter';
 import { Download, FileText, Receipt, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, dispatchVerificationRequiredEvent } from '@/lib/queryClient';
+import { dispatchVerificationRequiredEvent } from '@/lib/queryClient';
 
 export function ExportMenu() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportType, setExportType] = useState<string>('');
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   const handleExport = async (type: 'csv' | 'pdf' | 'backup' | 'tax-report') => {
     setIsExporting(true);
     setExportType(type);
 
     try {
-      let url = '';
-      let filename = '';
-      
-      switch (type) {
-        case 'csv':
-          url = '/api/export/csv';
-          filename = 'receipts.csv';
-          break;
-        case 'pdf':
-          url = '/api/export/pdf?includeImages=true&includeSummary=true';
-          filename = 'receipts-with-images.pdf';
-          break;
-        case 'backup':
-          url = '/api/backup';
-          filename = 'receipt-backup.json';
-          break;
-        case 'tax-report':
-          url = `/api/export/tax-report/${new Date().getFullYear()}`;
-          filename = `tax-report-${new Date().getFullYear()}.pdf`;
-          break;
+      if (type !== 'backup') {
+        setLocation('/exports');
+        toast({
+          title: "Choose a date range",
+          description: "Reports now require a date range and optional filters. Please use the exports page.",
+        });
+        return;
       }
+
+      const url = '/api/backup';
+      const filename = 'receipt-backup.json';
 
       // Get the token from localStorage with the correct key
       const token = localStorage.getItem('auth_token');
@@ -101,14 +93,14 @@ export function ExportMenu() {
     {
       type: 'csv' as const,
       title: 'CSV Export',
-      description: 'Spreadsheet format for analysis',
+      description: 'Choose a date range on the Exports page',
       icon: Download,
       color: 'text-green-600',
     },
     {
       type: 'pdf' as const,
       title: 'PDF Report',
-      description: 'Formatted document with summaries',
+      description: 'Choose a date range on the Exports page',
       icon: FileText,
       color: 'text-red-600',
     },
@@ -122,7 +114,7 @@ export function ExportMenu() {
     {
       type: 'tax-report' as const,
       title: 'Tax Report',
-      description: `${new Date().getFullYear()} deductibles and summaries`,
+      description: 'Choose a date range on the Exports page',
       icon: Calendar,
       color: 'text-purple-600',
     },

@@ -20,9 +20,11 @@ import { useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { PageLayout } from '@/components/page-layout';
 import { ContentCard, Section, PrimaryButton, StatusBadge } from '@/components/design-system';
+import { BackButton } from '@/components/back-button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useToast } from '@/hooks/use-toast';
 import { User, Mail, Phone, Shield, Edit2, Check, X, Camera, Key } from 'lucide-react';
+import { MobileBottomNav } from '@/components/mobile-bottom-nav';
 
 // Enhanced profile update schema
 const profileFormSchema = z.object({
@@ -30,6 +32,9 @@ const profileFormSchema = z.object({
   displayName: z.string().min(1, "Display name is required").max(100, "Display name must be less than 100 characters"),
   email: z.string().email("Please enter a valid email address"),
   phoneNumber: z.string().optional(),
+  gender: z.string().optional(),
+  address: z.string().optional(),
+  birthdate: z.string().optional(),
   profilePicture: z.string().optional(),
 });
 
@@ -53,6 +58,7 @@ export default function ProfilePage() {
       gender: user?.gender || '',
       phoneNumber: user?.phoneNumber || '',
       address: user?.address || '',
+      birthdate: user?.birthdate || '',
     },
   });
   
@@ -60,7 +66,8 @@ export default function ProfilePage() {
   useEffect(() => {
     if (user) {
       form.reset({
-        fullName: user.fullName || '',
+        username: user.username || '',
+        displayName: user.fullName || user.username || '',
         email: user.email || '',
         birthdate: user.birthdate || '',
         gender: user.gender || '',
@@ -159,13 +166,13 @@ export default function ProfilePage() {
               <ProfileField
                 label="NAME"
                 value={user.fullName || user.username}
-                isEditing={editingField === 'fullName'}
-                onEdit={() => startEditing('fullName')}
+                isEditing={editingField === 'displayName'}
+                onEdit={() => startEditing('displayName')}
                 onCancel={cancelEditing}
               >
                 <FormField
                   control={form.control}
-                  name="fullName"
+                  name="displayName"
                   render={({ field }) => (
                     <FormItem>
                       <FormControl>

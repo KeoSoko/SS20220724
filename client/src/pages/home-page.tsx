@@ -223,7 +223,9 @@ function HomePage() {
       const matchesSearch = receipt.storeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           receipt.notes?.toLowerCase().includes(searchQuery.toLowerCase());
       const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category, receipt.notes);
-      const matchesCategory = categoryFilter === "all" || receipt.category === categoryFilter || receiptCategoryLabel === categoryFilter;
+      const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
+      const normalizedLabel = receiptCategoryLabel.toLowerCase().replace(/_/g, ' ');
+      const matchesCategory = categoryFilter === "all" || receipt.category === categoryFilter || normalizedLabel === normalizedFilter;
       
       // Filter by confidence score if "Needs Review" is enabled
       let matchesConfidence = true;

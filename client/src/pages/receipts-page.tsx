@@ -108,10 +108,12 @@ export default function ReceiptsPage() {
     // Category filter
     let matchesCategory = true;
     const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category, receipt.notes);
+    const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
+    const normalizedLabel = receiptCategoryLabel.toLowerCase().replace(/_/g, ' ');
     if (categoryFilter === 'uncategorized') {
       matchesCategory = !receipt.category || (receipt.category === 'other' && !receipt.notes?.match(/\[Custom Category:/i)) || receipt.category === '';
     } else if (categoryFilter !== 'all') {
-      matchesCategory = receipt.category === categoryFilter || receiptCategoryLabel === categoryFilter;
+      matchesCategory = receipt.category === categoryFilter || normalizedLabel === normalizedFilter;
     }
     
     // Needs Review filter (confidence < 80%)

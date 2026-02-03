@@ -1,11 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Search, Filter, Download, Brain, TrendingUp, Sparkles } from 'lucide-react';
+import { Search, Filter, Brain, Sparkles, RefreshCw } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -15,6 +14,7 @@ import {
   SpacingContainer,
   EnhancedEmptyState
 } from '@/components/ui/enhanced-components';
+import { RecurringExpensesWidget } from '@/components/ui/recurring-expenses-widget';
 import { motion } from 'framer-motion';
 
 interface SearchResult {
@@ -66,47 +66,13 @@ export function SmartSearch() {
     enabled: query.length > 2,
   });
 
-  // AI Insights
-  const { data: insights } = useQuery({
-    queryKey: ['/api/insights'],
-  });
-
+  
   const handleSearch = useCallback((searchQuery: string) => {
     setQuery(searchQuery);
     if (searchQuery.length > 0) {
       refetch();
     }
   }, [refetch]);
-
-  const exportResults = async (format: 'csv' | 'pdf') => {
-    try {
-      const params = new URLSearchParams({
-        ...activeFilters,
-        ...(query && { q: query })
-      });
-      
-      const response = await fetch(`/api/export/${format}?${params}`);
-      if (!response.ok) throw new Error('Export failed');
-      
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipts.${format}`;
-      a.click();
-      
-      toast({
-        title: "Export successful",
-        description: `Your receipts have been exported to ${format.toUpperCase()}`,
-      });
-    } catch (error) {
-      toast({
-        title: "Export failed",
-        description: "Please try again",
-        variant: "destructive"
-      });
-    }
-  };
 
   return (
     <div className="space-y-6 px-2 mt-[16px] mb-[16px]">
@@ -169,25 +135,14 @@ export function SmartSearch() {
           )}
         </CardContent>
       </Card>
-      {/* Results and Insights */}
-      <Tabs defaultValue="results" className="w-full">
-        <TabsList className={`grid w-full grid-cols-3 ${isMobile ? 'h-12' : ''}`}>
-          <TabsTrigger value="results" className={isMobile ? 'text-xs px-1' : ''}>
-            {isMobile ? 'Results' : `Search Results ${searchResults ? `(${searchResults.totalCount})` : ''}`}
-          </TabsTrigger>
-          <TabsTrigger value="insights" className={isMobile ? 'text-xs px-1' : ''}>
-            <TrendingUp className={`${isMobile ? 'w-3 h-3 mr-1' : 'w-4 h-4 mr-2'}`} />
-            {isMobile ? 'Insights' : 'Spending Insights'}
-          </TabsTrigger>
-          <TabsTrigger value="export" className={isMobile ? 'text-xs px-1' : ''}>
-            <Download className={`${isMobile ? 'w-3 h-3 mr-1' : 'w-4 h-4 mr-2'}`} />
-            {isMobile ? 'Export' : 'Export & Reports'}
-          </TabsTrigger>
-        </TabsList>
+      {/* Search Results */}
+      <div className="w-full">
 
-        {/* Search Results Tab */}
-        <TabsContent value="results" className="space-y-4">
+        {/* Search Results */}
+        <div className="space-y-4">
 
+          {/* Recurring Expenses Section */}
+          <RecurringExpensesWidget />
           
           {/* Loading state */}
           {isLoading && (
@@ -330,172 +285,8 @@ export function SmartSearch() {
               onAction={() => window.location.href = '/home'}
             />
           )}
-        </TabsContent>
-
-        {/* Insights Tab */}
-        <TabsContent value="insights" className="space-y-4">
-          {insights ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                  <CardTitle>Spending Patterns</CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-sm text-muted-foreground">Average Spending</span>
-                      <div className="text-2xl font-bold">R {(insights as any)?.averageSpending?.toFixed(2) || '0.00'}</div>
-                    </div>
-                    <div>
-                      <span className="text-sm text-muted-foreground">Spending Trend</span>
-                      <Badge 
-                        variant={(insights as any)?.spendingTrend === 'increasing' ? 'destructive' : 
-                                (insights as any)?.spendingTrend === 'decreasing' ? 'default' : 'secondary'}
-                      >
-                        {(insights as any)?.spendingTrend || 'stable'}
-                      </Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                  <CardTitle>Top Merchants</CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                  <div className="space-y-3">
-                    {((insights as any)?.topStores || []).slice(0, 5).map((store: any, index: number) => (
-                      <div key={index} className="flex justify-between">
-                        <span className="truncate">{store.name}</span>
-                        <div className="text-right">
-                          <div className="font-semibold">R {store.amount.toFixed(2)}</div>
-                          <div className="text-xs text-muted-foreground">{store.frequency} visits</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="md:col-span-2">
-                <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                  <CardTitle>AI Recommendations</CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                  <div className="space-y-2">
-                    {((insights as any)?.recommendations || []).map((rec: string, index: number) => (
-                      <div key={index} className="p-3 bg-blue-50 rounded-none">
-                        <p className="text-sm">{rec}</p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-gray-500">No insights available yet</p>
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Export Tab */}
-        <TabsContent value="export" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card>
-              <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                <CardTitle>CSV Export</CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Export your receipts to a spreadsheet format for analysis
-                </p>
-                <Button onClick={() => exportResults('csv')} className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download CSV
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                <CardTitle>PDF Report</CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Generate a formatted PDF report with summaries
-                </p>
-                <Button onClick={() => exportResults('pdf')} className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download PDF
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                <CardTitle>Tax Report</CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Generate tax-deductible expenses report for 2025
-                </p>
-                <Button 
-                  onClick={async () => {
-                    try {
-                      const token = localStorage.getItem('auth_token');
-                      if (!token) {
-                        toast({
-                          title: "Authentication Error",
-                          description: "Please log in again to download the tax report.",
-                          variant: "destructive",
-                        });
-                        return;
-                      }
-                      
-                      const response = await fetch('/api/export/tax-report/2025?format=pdf', {
-                        headers: {
-                          'Authorization': `Bearer ${token}`,
-                        },
-                      });
-                      
-                      if (response.ok) {
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = `tax-report-2025.pdf`;
-                        link.click();
-                        window.URL.revokeObjectURL(url);
-                        
-                        toast({
-                          title: "Tax Report Downloaded",
-                          description: "Your 2025 tax report has been successfully downloaded.",
-                        });
-                      } else {
-                        const errorText = await response.text();
-                        throw new Error(`Export failed: ${response.status} - ${errorText}`);
-                      }
-                    } catch (error) {
-                      console.error('Tax report download failed:', error);
-                      toast({
-                        title: "Export Failed",
-                        description: "Unable to generate tax report. Please try again.",
-                        variant: "destructive",
-                      });
-                    }
-                  }}
-                  className="w-full"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Tax Report
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
     </div>
   );
 }

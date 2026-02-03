@@ -1,0 +1,45 @@
+client:755  WebSocket connection to 'wss://localhost:5173/?token=AuubJCo_039B' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+createConnection @ client:755
+client:765  [vite] failed to connect to websocket.
+your current setup:
+  (browser) 88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev/ <--[HTTP]--> localhost:5173/ (server)
+  (browser) 88cfa7c0-0419-48ed-b346-b76f80e6338d-00-guwaqz809r22.janeway.replit.dev:/ <--[WebSocket (failing)]--> localhost:5173/ (server)
+Check out your Vite / network configuration and https://vite.dev/config/server-options.html#server-hmr .
+connect @ client:765
+10The resource <URL> was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.
+[id].tsx:95 [Debug] Current path: /receipt/57, Path parts: ["","receipt","57"]
+[id].tsx:96 [Debug] ID from path: 57, Params: {"0":"57","id":"57"}
+[id].tsx:102 [Debug] Parsed ID: 57, isValidId: true
+[id].tsx:570 Successfully refreshed image URL when entering edit mode
+[id].tsx:95 [Debug] Current path: /receipt/57, Path parts: ["","receipt","57"]
+[id].tsx:96 [Debug] ID from path: 57, Params: {"0":"57","id":"57"}
+[id].tsx:102 [Debug] Parsed ID: 57, isValidId: true
+[id].tsx:95 [Debug] Current path: /receipt/57, Path parts: ["","receipt","57"]
+[id].tsx:96 [Debug] ID from path: 57, Params: {"0":"57","id":"57"}
+[id].tsx:102 [Debug] Parsed ID: 57, isValidId: true
+[id].tsx:95 [Debug] Current path: /receipt/57, Path parts: ["","receipt","57"]
+[id].tsx:96 [Debug] ID from path: 57, Params: {"0":"57","id":"57"}
+[id].tsx:102 [Debug] Parsed ID: 57, isValidId: true
+[id].tsx:95 [Debug] Current path: /receipt/57, Path parts: ["","receipt","57"]
+[id].tsx:96 [Debug] ID from path: 57, Params: {"0":"57","id":"57"}
+[id].tsx:102 [Debug] Parsed ID: 57, isValidId: true
+queryClient.ts:184 [QueryClient] Fetching URL: /api/receipts/57
+queryClient.ts:185 [QueryClient] Auth token available: true
+queryClient.ts:188 [QueryClient] Request headers: ['Authorization']
+protected-route.tsx:23 ProtectedRoute[/receipt/:id]: user=true, token=true, expired=false, isLoading=false
+[id].tsx:95 [Debug] Current path: /receipt/57, Path parts: ["","receipt","57"]
+[id].tsx:96 [Debug] ID from path: 57, Params: {"0":"57","id":"57"}
+[id].tsx:102 [Debug] Parsed ID: 57, isValidId: true
+[id].tsx:95 [Debug] Current path: /receipt/57, Path parts: ["","receipt","57"]
+[id].tsx:96 [Debug] ID from path: 57, Params: {"0":"57","id":"57"}
+[id].tsx:102 [Debug] Parsed ID: 57, isValidId: true
+[id].tsx:204 Receipt data loaded: {blobUrl: 'https://slipsstor1.blob.core.windows.net/receipt-i…5tDVci8ftxPnM%2F0Gy2OMk0d%2FAZ7Bzr9HSoEfkCtvd8%3D', imageData: null, blobName: 'receipt_1760964802171_va03hskpi1f.jpg'}
+[id].tsx:235 Setting image URL for receipt 57: URL/data available
+[id].tsx:236 Image source: Azure blob
+[id].tsx:95 [Debug] Current path: /receipt/57, Path parts: ["","receipt","57"]
+[id].tsx:96 [Debug] ID from path: 57, Params: {"0":"57","id":"57"}
+[id].tsx:102 [Debug] Parsed ID: 57, isValidId: true
+protected-route.tsx:23 ProtectedRoute[/receipt/:id]: user=true, token=true, expired=false, isLoading=false
+[id].tsx:95 [Debug] Current path: /receipt/57, Path parts: ["","receipt","57"]
+[id].tsx:96 [Debug] ID from path: 57, Params: {"0":"57","id":"57"}
+[id].tsx:102 [Debug] Parsed ID: 57, isValidId: true

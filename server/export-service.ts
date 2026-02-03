@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import type { Receipt, Budget } from '../shared/schema.js';
 import { storage } from './storage.js';
 import { azureStorage } from './azure-storage.js';
+import { formatReportingCategory, getReportingCategory } from './reporting-utils.js';
 
 /**
  * Compress and resize logo image to reduce PDF size for email attachments
@@ -51,6 +52,18 @@ function sanitizeTextForPDF(text: string | null | undefined): string {
 }
 
 export class ExportService {
+  private getReceiptCategoryLabel(receipt: Receipt): string {
+    const rawCategory = getReportingCategory(receipt.category, receipt.notes);
+    return formatReportingCategory(rawCategory);
+  }
+
+  private matchesCategoryFilter(receipt: Receipt, filter?: string): boolean {
+    if (!filter) return true;
+
+    const rawCategory = getReportingCategory(receipt.category, receipt.notes);
+    return filter === rawCategory || filter === formatReportingCategory(rawCategory);
+  }
+
   /**
    * Convert Simple Slips SVG logo to base64 PNG for PDF embedding
    */
@@ -121,7 +134,7 @@ export class ExportService {
       const filteredReceipts = receipts.filter(receipt => {
         if (options.startDate && receipt.date < options.startDate) return false;
         if (options.endDate && receipt.date > options.endDate) return false;
-        if (options.category && receipt.category !== options.category) return false;
+        if (!this.matchesCategoryFilter(receipt, options.category)) return false;
         return true;
       });
 
@@ -148,7 +161,7 @@ export class ExportService {
         const row = [
           receipt.date.toISOString().split('T')[0],
           `"${receipt.storeName.replace(/"/g, '""')}"`,
-          receipt.category,
+          this.getReceiptCategoryLabel(receipt),
           receipt.subcategory || '',
           receipt.total,
           receipt.paymentMethod || '',
@@ -191,7 +204,7 @@ export class ExportService {
       const filteredReceipts = receipts.filter(receipt => {
         if (options.startDate && receipt.date < options.startDate) return false;
         if (options.endDate && receipt.date > options.endDate) return false;
-        if (options.category && receipt.category !== options.category) return false;
+        if (!this.matchesCategoryFilter(receipt, options.category)) return false;
         return true;
       });
 
@@ -253,7 +266,7 @@ export class ExportService {
       const tableData = filteredReceipts.map(receipt => [
         receipt.date.toLocaleDateString(),
         receipt.storeName,
-        receipt.category,
+        this.getReceiptCategoryLabel(receipt),
         `R ${receipt.total}`,
         receipt.paymentMethod || '',
         receipt.items.length.toString()
@@ -290,7 +303,7 @@ export class ExportService {
               doc.setFontSize(12);
               doc.text(`Date: ${receipt.date.toLocaleDateString()}`, 20, 35);
               doc.text(`Total: R ${receipt.total}`, 20, 45);
-              doc.text(`Category: ${receipt.category}`, 20, 55);
+              doc.text(`Category: ${this.getReceiptCategoryLabel(receipt)}`, 20, 55);
               if (receipt.paymentMethod) {
                 doc.text(`Payment: ${receipt.paymentMethod}`, 20, 65);
               }
@@ -430,7 +443,7 @@ export class ExportService {
         const row = [
           receipt.date.toISOString().split('T')[0],
           `"${receipt.storeName.replace(/"/g, '""')}"`,
-          receipt.category,
+          this.getReceiptCategoryLabel(receipt),
           receipt.taxCategory || 'General',
           receipt.total,
           `"${(receipt.notes || '').replace(/"/g, '""')}"`
@@ -940,7 +953,7 @@ export class ExportService {
     const breakdown: Record<string, number> = {};
     
     receipts.forEach(receipt => {
-      const category = receipt.category;
+      const category = this.getReceiptCategoryLabel(receipt);
       breakdown[category] = (breakdown[category] || 0) + parseFloat(receipt.total);
     });
     

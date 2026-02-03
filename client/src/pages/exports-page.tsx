@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { Download, FileText, Receipt, Calendar, CalendarRange } from 'lucide-react';
+import { Download, FileText, Receipt, Calendar, CalendarRange, Archive } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+
+const EXPENSE_CATEGORIES = [
+  'food', 'groceries', 'dining', 'transportation', 'entertainment', 
+  'utilities', 'rent', 'travel', 'healthcare', 'education', 'shopping', 
+  'office_supplies', 'personal_care', 'gifts', 'other'
+];
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -25,6 +32,10 @@ export default function ExportsPage() {
   const [allowAllTimeExport, setAllowAllTimeExport] = useState(false);
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  
+  const { data: customCategories = [] } = useQuery<{ id: number; name: string; displayName?: string }[]>({
+    queryKey: ['/api/custom-categories'],
+  });
 
   const handleExport = async (type: 'backup') => {
     setIsExporting(true);

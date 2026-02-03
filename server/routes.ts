@@ -433,19 +433,16 @@ function normalizeReceiptCategory(
   category: string,
   notes?: string | null
 ): { category: ExpenseCategory; notes: string | null } {
-  // Check if notes already contain a custom category prefix
   const hasCustomCategoryPrefix = notes?.match(/\[Custom Category: .*?\]/i);
-  
   const cleanedNotes = notes
     ? notes.replace(/\[Custom Category: .*?\]\s*/i, "").trim()
     : null;
 
   if (EXPENSE_CATEGORIES.includes(category as ExpenseCategory)) {
-    // If category is "other" and notes already have custom category prefix, preserve them
     if (category === "other" && hasCustomCategoryPrefix) {
       return {
         category: "other",
-        notes: notes || null // Keep original notes with the custom category prefix
+        notes: notes || null
       };
     }
     return {
@@ -2487,6 +2484,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         category: req.query.category as string,
         includeSummary: req.query.includeSummary === 'true',
         includeImages: req.query.includeImages === 'true',
+        groupBy: req.query.groupBy === 'category' ? 'category' : undefined,
       };
       
       const pdf = await exportService.exportReceiptsToPDF(getUserId(req), options);
@@ -2507,8 +2505,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const year = parseInt(req.params.year);
       const format = req.query.format as string || 'pdf';
+      const options = {
+        startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
+        endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
+        category: req.query.category as string,
+      };
       
-      const report = await exportService.generateTaxReport(getUserId(req), year);
+      const report = await exportService.generateTaxReport(getUserId(req), year, options);
       
       if (format === 'csv') {
         res.setHeader('Content-Type', 'text/csv');

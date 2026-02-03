@@ -254,14 +254,20 @@ export default function ExportsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All categories</SelectItem>
-                    <SelectItem value="groceries">Groceries</SelectItem>
-                    <SelectItem value="fuel">Fuel</SelectItem>
-                    <SelectItem value="clothing">Clothing</SelectItem>
-                    <SelectItem value="dining">Dining</SelectItem>
-                    <SelectItem value="medical">Medical</SelectItem>
-                    <SelectItem value="office_supplies">Office Supplies</SelectItem>
-                    <SelectItem value="entertainment">Entertainment</SelectItem>
-                    <SelectItem value="travel">Travel</SelectItem>
+                    {EXPENSE_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ')}
+                      </SelectItem>
+                    ))}
+                    {Array.isArray(customCategories) && customCategories.length > 0 && (
+                      <>
+                        {customCategories.map((customCat: any) => (
+                          <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
+                            {customCat.displayName || customCat.name}
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

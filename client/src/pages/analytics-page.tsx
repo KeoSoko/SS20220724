@@ -484,28 +484,6 @@ export default function AnalyticsPage() {
         </Card>
       </Section>
 
-      {/* Recurring Expenses */}
-      <Section title="Recurring Expenses" description="Track your subscription payments and recurring bills">
-        <ContentCard>
-          <div className="text-center py-8">
-            <div className="flex items-center justify-center gap-4 mb-4">
-              <TrendingUp className="h-8 w-8 text-blue-600" />
-              <div>
-                <h3 className="text-lg font-medium">Smart Recurring Detection</h3>
-                <p className="text-sm text-gray-600">Automatically identify your recurring expenses</p>
-              </div>
-            </div>
-            <Button 
-              onClick={() => setLocation('/recurring-expenses')}
-              className="gap-2"
-            >
-              <Calendar className="h-4 w-4" />
-              View Recurring Expenses
-            </Button>
-          </div>
-        </ContentCard>
-      </Section>
-
       {/* Recent Activity */}
       <Section title="Recent Activity" description="Your latest transactions">
         <ContentCard>

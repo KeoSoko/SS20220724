@@ -1,11 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Search, Filter, Download, Brain, Sparkles, RefreshCw } from 'lucide-react';
+import { Search, Filter, Brain, Sparkles, RefreshCw } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -75,36 +74,6 @@ export function SmartSearch() {
     }
   }, [refetch]);
 
-  const exportResults = async (format: 'csv' | 'pdf') => {
-    try {
-      const params = new URLSearchParams({
-        ...activeFilters,
-        ...(query && { q: query })
-      });
-      
-      const response = await fetch(`/api/export/${format}?${params}`);
-      if (!response.ok) throw new Error('Export failed');
-      
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipts.${format}`;
-      a.click();
-      
-      toast({
-        title: "Export successful",
-        description: `Your receipts have been exported to ${format.toUpperCase()}`,
-      });
-    } catch (error) {
-      toast({
-        title: "Export failed",
-        description: "Please try again",
-        variant: "destructive"
-      });
-    }
-  };
-
   return (
     <div className="space-y-6 px-2 mt-[16px] mb-[16px]">
       {/* Smart Search Header */}
@@ -166,20 +135,11 @@ export function SmartSearch() {
           )}
         </CardContent>
       </Card>
-      {/* Results and Export */}
-      <Tabs defaultValue="results" className="w-full">
-        <TabsList className={`grid w-full grid-cols-2 ${isMobile ? 'h-12' : ''}`}>
-          <TabsTrigger value="results" className={isMobile ? 'text-xs px-1' : ''}>
-            {isMobile ? 'Results' : `Search Results ${searchResults ? `(${searchResults.totalCount})` : ''}`}
-          </TabsTrigger>
-          <TabsTrigger value="export" className={isMobile ? 'text-xs px-1' : ''}>
-            <Download className={`${isMobile ? 'w-3 h-3 mr-1' : 'w-4 h-4 mr-2'}`} />
-            {isMobile ? 'Export' : 'Export & Reports'}
-          </TabsTrigger>
-        </TabsList>
+      {/* Search Results */}
+      <div className="w-full">
 
-        {/* Search Results Tab */}
-        <TabsContent value="results" className="space-y-4">
+        {/* Search Results */}
+        <div className="space-y-4">
 
           {/* Recurring Expenses Section */}
           <RecurringExpensesWidget />
@@ -325,104 +285,8 @@ export function SmartSearch() {
               onAction={() => window.location.href = '/home'}
             />
           )}
-        </TabsContent>
-
-        {/* Export Tab */}
-        <TabsContent value="export" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card>
-              <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                <CardTitle>CSV Export</CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Export your receipts to a spreadsheet format for analysis
-                </p>
-                <Button onClick={() => exportResults('csv')} className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download CSV
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                <CardTitle>PDF Report</CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Generate a formatted PDF report with summaries
-                </p>
-                <Button onClick={() => exportResults('pdf')} className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download PDF
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                <CardTitle>Tax Report</CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Generate tax-deductible expenses report for 2025
-                </p>
-                <Button 
-                  onClick={async () => {
-                    try {
-                      const token = localStorage.getItem('auth_token');
-                      if (!token) {
-                        toast({
-                          title: "Authentication Error",
-                          description: "Please log in again to download the tax report.",
-                          variant: "destructive",
-                        });
-                        return;
-                      }
-                      
-                      const response = await fetch('/api/export/tax-report/2025?format=pdf', {
-                        headers: {
-                          'Authorization': `Bearer ${token}`,
-                        },
-                      });
-                      
-                      if (response.ok) {
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = `tax-report-2025.pdf`;
-                        link.click();
-                        window.URL.revokeObjectURL(url);
-                        
-                        toast({
-                          title: "Tax Report Downloaded",
-                          description: "Your 2025 tax report has been successfully downloaded.",
-                        });
-                      } else {
-                        const errorText = await response.text();
-                        throw new Error(`Export failed: ${response.status} - ${errorText}`);
-                      }
-                    } catch (error) {
-                      console.error('Tax report download failed:', error);
-                      toast({
-                        title: "Export Failed",
-                        description: "Unable to generate tax report. Please try again.",
-                        variant: "destructive",
-                      });
-                    }
-                  }}
-                  className="w-full"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Tax Report
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
     </div>
   );
 }

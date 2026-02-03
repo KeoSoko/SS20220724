@@ -24,6 +24,7 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import { log } from "./vite";
 import { randomBytes } from "crypto";
+import { getReportingCategory } from "./reporting-utils";
 
 const MemoryStore = createMemoryStore(session);
 
@@ -673,26 +674,27 @@ export class MemStorage implements IStorage {
   async getCategorySummary(userId: number): Promise<{ category: string, count: number, total: number }[]> {
     const receipts = await this.getReceiptsByUser(userId);
     
-    // Initialize the summary with all categories (even if there are no receipts in a category)
-    const categorySummary = EXPENSE_CATEGORIES.map(cat => ({
-      category: cat,
-      count: 0,
-      total: 0
-    }));
+    const categoryMap = new Map<string, { category: string, count: number, total: number }>();
     
-    // Update the counts and totals for categories that have receipts
-    receipts.forEach(receipt => {
-      const category = receipt.category;
-      const total = parseFloat(receipt.total) || 0;
-      
-      const categoryStat = categorySummary.find(stat => stat.category === category);
-      if (categoryStat) {
-        categoryStat.count += 1;
-        categoryStat.total += total;
-      }
+    EXPENSE_CATEGORIES.forEach(category => {
+      categoryMap.set(category, { category, count: 0, total: 0 });
     });
     
-    return categorySummary;
+    receipts.forEach(receipt => {
+      const categoryLabel = getReportingCategory(receipt.category, receipt.notes);
+      const total = parseFloat(receipt.total) || 0;
+      const existing = categoryMap.get(categoryLabel) || { category: categoryLabel, count: 0, total: 0 };
+      existing.count += 1;
+      existing.total += total;
+      categoryMap.set(categoryLabel, existing);
+    });
+    
+    const customCategories = Array.from(categoryMap.values()).filter(entry => !EXPENSE_CATEGORIES.includes(entry.category as any));
+    
+    return [
+      ...EXPENSE_CATEGORIES.map(category => categoryMap.get(category)!).filter(Boolean),
+      ...customCategories.sort((a, b) => a.category.localeCompare(b.category))
+    ];
   }
 
   async getMonthlyExpenseSummary(userId: number): Promise<{ month: string, total: number }[]> {

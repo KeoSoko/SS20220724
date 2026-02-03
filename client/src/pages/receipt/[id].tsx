@@ -167,6 +167,23 @@ export default function ReceiptDetail() {
     });
   }, [customCategories, customCategoriesLoading, customCategoriesError, isValidId, id]);
 
+  const buildNotesWithCustomCategory = (
+    notesValue: string,
+    categoryValue: ExpenseCategory,
+    customCategoryValue: string
+  ) => {
+    const cleanedNotes = notesValue
+      ? notesValue.replace(/\[Custom Category: .*?\]\s*/i, "").trim()
+      : "";
+
+    if (categoryValue !== "other" || !customCategoryValue.trim()) {
+      return cleanedNotes || null;
+    }
+
+    const prefix = `[Custom Category: ${customCategoryValue.trim()}]`;
+    return cleanedNotes ? `${prefix} ${cleanedNotes}` : prefix;
+  };
+
 
 
   // Handle query error
@@ -304,7 +321,7 @@ export default function ReceiptDetail() {
         date: editedDate,
         total: editedTotal,
         category: editedCategory,
-        notes: editedNotes || null,
+        notes: buildNotesWithCustomCategory(editedNotes, editedCategory, customCategory),
         
         // Advanced categorization fields
         subcategory: editedSubcategory || null,
@@ -693,8 +710,22 @@ export default function ReceiptDetail() {
                     <Select
                       value={editedCategory}
                       onValueChange={(value) => {
+                        const matchedCustomCategory = Array.isArray(customCategories)
+                          ? customCategories.find((customCat: any) => customCat.name === value)
+                          : null;
+
+                        if (matchedCustomCategory) {
+                          setEditedCategory("other");
+                          setCustomCategory(matchedCustomCategory.displayName || matchedCustomCategory.name);
+                          setShowCustomCategory(true);
+                          return;
+                        }
+
                         setEditedCategory(value as ExpenseCategory);
                         setShowCustomCategory(value === "other");
+                        if (value !== "other") {
+                          setCustomCategory("");
+                        }
                       }}
                     >
                       <SelectTrigger>

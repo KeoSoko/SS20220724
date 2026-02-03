@@ -97,9 +97,8 @@ export default function ExportsPage() {
   const handleDateRangeExport = async (type: 'csv' | 'pdf' | 'tax-report') => {
     if (!startDate && !endDate && !allowAllTimeExport) {
       toast({
-        title: "Select a date range",
-        description: "Please choose a start date, end date, or enable all-time export.",
-        variant: "destructive",
+        title: "One more step",
+        description: "Pick a date range or tick 'Export all receipts' to continue.",
       });
       return;
     }

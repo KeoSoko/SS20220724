@@ -433,11 +433,18 @@ function normalizeReceiptCategory(
   category: string,
   notes?: string | null
 ): { category: ExpenseCategory; notes: string | null } {
+  const hasCustomCategoryPrefix = notes?.match(/\[Custom Category: .*?\]/i);
   const cleanedNotes = notes
     ? notes.replace(/\[Custom Category: .*?\]\s*/i, "").trim()
     : null;
 
   if (EXPENSE_CATEGORIES.includes(category as ExpenseCategory)) {
+    if (category === "other" && hasCustomCategoryPrefix) {
+      return {
+        category: "other",
+        notes: notes || null
+      };
+    }
     return {
       category: category as ExpenseCategory,
       notes: cleanedNotes && cleanedNotes.length > 0 ? cleanedNotes : null

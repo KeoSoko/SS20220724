@@ -4,6 +4,7 @@ import { eq, sql, and, gte, lte, desc, asc } from "drizzle-orm";
 import { exportService } from "./export-service";
 import { emailService } from "./email-service";
 import { format, startOfMonth, endOfMonth, addMonths, isAfter, isBefore, parseISO } from 'date-fns';
+import { formatReportingCategory, getReportingCategory } from "./reporting-utils";
 
 export interface TaxDashboardData {
   ytdDeductible: number;
@@ -261,7 +262,7 @@ export class TaxService {
     const breakdown = new Map<string, { amount: number; count: number }>();
     
     deductibleReceipts.forEach(receipt => {
-      const category = receipt.category || 'other';
+      const category = getReportingCategory(receipt.category, receipt.notes);
       const amount = parseFloat(receipt.total);
       
       if (breakdown.has(category)) {
@@ -277,7 +278,7 @@ export class TaxService {
     
     return Array.from(breakdown.entries())
       .map(([category, data]) => ({
-        category: category.charAt(0).toUpperCase() + category.slice(1).replace('_', ' '),
+        category: formatReportingCategory(category),
         amount: data.amount,
         count: data.count
       }))

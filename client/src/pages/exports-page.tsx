@@ -11,6 +11,8 @@ import { Section } from '@/components/design-system';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { dispatchVerificationRequiredEvent } from '@/lib/queryClient';
+import { useQuery } from '@tanstack/react-query';
+import { EXPENSE_CATEGORIES } from '@shared/schema';
 
 export default function ExportsPage() {
   const [isExporting, setIsExporting] = useState(false);
@@ -25,6 +27,11 @@ export default function ExportsPage() {
   const [allowAllTimeExport, setAllowAllTimeExport] = useState(false);
   const { toast } = useToast();
   const isMobile = useIsMobile();
+
+  // Fetch user's custom categories
+  const { data: customCategories = [] } = useQuery<any[]>({
+    queryKey: ['/api/custom-categories'],
+  });
 
   const handleExport = async (type: 'backup') => {
     setIsExporting(true);

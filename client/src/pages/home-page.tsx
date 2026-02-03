@@ -32,6 +32,7 @@ import {
   Receipt as ReceiptIcon,
   ShoppingBag,
   Tags,
+  Tag,
   Trash2,
   Utensils,
   CheckSquare,
@@ -56,6 +57,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PageLayout } from "@/components/page-layout";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
@@ -81,6 +92,8 @@ function HomePage() {
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedReceipts, setSelectedReceipts] = useState<Set<number>>(new Set());
   const [isTaxAIOpen, setIsTaxAIOpen] = useState(false);
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  const [bulkCategory, setBulkCategory] = useState('');
   const isMobile = useIsMobile();
   const { isOnline, pendingUploads } = useOfflineSync();
   
@@ -196,6 +209,44 @@ function HomePage() {
     },
   });
 
+  // Bulk categorize mutation
+  const bulkCategorizeMutation = useMutation({
+    mutationFn: async ({ receiptIds, category }: { receiptIds: number[], category: string }) => {
+      await Promise.all(
+        receiptIds.map(id => 
+          apiRequest('PATCH', `/api/receipts/${id}`, { category })
+        )
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/receipts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/analytics/monthly'] });
+      toast({
+        title: "Receipts updated",
+        description: `Successfully categorised ${selectedReceipts.size} receipt(s)`,
+      });
+      setSelectedReceipts(new Set());
+      setShowCategoryDialog(false);
+      setBulkCategory('');
+      setBulkMode(false);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update receipts. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleBulkCategorize = () => {
+    if (!bulkCategory) return;
+    bulkCategorizeMutation.mutate({ 
+      receiptIds: Array.from(selectedReceipts), 
+      category: bulkCategory 
+    });
+  };
+
   // Unique vendors list for filter
   const uniqueVendors = useMemo(() => {
     const vendors = new Set<string>();
@@ -289,41 +340,6 @@ function HomePage() {
 
   const clearSelection = () => {
     setSelectedReceipts(new Set());
-  };
-
-  const exportSelectedReceipts = async () => {
-    try {
-      const selectedData = filteredReceipts.filter(r => selectedReceipts.has(r.id));
-      const csvContent = [
-        ['Date', 'Store', 'Amount', 'Category', 'Notes'].join(','),
-        ...selectedData.map(r => [
-          format(new Date(r.date), 'yyyy-MM-dd'),
-          r.storeName || '',
-          r.total.toString(),
-          r.category || '',
-          r.notes || ''
-        ].join(','))
-      ].join('\n');
-      
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipts-${format(new Date(), 'yyyy-MM-dd')}.csv`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      
-      toast({
-        title: "Success",
-        description: "Receipts exported successfully.",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to export receipts.",
-        variant: "destructive",
-      });
-    }
   };
 
   // Swipe actions helper function
@@ -577,10 +593,15 @@ function HomePage() {
                   <Button 
                     size="sm" 
                     variant="outline"
-                    onClick={exportSelectedReceipts}
+                    onClick={() => setShowCategoryDialog(true)}
+                    disabled={bulkCategorizeMutation.isPending}
                   >
-                    <Download className="h-4 w-4 mr-2" />
-                    Export CSV
+                    {bulkCategorizeMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Tag className="h-4 w-4 mr-2" />
+                    )}
+                    Bulk Categorise
                   </Button>
                   <Button 
                     size="sm" 
@@ -1360,6 +1381,57 @@ function HomePage() {
           onToggle={setIsTaxAIOpen} 
         />
       )}
+
+      {/* Bulk Categorise Dialog */}
+      <AlertDialog open={showCategoryDialog} onOpenChange={setShowCategoryDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Categorise Selected Receipts</AlertDialogTitle>
+            <AlertDialogDescription>
+              Choose a category for {selectedReceipts.size} receipt(s):
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Select value={bulkCategory} onValueChange={setBulkCategory}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {EXPENSE_CATEGORIES.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ')}
+                  </SelectItem>
+                ))}
+                {Array.isArray(customCategories) && customCategories.length > 0 && (
+                  <>
+                    {customCategories.map((customCat: any) => (
+                      <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
+                        {customCat.displayName}
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleBulkCategorize}
+              disabled={!bulkCategory || bulkCategorizeMutation.isPending}
+            >
+              {bulkCategorizeMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Categorising...
+                </>
+              ) : (
+                `Categorise ${selectedReceipts.size} Receipt(s)`
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

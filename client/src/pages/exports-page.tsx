@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, FileText, Receipt, Calendar, CalendarRange } from 'lucide-react';
+import { Download, FileText, Archive, Calendar, CalendarRange } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -188,7 +188,7 @@ export default function ExportsPage() {
       type: 'backup' as const,
       title: 'Full Backup',
       description: 'Complete data export in JSON format',
-      icon: Receipt,
+      icon: Archive,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
     },

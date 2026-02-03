@@ -1354,6 +1354,19 @@ function HomePage() {
                 All
               </Button>
               <Button 
+                variant="outline"
+                className="h-11 px-4 min-w-[44px]"
+                onClick={() => setShowCategoryDialog(true)}
+                disabled={selectedReceipts.size === 0 || bulkCategorizeMutation.isPending}
+                data-testid="button-bulk-categorize-mobile"
+              >
+                {bulkCategorizeMutation.isPending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Tag className="h-5 w-5" />
+                )}
+              </Button>
+              <Button 
                 variant="destructive"
                 className="h-11 px-4 min-w-[44px]"
                 onClick={() => bulkDeleteMutation.mutate(Array.from(selectedReceipts))}

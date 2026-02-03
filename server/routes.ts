@@ -433,11 +433,21 @@ function normalizeReceiptCategory(
   category: string,
   notes?: string | null
 ): { category: ExpenseCategory; notes: string | null } {
+  // Check if notes already contain a custom category prefix
+  const hasCustomCategoryPrefix = notes?.match(/\[Custom Category: .*?\]/i);
+  
   const cleanedNotes = notes
     ? notes.replace(/\[Custom Category: .*?\]\s*/i, "").trim()
     : null;
 
   if (EXPENSE_CATEGORIES.includes(category as ExpenseCategory)) {
+    // If category is "other" and notes already have custom category prefix, preserve them
+    if (category === "other" && hasCustomCategoryPrefix) {
+      return {
+        category: "other",
+        notes: notes || null // Keep original notes with the custom category prefix
+      };
+    }
     return {
       category: category as ExpenseCategory,
       notes: cleanedNotes && cleanedNotes.length > 0 ? cleanedNotes : null

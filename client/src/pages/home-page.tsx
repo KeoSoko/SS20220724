@@ -1233,6 +1233,7 @@ function HomePage() {
                                   total: parseFloat(receipt.total),
                                   date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
                                   category: receipt.category || 'other',
+                                  notes: receipt.notes,
                                   confidenceScore: receipt.confidenceScore,
                                   source: receipt.source,
                                   isPotentialDuplicate: receipt.isPotentialDuplicate

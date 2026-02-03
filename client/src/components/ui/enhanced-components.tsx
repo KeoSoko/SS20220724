@@ -237,6 +237,7 @@ interface EnhancedReceiptCardProps {
     total: number;
     date: string;
     category: string;
+    notes?: string | null;
     confidenceScore?: string | null;
     source?: string | null;
     isPotentialDuplicate?: boolean | null;

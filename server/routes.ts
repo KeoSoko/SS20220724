@@ -1587,6 +1587,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Validate and parse receipt ID
       const receiptId = validateReceiptId(req.params.id);
+      
+      // Debug logging for receipt updates
+      log(`[PATCH receipt ${receiptId}] Request body: ${JSON.stringify(req.body)}`, 'debug');
 
       const userId = getUserId(req);
 

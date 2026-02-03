@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { ExpenseCategory, Receipt, EXPENSE_CATEGORIES } from "@shared/schema";
+import { getReceiptCategoryLabel } from "@/utils/receipt-category";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { 
@@ -221,7 +222,10 @@ function HomePage() {
     .filter((receipt) => {
       const matchesSearch = receipt.storeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           receipt.notes?.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = categoryFilter === "all" || receipt.category === categoryFilter;
+      const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category, receipt.notes);
+      const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
+      const normalizedLabel = receiptCategoryLabel.toLowerCase().replace(/_/g, ' ');
+      const matchesCategory = categoryFilter === "all" || receipt.category === categoryFilter || normalizedLabel === normalizedFilter;
       
       // Filter by confidence score if "Needs Review" is enabled
       let matchesConfidence = true;
@@ -1233,6 +1237,7 @@ function HomePage() {
                                   total: parseFloat(receipt.total),
                                   date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
                                   category: receipt.category || 'other',
+                                  notes: receipt.notes,
                                   confidenceScore: receipt.confidenceScore,
                                   source: receipt.source,
                                   isPotentialDuplicate: receipt.isPotentialDuplicate

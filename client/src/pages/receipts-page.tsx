@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { EnhancedReceiptCard, SpacingContainer, EnhancedEmptyState } from '@/components/ui/enhanced-components';
+import { getReceiptCategoryLabel } from '@/utils/receipt-category';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -106,10 +107,13 @@ export default function ReceiptsPage() {
     
     // Category filter
     let matchesCategory = true;
+    const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category, receipt.notes);
+    const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
+    const normalizedLabel = receiptCategoryLabel.toLowerCase().replace(/_/g, ' ');
     if (categoryFilter === 'uncategorized') {
-      matchesCategory = !receipt.category || receipt.category === 'other' || receipt.category === '';
+      matchesCategory = !receipt.category || (receipt.category === 'other' && !receipt.notes?.match(/\[Custom Category:/i)) || receipt.category === '';
     } else if (categoryFilter !== 'all') {
-      matchesCategory = receipt.category === categoryFilter;
+      matchesCategory = receipt.category === categoryFilter || normalizedLabel === normalizedFilter;
     }
     
     // Needs Review filter (confidence < 80%)
@@ -794,6 +798,7 @@ export default function ReceiptsPage() {
                         total: parseFloat(receipt.total),
                         date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
                         category: receipt.category || 'other',
+                        notes: receipt.notes,
                         confidenceScore: receipt.confidenceScore,
                         source: receipt.source,
                         isPotentialDuplicate: receipt.isPotentialDuplicate

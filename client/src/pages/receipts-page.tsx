@@ -121,7 +121,7 @@ export default function ReceiptsPage() {
     
     // Category filter
     let matchesCategory = true;
-    const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category, receipt.notes);
+    const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category || '', receipt.notes);
     const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
     const normalizedLabel = receiptCategoryLabel.toLowerCase().replace(/_/g, ' ');
     if (categoryFilter === 'uncategorized') {

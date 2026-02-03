@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Search, Filter, Download, Brain, TrendingUp, Sparkles } from 'lucide-react';
+import { Search, Filter, Download, Brain, Sparkles, RefreshCw } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import {
   SpacingContainer,
   EnhancedEmptyState
 } from '@/components/ui/enhanced-components';
+import { RecurringExpensesWidget } from '@/components/ui/recurring-expenses-widget';
 import { motion } from 'framer-motion';
 
 interface SearchResult {
@@ -66,11 +67,7 @@ export function SmartSearch() {
     enabled: query.length > 2,
   });
 
-  // AI Insights
-  const { data: insights } = useQuery({
-    queryKey: ['/api/insights'],
-  });
-
+  
   const handleSearch = useCallback((searchQuery: string) => {
     setQuery(searchQuery);
     if (searchQuery.length > 0) {
@@ -169,15 +166,11 @@ export function SmartSearch() {
           )}
         </CardContent>
       </Card>
-      {/* Results and Insights */}
+      {/* Results and Export */}
       <Tabs defaultValue="results" className="w-full">
-        <TabsList className={`grid w-full grid-cols-3 ${isMobile ? 'h-12' : ''}`}>
+        <TabsList className={`grid w-full grid-cols-2 ${isMobile ? 'h-12' : ''}`}>
           <TabsTrigger value="results" className={isMobile ? 'text-xs px-1' : ''}>
             {isMobile ? 'Results' : `Search Results ${searchResults ? `(${searchResults.totalCount})` : ''}`}
-          </TabsTrigger>
-          <TabsTrigger value="insights" className={isMobile ? 'text-xs px-1' : ''}>
-            <TrendingUp className={`${isMobile ? 'w-3 h-3 mr-1' : 'w-4 h-4 mr-2'}`} />
-            {isMobile ? 'Insights' : 'Spending Insights'}
           </TabsTrigger>
           <TabsTrigger value="export" className={isMobile ? 'text-xs px-1' : ''}>
             <Download className={`${isMobile ? 'w-3 h-3 mr-1' : 'w-4 h-4 mr-2'}`} />
@@ -188,6 +181,8 @@ export function SmartSearch() {
         {/* Search Results Tab */}
         <TabsContent value="results" className="space-y-4">
 
+          {/* Recurring Expenses Section */}
+          <RecurringExpensesWidget />
           
           {/* Loading state */}
           {isLoading && (
@@ -329,74 +324,6 @@ export function SmartSearch() {
               actionLabel="View All Receipts"
               onAction={() => window.location.href = '/home'}
             />
-          )}
-        </TabsContent>
-
-        {/* Insights Tab */}
-        <TabsContent value="insights" className="space-y-4">
-          {insights ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                  <CardTitle>Spending Patterns</CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-sm text-muted-foreground">Average Spending</span>
-                      <div className="text-2xl font-bold">R {(insights as any)?.averageSpending?.toFixed(2) || '0.00'}</div>
-                    </div>
-                    <div>
-                      <span className="text-sm text-muted-foreground">Spending Trend</span>
-                      <Badge 
-                        variant={(insights as any)?.spendingTrend === 'increasing' ? 'destructive' : 
-                                (insights as any)?.spendingTrend === 'decreasing' ? 'default' : 'secondary'}
-                      >
-                        {(insights as any)?.spendingTrend || 'stable'}
-                      </Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                  <CardTitle>Top Merchants</CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                  <div className="space-y-3">
-                    {((insights as any)?.topStores || []).slice(0, 5).map((store: any, index: number) => (
-                      <div key={index} className="flex justify-between">
-                        <span className="truncate">{store.name}</span>
-                        <div className="text-right">
-                          <div className="font-semibold">R {store.amount.toFixed(2)}</div>
-                          <div className="text-xs text-muted-foreground">{store.frequency} visits</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="md:col-span-2">
-                <CardHeader className="flex flex-col space-y-1.5 p-6 mt-[20px] mb-[20px]">
-                  <CardTitle>AI Recommendations</CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 pt-[0px] pb-[0px] pl-[50px] pr-[50px] mt-[20px] mb-[20px]">
-                  <div className="space-y-2">
-                    {((insights as any)?.recommendations || []).map((rec: string, index: number) => (
-                      <div key={index} className="p-3 bg-blue-50 rounded-none">
-                        <p className="text-sm">{rec}</p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-gray-500">No insights available yet</p>
-            </div>
           )}
         </TabsContent>
 

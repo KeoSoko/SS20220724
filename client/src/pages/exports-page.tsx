@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, FileText, Receipt, Calendar, TrendingUp, BarChart3, CalendarRange } from 'lucide-react';
+import { Download, FileText, Receipt, Calendar, CalendarRange } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { PageLayout } from '@/components/page-layout';
 import { Section } from '@/components/design-system';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { apiRequest, dispatchVerificationRequiredEvent } from '@/lib/queryClient';
+import { dispatchVerificationRequiredEvent } from '@/lib/queryClient';
 
 export default function ExportsPage() {
   const [isExporting, setIsExporting] = useState(false);
@@ -21,35 +21,18 @@ export default function ExportsPage() {
   const [includeSummary, setIncludeSummary] = useState(true);
   const [includeImages, setIncludeImages] = useState(true);
   const [showDateRangeExport, setShowDateRangeExport] = useState(false);
+  const [groupByCategory, setGroupByCategory] = useState(false);
+  const [allowAllTimeExport, setAllowAllTimeExport] = useState(false);
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
-  const handleExport = async (type: 'csv' | 'pdf' | 'backup' | 'tax-report') => {
+  const handleExport = async (type: 'backup') => {
     setIsExporting(true);
     setExportType(type);
 
     try {
-      let url = '';
-      let filename = '';
-      
-      switch (type) {
-        case 'csv':
-          url = '/api/export/csv';
-          filename = 'receipts.csv';
-          break;
-        case 'pdf':
-          url = '/api/export/pdf?includeImages=true&includeSummary=true';
-          filename = 'receipts-with-images.pdf';
-          break;
-        case 'backup':
-          url = '/api/backup';
-          filename = 'receipt-backup.json';
-          break;
-        case 'tax-report':
-          url = `/api/export/tax-report/${new Date().getFullYear()}`;
-          filename = `tax-report-${new Date().getFullYear()}.pdf`;
-          break;
-      }
+      const url = '/api/backup';
+      const filename = 'receipt-backup.json';
 
       const token = localStorage.getItem('auth_token');
       if (!token) {
@@ -104,24 +87,42 @@ export default function ExportsPage() {
     }
   };
 
-  const handleDateRangeExport = async () => {
+  const handleDateRangeExport = async (type: 'csv' | 'pdf' | 'tax-report') => {
+    if (!startDate && !endDate && !allowAllTimeExport) {
+      toast({
+        title: "Select a date range",
+        description: "Please choose a start date, end date, or enable all-time export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsExporting(true);
-    setExportType('date-range-pdf');
+    setExportType(type === 'csv' ? 'date-range-csv' : type === 'tax-report' ? 'date-range-tax' : 'date-range-pdf');
 
     try {
       const params = new URLSearchParams({
-        includeImages: includeImages.toString(),
-        includeSummary: includeSummary.toString(),
+        ...(type === 'pdf' && { includeImages: includeImages.toString() }),
+        ...(type === 'pdf' && { includeSummary: includeSummary.toString() }),
+        ...(type === 'pdf' && { groupBy: groupByCategory ? 'category' : 'date' }),
         ...(startDate && { startDate }),
         ...(endDate && { endDate }),
         ...(category && category !== 'all' && { category })
       });
 
-      const url = `/api/export/pdf?${params.toString()}`;
       const dateRange = startDate && endDate ? `${startDate}-to-${endDate}` : 
                        startDate ? `from-${startDate}` :
                        endDate ? `until-${endDate}` : 'all-dates';
-      const filename = `receipts-${dateRange}.pdf`;
+      const url = type === 'csv'
+        ? `/api/export/csv?${params.toString()}`
+        : type === 'tax-report'
+          ? `/api/export/tax-report/${new Date().getFullYear()}?${params.toString()}`
+          : `/api/export/pdf?${params.toString()}`;
+      const filename = type === 'csv'
+        ? `receipts-${dateRange}.csv`
+        : type === 'tax-report'
+          ? `tax-report-${dateRange}.pdf`
+          : `receipts-${dateRange}.pdf`;
 
       const token = localStorage.getItem('auth_token');
       if (!token) {
@@ -145,7 +146,7 @@ export default function ExportsPage() {
         
         toast({
           title: "Export Successful",
-          description: `Your custom PDF report has been downloaded.`,
+          description: `Your ${type.replace('-', ' ')} report has been downloaded.`,
         });
       } else {
         // Check for email verification required error (403)
@@ -178,36 +179,12 @@ export default function ExportsPage() {
 
   const exportOptions = [
     {
-      type: 'csv' as const,
-      title: 'CSV Export',
-      description: 'Spreadsheet format for analysis in Excel or Google Sheets',
-      icon: Download,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
-    },
-    {
-      type: 'pdf' as const,
-      title: 'PDF Report',
-      description: 'Formatted document with summaries and charts',
-      icon: FileText,
-      color: 'text-red-600',
-      bgColor: 'bg-red-50',
-    },
-    {
       type: 'backup' as const,
       title: 'Full Backup',
       description: 'Complete data export in JSON format',
       icon: Receipt,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
-    },
-    {
-      type: 'tax-report' as const,
-      title: 'Tax Report',
-      description: `${new Date().getFullYear()} tax-deductible expenses summary`,
-      icon: Calendar,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
     },
   ];
 
@@ -225,7 +202,7 @@ export default function ExportsPage() {
               <div className="p-2 rounded-none bg-indigo-50">
                 <CalendarRange className="h-6 w-6 text-indigo-600" />
               </div>
-              Custom Date Range Export
+              Custom Reports (Date Range)
               <Button 
                 variant="ghost" 
                 size="sm" 
@@ -238,6 +215,9 @@ export default function ExportsPage() {
           </CardHeader>
           {showDateRangeExport && (
             <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Choose a date range or enable all-time export, then optionally filter by category.
+              </p>
               <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <Label htmlFor="start-date">Start Date</Label>
@@ -286,7 +266,7 @@ export default function ExportsPage() {
                     checked={includeSummary}
                     onCheckedChange={(checked) => setIncludeSummary(checked === true)}
                   />
-                  <Label htmlFor="include-summary">Include summary and totals</Label>
+                  <Label htmlFor="include-summary">Include summary and totals (PDF only)</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
@@ -294,28 +274,81 @@ export default function ExportsPage() {
                     checked={includeImages}
                     onCheckedChange={(checked) => setIncludeImages(checked === true)}
                   />
-                  <Label htmlFor="include-images">Include receipt images</Label>
+                  <Label htmlFor="include-images">Include receipt images (PDF only)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="group-by-category"
+                    checked={groupByCategory}
+                    onCheckedChange={(checked) => setGroupByCategory(checked === true)}
+                  />
+                  <Label htmlFor="group-by-category">Group receipts by category (PDF only)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="allow-all-time"
+                    checked={allowAllTimeExport}
+                    onCheckedChange={(checked) => setAllowAllTimeExport(checked === true)}
+                  />
+                  <Label htmlFor="allow-all-time">Allow all-time export (no date range)</Label>
                 </div>
               </div>
 
-              <Button 
-                onClick={handleDateRangeExport}
-                disabled={isExporting}
-                className="w-full"
-                size={isMobile ? "lg" : "default"}
-              >
-                {isExporting && exportType === 'date-range-pdf' ? (
-                  <>
-                    <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-white border-t-transparent" />
-                    Generating PDF...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="h-4 w-4 mr-2" />
-                    Generate Custom PDF Report
-                  </>
-                )}
-              </Button>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                <Button 
+                  onClick={() => handleDateRangeExport('pdf')}
+                  disabled={isExporting}
+                  size={isMobile ? "lg" : "default"}
+                >
+                  {isExporting && exportType === 'date-range-pdf' ? (
+                    <>
+                      <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-white border-t-transparent" />
+                      Generating PDF...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Download PDF
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => handleDateRangeExport('csv')}
+                  disabled={isExporting}
+                  size={isMobile ? "lg" : "default"}
+                >
+                  {isExporting && exportType === 'date-range-csv' ? (
+                    <>
+                      <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-gray-500 border-t-transparent" />
+                      Generating CSV...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download CSV
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  variant="secondary"
+                  onClick={() => handleDateRangeExport('tax-report')}
+                  disabled={isExporting}
+                  size={isMobile ? "lg" : "default"}
+                >
+                  {isExporting && exportType === 'date-range-tax' ? (
+                    <>
+                      <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-white border-t-transparent" />
+                      Generating Tax...
+                    </>
+                  ) : (
+                    <>
+                      <Calendar className="h-4 w-4 mr-2" />
+                      Download Tax PDF
+                    </>
+                  )}
+                </Button>
+              </div>
             </CardContent>
           )}
         </Card>

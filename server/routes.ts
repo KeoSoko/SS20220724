@@ -57,6 +57,7 @@ import { registerAdminRoutes } from "./admin-routes";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
 import { log } from "./vite";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
+import { getReportingCategory } from "./reporting-utils";
 import { and, asc, eq, gte, lt, lte, sql, isNull, isNotNull } from "drizzle-orm";
 import multer from "multer";
 import { scrypt, timingSafeEqual } from 'crypto';
@@ -426,6 +427,33 @@ async function validateCategory(category: any, userId?: number): Promise<{ isVal
   // This ensures backwards compatibility and doesn't block uploads
   log(`Category "${category}" not found in predefined list, allowing as custom category`, 'validation');
   return { isValid: true, value: category };
+}
+
+function normalizeReceiptCategory(
+  category: string,
+  notes?: string | null
+): { category: ExpenseCategory; notes: string | null } {
+  const cleanedNotes = notes
+    ? notes.replace(/\[Custom Category: .*?\]\s*/i, "").trim()
+    : null;
+
+  if (EXPENSE_CATEGORIES.includes(category as ExpenseCategory)) {
+    return {
+      category: category as ExpenseCategory,
+      notes: cleanedNotes && cleanedNotes.length > 0 ? cleanedNotes : null
+    };
+  }
+
+  const customLabel = category.trim();
+  const prefix = `[Custom Category: ${customLabel || "Other"}]`;
+  const combinedNotes = cleanedNotes && cleanedNotes.length > 0
+    ? `${prefix} ${cleanedNotes}`
+    : prefix;
+
+  return {
+    category: "other",
+    notes: combinedNotes
+  };
 }
 
 function validateItems(items: any): { isValid: boolean; value?: Array<{name: string, price: string}>; error?: string } {
@@ -976,6 +1004,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Sanitize notes
       const sanitizedNotes = notes ? sanitizeString(notes, MAX_NOTES_LENGTH) : null;
+      const normalizedCategory = normalizeReceiptCategory(categoryValidation.value!, sanitizedNotes);
       
       // Handle date conversion explicitly to prevent "Invalid time value" errors
       let receiptData;
@@ -985,8 +1014,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const validationResult = insertReceiptSchema.omit({ date: true }).safeParse({
           storeName: sanitizedStoreName,
           total: amountValidation.value!,
-          category: categoryValidation.value!,
-          notes: sanitizedNotes,
+          category: normalizedCategory.category,
+          notes: normalizedCategory.notes,
           items: itemsValidation.value!,
           imageData,
           userId,
@@ -1560,7 +1589,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existingReceipt.userId !== userId) return res.sendStatus(403);
 
       // Validate update data
-      const updateData = req.body;
+      const updateData = { ...req.body };
+
+      if ('storeName' in updateData) {
+        const sanitizedStoreName = sanitizeString(updateData.storeName || '');
+        if (!sanitizedStoreName) {
+          return res.status(400).json({ error: 'Store name is required' });
+        }
+        updateData.storeName = sanitizedStoreName;
+      }
+
+      if ('total' in updateData) {
+        const amountValidation = validateNumericAmount(updateData.total);
+        if (!amountValidation.isValid) {
+          return res.status(400).json({ error: amountValidation.error });
+        }
+        updateData.total = amountValidation.value;
+      }
+
+      if ('date' in updateData) {
+        const receiptDate = new Date(updateData.date);
+        if (isNaN(receiptDate.getTime())) {
+          return res.status(400).json({ error: "Invalid date format" });
+        }
+        updateData.date = receiptDate;
+      }
+
+      if ('notes' in updateData) {
+        updateData.notes = updateData.notes
+          ? sanitizeString(updateData.notes, MAX_NOTES_LENGTH)
+          : null;
+      }
+
+      if ('category' in updateData) {
+        const categoryValidation = await validateCategory(updateData.category, userId);
+        if (!categoryValidation.isValid) {
+          return res.status(400).json({ error: categoryValidation.error });
+        }
+
+        const rawNotes = 'notes' in updateData ? updateData.notes : existingReceipt.notes;
+        const normalizedCategory = normalizeReceiptCategory(categoryValidation.value!, rawNotes);
+        updateData.category = normalizedCategory.category;
+        updateData.notes = normalizedCategory.notes;
+      }
 
       // Update the receipt
       const updatedReceipt = await storage.updateReceipt(receiptId, updateData);
@@ -1899,31 +1970,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      
-      const result = await db.execute(sql`
-        SELECT 
-          store_name,
+      const receiptsList = await storage.getReceiptsByUser(userId);
+      const recurringMap = new Map<string, {
+        storeName: string;
+        category: string;
+        subcategory: string;
+        frequency: string;
+        count: number;
+        totalAmount: number;
+      }>();
+
+      receiptsList.forEach(receipt => {
+        if (!receipt.isRecurring) return;
+        const storeName = receipt.storeName || "Unknown Store";
+        const category = getReportingCategory(receipt.category, receipt.notes);
+        const subcategory = receipt.subcategory || "Uncategorized";
+        const frequency = receipt.frequency || "Monthly";
+        const total = parseFloat(receipt.total) || 0;
+        const key = `${storeName}||${category}||${subcategory}||${frequency}`;
+
+        const existing = recurringMap.get(key) || {
+          storeName,
           category,
           subcategory,
           frequency,
-          COUNT(*) AS count,
-          AVG(CAST(total AS DECIMAL)) AS average_amount,
-          SUM(CAST(total AS DECIMAL)) AS total_amount
-        FROM receipts
-        WHERE user_id = ${userId} AND is_recurring = true
-        GROUP BY store_name, category, subcategory, frequency
-        ORDER BY average_amount DESC
-      `);
+          count: 0,
+          totalAmount: 0
+        };
 
-      const processedResults = result.rows.map((row: any) => ({
-        storeName: row.store_name,
-        category: row.category,
-        subcategory: row.subcategory || "Uncategorized",
-        frequency: row.frequency || "Monthly",
-        count: Number(row.count),
-        averageAmount: Number(row.average_amount).toFixed(2),
-        totalAmount: Number(row.total_amount).toFixed(2)
-      }));
+        existing.count += 1;
+        existing.totalAmount += total;
+        recurringMap.set(key, existing);
+      });
+
+      const processedResults = Array.from(recurringMap.values())
+        .map(entry => ({
+          storeName: entry.storeName,
+          category: entry.category,
+          subcategory: entry.subcategory,
+          frequency: entry.frequency,
+          count: entry.count,
+          averageAmount: (entry.totalAmount / entry.count).toFixed(2),
+          totalAmount: entry.totalAmount.toFixed(2)
+        }))
+        .sort((a, b) => Number(b.averageAmount) - Number(a.averageAmount));
 
       res.json(processedResults);
     } catch (error: any) {
@@ -1938,25 +2028,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      
-      const result = await db.execute(sql`
-        SELECT 
-          tax_category,
-          category,
-          COUNT(*) AS count,
-          SUM(CAST(total AS DECIMAL)) AS total
-        FROM receipts
-        WHERE user_id = ${userId} AND is_tax_deductible = true
-        GROUP BY tax_category, category
-        ORDER BY total DESC
-      `);
+      const receiptsList = await storage.getReceiptsByUser(userId);
+      const breakdown = new Map<string, Map<string, { count: number; total: number }>>();
 
-      const processedResults = result.rows.map((row: any) => ({
-        taxCategory: row.tax_category || "Uncategorized",
-        category: row.category,
-        count: Number(row.count),
-        total: Number(row.total).toFixed(2)
-      }));
+      receiptsList.forEach(receipt => {
+        if (!receipt.isTaxDeductible) return;
+        const taxCategory = receipt.taxCategory || "Uncategorized";
+        const category = getReportingCategory(receipt.category, receipt.notes);
+        const total = parseFloat(receipt.total) || 0;
+
+        if (!breakdown.has(taxCategory)) {
+          breakdown.set(taxCategory, new Map());
+        }
+
+        const categoryMap = breakdown.get(taxCategory)!;
+        const existing = categoryMap.get(category) || { count: 0, total: 0 };
+        existing.count += 1;
+        existing.total += total;
+        categoryMap.set(category, existing);
+      });
+
+      const processedResults = Array.from(breakdown.entries())
+        .flatMap(([taxCategory, categories]) =>
+          Array.from(categories.entries()).map(([category, data]) => ({
+            taxCategory,
+            category,
+            count: data.count,
+            total: data.total.toFixed(2)
+          }))
+        )
+        .sort((a, b) => Number(b.total) - Number(a.total));
 
       res.json(processedResults);
     } catch (error: any) {
@@ -1970,19 +2071,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
     try {
-      const result = await pool.query(`
-        SELECT 
-          to_char(date_trunc('month', date), 'YYYY-MM') AS month,
-          category,
-          COUNT(*) AS count,
-          SUM(CAST(total AS DECIMAL)) AS total
-        FROM receipts
-        WHERE user_id = $1
-        GROUP BY month, category
-        ORDER BY month, category
-      `, [getUserId(req)]);
-      
-      res.json(result.rows);
+      const userId = getUserId(req);
+      const receipts = await storage.getReceiptsByUser(userId);
+      const totalsByMonth = new Map<string, Map<string, { total: number; count: number }>>();
+
+      receipts.forEach(receipt => {
+        const date = new Date(receipt.date);
+        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const category = getReportingCategory(receipt.category, receipt.notes);
+        const total = parseFloat(receipt.total) || 0;
+
+        if (!totalsByMonth.has(month)) {
+          totalsByMonth.set(month, new Map());
+        }
+
+        const monthMap = totalsByMonth.get(month)!;
+        const existing = monthMap.get(category) || { total: 0, count: 0 };
+        existing.total += total;
+        existing.count += 1;
+        monthMap.set(category, existing);
+      });
+
+      const response = Array.from(totalsByMonth.entries())
+        .flatMap(([month, categories]) =>
+          Array.from(categories.entries()).map(([category, data]) => ({
+            month,
+            category,
+            count: data.count,
+            total: data.total
+          }))
+        )
+        .sort((a, b) => a.month.localeCompare(b.month) || a.category.localeCompare(b.category));
+
+      res.json(response);
     } catch (error: any) {
       log(`Error in /api/analytics/category-comparison: ${error.message}`, 'express');
       res.status(500).json({ error: "Failed to retrieve category comparison data" });
@@ -1994,16 +2115,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
     try {
-      // First, get standard categories
-      const result = await db.select({
-        category: receipts.category,
-        count: sql<number>`count(*)`,
-        total: sql<number>`sum(cast(${receipts.total} as float))`
-      })
-      .from(receipts)
-      .where(eq(receipts.userId, getUserId(req)))
-      .groupBy(receipts.category)
-      .orderBy(sql<string>`sum(cast(${receipts.total} as float)) DESC`);
+      const userId = getUserId(req);
+      const receiptsList = await storage.getReceiptsByUser(userId);
+      const categoryMap = new Map<string, { category: string; count: number; total: number }>();
+
+      receiptsList.forEach(receipt => {
+        const category = getReportingCategory(receipt.category, receipt.notes);
+        const total = parseFloat(receipt.total) || 0;
+        const existing = categoryMap.get(category) || { category, count: 0, total: 0 };
+        existing.count += 1;
+        existing.total += total;
+        categoryMap.set(category, existing);
+      });
+
+      const result = Array.from(categoryMap.values()).sort((a, b) => b.total - a.total);
       
       // Then extract any custom categories from notes field (tagged with [Custom Category: X])
       const customResult = await pool.query(`
@@ -2017,7 +2142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           notes LIKE '%[Custom Category:%]%'
         GROUP BY subcategory
         ORDER BY total DESC
-      `, [getUserId(req)]);
+      `, [userId]);
       
       // Combine the results
       res.json({
@@ -2349,6 +2474,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         category: req.query.category as string,
         includeSummary: req.query.includeSummary === 'true',
         includeImages: req.query.includeImages === 'true',
+        groupBy: req.query.groupBy === 'category' ? 'category' : undefined,
       };
       
       const pdf = await exportService.exportReceiptsToPDF(getUserId(req), options);
@@ -2369,8 +2495,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const year = parseInt(req.params.year);
       const format = req.query.format as string || 'pdf';
+      const options = {
+        startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
+        endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
+        category: req.query.category as string,
+      };
       
-      const report = await exportService.generateTaxReport(getUserId(req), year);
+      const report = await exportService.generateTaxReport(getUserId(req), year, options);
       
       if (format === 'csv') {
         res.setHeader('Content-Type', 'text/csv');

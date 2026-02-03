@@ -1,5 +1,5 @@
 import React from 'react';
-import { Brain, Search, Sparkles, BarChart3, Settings, Upload, TrendingUp, Download, Zap, ArrowRight } from 'lucide-react';
+import { Brain, Search, Sparkles, Settings, TrendingUp, Download, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 // Removed icon-badge import - using inline components instead
 import { PageLayout } from '@/components/page-layout';
@@ -128,13 +128,6 @@ export default function SmartFeaturesPage() {
       onClick: () => handleNavigation('/search')
     },
     {
-      icon: Upload,
-      title: "Scan Receipt",
-      description: "Upload receipts with automatic AI categorization and processing",
-      status: 'available' as const,
-      onClick: () => handleNavigation('/upload')
-    },
-    {
       icon: TrendingUp,
       title: "Budget Intelligence",
       description: "Smart budget tracking with predictive spending insights",
@@ -142,25 +135,11 @@ export default function SmartFeaturesPage() {
       onClick: () => handleNavigation('/budgets')
     },
     {
-      icon: BarChart3,
-      title: "Analytics Dashboard", 
-      description: "Advanced spending analytics and personalized insights",
-      status: 'available' as const,
-      onClick: () => handleNavigation('/analytics')
-    },
-    {
       icon: Download,
       title: "Smart Reports",
       description: "Export data with AI-generated insights and tax optimization",
       status: 'available' as const,
       onClick: () => handleNavigation('/exports')
-    },
-    {
-      icon: Zap,
-      title: "Expense Predictions",
-      description: "Predict future spending patterns based on historical data",
-      status: 'coming-soon' as const,
-      onClick: () => {}
     }
   ];
 

@@ -91,11 +91,7 @@ function HomePage() {
   const [activeTab, setActiveTab] = useState(() => {
     // Restore saved tab if coming back from receipt detail
     const savedTab = sessionStorage.getItem('home_active_tab');
-    if (savedTab) {
-      sessionStorage.removeItem('home_active_tab');
-      return savedTab;
-    }
-    return "analytics";
+    return savedTab || "analytics";
   });
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedReceipts, setSelectedReceipts] = useState<Set<number>>(new Set());
@@ -145,11 +141,13 @@ function HomePage() {
     const savedPosition = sessionStorage.getItem('home_scroll_position');
     if (savedPosition && !isLoading && receipts.length > 0) {
       const scrollY = parseInt(savedPosition, 10);
-      // Use setTimeout to ensure content is fully rendered
+      // Use setTimeout to ensure content is fully rendered after tab switch
       setTimeout(() => {
         window.scrollTo(0, scrollY);
+        // Clear saved state after restoring
         sessionStorage.removeItem('home_scroll_position');
-      }, 100);
+        sessionStorage.removeItem('home_active_tab');
+      }, 300);
     }
   }, [isLoading, receipts.length]);
 

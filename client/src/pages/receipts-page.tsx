@@ -101,7 +101,7 @@ export default function ReceiptsPage() {
       setTimeout(() => {
         window.scrollTo(0, scrollY);
         sessionStorage.removeItem('receipts_scroll_position');
-      }, 100);
+      }, 300);
     }
   }, [isLoading, receipts.length]);
 

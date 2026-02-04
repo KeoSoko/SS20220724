@@ -113,6 +113,7 @@ export default function UploadReceipt() {
   const [duplicateReceipts, setDuplicateReceipts] = useState<DuplicateReceipt[]>([]);
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
   const [pendingContinuousMode, setPendingContinuousMode] = useState(false);
+  const [allowDuplicateSave, setAllowDuplicateSave] = useState(false);
 
   // Session storage key for preserving form state
   const FORM_STATE_KEY = 'upload_receipt_form_state';
@@ -754,6 +755,7 @@ export default function UploadReceipt() {
         imageData,
         isRecurring,
         isTaxDeductible,
+        allowDuplicate: allowDuplicateSave,
       };
       
       // If offline, use the offline sync system
@@ -797,6 +799,7 @@ export default function UploadReceipt() {
           imageData,
           isRecurring,
           isTaxDeductible,
+          allowDuplicate: allowDuplicateSave,
         });
         
         const res = await Promise.race([apiPromise, timeoutPromise]) as Response;
@@ -866,6 +869,7 @@ export default function UploadReceipt() {
           imageData,
           isRecurring,
           isTaxDeductible,
+          allowDuplicate: allowDuplicateSave,
         });
         
         // Upload complete
@@ -882,6 +886,7 @@ export default function UploadReceipt() {
     onSuccess: (data) => {
       // Check if this is an offline response from service worker
       if (data && data.offline === true) {
+        setAllowDuplicateSave(false);
         const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
 
         // Handle offline response - queue for sync
@@ -917,6 +922,7 @@ export default function UploadReceipt() {
       }
       
       // Normal online success handling
+      setAllowDuplicateSave(false);
       // Invalidate receipts query to refresh the list
       queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
       
@@ -1003,6 +1009,7 @@ export default function UploadReceipt() {
     onError: (error: any) => {
       setProgressValue(0);
       setScanProgress("");
+      setAllowDuplicateSave(false);
       
       // Check if this is an offline error from service worker or network failure
       const isOfflineError = !isOnline || 
@@ -1011,7 +1018,16 @@ export default function UploadReceipt() {
         error.offline === true ||
         (error.status === 503 && error.responseData?.offline);
       
+      if (error.status === 409 && error.responseData?.duplicates?.length) {
+        setAllowDuplicateSave(false);
+        setDuplicateReceipts(error.responseData.duplicates);
+        setShowDuplicateDialog(true);
+        setIsCheckingDuplicate(false);
+        return;
+      }
+
       if (isOfflineError) {
+        setAllowDuplicateSave(false);
         const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
 
         // Queue for offline sync
@@ -1378,6 +1394,7 @@ export default function UploadReceipt() {
   const handleProceedWithSave = () => {
     setShowDuplicateDialog(false);
     setDuplicateReceipts([]);
+    setAllowDuplicateSave(true);
     if (pendingContinuousMode) {
       setContinuousMode(true);
     }
@@ -1389,6 +1406,7 @@ export default function UploadReceipt() {
     setShowDuplicateDialog(false);
     setDuplicateReceipts([]);
     setPendingContinuousMode(false);
+    setAllowDuplicateSave(false);
   };
 
   // Handle form submission

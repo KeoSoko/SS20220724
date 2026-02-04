@@ -975,7 +975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       
       // Security: Validate and sanitize all inputs
-      const { storeName, total, category, notes, items, imageData, isRecurring, isTaxDeductible, confidenceScore, clientUploadId } = req.body;
+      const { storeName, total, category, notes, items, imageData, isRecurring, isTaxDeductible, confidenceScore, clientUploadId, allowDuplicate } = req.body;
 
       if (clientUploadId && typeof clientUploadId === 'string' && storage.getReceiptByClientUploadId) {
         const existingReceipt = await storage.getReceiptByClientUploadId(userId, clientUploadId);
@@ -1014,6 +1014,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const itemsValidation = validateItems(items);
       if (!itemsValidation.isValid) {
         return res.status(400).json({ error: itemsValidation.error });
+      }
+
+      const receiptDateForDupes = req.body.date ? new Date(req.body.date) : new Date();
+      if (isNaN(receiptDateForDupes.getTime())) {
+        return res.status(400).json({ error: "Invalid date format" });
+      }
+
+      if (!allowDuplicate && storage.findDuplicateReceipts) {
+        const duplicates = await storage.findDuplicateReceipts(
+          userId,
+          sanitizedStoreName,
+          receiptDateForDupes,
+          String(amountValidation.value ?? total)
+        );
+        if (duplicates.length > 0) {
+          return res.status(409).json({
+            error: "Duplicate receipt",
+            message: "A receipt with identical information already exists.",
+            duplicates: duplicates.map(d => ({
+              id: d.id,
+              storeName: d.storeName,
+              date: d.date,
+              total: d.total,
+              category: d.category
+            }))
+          });
+        }
       }
       
       // Sanitize notes

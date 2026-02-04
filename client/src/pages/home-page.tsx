@@ -135,14 +135,15 @@ function HomePage() {
   // Restore scroll position when returning from receipt detail page
   useEffect(() => {
     const savedPosition = sessionStorage.getItem('home_scroll_position');
-    if (savedPosition && !isLoading) {
+    if (savedPosition && !isLoading && receipts.length > 0) {
       const scrollY = parseInt(savedPosition, 10);
-      requestAnimationFrame(() => {
+      // Use setTimeout to ensure content is fully rendered
+      setTimeout(() => {
         window.scrollTo(0, scrollY);
-      });
-      sessionStorage.removeItem('home_scroll_position');
+        sessionStorage.removeItem('home_scroll_position');
+      }, 100);
     }
-  }, [isLoading]);
+  }, [isLoading, receipts.length]);
 
   // Fetch custom categories
   const { data: customCategories = [] } = useQuery<Array<{

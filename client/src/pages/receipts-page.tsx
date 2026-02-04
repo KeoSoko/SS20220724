@@ -95,16 +95,15 @@ export default function ReceiptsPage() {
   // Restore scroll position when returning from receipt detail page
   useEffect(() => {
     const savedPosition = sessionStorage.getItem('receipts_scroll_position');
-    if (savedPosition && !isLoading) {
+    if (savedPosition && !isLoading && receipts.length > 0) {
       const scrollY = parseInt(savedPosition, 10);
-      // Use requestAnimationFrame to ensure DOM is ready
-      requestAnimationFrame(() => {
+      // Use setTimeout to ensure content is fully rendered
+      setTimeout(() => {
         window.scrollTo(0, scrollY);
-      });
-      // Clear saved position after restoring
-      sessionStorage.removeItem('receipts_scroll_position');
+        sessionStorage.removeItem('receipts_scroll_position');
+      }, 100);
     }
-  }, [isLoading]);
+  }, [isLoading, receipts.length]);
 
   // Check if any smart filters are active
   const hasActiveSmartFilters = dateFrom || dateTo || amountMin || amountMax || vendorFilter !== 'all';

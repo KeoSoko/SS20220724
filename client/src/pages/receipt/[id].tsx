@@ -140,7 +140,7 @@ export default function ReceiptDetail() {
   const [showSplitDialog, setShowSplitDialog] = useState(false);
   const [splits, setSplits] = useState([
     { category: "groceries", amount: 0, notes: "" },
-    { category: "dining", amount: 0, notes: "" }
+    { category: "dining_takeaways", amount: 0, notes: "" }
   ]);
   const [splitMode, setSplitMode] = useState<"amount" | "percentage">("amount");
 
@@ -546,7 +546,7 @@ export default function ReceiptDetail() {
                     const half = receiptTotal / 2;
                     setSplits([
                       { category: "groceries", amount: half, notes: "" },
-                      { category: "dining", amount: receiptTotal - half, notes: "" }
+                      { category: "dining_takeaways", amount: receiptTotal - half, notes: "" }
                     ]);
                     setShowSplitDialog(true);
                   }}

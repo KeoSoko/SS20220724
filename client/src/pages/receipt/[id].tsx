@@ -1055,25 +1055,25 @@ export default function ReceiptDetail() {
 
       {/* Split Receipt Dialog */}
       <Dialog open={showSplitDialog} onOpenChange={setShowSplitDialog}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Split Receipt</DialogTitle>
-            <DialogDescription>
-              Split this receipt into multiple expenses with different categories.
-              Enter amounts (recommended) or switch to percentages.
+        <DialogContent className="max-w-[95vw] sm:max-w-[500px] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-base">Split Receipt</DialogTitle>
+            <DialogDescription className="text-xs">
+              Split into multiple categories. Enter amounts or percentages.
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm text-muted-foreground">
-                Total Amount: {receipt ? formatCurrency(parseFloat(receipt.total)) : ''}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs text-muted-foreground">
+                Total: {receipt ? formatCurrency(parseFloat(receipt.total)) : ''}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button
                   type="button"
                   variant={splitMode === "amount" ? "default" : "outline"}
                   size="sm"
+                  className="h-7 px-2 text-xs"
                   onClick={() => setSplitMode("amount")}
                 >
                   Amount
@@ -1082,6 +1082,7 @@ export default function ReceiptDetail() {
                   type="button"
                   variant={splitMode === "percentage" ? "default" : "outline"}
                   size="sm"
+                  className="h-7 px-2 text-xs"
                   onClick={() => setSplitMode("percentage")}
                 >
                   Percentage
@@ -1090,28 +1091,29 @@ export default function ReceiptDetail() {
             </div>
             
             {splits.map((split, index) => (
-              <div key={index} className="p-4 border rounded-sm space-y-3">
+              <div key={index} className="p-3 border rounded-none space-y-2">
                 <div className="flex justify-between items-center">
-                  <h4 className="font-medium">Split {index + 1}</h4>
+                  <h4 className="text-sm font-medium">Split {index + 1}</h4>
                   {splits.length > 2 && (
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="h-6 w-6 p-0"
                       onClick={() => removeSplit(index)}
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-3 w-3" />
                     </Button>
                   )}
                 </div>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Category</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Category</Label>
                     <Select
                       value={split.category}
                       onValueChange={(value) => updateSplit(index, 'category', value)}
                     >
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger className="w-full h-9">
                         <SelectValue className="truncate" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1124,13 +1126,14 @@ export default function ReceiptDetail() {
                     </Select>
                   </div>
                   
-                  <div className="space-y-2">
-                    <Label>{splitMode === "amount" ? "Amount" : "Percentage"}</Label>
+                  <div className="space-y-1">
+                    <Label className="text-xs">{splitMode === "amount" ? "Amount" : "Percentage"}</Label>
                     {splitMode === "amount" ? (
                       <Input
                         type="number"
                         min="0"
                         step="0.01"
+                        className="h-9"
                         value={split.amount}
                         onChange={(e) => updateSplit(index, 'amount', parseFloat(e.target.value) || 0)}
                         placeholder="0.00"
@@ -1141,6 +1144,7 @@ export default function ReceiptDetail() {
                         min="0"
                         max="100"
                         step="0.01"
+                        className="h-9"
                         value={receiptTotal > 0 ? ((Number(split.amount) || 0) / receiptTotal) * 100 : 0}
                         onChange={(e) => {
                           const percent = parseFloat(e.target.value) || 0;
@@ -1152,35 +1156,37 @@ export default function ReceiptDetail() {
                   </div>
                 </div>
                 
-                <div className="space-y-2">
-                  <Label>Notes (optional)</Label>
+                <div className="space-y-1">
+                  <Label className="text-xs">Notes (optional)</Label>
                   <Input
+                    className="h-9"
                     value={split.notes}
                     onChange={(e) => updateSplit(index, 'notes', e.target.value)}
-                    placeholder="Additional notes for this split"
+                    placeholder="Notes for this split"
                   />
                 </div>
                 
-                <div className="text-sm text-muted-foreground">
+                <div className="text-xs text-muted-foreground">
                   {splitMode === "amount"
-                    ? `Percentage: ${receiptTotal > 0 ? ((Number(split.amount) || 0) / receiptTotal * 100).toFixed(2) : "0.00"}%`
-                    : `Amount: ${receipt ? formatCurrency(Number(split.amount) || 0) : ''}`}
+                    ? `${receiptTotal > 0 ? ((Number(split.amount) || 0) / receiptTotal * 100).toFixed(1) : "0"}%`
+                    : formatCurrency(Number(split.amount) || 0)}
                 </div>
               </div>
             ))}
             
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center pt-2">
               <Button
                 variant="outline"
+                size="sm"
                 onClick={addSplit}
                 disabled={splits.length >= 5}
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="h-3 w-3 mr-1" />
                 Add Split
               </Button>
               
-              <div className="text-sm">
-                Total: {formatCurrency(totalSplitAmount)} ({totalSplitPercentage.toFixed(2)}%)
+              <div className="text-xs font-medium">
+                Total: {formatCurrency(totalSplitAmount)} ({totalSplitPercentage.toFixed(0)}%)
                 {!isSplitBalanced && (
                   <Button
                     variant="ghost"

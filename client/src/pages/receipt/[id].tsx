@@ -1090,7 +1090,7 @@ export default function ReceiptDetail() {
             </div>
             
             {splits.map((split, index) => (
-              <div key={index} className="p-4 border rounded-lg space-y-3">
+              <div key={index} className="p-4 border rounded-sm space-y-3">
                 <div className="flex justify-between items-center">
                   <h4 className="font-medium">Split {index + 1}</h4>
                   {splits.length > 2 && (
@@ -1104,15 +1104,15 @@ export default function ReceiptDetail() {
                   )}
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Category</Label>
                     <Select
                       value={split.category}
                       onValueChange={(value) => updateSplit(index, 'category', value)}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
+                      <SelectTrigger className="w-full">
+                        <SelectValue className="truncate" />
                       </SelectTrigger>
                       <SelectContent>
                         {EXPENSE_CATEGORIES.map((cat) => (

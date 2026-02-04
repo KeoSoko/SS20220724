@@ -408,7 +408,7 @@ export default function ReceiptDetail() {
       });
       
       setShowSplitDialog(false);
-      setLocation("/");
+      setLocation("/home");
     },
     onError: (error: Error) => {
       toast({

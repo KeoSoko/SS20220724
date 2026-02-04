@@ -88,7 +88,15 @@ function HomePage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [showNeedsReview, setShowNeedsReview] = useState(false);
   const [sortBy, setSortBy] = useState<"date" | "amount" | "category">("date");
-  const [activeTab, setActiveTab] = useState("analytics");
+  const [activeTab, setActiveTab] = useState(() => {
+    // Restore saved tab if coming back from receipt detail
+    const savedTab = sessionStorage.getItem('home_active_tab');
+    if (savedTab) {
+      sessionStorage.removeItem('home_active_tab');
+      return savedTab;
+    }
+    return "analytics";
+  });
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedReceipts, setSelectedReceipts] = useState<Set<number>>(new Set());
   const [isTaxAIOpen, setIsTaxAIOpen] = useState(false);
@@ -363,6 +371,7 @@ function HomePage() {
           icon: <span className="text-sm">✏️</span>,
           onClick: () => {
             sessionStorage.setItem('home_scroll_position', window.scrollY.toString());
+            sessionStorage.setItem('home_active_tab', activeTab);
             window.location.href = `/receipt/${receipt.id}/edit`;
           },
           color: '#3b82f6',
@@ -1290,6 +1299,7 @@ function HomePage() {
                                     setSelectedReceipts(newSelected);
                                   } else {
                                     sessionStorage.setItem('home_scroll_position', window.scrollY.toString());
+                                    sessionStorage.setItem('home_active_tab', activeTab);
                                     window.location.href = `/receipt/${receipt.id}`;
                                   }
                                 }}

@@ -1134,8 +1134,8 @@ export default function ReceiptDetail() {
                         min="0"
                         step="0.01"
                         className="h-9"
-                        value={split.amount}
-                        onChange={(e) => updateSplit(index, 'amount', parseFloat(e.target.value) || 0)}
+                        value={split.amount === 0 ? "" : split.amount}
+                        onChange={(e) => updateSplit(index, 'amount', e.target.value === "" ? 0 : parseFloat(e.target.value))}
                         placeholder="0.00"
                       />
                     ) : (
@@ -1145,9 +1145,9 @@ export default function ReceiptDetail() {
                         max="100"
                         step="0.01"
                         className="h-9"
-                        value={receiptTotal > 0 ? ((Number(split.amount) || 0) / receiptTotal) * 100 : 0}
+                        value={receiptTotal > 0 && split.amount > 0 ? ((Number(split.amount) || 0) / receiptTotal) * 100 : ""}
                         onChange={(e) => {
-                          const percent = parseFloat(e.target.value) || 0;
+                          const percent = e.target.value === "" ? 0 : parseFloat(e.target.value);
                           updateSplit(index, 'amount', receiptTotal * percent / 100);
                         }}
                         placeholder="0"

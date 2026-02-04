@@ -218,6 +218,8 @@ export default function ReceiptsPage() {
     if (selectionMode) {
       toggleReceiptSelection(receiptId);
     } else {
+      // Save scroll position before navigating
+      sessionStorage.setItem('receipts_scroll_position', window.scrollY.toString());
       setLocation(`/receipt/${receiptId}`);
     }
   };

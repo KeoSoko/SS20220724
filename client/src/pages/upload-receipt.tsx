@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -56,6 +56,7 @@ export default function UploadReceipt() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const { isOnline, addPendingUpload } = useOfflineSync();
+  const clientUploadIdRef = useRef<string>(crypto.randomUUID());
   
   // Scanning states
   const [isScanning, setIsScanning] = useState(false);
@@ -179,6 +180,7 @@ export default function UploadReceipt() {
 
   // Reset form for another scan (used in continuous mode)
   const resetForAnotherScan = () => {
+    clientUploadIdRef.current = crypto.randomUUID();
     setImageData(null);
     setPreviewUrl(null);
     setStoreName("");
@@ -322,6 +324,7 @@ export default function UploadReceipt() {
         } else {
           // Offline - add to pending uploads
           addPendingUpload({
+            clientUploadId: crypto.randomUUID(),
             storeName: `Pending Receipt ${i + 1}`,
             date: new Date().toISOString().split('T')[0],
             total: "0.00",
@@ -733,12 +736,14 @@ export default function UploadReceipt() {
         throw new Error("No image data available");
       }
       const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
+      const clientUploadId = clientUploadIdRef.current;
       
       // Always save offline first to prevent hanging
       console.log("[Upload] Save attempt - isOnline:", isOnline, "navigator.onLine:", navigator.onLine);
       
       // Prepare receipt data
       const receiptData = {
+        clientUploadId,
         storeName,
         date,
         total,
@@ -781,6 +786,7 @@ export default function UploadReceipt() {
         
         // Race between API call and timeout
         const apiPromise = apiRequest("POST", "/api/receipts", {
+          clientUploadId,
           storeName,
           date,
           total,
@@ -849,6 +855,7 @@ export default function UploadReceipt() {
       try {
         // Upload receipt data to server
         const res = await apiRequest("POST", "/api/receipts", {
+          clientUploadId,
           storeName,
           date,
           total,
@@ -879,6 +886,7 @@ export default function UploadReceipt() {
 
         // Handle offline response - queue for sync
         addPendingUpload({
+          clientUploadId: clientUploadIdRef.current,
           storeName,
           date,
           total,
@@ -1008,6 +1016,7 @@ export default function UploadReceipt() {
 
         // Queue for offline sync
         addPendingUpload({
+          clientUploadId: clientUploadIdRef.current,
           storeName,
           date,
           total,

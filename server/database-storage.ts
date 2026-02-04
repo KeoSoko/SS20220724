@@ -437,6 +437,20 @@ export class DatabaseStorage implements IStorage {
       throw error;
     }
   }
+
+  async getReceiptByClientUploadId(userId: number, clientUploadId: string): Promise<Receipt | undefined> {
+    if (!clientUploadId) return undefined;
+    try {
+      const result = await db.select()
+        .from(receipts)
+        .where(and(eq(receipts.userId, userId), eq(receipts.clientUploadId, clientUploadId)))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      log(`Error in getReceiptByClientUploadId(${userId}, ${clientUploadId}): ${error}`, 'db');
+      throw error;
+    }
+  }
   
   async getReceiptsByUser(userId: number, limit?: number, offset: number = 0): Promise<Receipt[]> {
     // Base query with required filters and sorting
@@ -482,6 +496,7 @@ export class DatabaseStorage implements IStorage {
       // Prepare the insert payload with thorough validation and explicit type enforcement
       const insertValues = {
         userId: insertReceipt.userId,
+        clientUploadId: insertReceipt.clientUploadId || null,
         storeName: insertReceipt.storeName,
         date: insertReceipt.date,
         total: insertReceipt.total,
@@ -523,16 +538,16 @@ export class DatabaseStorage implements IStorage {
         // Using a direct parameterized query to handle the array types properly
         const query = `
           INSERT INTO receipts (
-            "user_id", "store_name", "date", "total", "items", "blob_url", 
+            "user_id", "client_upload_id", "store_name", "date", "total", "items", "blob_url", 
             "blob_name", "image_data", "category", "tags", "notes", 
             "confidence_score", "raw_ocr_data", "latitude", "longitude",
             "is_tax_deductible", "is_recurring",
             "created_at", "updated_at", "processed_at"
           ) VALUES (
-            $1, $2, $3, $4, $5::jsonb, $6, 
-            $7, $8, $9, $10, $11, 
-            $12, $13, $14, $15,
-            $16, $17, $18, $19, $20
+            $1, $2, $3, $4, $5, $6::jsonb, $7, 
+            $8, $9, $10, $11, $12, 
+            $13, $14, $15, $16,
+            $17, $18, $19, $20, $21
           )
           RETURNING *;
         `;
@@ -547,6 +562,7 @@ export class DatabaseStorage implements IStorage {
         
         const values = [
           insertValues.userId,
+          insertValues.clientUploadId,
           insertValues.storeName,
           insertValues.date,
           insertValues.total,

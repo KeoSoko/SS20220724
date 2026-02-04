@@ -57,6 +57,7 @@ export interface IStorage {
   
   // Receipt methods
   getReceipt(id: number): Promise<Receipt | undefined>;
+  getReceiptByClientUploadId?(userId: number, clientUploadId: string): Promise<Receipt | undefined>;
   getReceiptsByUser(userId: number, limit?: number, offset?: number): Promise<Receipt[]>;
   createReceipt(receipt: InsertReceipt): Promise<Receipt>;
   updateReceipt(id: number, updates: Partial<InsertReceipt>): Promise<Receipt | undefined>;
@@ -435,6 +436,12 @@ export class MemStorage implements IStorage {
     return this.receipts.get(id);
   }
 
+  async getReceiptByClientUploadId(userId: number, clientUploadId: string): Promise<Receipt | undefined> {
+    return Array.from(this.receipts.values()).find(
+      (receipt) => receipt.userId === userId && receipt.clientUploadId === clientUploadId
+    );
+  }
+
   async getReceiptsByUser(userId: number, limit?: number, offset: number = 0): Promise<Receipt[]> {
     let receipts = Array.from(this.receipts.values())
       .filter(receipt => receipt.userId === userId)
@@ -459,6 +466,7 @@ export class MemStorage implements IStorage {
       // Core fields matching schema order
       id,
       userId: insertReceipt.userId,
+      clientUploadId: insertReceipt.clientUploadId || null,
       storeName: insertReceipt.storeName,
       date: insertReceipt.date,
       total: insertReceipt.total,

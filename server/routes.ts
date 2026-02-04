@@ -975,7 +975,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       
       // Security: Validate and sanitize all inputs
-      const { storeName, total, category, notes, items, imageData, isRecurring, isTaxDeductible, confidenceScore } = req.body;
+      const { storeName, total, category, notes, items, imageData, isRecurring, isTaxDeductible, confidenceScore, clientUploadId } = req.body;
+
+      if (clientUploadId && typeof clientUploadId === 'string' && storage.getReceiptByClientUploadId) {
+        const existingReceipt = await storage.getReceiptByClientUploadId(userId, clientUploadId);
+        if (existingReceipt) {
+          return res.status(200).json(existingReceipt);
+        }
+      }
       
       // Validate image data first (most resource-intensive check)
       if (imageData) {
@@ -1026,6 +1033,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           items: itemsValidation.value!,
           imageData,
           userId,
+          clientUploadId: typeof clientUploadId === 'string' ? clientUploadId : undefined,
           isRecurring: Boolean(isRecurring),
           isTaxDeductible: Boolean(isTaxDeductible),
           confidenceScore: confidenceScore || null
@@ -1297,6 +1305,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         if (error.message.includes('duplicate key')) {
+          if (clientUploadId && typeof clientUploadId === 'string' && storage.getReceiptByClientUploadId) {
+            const existingReceipt = await storage.getReceiptByClientUploadId(userId, clientUploadId);
+            if (existingReceipt) {
+              return res.status(200).json(existingReceipt);
+            }
+          }
           return res.status(409).json({ 
             error: "Duplicate receipt",
             message: "A receipt with identical information already exists."

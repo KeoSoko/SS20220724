@@ -92,6 +92,20 @@ export default function ReceiptsPage() {
     return Array.from(new Set(vendors)).sort((a, b) => a.localeCompare(b));
   }, [receipts]);
 
+  // Restore scroll position when returning from receipt detail page
+  useEffect(() => {
+    const savedPosition = sessionStorage.getItem('receipts_scroll_position');
+    if (savedPosition && !isLoading) {
+      const scrollY = parseInt(savedPosition, 10);
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
+      // Clear saved position after restoring
+      sessionStorage.removeItem('receipts_scroll_position');
+    }
+  }, [isLoading]);
+
   // Check if any smart filters are active
   const hasActiveSmartFilters = dateFrom || dateTo || amountMin || amountMax || vendorFilter !== 'all';
 

@@ -1,5 +1,3 @@
-import { ReceiptDebugger } from "./receipt-debug";
-
 export interface ValidationResult {
   isValid: boolean;
   errors: string[];
@@ -9,11 +7,7 @@ export interface ValidationResult {
 }
 
 export class ReceiptValidator {
-  private receiptDebugger: ReceiptDebugger;
-
-  constructor(receiptDebugger: ReceiptDebugger) {
-    this.receiptDebugger = receiptDebugger;
-  }
+  constructor() {}
 
   /**
    * Comprehensive validation checklist for receipt processing

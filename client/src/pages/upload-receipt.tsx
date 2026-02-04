@@ -84,7 +84,8 @@ export default function UploadReceipt() {
   const [storeName, setStoreName] = useState("");
   const [date, setDate] = useState("");
   const [total, setTotal] = useState("");
-  const [category, setCategory] = useState<ExpenseCategory>("other");
+  const [category, setCategory] = useState<string>("other");
+  const [customCategoryName, setCustomCategoryName] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<Array<{name: string, price: string}>>([]);
   const [confidenceScore, setConfidenceScore] = useState<string | null>(null);
@@ -124,6 +125,7 @@ export default function UploadReceipt() {
       date,
       total,
       category,
+      customCategoryName,
       notes,
       items,
       confidenceScore,
@@ -145,6 +147,10 @@ export default function UploadReceipt() {
         setDate(formState.date || "");
         setTotal(formState.total || "");
         setCategory(formState.category || "other");
+        const restoredCategory = formState.category || "other";
+        const restoredCustomCategory = formState.customCategoryName ||
+          (!EXPENSE_CATEGORIES.includes(restoredCategory as ExpenseCategory) ? restoredCategory : null);
+        setCustomCategoryName(restoredCustomCategory || null);
         setNotes(formState.notes || "");
         setItems(formState.items || []);
         setConfidenceScore(formState.confidenceScore || null);
@@ -179,6 +185,7 @@ export default function UploadReceipt() {
     setDate("");
     setTotal("");
     setCategory("other");
+    setCustomCategoryName(null);
     setNotes("");
     setItems([]);
     setConfidenceScore(null);
@@ -554,6 +561,7 @@ export default function UploadReceipt() {
       // Use AI-suggested category from the scan response
       if (data.category && data.category !== 'other') {
         setCategory(data.category as ExpenseCategory);
+        setCustomCategoryName(null);
       } else {
         // Only use fallback categorization if AI didn't provide a category
         const lowerStoreName = data.storeName.toLowerCase();
@@ -585,6 +593,7 @@ export default function UploadReceipt() {
         }
         
         setCategory(matchedCategory as ExpenseCategory);
+        setCustomCategoryName(null);
       }
       
       // Complete the process
@@ -702,11 +711,28 @@ export default function UploadReceipt() {
   });
 
   // Upload receipt mutation
+  const getNormalizedReceiptValues = () => {
+    const isPredefinedCategory = EXPENSE_CATEGORIES.includes(category as ExpenseCategory);
+    const customCategoryLabel = customCategoryName?.trim()
+      || (!isPredefinedCategory && category.trim() ? category.trim() : null);
+    const cleanedNotes = notes ? notes.replace(/\[Custom Category: .*?\]\s*/i, "").trim() : "";
+    const normalizedNotes = customCategoryLabel
+      ? (() => {
+          const prefix = `[Custom Category: ${customCategoryLabel}]`;
+          return cleanedNotes ? `${prefix} ${cleanedNotes}` : prefix;
+        })()
+      : (cleanedNotes || null);
+    const normalizedCategory = isPredefinedCategory ? category : "other";
+
+    return { normalizedCategory, normalizedNotes };
+  };
+
   const uploadMutation = useMutation({
     mutationFn: async () => {
       if (!imageData) {
         throw new Error("No image data available");
       }
+      const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
       
       // Always save offline first to prevent hanging
       console.log("[Upload] Save attempt - isOnline:", isOnline, "navigator.onLine:", navigator.onLine);
@@ -717,8 +743,8 @@ export default function UploadReceipt() {
         date,
         total,
         items: Array.isArray(items) ? items : [],
-        category,
-        notes: notes || null,
+        category: normalizedCategory,
+        notes: normalizedNotes,
         confidenceScore: confidenceScore || null,
         imageData,
         isRecurring,
@@ -759,8 +785,8 @@ export default function UploadReceipt() {
           date,
           total,
           items: Array.isArray(items) ? items : [],
-          category,
-          notes: notes || null,
+          category: normalizedCategory,
+          notes: normalizedNotes,
           confidenceScore: confidenceScore || null,
           imageData,
           isRecurring,
@@ -827,8 +853,8 @@ export default function UploadReceipt() {
           date,
           total,
           items: itemsArray,
-          category,
-          notes: notes || null,
+          category: normalizedCategory,
+          notes: normalizedNotes,
           confidenceScore: confidenceScore || null,
           imageData,
           isRecurring,
@@ -849,14 +875,16 @@ export default function UploadReceipt() {
     onSuccess: (data) => {
       // Check if this is an offline response from service worker
       if (data && data.offline === true) {
+        const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
+
         // Handle offline response - queue for sync
         addPendingUpload({
           storeName,
           date,
           total,
           items: Array.isArray(items) ? items : [],
-          category,
-          notes: notes || null,
+          category: normalizedCategory,
+          notes: normalizedNotes,
           confidenceScore: confidenceScore || null,
           imageData,
           isRecurring,
@@ -976,14 +1004,16 @@ export default function UploadReceipt() {
         (error.status === 503 && error.responseData?.offline);
       
       if (isOfflineError) {
+        const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
+
         // Queue for offline sync
         addPendingUpload({
           storeName,
           date,
           total,
           items: Array.isArray(items) ? items : [],
-          category,
-          notes: notes || null,
+          category: normalizedCategory,
+          notes: normalizedNotes,
           confidenceScore: confidenceScore || null,
           imageData,
           isRecurring,
@@ -1767,7 +1797,18 @@ export default function UploadReceipt() {
                     <div className="space-y-3">
                       <Select 
                         value={category} 
-                        onValueChange={(value) => setCategory(value as ExpenseCategory)} 
+                        onValueChange={(value) => {
+                          const matchedCustomCategory = Array.isArray(customCategories)
+                            ? customCategories.find((customCat: any) => customCat.name === value)
+                            : null;
+
+                          setCategory(value);
+                          setCustomCategoryName(
+                            matchedCustomCategory
+                              ? (matchedCustomCategory.displayName || matchedCustomCategory.name)
+                              : null
+                          );
+                        }}
                         disabled={isScanning}
                       >
                         <SelectTrigger className="w-full">
@@ -1872,6 +1913,7 @@ export default function UploadReceipt() {
                     setDate("");
                     setTotal("");
                     setCategory("other");
+                    setCustomCategoryName(null);
                     setNotes("");
                     setItems([]);
                     setConfidenceScore(null);

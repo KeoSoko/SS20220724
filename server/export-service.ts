@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import type { Receipt, Budget } from '../shared/schema.js';
 import { storage } from './storage.js';
 import { azureStorage } from './azure-storage.js';
+import { formatReportingCategory, getReportingCategory } from './reporting-utils.js';
 
 /**
  * Compress and resize logo image to reduce PDF size for email attachments
@@ -51,6 +52,18 @@ function sanitizeTextForPDF(text: string | null | undefined): string {
 }
 
 export class ExportService {
+  private getReceiptCategoryLabel(receipt: Receipt): string {
+    const rawCategory = getReportingCategory(receipt.category, receipt.notes);
+    return formatReportingCategory(rawCategory);
+  }
+
+  private matchesCategoryFilter(receipt: Receipt, filter?: string): boolean {
+    if (!filter) return true;
+
+    const rawCategory = getReportingCategory(receipt.category, receipt.notes);
+    return filter === rawCategory || filter === formatReportingCategory(rawCategory);
+  }
+
   /**
    * Convert Simple Slips SVG logo to base64 PNG for PDF embedding
    */
@@ -121,7 +134,7 @@ export class ExportService {
       const filteredReceipts = receipts.filter(receipt => {
         if (options.startDate && receipt.date < options.startDate) return false;
         if (options.endDate && receipt.date > options.endDate) return false;
-        if (options.category && receipt.category !== options.category) return false;
+        if (!this.matchesCategoryFilter(receipt, options.category)) return false;
         return true;
       });
 
@@ -148,7 +161,7 @@ export class ExportService {
         const row = [
           receipt.date.toISOString().split('T')[0],
           `"${receipt.storeName.replace(/"/g, '""')}"`,
-          receipt.category,
+          this.getReceiptCategoryLabel(receipt),
           receipt.subcategory || '',
           receipt.total,
           receipt.paymentMethod || '',
@@ -182,6 +195,7 @@ export class ExportService {
     category?: string;
     includeSummary?: boolean;
     includeImages?: boolean;
+    groupBy?: 'category' | 'date';
   } = {}): Promise<Buffer> {
     try {
       const receipts = await storage.getReceiptsByUser(userId, 10000);
@@ -191,9 +205,9 @@ export class ExportService {
       const filteredReceipts = receipts.filter(receipt => {
         if (options.startDate && receipt.date < options.startDate) return false;
         if (options.endDate && receipt.date > options.endDate) return false;
-        if (options.category && receipt.category !== options.category) return false;
+        if (!this.matchesCategoryFilter(receipt, options.category)) return false;
         return true;
-      });
+      }).sort((a, b) => a.date.getTime() - b.date.getTime());
 
       const doc = new jsPDF();
       
@@ -250,29 +264,84 @@ export class ExportService {
       }
 
       // Add receipts table
-      const tableData = filteredReceipts.map(receipt => [
-        receipt.date.toLocaleDateString(),
-        receipt.storeName,
-        receipt.category,
-        `R ${receipt.total}`,
-        receipt.paymentMethod || '',
-        receipt.items.length.toString()
-      ]);
+      const includeCategoryColumn = options.groupBy !== 'category';
+      const tableHead = includeCategoryColumn
+        ? ['Date', 'Store', 'Category', 'Total']
+        : ['Date', 'Store', 'Total'];
 
-      autoTable(doc, {
-        head: [['Date', 'Store', 'Category', 'Total', 'Payment', 'Items']],
-        body: tableData,
-        startY: options.includeSummary ? 150 : 80,
-        styles: { 
-          fontSize: 8,
-          cellPadding: 3
-        },
-        headStyles: { 
-          fillColor: [primaryBlue[0], primaryBlue[1], primaryBlue[2]] as [number, number, number],
-          textColor: [255, 255, 255] as [number, number, number],
-          fontStyle: 'bold'
-        }
-      });
+      const tableRowForReceipt = (receipt: Receipt) => (
+        includeCategoryColumn
+          ? [
+              receipt.date.toLocaleDateString(),
+              receipt.storeName,
+              this.getReceiptCategoryLabel(receipt),
+              `R ${receipt.total}`
+            ]
+          : [
+              receipt.date.toLocaleDateString(),
+              receipt.storeName,
+              `R ${receipt.total}`
+            ]
+      );
+
+      const startY = options.includeSummary ? 150 : 80;
+
+      if (options.groupBy === 'category') {
+        const grouped = new Map<string, Receipt[]>();
+        filteredReceipts.forEach(receipt => {
+          const category = this.getReceiptCategoryLabel(receipt);
+          if (!grouped.has(category)) {
+            grouped.set(category, []);
+          }
+          grouped.get(category)!.push(receipt);
+        });
+
+        let yPos = startY;
+        Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b)).forEach(([category, receipts]) => {
+          if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+          doc.setFontSize(12);
+          doc.text(category, 20, yPos);
+          yPos += 6;
+
+          autoTable(doc, {
+            head: [tableHead],
+            body: receipts.map(tableRowForReceipt),
+            startY: yPos,
+            styles: {
+              fontSize: 8,
+              cellPadding: 3
+            },
+            headStyles: {
+              fillColor: [primaryBlue[0], primaryBlue[1], primaryBlue[2]] as [number, number, number],
+              textColor: [255, 255, 255] as [number, number, number],
+              fontStyle: 'bold'
+            }
+          });
+
+          const lastTable = (doc as any).lastAutoTable;
+          yPos = lastTable ? lastTable.finalY + 10 : yPos + 10;
+        });
+      } else {
+        autoTable(doc, {
+          head: [tableHead],
+          body: filteredReceipts.map(tableRowForReceipt),
+          startY,
+          styles: { 
+            fontSize: 8,
+            cellPadding: 3
+          },
+          headStyles: { 
+            fillColor: [primaryBlue[0], primaryBlue[1], primaryBlue[2]] as [number, number, number],
+            textColor: [255, 255, 255] as [number, number, number],
+            fontStyle: 'bold'
+          }
+        });
+      }
 
       // Add individual receipts with images if requested
       if (options.includeImages) {
@@ -290,7 +359,7 @@ export class ExportService {
               doc.setFontSize(12);
               doc.text(`Date: ${receipt.date.toLocaleDateString()}`, 20, 35);
               doc.text(`Total: R ${receipt.total}`, 20, 45);
-              doc.text(`Category: ${receipt.category}`, 20, 55);
+              doc.text(`Category: ${this.getReceiptCategoryLabel(receipt)}`, 20, 55);
               if (receipt.paymentMethod) {
                 doc.text(`Payment: ${receipt.paymentMethod}`, 20, 65);
               }
@@ -394,7 +463,11 @@ export class ExportService {
   /**
    * Generate tax report for a specific year
    */
-  async generateTaxReport(userId: number, taxYear: number): Promise<{
+  async generateTaxReport(userId: number, taxYear: number, options?: {
+    startDate?: Date;
+    endDate?: Date;
+    category?: string;
+  }): Promise<{
     csv: string;
     pdf: Buffer;
     summary: {
@@ -406,10 +479,17 @@ export class ExportService {
     try {
       const receipts = await storage.getReceiptsByUser(userId, 10000);
       
-      // Filter for tax year and deductible receipts
+      // Filter for date range or tax year and deductible receipts
       const taxReceipts = receipts.filter(receipt => {
-        const receiptYear = receipt.date.getFullYear();
-        return receiptYear === taxYear && receipt.isTaxDeductible;
+        if (!receipt.isTaxDeductible) return false;
+        if (options?.startDate && receipt.date < options.startDate) return false;
+        if (options?.endDate && receipt.date > options.endDate) return false;
+        if (options?.category && !this.matchesCategoryFilter(receipt, options.category)) return false;
+        if (!options?.startDate && !options?.endDate) {
+          const receiptYear = receipt.date.getFullYear();
+          return receiptYear === taxYear;
+        }
+        return true;
       });
 
       const totalDeductible = taxReceipts.reduce((sum, receipt) => sum + parseFloat(receipt.total), 0);
@@ -430,7 +510,7 @@ export class ExportService {
         const row = [
           receipt.date.toISOString().split('T')[0],
           `"${receipt.storeName.replace(/"/g, '""')}"`,
-          receipt.category,
+          this.getReceiptCategoryLabel(receipt),
           receipt.taxCategory || 'General',
           receipt.total,
           `"${(receipt.notes || '').replace(/"/g, '""')}"`
@@ -443,14 +523,21 @@ export class ExportService {
       // Generate PDF
       const doc = new jsPDF();
       doc.setFontSize(20);
-      doc.text(`Tax Report ${taxYear}`, 20, 20);
+      const titleSuffix = options?.startDate || options?.endDate
+        ? 'Custom Range'
+        : `${taxYear}`;
+      doc.text(`Tax Report ${titleSuffix}`, 20, 20);
       
       doc.setFontSize(12);
       doc.text(`Total Deductible Amount: R ${totalDeductible.toFixed(2)}`, 20, 40);
       doc.text(`Number of Deductible Receipts: ${taxReceipts.length}`, 20, 50);
+      if (options?.startDate || options?.endDate) {
+        const dateRange = `Date Range: ${options?.startDate?.toLocaleDateString() || 'All'} - ${options?.endDate?.toLocaleDateString() || 'All'}`;
+        doc.text(dateRange, 20, 60);
+      }
 
       // Category breakdown
-      let yPos = 70;
+      let yPos = options?.startDate || options?.endDate ? 80 : 70;
       doc.text('Category Breakdown:', 20, yPos);
       Object.entries(categoriesBreakdown).forEach(([category, amount]) => {
         yPos += 10;
@@ -940,7 +1027,7 @@ export class ExportService {
     const breakdown: Record<string, number> = {};
     
     receipts.forEach(receipt => {
-      const category = receipt.category;
+      const category = this.getReceiptCategoryLabel(receipt);
       breakdown[category] = (breakdown[category] || 0) + parseFloat(receipt.total);
     });
     

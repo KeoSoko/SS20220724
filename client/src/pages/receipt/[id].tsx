@@ -139,9 +139,10 @@ export default function ReceiptDetail() {
   // Split receipt state
   const [showSplitDialog, setShowSplitDialog] = useState(false);
   const [splits, setSplits] = useState([
-    { category: "groceries", percentage: 50, notes: "" },
-    { category: "dining", percentage: 50, notes: "" }
+    { category: "groceries", amount: 0, notes: "" },
+    { category: "dining", amount: 0, notes: "" }
   ]);
+  const [splitMode, setSplitMode] = useState<"amount" | "percentage">("amount");
 
   // Get a specific receipt
   const { data: receipt, isLoading, error } = useQuery<Receipt>({
@@ -150,7 +151,7 @@ export default function ReceiptDetail() {
   });
 
   // Query for custom categories
-  const { data: customCategories = [], isLoading: customCategoriesLoading, error: customCategoriesError } = useQuery({
+  const { data: customCategories = [], isLoading: customCategoriesLoading, error: customCategoriesError } = useQuery<Array<{ id: number; name: string; isActive: boolean }>>({
     queryKey: ["/api/custom-categories"],
     enabled: !!user, // Only fetch when user is authenticated
   });
@@ -166,6 +167,23 @@ export default function ReceiptDetail() {
       id
     });
   }, [customCategories, customCategoriesLoading, customCategoriesError, isValidId, id]);
+
+  const buildNotesWithCustomCategory = (
+    notesValue: string,
+    categoryValue: ExpenseCategory,
+    customCategoryValue: string
+  ) => {
+    const cleanedNotes = notesValue
+      ? notesValue.replace(/\[Custom Category: .*?\]\s*/i, "").trim()
+      : "";
+
+    if (categoryValue !== "other" || !customCategoryValue.trim()) {
+      return cleanedNotes || null;
+    }
+
+    const prefix = `[Custom Category: ${customCategoryValue.trim()}]`;
+    return cleanedNotes ? `${prefix} ${cleanedNotes}` : prefix;
+  };
 
 
 
@@ -206,7 +224,7 @@ export default function ReceiptDetail() {
         setCustomCategory(customCategoryMatch[1]);
         setShowCustomCategory(true);
         // Remove the custom category prefix from notes
-        const cleanedNotes = receipt.notes.replace(/\[Custom Category: .*?\]\s*/, "").trim();
+        const cleanedNotes = (receipt.notes ?? "").replace(/\[Custom Category: .*?\]\s*/, "").trim();
         setEditedNotes(cleanedNotes);
       } else {
         setEditedNotes(receipt.notes || "");
@@ -304,7 +322,7 @@ export default function ReceiptDetail() {
         date: editedDate,
         total: editedTotal,
         category: editedCategory,
-        notes: editedNotes || null,
+        notes: buildNotesWithCustomCategory(editedNotes, editedCategory, customCategory),
         
         // Advanced categorization fields
         subcategory: editedSubcategory || null,
@@ -362,14 +380,19 @@ export default function ReceiptDetail() {
         throw new Error("Invalid receipt or receipt ID");
       }
 
+      const receiptTotal = parseFloat(receipt.total);
       const splitData = {
         originalReceiptId: receiptId,
-        splits: splits.map(split => ({
-          category: split.category,
-          percentage: split.percentage,
-          amount: (parseFloat(receipt.total) * split.percentage / 100).toFixed(2),
-          notes: split.notes
-        }))
+        splits: splits.map(split => {
+          const amount = Number(split.amount) || 0;
+          const percentage = receiptTotal > 0 ? (amount / receiptTotal) * 100 : 0;
+          return {
+            category: split.category,
+            percentage: Number(percentage.toFixed(2)),
+            amount: amount.toFixed(2),
+            notes: split.notes
+          };
+        })
       };
 
       await apiRequest("POST", `/api/receipts/${receiptId}/split`, splitData);
@@ -399,7 +422,7 @@ export default function ReceiptDetail() {
   // Add split functionality
   const addSplit = () => {
     if (splits.length < 5) {
-      setSplits([...splits, { category: "other", percentage: 0, notes: "" }]);
+      setSplits([...splits, { category: "other", amount: 0, notes: "" }]);
     }
   };
 
@@ -416,17 +439,25 @@ export default function ReceiptDetail() {
   };
 
   const balanceSplits = () => {
-    const totalPercentage = splits.reduce((sum, split) => sum + split.percentage, 0);
-    if (totalPercentage !== 100) {
-      const difference = 100 - totalPercentage;
-      const splitCount = splits.length;
-      const adjustment = difference / splitCount;
-      setSplits(splits.map(split => ({
-        ...split,
-        percentage: Math.max(0, Math.min(100, split.percentage + adjustment))
-      })));
+    if (!receipt) return;
+    const receiptTotal = parseFloat(receipt.total);
+    const totalAmount = splits.reduce((sum, split) => sum + (Number(split.amount) || 0), 0);
+    if (receiptTotal === 0 || totalAmount === receiptTotal) {
+      return;
     }
+    const difference = receiptTotal - totalAmount;
+    const splitCount = splits.length;
+    const adjustment = difference / splitCount;
+    setSplits(splits.map(split => ({
+      ...split,
+      amount: Math.max(0, (Number(split.amount) || 0) + adjustment)
+    })));
   };
+
+  const receiptTotal = receipt ? parseFloat(receipt.total) : 0;
+  const totalSplitAmount = splits.reduce((sum, split) => sum + (Number(split.amount) || 0), 0);
+  const totalSplitPercentage = receiptTotal > 0 ? (totalSplitAmount / receiptTotal) * 100 : 0;
+  const isSplitBalanced = receiptTotal === 0 || Math.abs(totalSplitAmount - receiptTotal) < 0.01;
 
   // Invalid ID state
   if (!isValidId) {
@@ -511,9 +542,11 @@ export default function ReceiptDetail() {
                   variant="outline"
                   onClick={() => {
                     // Initialize splits with current receipt data
+                    const receiptTotal = receipt ? parseFloat(receipt.total) : 0;
+                    const half = receiptTotal / 2;
                     setSplits([
-                      { category: "groceries", percentage: 50, notes: "" },
-                      { category: "dining", percentage: 50, notes: "" }
+                      { category: "groceries", amount: half, notes: "" },
+                      { category: "dining", amount: receiptTotal - half, notes: "" }
                     ]);
                     setShowSplitDialog(true);
                   }}
@@ -537,7 +570,7 @@ export default function ReceiptDetail() {
                       setCustomCategory(customCategoryMatch[1]);
                       setShowCustomCategory(true);
                       // Remove the custom category prefix from notes
-                      const cleanedNotes = receipt.notes.replace(/\[Custom Category: .*?\]\s*/, "").trim();
+                      const cleanedNotes = (receipt.notes ?? "").replace(/\[Custom Category: .*?\]\s*/, "").trim();
                       setEditedNotes(cleanedNotes);
                     } else {
                       setEditedNotes(receipt.notes || "");
@@ -693,8 +726,22 @@ export default function ReceiptDetail() {
                     <Select
                       value={editedCategory}
                       onValueChange={(value) => {
+                        const matchedCustomCategory = Array.isArray(customCategories)
+                          ? customCategories.find((customCat: any) => customCat.name === value)
+                          : null;
+
+                        if (matchedCustomCategory) {
+                          setEditedCategory("other");
+                          setCustomCategory(matchedCustomCategory.name);
+                          setShowCustomCategory(true);
+                          return;
+                        }
+
                         setEditedCategory(value as ExpenseCategory);
                         setShowCustomCategory(value === "other");
+                        if (value !== "other") {
+                          setCustomCategory("");
+                        }
                       }}
                     >
                       <SelectTrigger>
@@ -1013,13 +1060,33 @@ export default function ReceiptDetail() {
             <DialogTitle>Split Receipt</DialogTitle>
             <DialogDescription>
               Split this receipt into multiple expenses with different categories.
-              Make sure percentages add up to 100%.
+              Enter amounts (recommended) or switch to percentages.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4">
-            <div className="text-sm text-muted-foreground">
-              Total Amount: {receipt ? formatCurrency(parseFloat(receipt.total)) : ''}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-muted-foreground">
+                Total Amount: {receipt ? formatCurrency(parseFloat(receipt.total)) : ''}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant={splitMode === "amount" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSplitMode("amount")}
+                >
+                  Amount
+                </Button>
+                <Button
+                  type="button"
+                  variant={splitMode === "percentage" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSplitMode("percentage")}
+                >
+                  Percentage
+                </Button>
+              </div>
             </div>
             
             {splits.map((split, index) => (
@@ -1058,15 +1125,30 @@ export default function ReceiptDetail() {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label>Percentage</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={split.percentage}
-                      onChange={(e) => updateSplit(index, 'percentage', parseFloat(e.target.value) || 0)}
-                      placeholder="0"
-                    />
+                    <Label>{splitMode === "amount" ? "Amount" : "Percentage"}</Label>
+                    {splitMode === "amount" ? (
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={split.amount}
+                        onChange={(e) => updateSplit(index, 'amount', parseFloat(e.target.value) || 0)}
+                        placeholder="0.00"
+                      />
+                    ) : (
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={receiptTotal > 0 ? ((Number(split.amount) || 0) / receiptTotal) * 100 : 0}
+                        onChange={(e) => {
+                          const percent = parseFloat(e.target.value) || 0;
+                          updateSplit(index, 'amount', receiptTotal * percent / 100);
+                        }}
+                        placeholder="0"
+                      />
+                    )}
                   </div>
                 </div>
                 
@@ -1080,7 +1162,9 @@ export default function ReceiptDetail() {
                 </div>
                 
                 <div className="text-sm text-muted-foreground">
-                  Amount: {receipt ? formatCurrency(parseFloat(receipt.total) * split.percentage / 100) : ''}
+                  {splitMode === "amount"
+                    ? `Percentage: ${receiptTotal > 0 ? ((Number(split.amount) || 0) / receiptTotal * 100).toFixed(2) : "0.00"}%`
+                    : `Amount: ${receipt ? formatCurrency(Number(split.amount) || 0) : ''}`}
                 </div>
               </div>
             ))}
@@ -1096,8 +1180,8 @@ export default function ReceiptDetail() {
               </Button>
               
               <div className="text-sm">
-                Total: {splits.reduce((sum, split) => sum + split.percentage, 0)}%
-                {splits.reduce((sum, split) => sum + split.percentage, 0) !== 100 && (
+                Total: {formatCurrency(totalSplitAmount)} ({totalSplitPercentage.toFixed(2)}%)
+                {!isSplitBalanced && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1118,13 +1202,13 @@ export default function ReceiptDetail() {
             >
               Cancel
             </Button>
-            <Button
-              onClick={() => splitMutation.mutate()}
-              disabled={
-                splitMutation.isPending ||
-                splits.reduce((sum, split) => sum + split.percentage, 0) !== 100
-              }
-            >
+              <Button
+                onClick={() => splitMutation.mutate()}
+                disabled={
+                  splitMutation.isPending ||
+                  !isSplitBalanced
+                }
+              >
               {splitMutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />

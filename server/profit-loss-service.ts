@@ -3,6 +3,7 @@ import { db } from './db';
 import { invoices, clients } from '../shared/schema.js';
 import { eq } from 'drizzle-orm';
 import type { Invoice, Receipt } from '../shared/schema.js';
+import { getReportingCategory } from './reporting-utils.js';
 
 export interface ProfitLossData {
   period: string;
@@ -270,7 +271,7 @@ export class ProfitLossService {
     // Group by category
     const categoryMap = new Map<string, { amount: number; count: number }>();
     receipts.forEach(rec => {
-      const category = rec.category || 'uncategorized';
+      const category = getReportingCategory(rec.category, rec.notes) || 'uncategorized';
       const existing = categoryMap.get(category) || { amount: 0, count: 0 };
       categoryMap.set(category, {
         amount: existing.amount + parseFloat(rec.total),

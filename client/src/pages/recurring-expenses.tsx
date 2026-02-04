@@ -73,10 +73,7 @@ export default function RecurringExpensesPage() {
         tags: []
       };
       
-      return apiRequest('/api/receipts', {
-        method: 'POST',
-        body: JSON.stringify(receiptData)
-      });
+      return apiRequest('POST', '/api/receipts', receiptData);
     },
     onSuccess: () => {
       toast({

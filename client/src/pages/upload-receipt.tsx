@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -56,6 +56,7 @@ export default function UploadReceipt() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const { isOnline, addPendingUpload } = useOfflineSync();
+  const clientUploadIdRef = useRef<string>(crypto.randomUUID());
   
   // Scanning states
   const [isScanning, setIsScanning] = useState(false);
@@ -112,6 +113,7 @@ export default function UploadReceipt() {
   const [duplicateReceipts, setDuplicateReceipts] = useState<DuplicateReceipt[]>([]);
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
   const [pendingContinuousMode, setPendingContinuousMode] = useState(false);
+  const [allowDuplicateSave, setAllowDuplicateSave] = useState(false);
 
   // Session storage key for preserving form state
   const FORM_STATE_KEY = 'upload_receipt_form_state';
@@ -179,6 +181,7 @@ export default function UploadReceipt() {
 
   // Reset form for another scan (used in continuous mode)
   const resetForAnotherScan = () => {
+    clientUploadIdRef.current = crypto.randomUUID();
     setImageData(null);
     setPreviewUrl(null);
     setStoreName("");
@@ -322,6 +325,7 @@ export default function UploadReceipt() {
         } else {
           // Offline - add to pending uploads
           addPendingUpload({
+            clientUploadId: crypto.randomUUID(),
             storeName: `Pending Receipt ${i + 1}`,
             date: new Date().toISOString().split('T')[0],
             total: "0.00",
@@ -733,12 +737,14 @@ export default function UploadReceipt() {
         throw new Error("No image data available");
       }
       const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
+      const clientUploadId = clientUploadIdRef.current;
       
       // Always save offline first to prevent hanging
       console.log("[Upload] Save attempt - isOnline:", isOnline, "navigator.onLine:", navigator.onLine);
       
       // Prepare receipt data
       const receiptData = {
+        clientUploadId,
         storeName,
         date,
         total,
@@ -749,6 +755,7 @@ export default function UploadReceipt() {
         imageData,
         isRecurring,
         isTaxDeductible,
+        allowDuplicate: allowDuplicateSave,
       };
       
       // If offline, use the offline sync system
@@ -781,6 +788,7 @@ export default function UploadReceipt() {
         
         // Race between API call and timeout
         const apiPromise = apiRequest("POST", "/api/receipts", {
+          clientUploadId,
           storeName,
           date,
           total,
@@ -791,6 +799,7 @@ export default function UploadReceipt() {
           imageData,
           isRecurring,
           isTaxDeductible,
+          allowDuplicate: allowDuplicateSave,
         });
         
         const res = await Promise.race([apiPromise, timeoutPromise]) as Response;
@@ -849,6 +858,7 @@ export default function UploadReceipt() {
       try {
         // Upload receipt data to server
         const res = await apiRequest("POST", "/api/receipts", {
+          clientUploadId,
           storeName,
           date,
           total,
@@ -859,6 +869,7 @@ export default function UploadReceipt() {
           imageData,
           isRecurring,
           isTaxDeductible,
+          allowDuplicate: allowDuplicateSave,
         });
         
         // Upload complete
@@ -875,10 +886,12 @@ export default function UploadReceipt() {
     onSuccess: (data) => {
       // Check if this is an offline response from service worker
       if (data && data.offline === true) {
+        setAllowDuplicateSave(false);
         const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
 
         // Handle offline response - queue for sync
         addPendingUpload({
+          clientUploadId: clientUploadIdRef.current,
           storeName,
           date,
           total,
@@ -909,6 +922,7 @@ export default function UploadReceipt() {
       }
       
       // Normal online success handling
+      setAllowDuplicateSave(false);
       // Invalidate receipts query to refresh the list
       queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
       
@@ -995,6 +1009,7 @@ export default function UploadReceipt() {
     onError: (error: any) => {
       setProgressValue(0);
       setScanProgress("");
+      setAllowDuplicateSave(false);
       
       // Check if this is an offline error from service worker or network failure
       const isOfflineError = !isOnline || 
@@ -1003,11 +1018,21 @@ export default function UploadReceipt() {
         error.offline === true ||
         (error.status === 503 && error.responseData?.offline);
       
+      if (error.status === 409 && error.responseData?.duplicates?.length) {
+        setAllowDuplicateSave(false);
+        setDuplicateReceipts(error.responseData.duplicates);
+        setShowDuplicateDialog(true);
+        setIsCheckingDuplicate(false);
+        return;
+      }
+
       if (isOfflineError) {
+        setAllowDuplicateSave(false);
         const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
 
         // Queue for offline sync
         addPendingUpload({
+          clientUploadId: clientUploadIdRef.current,
           storeName,
           date,
           total,
@@ -1369,6 +1394,7 @@ export default function UploadReceipt() {
   const handleProceedWithSave = () => {
     setShowDuplicateDialog(false);
     setDuplicateReceipts([]);
+    setAllowDuplicateSave(true);
     if (pendingContinuousMode) {
       setContinuousMode(true);
     }
@@ -1380,6 +1406,7 @@ export default function UploadReceipt() {
     setShowDuplicateDialog(false);
     setDuplicateReceipts([]);
     setPendingContinuousMode(false);
+    setAllowDuplicateSave(false);
   };
 
   // Handle form submission

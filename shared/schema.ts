@@ -113,6 +113,7 @@ export const users = pgTable("users", {
 export const receipts = pgTable("receipts", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clientUploadId: text("client_upload_id"),
   
   // Receipt basic data
   storeName: text("store_name").notNull(),
@@ -162,7 +163,9 @@ export const receipts = pgTable("receipts", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at"),
   processedAt: timestamp("processed_at"), // When OCR processing was completed
-});
+}, (table) => ({
+  uniqueClientUploadId: unique().on(table.userId, table.clientUploadId),
+}));
 
 // Define tags table for analytics and filtering
 export const tags = pgTable("tags", {
@@ -639,6 +642,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
 // Custom schema for receipt insertion
 export const insertReceiptSchema = z.object({
   userId: z.number(),
+  clientUploadId: z.string().uuid().optional(),
   storeName: z.string().min(1, "Store name is required"),
   // Accept string, date, or any valid date format
   date: z.union([

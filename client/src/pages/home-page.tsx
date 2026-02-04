@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -131,6 +131,18 @@ function HomePage() {
     queryKey: ["/api/budgets"],
     enabled: !!user,
   });
+
+  // Restore scroll position when returning from receipt detail page
+  useEffect(() => {
+    const savedPosition = sessionStorage.getItem('home_scroll_position');
+    if (savedPosition && !isLoading) {
+      const scrollY = parseInt(savedPosition, 10);
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
+      sessionStorage.removeItem('home_scroll_position');
+    }
+  }, [isLoading]);
 
   // Fetch custom categories
   const { data: customCategories = [] } = useQuery<Array<{
@@ -348,7 +360,10 @@ function HomePage() {
       leftActions: [
         {
           icon: <span className="text-sm">✏️</span>,
-          onClick: () => window.location.href = `/receipt/${receipt.id}/edit`,
+          onClick: () => {
+            sessionStorage.setItem('home_scroll_position', window.scrollY.toString());
+            window.location.href = `/receipt/${receipt.id}/edit`;
+          },
           color: '#3b82f6',
           label: 'Edit receipt'
         }
@@ -1273,6 +1288,7 @@ function HomePage() {
                                     }
                                     setSelectedReceipts(newSelected);
                                   } else {
+                                    sessionStorage.setItem('home_scroll_position', window.scrollY.toString());
                                     window.location.href = `/receipt/${receipt.id}`;
                                   }
                                 }}

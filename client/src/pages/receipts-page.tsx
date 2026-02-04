@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { EnhancedReceiptCard, SpacingContainer, EnhancedEmptyState } from '@/components/ui/enhanced-components';
+import { getReceiptCategoryLabel } from '@/utils/receipt-category';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -91,6 +92,19 @@ export default function ReceiptsPage() {
     return Array.from(new Set(vendors)).sort((a, b) => a.localeCompare(b));
   }, [receipts]);
 
+  // Restore scroll position when returning from receipt detail page
+  useEffect(() => {
+    const savedPosition = sessionStorage.getItem('receipts_scroll_position');
+    if (savedPosition && !isLoading && receipts.length > 0) {
+      const scrollY = parseInt(savedPosition, 10);
+      // Use setTimeout to ensure content is fully rendered
+      setTimeout(() => {
+        window.scrollTo(0, scrollY);
+        sessionStorage.removeItem('receipts_scroll_position');
+      }, 100);
+    }
+  }, [isLoading, receipts.length]);
+
   // Check if any smart filters are active
   const hasActiveSmartFilters = dateFrom || dateTo || amountMin || amountMax || vendorFilter !== 'all';
 
@@ -120,10 +134,13 @@ export default function ReceiptsPage() {
     
     // Category filter
     let matchesCategory = true;
+    const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category || '', receipt.notes);
+    const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
+    const normalizedLabel = receiptCategoryLabel.toLowerCase().replace(/_/g, ' ');
     if (categoryFilter === 'uncategorized') {
-      matchesCategory = !receipt.category || receipt.category === 'other' || receipt.category === '';
+      matchesCategory = !receipt.category || (receipt.category === 'other' && !receipt.notes?.match(/\[Custom Category:/i)) || receipt.category === '';
     } else if (categoryFilter !== 'all') {
-      matchesCategory = receipt.category === categoryFilter;
+      matchesCategory = receipt.category === categoryFilter || normalizedLabel === normalizedFilter;
     }
     
     // Needs Review filter (confidence < 80%)
@@ -214,6 +231,8 @@ export default function ReceiptsPage() {
     if (selectionMode) {
       toggleReceiptSelection(receiptId);
     } else {
+      // Save scroll position before navigating
+      sessionStorage.setItem('receipts_scroll_position', window.scrollY.toString());
       setLocation(`/receipt/${receiptId}`);
     }
   };
@@ -769,7 +788,7 @@ export default function ReceiptsPage() {
           </div>
         ) : sortedReceipts.length === 0 ? (
           <EnhancedEmptyState
-            icon={<Receipt className="w-12 h-12" />}
+            icon={<Search className="w-12 h-12 text-muted-foreground" />}
             title={
               categoryFilter === 'uncategorized' 
                 ? "No uncategorized receipts" 
@@ -809,6 +828,7 @@ export default function ReceiptsPage() {
                         total: Number(receipt.total),
                         date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
                         category: receipt.category || 'other',
+                        notes: receipt.notes,
                         confidenceScore: receipt.confidenceScore,
                         source: receipt.source,
                         isPotentialDuplicate: receipt.isPotentialDuplicate

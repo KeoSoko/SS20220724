@@ -312,6 +312,7 @@ export class ExportService {
             head: [tableHead],
             body: receipts.map(tableRowForReceipt),
             startY: yPos,
+            margin: { bottom: 35 },
             styles: {
               fontSize: 8,
               cellPadding: 3
@@ -331,6 +332,7 @@ export class ExportService {
           head: [tableHead],
           body: filteredReceipts.map(tableRowForReceipt),
           startY,
+          margin: { bottom: 35 },
           styles: { 
             fontSize: 8,
             cellPadding: 3
@@ -556,6 +558,7 @@ export class ExportService {
         head: [['Date', 'Store', 'Tax Category', 'Amount']],
         body: tableData,
         startY: yPos + 20,
+        margin: { bottom: 35 },
         styles: { fontSize: 8 },
         headStyles: { fillColor: [220, 53, 69] }
       });
@@ -725,6 +728,7 @@ export class ExportService {
         head: [['Description', 'Quantity', 'Unit Price', 'Total']],
         body: tableData,
         startY: yPos,
+        margin: { bottom: 35 },
         theme: 'striped',
         headStyles: { fillColor: [0, 0, 0] },
         styles: { fontSize: 10 },
@@ -971,6 +975,7 @@ export class ExportService {
           head: [['Date', 'Method', 'Reference', 'Amount']],
           body: paymentData,
           startY: yPos,
+          margin: { bottom: 35 },
           theme: 'plain',
           styles: { fontSize: 9 },
         });

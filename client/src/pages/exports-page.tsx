@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { Download, FileText, Receipt, Calendar, CalendarRange } from 'lucide-react';
+import { Download, FileText, Receipt, Calendar, CalendarRange, Archive } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+
+const EXPENSE_CATEGORIES = [
+  'food', 'groceries', 'dining', 'transportation', 'entertainment', 
+  'utilities', 'rent', 'travel', 'healthcare', 'education', 'shopping', 
+  'office_supplies', 'personal_care', 'gifts', 'other'
+];
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -25,6 +32,10 @@ export default function ExportsPage() {
   const [allowAllTimeExport, setAllowAllTimeExport] = useState(false);
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  
+  const { data: customCategories = [] } = useQuery<{ id: number; name: string; displayName?: string }[]>({
+    queryKey: ['/api/custom-categories'],
+  });
 
   const handleExport = async (type: 'backup') => {
     setIsExporting(true);
@@ -182,7 +193,7 @@ export default function ExportsPage() {
       type: 'backup' as const,
       title: 'Full Backup',
       description: 'Complete data export in JSON format',
-      icon: Receipt,
+      icon: Archive,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
     },
@@ -247,14 +258,20 @@ export default function ExportsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All categories</SelectItem>
-                    <SelectItem value="groceries">Groceries</SelectItem>
-                    <SelectItem value="fuel">Fuel</SelectItem>
-                    <SelectItem value="clothing">Clothing</SelectItem>
-                    <SelectItem value="dining">Dining</SelectItem>
-                    <SelectItem value="medical">Medical</SelectItem>
-                    <SelectItem value="office_supplies">Office Supplies</SelectItem>
-                    <SelectItem value="entertainment">Entertainment</SelectItem>
-                    <SelectItem value="travel">Travel</SelectItem>
+                    {EXPENSE_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ')}
+                      </SelectItem>
+                    ))}
+                    {Array.isArray(customCategories) && customCategories.length > 0 && (
+                      <>
+                        {customCategories.map((customCat: any) => (
+                          <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
+                            {customCat.displayName || customCat.name}
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

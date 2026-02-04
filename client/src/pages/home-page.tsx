@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { ExpenseCategory, Receipt, EXPENSE_CATEGORIES } from "@shared/schema";
+import { getReceiptCategoryLabel } from "@/utils/receipt-category";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { 
@@ -31,6 +32,7 @@ import {
   Receipt as ReceiptIcon,
   ShoppingBag,
   Tags,
+  Tag,
   Trash2,
   Utensils,
   CheckSquare,
@@ -55,6 +57,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PageLayout } from "@/components/page-layout";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
@@ -76,10 +88,20 @@ function HomePage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [showNeedsReview, setShowNeedsReview] = useState(false);
   const [sortBy, setSortBy] = useState<"date" | "amount" | "category">("date");
-  const [activeTab, setActiveTab] = useState("analytics");
+  const [activeTab, setActiveTab] = useState(() => {
+    // Restore saved tab if coming back from receipt detail
+    const savedTab = sessionStorage.getItem('home_active_tab');
+    if (savedTab) {
+      sessionStorage.removeItem('home_active_tab');
+      return savedTab;
+    }
+    return "analytics";
+  });
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedReceipts, setSelectedReceipts] = useState<Set<number>>(new Set());
   const [isTaxAIOpen, setIsTaxAIOpen] = useState(false);
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  const [bulkCategory, setBulkCategory] = useState('');
   const isMobile = useIsMobile();
   const { isOnline, pendingUploads } = useOfflineSync();
   
@@ -117,6 +139,19 @@ function HomePage() {
     queryKey: ["/api/budgets"],
     enabled: !!user,
   });
+
+  // Restore scroll position when returning from receipt detail page
+  useEffect(() => {
+    const savedPosition = sessionStorage.getItem('home_scroll_position');
+    if (savedPosition && !isLoading && receipts.length > 0) {
+      const scrollY = parseInt(savedPosition, 10);
+      // Use setTimeout to ensure content is fully rendered
+      setTimeout(() => {
+        window.scrollTo(0, scrollY);
+        sessionStorage.removeItem('home_scroll_position');
+      }, 100);
+    }
+  }, [isLoading, receipts.length]);
 
   // Fetch custom categories
   const { data: customCategories = [] } = useQuery<Array<{
@@ -195,6 +230,44 @@ function HomePage() {
     },
   });
 
+  // Bulk categorize mutation
+  const bulkCategorizeMutation = useMutation({
+    mutationFn: async ({ receiptIds, category }: { receiptIds: number[], category: string }) => {
+      await Promise.all(
+        receiptIds.map(id => 
+          apiRequest('PATCH', `/api/receipts/${id}`, { category })
+        )
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/receipts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/analytics/monthly'] });
+      toast({
+        title: "Receipts updated",
+        description: `Successfully categorised ${selectedReceipts.size} receipt(s)`,
+      });
+      setSelectedReceipts(new Set());
+      setShowCategoryDialog(false);
+      setBulkCategory('');
+      setBulkMode(false);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update receipts. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleBulkCategorize = () => {
+    if (!bulkCategory) return;
+    bulkCategorizeMutation.mutate({ 
+      receiptIds: Array.from(selectedReceipts), 
+      category: bulkCategory 
+    });
+  };
+
   // Unique vendors list for filter
   const uniqueVendors = useMemo(() => {
     const vendors = new Set<string>();
@@ -221,7 +294,10 @@ function HomePage() {
     .filter((receipt) => {
       const matchesSearch = receipt.storeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           receipt.notes?.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = categoryFilter === "all" || receipt.category === categoryFilter;
+      const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category, receipt.notes);
+      const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
+      const normalizedLabel = receiptCategoryLabel.toLowerCase().replace(/_/g, ' ');
+      const matchesCategory = categoryFilter === "all" || receipt.category === categoryFilter || normalizedLabel === normalizedFilter;
       
       // Filter by confidence score if "Needs Review" is enabled
       let matchesConfidence = true;
@@ -287,48 +363,17 @@ function HomePage() {
     setSelectedReceipts(new Set());
   };
 
-  const exportSelectedReceipts = async () => {
-    try {
-      const selectedData = filteredReceipts.filter(r => selectedReceipts.has(r.id));
-      const csvContent = [
-        ['Date', 'Store', 'Amount', 'Category', 'Notes'].join(','),
-        ...selectedData.map(r => [
-          format(new Date(r.date), 'yyyy-MM-dd'),
-          r.storeName || '',
-          r.total.toString(),
-          r.category || '',
-          r.notes || ''
-        ].join(','))
-      ].join('\n');
-      
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipts-${format(new Date(), 'yyyy-MM-dd')}.csv`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      
-      toast({
-        title: "Success",
-        description: "Receipts exported successfully.",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to export receipts.",
-        variant: "destructive",
-      });
-    }
-  };
-
   // Swipe actions helper function
   const getSwipeActions = (receipt: Receipt) => {
     return {
       leftActions: [
         {
           icon: <span className="text-sm">✏️</span>,
-          onClick: () => window.location.href = `/receipt/${receipt.id}/edit`,
+          onClick: () => {
+            sessionStorage.setItem('home_scroll_position', window.scrollY.toString());
+            sessionStorage.setItem('home_active_tab', activeTab);
+            window.location.href = `/receipt/${receipt.id}/edit`;
+          },
           color: '#3b82f6',
           label: 'Edit receipt'
         }
@@ -573,10 +618,15 @@ function HomePage() {
                   <Button 
                     size="sm" 
                     variant="outline"
-                    onClick={exportSelectedReceipts}
+                    onClick={() => setShowCategoryDialog(true)}
+                    disabled={bulkCategorizeMutation.isPending}
                   >
-                    <Download className="h-4 w-4 mr-2" />
-                    Export CSV
+                    {bulkCategorizeMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Tag className="h-4 w-4 mr-2" />
+                    )}
+                    Bulk Categorise
                   </Button>
                   <Button 
                     size="sm" 
@@ -1186,7 +1236,7 @@ function HomePage() {
                 {/* Receipts List */}
                 {filteredReceipts.length === 0 ? (
                   <EnhancedEmptyState
-                    icon={<ReceiptIcon className="w-12 h-12" />}
+                    icon={<Search className="w-12 h-12 text-muted-foreground" />}
                     title="No receipts found"
                     description="Start by scanning your first receipt or adjust your search filters"
                     onAction={() => window.location.href = '/upload'}
@@ -1233,6 +1283,7 @@ function HomePage() {
                                   total: parseFloat(receipt.total),
                                   date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
                                   category: receipt.category || 'other',
+                                  notes: receipt.notes,
                                   confidenceScore: receipt.confidenceScore,
                                   source: receipt.source,
                                   isPotentialDuplicate: receipt.isPotentialDuplicate
@@ -1247,6 +1298,8 @@ function HomePage() {
                                     }
                                     setSelectedReceipts(newSelected);
                                   } else {
+                                    sessionStorage.setItem('home_scroll_position', window.scrollY.toString());
+                                    sessionStorage.setItem('home_active_tab', activeTab);
                                     window.location.href = `/receipt/${receipt.id}`;
                                   }
                                 }}
@@ -1328,6 +1381,19 @@ function HomePage() {
                 All
               </Button>
               <Button 
+                variant="outline"
+                className="h-11 px-4 min-w-[44px]"
+                onClick={() => setShowCategoryDialog(true)}
+                disabled={selectedReceipts.size === 0 || bulkCategorizeMutation.isPending}
+                data-testid="button-bulk-categorize-mobile"
+              >
+                {bulkCategorizeMutation.isPending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Tag className="h-5 w-5" />
+                )}
+              </Button>
+              <Button 
                 variant="destructive"
                 className="h-11 px-4 min-w-[44px]"
                 onClick={() => bulkDeleteMutation.mutate(Array.from(selectedReceipts))}
@@ -1355,6 +1421,57 @@ function HomePage() {
           onToggle={setIsTaxAIOpen} 
         />
       )}
+
+      {/* Bulk Categorise Dialog */}
+      <AlertDialog open={showCategoryDialog} onOpenChange={setShowCategoryDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Categorise Selected Receipts</AlertDialogTitle>
+            <AlertDialogDescription>
+              Choose a category for {selectedReceipts.size} receipt(s):
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Select value={bulkCategory} onValueChange={setBulkCategory}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {EXPENSE_CATEGORIES.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ')}
+                  </SelectItem>
+                ))}
+                {Array.isArray(customCategories) && customCategories.length > 0 && (
+                  <>
+                    {customCategories.map((customCat: any) => (
+                      <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
+                        {customCat.displayName}
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleBulkCategorize}
+              disabled={!bulkCategory || bulkCategorizeMutation.isPending}
+            >
+              {bulkCategorizeMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Categorising...
+                </>
+              ) : (
+                `Categorise ${selectedReceipts.size} Receipt(s)`
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

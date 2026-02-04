@@ -103,6 +103,11 @@ export default function AnalyticsPage() {
     queryKey: ["/api/receipts"]
   });
 
+  // AI Insights data for spending patterns, top merchants, and recommendations
+  const { data: insights } = useQuery({
+    queryKey: ['/api/insights'],
+  });
+
   // Calculate analytics
   const totalSpending = categoryData.reduce((sum, cat) => sum + cat.total, 0);
   const totalReceipts = receipts.length;
@@ -385,26 +390,98 @@ export default function AnalyticsPage() {
         </ContentCard>
       </Section>
 
-      {/* Recurring Expenses */}
-      <Section title="Recurring Expenses" description="Track your subscription payments and recurring bills">
-        <ContentCard>
-          <div className="text-center py-8">
-            <div className="flex items-center justify-center gap-4 mb-4">
-              <TrendingUp className="h-8 w-8 text-blue-600" />
-              <div>
-                <h3 className="text-lg font-medium">Smart Recurring Detection</h3>
-                <p className="text-sm text-gray-600">Automatically identify your recurring expenses</p>
+      {/* AI Spending Insights */}
+      <Section title="AI Spending Insights" description="Smart analysis of your spending patterns and habits">
+        <div className={`grid gap-6 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          {/* Spending Patterns */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-primary" />
+                Spending Patterns
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {insights ? (
+                <div className="space-y-4">
+                  <div>
+                    <span className="text-sm text-muted-foreground">Average Spending</span>
+                    <div className="text-2xl font-bold">{formatCurrency((insights as any)?.averageSpending || 0)}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-muted-foreground">Spending Trend</span>
+                    <div className="mt-1">
+                      <Badge 
+                        variant={(insights as any)?.spendingTrend === 'increasing' ? 'destructive' : 
+                                (insights as any)?.spendingTrend === 'decreasing' ? 'default' : 'secondary'}
+                      >
+                        {(insights as any)?.spendingTrend || 'stable'}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted-foreground">
+                  No spending pattern data available
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Top Merchants */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Banknote className="h-5 w-5 text-primary" />
+                Top Merchants
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {insights && ((insights as any)?.topStores || []).length > 0 ? (
+                <div className="space-y-3">
+                  {((insights as any)?.topStores || []).slice(0, 5).map((store: any, index: number) => (
+                    <div key={index} className="flex justify-between items-center">
+                      <span className="truncate flex-1">{store.name}</span>
+                      <div className="text-right ml-4">
+                        <div className="font-semibold">{formatCurrency(store.amount)}</div>
+                        <div className="text-xs text-muted-foreground">{store.frequency} visits</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted-foreground">
+                  No merchant data available
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* AI Recommendations */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <PieChart className="h-5 w-5 text-primary" />
+              AI Recommendations
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {insights && ((insights as any)?.recommendations || []).length > 0 ? (
+              <div className="space-y-2">
+                {((insights as any)?.recommendations || []).map((rec: string, index: number) => (
+                  <div key={index} className="p-3 bg-blue-50 border border-blue-100 rounded-none">
+                    <p className="text-sm">{rec}</p>
+                  </div>
+                ))}
               </div>
-            </div>
-            <Button 
-              onClick={() => setLocation('/recurring-expenses')}
-              className="gap-2"
-            >
-              <Calendar className="h-4 w-4" />
-              View Recurring Expenses
-            </Button>
-          </div>
-        </ContentCard>
+            ) : (
+              <div className="text-center py-4 text-muted-foreground">
+                Add more receipts to get personalised AI recommendations
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </Section>
 
       {/* Recent Activity */}

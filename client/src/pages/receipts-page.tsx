@@ -93,27 +93,18 @@ export default function ReceiptsPage() {
   }, [receipts]);
 
   const scrollStorageKey = 'receipts_scroll_position';
-
-  useEffect(() => {
-    const handleScroll = () => {
-      sessionStorage.setItem(scrollStorageKey, window.scrollY.toString());
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      handleScroll();
-      window.removeEventListener('scroll', handleScroll);
-    };
-  }, []);
+  const scrollRestoreKey = 'receipts_should_restore_scroll';
 
   // Restore scroll position when returning from receipt detail page
   useEffect(() => {
+    const shouldRestore = sessionStorage.getItem(scrollRestoreKey) === 'true';
     const savedPosition = sessionStorage.getItem(scrollStorageKey);
-    if (savedPosition && !isLoading && receipts.length > 0) {
+    if (shouldRestore && savedPosition && !isLoading && receipts.length > 0) {
       const scrollY = parseInt(savedPosition, 10);
       requestAnimationFrame(() => {
         window.scrollTo(0, scrollY);
         sessionStorage.removeItem(scrollStorageKey);
+        sessionStorage.removeItem(scrollRestoreKey);
       });
     }
   }, [isLoading, receipts.length]);
@@ -244,6 +235,8 @@ export default function ReceiptsPage() {
     if (selectionMode) {
       toggleReceiptSelection(receiptId);
     } else {
+      sessionStorage.setItem(scrollStorageKey, window.scrollY.toString());
+      sessionStorage.setItem(scrollRestoreKey, 'true');
       setLocation(`/receipt/${receiptId}`);
     }
   };

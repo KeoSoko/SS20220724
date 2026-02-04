@@ -408,7 +408,7 @@ export default function ReceiptDetail() {
       });
       
       setShowSplitDialog(false);
-      setLocation("/home");
+      window.location.href = "/home";
     },
     onError: (error: Error) => {
       toast({

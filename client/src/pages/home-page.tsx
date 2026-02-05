@@ -291,11 +291,20 @@ function HomePage() {
     });
   };
 
-  // Unique vendors list for filter
+  // Helper to strip split suffix from vendor names (e.g., "Store Name (split 1/2)" -> "Store Name")
+  const stripSplitSuffix = (name: string | null | undefined): string => {
+    if (!name) return "";
+    return name.replace(/\s*\(split \d+\/\d+\)$/i, "").trim();
+  };
+
+  // Unique vendors list for filter - normalize by stripping split suffixes
   const uniqueVendors = useMemo(() => {
     const vendors = new Set<string>();
     receipts.forEach(r => {
-      if (r.storeName) vendors.add(r.storeName);
+      if (r.storeName) {
+        const baseVendor = stripSplitSuffix(r.storeName);
+        if (baseVendor) vendors.add(baseVendor);
+      }
     });
     return Array.from(vendors).sort();
   }, [receipts]);
@@ -353,8 +362,8 @@ function HomePage() {
         matchesAmountRange = matchesAmountRange && amount <= parseFloat(amountMax);
       }
 
-      // Smart Filters: Vendor
-      const matchesVendor = vendorFilter === "all" || receipt.storeName === vendorFilter;
+      // Smart Filters: Vendor - compare base vendor names (ignore split suffixes)
+      const matchesVendor = vendorFilter === "all" || stripSplitSuffix(receipt.storeName) === vendorFilter;
       
       return matchesSearch && matchesCategory && matchesConfidence && matchesDateRange && matchesAmountRange && matchesVendor;
     })

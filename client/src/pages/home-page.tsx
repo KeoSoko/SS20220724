@@ -105,13 +105,27 @@ function HomePage() {
   const isMobile = useIsMobile();
   const { isOnline, pendingUploads } = useOfflineSync();
   
-  // Smart Filters state
-  const [showSmartFilters, setShowSmartFilters] = useState(false);
-  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
-  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
-  const [amountMin, setAmountMin] = useState("");
-  const [amountMax, setAmountMax] = useState("");
-  const [vendorFilter, setVendorFilter] = useState("all");
+  // Smart Filters state - restore from sessionStorage if coming back from receipt detail
+  const [showSmartFilters, setShowSmartFilters] = useState(() => {
+    return sessionStorage.getItem('home_show_smart_filters') === 'true';
+  });
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(() => {
+    const saved = sessionStorage.getItem('home_date_from');
+    return saved ? new Date(saved) : undefined;
+  });
+  const [dateTo, setDateTo] = useState<Date | undefined>(() => {
+    const saved = sessionStorage.getItem('home_date_to');
+    return saved ? new Date(saved) : undefined;
+  });
+  const [amountMin, setAmountMin] = useState(() => {
+    return sessionStorage.getItem('home_amount_min') || "";
+  });
+  const [amountMax, setAmountMax] = useState(() => {
+    return sessionStorage.getItem('home_amount_max') || "";
+  });
+  const [vendorFilter, setVendorFilter] = useState(() => {
+    return sessionStorage.getItem('home_vendor_filter') || "all";
+  });
 
   // Fetch receipts
   const { data: receipts = [], isLoading, error } = useQuery<Receipt[]>({
@@ -152,6 +166,12 @@ function HomePage() {
         sessionStorage.removeItem('home_scroll_position');
         sessionStorage.removeItem('home_active_tab');
         sessionStorage.removeItem('home_category_filter');
+        sessionStorage.removeItem('home_show_smart_filters');
+        sessionStorage.removeItem('home_date_from');
+        sessionStorage.removeItem('home_date_to');
+        sessionStorage.removeItem('home_amount_min');
+        sessionStorage.removeItem('home_amount_max');
+        sessionStorage.removeItem('home_vendor_filter');
       }, 300);
     }
   }, [isLoading, receipts.length]);
@@ -376,6 +396,12 @@ function HomePage() {
             sessionStorage.setItem('home_scroll_position', window.scrollY.toString());
             sessionStorage.setItem('home_active_tab', activeTab);
             sessionStorage.setItem('home_category_filter', categoryFilter);
+            sessionStorage.setItem('home_show_smart_filters', showSmartFilters.toString());
+            if (dateFrom) sessionStorage.setItem('home_date_from', dateFrom.toISOString());
+            if (dateTo) sessionStorage.setItem('home_date_to', dateTo.toISOString());
+            sessionStorage.setItem('home_amount_min', amountMin);
+            sessionStorage.setItem('home_amount_max', amountMax);
+            sessionStorage.setItem('home_vendor_filter', vendorFilter);
             window.location.href = `/receipt/${receipt.id}/edit`;
           },
           color: '#3b82f6',
@@ -1305,6 +1331,12 @@ function HomePage() {
                                     sessionStorage.setItem('home_scroll_position', window.scrollY.toString());
                                     sessionStorage.setItem('home_active_tab', activeTab);
                                     sessionStorage.setItem('home_category_filter', categoryFilter);
+                                    sessionStorage.setItem('home_show_smart_filters', showSmartFilters.toString());
+                                    if (dateFrom) sessionStorage.setItem('home_date_from', dateFrom.toISOString());
+                                    if (dateTo) sessionStorage.setItem('home_date_to', dateTo.toISOString());
+                                    sessionStorage.setItem('home_amount_min', amountMin);
+                                    sessionStorage.setItem('home_amount_max', amountMax);
+                                    sessionStorage.setItem('home_vendor_filter', vendorFilter);
                                     window.location.href = `/receipt/${receipt.id}`;
                                   }
                                 }}

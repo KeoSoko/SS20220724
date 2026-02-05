@@ -85,7 +85,11 @@ function HomePage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>(() => {
+    // Restore saved category filter if coming back from receipt detail
+    const savedCategory = sessionStorage.getItem('home_category_filter');
+    return savedCategory || "all";
+  });
   const [showNeedsReview, setShowNeedsReview] = useState(false);
   const [sortBy, setSortBy] = useState<"date" | "amount" | "category">("date");
   const [activeTab, setActiveTab] = useState(() => {
@@ -147,6 +151,7 @@ function HomePage() {
         // Clear saved state after restoring
         sessionStorage.removeItem('home_scroll_position');
         sessionStorage.removeItem('home_active_tab');
+        sessionStorage.removeItem('home_category_filter');
       }, 300);
     }
   }, [isLoading, receipts.length]);
@@ -370,6 +375,7 @@ function HomePage() {
           onClick: () => {
             sessionStorage.setItem('home_scroll_position', window.scrollY.toString());
             sessionStorage.setItem('home_active_tab', activeTab);
+            sessionStorage.setItem('home_category_filter', categoryFilter);
             window.location.href = `/receipt/${receipt.id}/edit`;
           },
           color: '#3b82f6',
@@ -1298,6 +1304,7 @@ function HomePage() {
                                   } else {
                                     sessionStorage.setItem('home_scroll_position', window.scrollY.toString());
                                     sessionStorage.setItem('home_active_tab', activeTab);
+                                    sessionStorage.setItem('home_category_filter', categoryFilter);
                                     window.location.href = `/receipt/${receipt.id}`;
                                   }
                                 }}

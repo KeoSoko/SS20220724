@@ -1332,8 +1332,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         if (error.message.includes('duplicate key')) {
-          if (clientUploadId && typeof clientUploadId === 'string' && storage.getReceiptByClientUploadId) {
-            const existingReceipt = await storage.getReceiptByClientUploadId(userId, clientUploadId);
+          const catchClientUploadId = req.body.clientUploadId;
+          const catchUserId = getUserId(req);
+          if (catchClientUploadId && typeof catchClientUploadId === 'string' && storage.getReceiptByClientUploadId) {
+            const existingReceipt = await storage.getReceiptByClientUploadId(catchUserId, catchClientUploadId);
             if (existingReceipt) {
               return res.status(200).json(existingReceipt);
             }

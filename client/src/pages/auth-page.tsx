@@ -147,11 +147,11 @@ export default function AuthPage() {
     },
   });
 
-  // Redirect if already logged in
-  if (user) {
-    setTimeout(() => setLocation("/home"), 0);
-    return null;
-  }
+  useEffect(() => {
+    if (user) {
+      setLocation('/home');
+    }
+  }, [user, setLocation]);
 
   // Handle login
   const onLoginSubmit = async (data: z.infer<typeof loginSchema>) => {

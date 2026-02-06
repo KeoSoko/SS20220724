@@ -99,7 +99,18 @@ app.get('/manifest.json', (req, res) => {
 });
 app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.resolve(process.cwd(), 'public/sw.js'));
+});
+
+app.get('/clear-cache.html', (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.resolve(process.cwd(), 'public/clear-cache.html'));
 });
 
 app.use('/favicon.ico', express.static('public/favicon.ico'));

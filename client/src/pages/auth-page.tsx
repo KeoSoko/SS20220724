@@ -153,116 +153,147 @@ export default function AuthPage() {
     }
   }, [user, setLocation]);
 
-  // Handle login
-  const onLoginSubmit = async (data: z.infer<typeof loginSchema>) => {
+  const logAuthError = (context: string, error: any, username: string) => {
+    const errorDetails = {
+      context,
+      username,
+      message: error?.message,
+      status: error?.status,
+      errorType: error?.errorType,
+      originalMessage: error?.originalMessage,
+      userMessage: error?.userMessage,
+      responseData: error?.responseData,
+      constructorName: error?.constructor?.name,
+      isNetworkError: error instanceof TypeError,
+      online: navigator.onLine,
+      timestamp: new Date().toISOString()
+    };
+    console.error(`[AUTH] ${context}:`, errorDetails);
     try {
-      await loginMutation.mutateAsync(data);
-      // Success! Redirect to home without toast to avoid any conflicts
-      setLocation("/home");
-    } catch (error: any) {
-      // Enhanced error handling with better user experience
-      console.error("🚨 AUTH PAGE CAUGHT ERROR:", error);
-      console.error("🚨 Error message:", error.message);
-      console.error("🚨 Error status:", error.status);
-      console.error("🚨 Error errorType:", error.errorType);
-      console.error("🚨 Error originalMessage:", error.originalMessage);
-      console.error("🚨 Error responseData:", error.responseData);
-      console.error("🚨 Full error object:", JSON.stringify(error, null, 2));
-      console.error("🚨 Error constructor:", error.constructor.name);
-      console.error("🚨 Error keys:", Object.keys(error));
+      fetch('/api/log-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'auth_error',
+          component: 'auth-page',
+          ...errorDetails
+        })
+      }).catch(() => {});
+    } catch {}
+  };
 
-      // Authentication system is now production-ready
+  const onLoginSubmit = async (data: z.infer<typeof loginSchema>) => {
+    let lastError: any = null;
+    const maxAttempts = 2;
 
-      // Check for email verification error
-      if (error.needsEmailVerification) {
-        setErrorDetails({
-          title: "Email Verification Required",
-          message: "Please verify your email address before signing in. We've sent a verification link to your email. Click the link to activate your account, then return here to sign in.",
-          type: 'email'
-        });
-        setShowErrorDialog(true);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await loginMutation.mutateAsync(data);
+        setLocation("/home");
         return;
-      }
+      } catch (error: any) {
+        lastError = error;
+        const isNetworkError = error instanceof TypeError || 
+          error.message?.includes('Failed to fetch') ||
+          error.message?.includes('NetworkError') ||
+          !navigator.onLine;
 
-      // Check for account locked error (must be first check to override other patterns)
-      // Server sends: {"error":"Account temporarily locked","message":"For your security...","userMessage":"Account locked. Please try again in X minutes."}
-      const isAccountLocked = 
-          error.errorType === "Account locked" || 
-          error.errorType === "Account temporarily locked" ||
-          error.responseData?.error === "Account locked" ||
-          error.responseData?.error === "Account temporarily locked" ||
-          error.message?.toLowerCase().includes("account locked") || 
-          error.message?.toLowerCase().includes("account is locked") || 
-          error.message?.toLowerCase().includes("temporarily locked") ||
-          error.message?.toLowerCase().includes("too many failed") ||
-          error.originalMessage?.toLowerCase().includes("too many failed") ||
-          error.originalMessage?.toLowerCase().includes("temporarily locked") ||
-          error.userMessage?.toLowerCase().includes("account locked");
-          
-      if (isAccountLocked) {
-        console.log("🔒 ACCOUNT LOCKED ERROR DETECTED:", { 
-          message: error.message, 
-          errorType: error.errorType, 
-          responseData: error.responseData,
-          originalMessage: error.originalMessage,
-          userMessage: error.userMessage
-        });
-        
-        // Extract the time remaining from the server message if available
-        const serverMessage = error.userMessage || error.originalMessage || error.message || "";
-        const timeMatch = serverMessage.match(/(\d+)\s*minute/i);
-        const minutesRemaining = timeMatch ? parseInt(timeMatch[1]) : 15;
-        
-        setErrorDetails({
-          title: "Account Temporarily Locked",
-          message: `For your security, we've temporarily locked your account after multiple failed login attempts.\n\nPlease wait ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''} before trying again.\n\nAlternatively, you can use 'Forgot Password' below to reset your password and unlock your account immediately.`,
-          type: 'general'
-        });
-        setShowErrorDialog(true);
-        return;
+        if (isNetworkError && attempt < maxAttempts) {
+          logAuthError(`Network error on attempt ${attempt}, retrying`, error, data.username);
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        break;
       }
+    }
 
-      // Check for invalid credentials (comprehensive patterns) - but NOT if it's an account lock
-      if (!isAccountLocked &&
-          (error.message?.includes("Invalid credentials") || 
-           error.message?.includes("invalid username or password") || 
-           error.message?.includes("Invalid username or password") ||
-           error.message?.includes("Login failed: 401") ||
-           error.errorType === "Invalid username or password" ||
-           error.status === 401)) {
-        console.log("🔑 INVALID CREDENTIALS ERROR DETECTED:", { 
-          message: error.message, 
-          errorType: error.errorType, 
-          status: error.status 
-        });
-        setErrorDetails({
-          title: "Invalid Login Credentials", 
-          message: "The username or password you entered is incorrect. Please double-check your credentials and try again. If you forgot your password, use the 'Reset Password' link below.",
-          type: 'general'
-        });
-        setShowErrorDialog(true);
-        return;
-      }
+    const error = lastError;
+    logAuthError('Login failed', error, data.username);
 
-      // Check for user not found
-      if (error.message?.includes("User not found") || error.message?.includes("does not exist")) {
-        setErrorDetails({
-          title: "Username Not Found",
-          message: "No account was found with this username. Please check your username or create a new account by switching to the 'Register' tab.",
-          type: 'username'
-        });
-        setShowErrorDialog(true);
-        return;
-      }
-
-      // Generic fallback error with helpful guidance
+    if (error.needsEmailVerification) {
       setErrorDetails({
-        title: "Sign In Problem",
-        message: "We're having trouble signing you in right now. Please check your internet connection and try again. If the problem continues, contact support.",
+        title: "Email Verification Required",
+        message: "Please verify your email address before signing in. We've sent a verification link to your email. Click the link to activate your account, then return here to sign in.",
+        type: 'email'
+      });
+      setShowErrorDialog(true);
+      return;
+    }
+
+    const isAccountLocked = 
+        error.errorType === "Account locked" || 
+        error.errorType === "Account temporarily locked" ||
+        error.responseData?.error === "Account locked" ||
+        error.responseData?.error === "Account temporarily locked" ||
+        error.message?.toLowerCase().includes("account locked") || 
+        error.message?.toLowerCase().includes("account is locked") || 
+        error.message?.toLowerCase().includes("temporarily locked") ||
+        error.message?.toLowerCase().includes("too many failed") ||
+        error.originalMessage?.toLowerCase().includes("too many failed") ||
+        error.originalMessage?.toLowerCase().includes("temporarily locked") ||
+        error.userMessage?.toLowerCase().includes("account locked");
+        
+    if (isAccountLocked) {
+      const serverMessage = error.userMessage || error.originalMessage || error.message || "";
+      const timeMatch = serverMessage.match(/(\d+)\s*minute/i);
+      const minutesRemaining = timeMatch ? parseInt(timeMatch[1]) : 15;
+      
+      setErrorDetails({
+        title: "Account Temporarily Locked",
+        message: `For your security, we've temporarily locked your account after multiple failed login attempts.\n\nPlease wait ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''} before trying again.\n\nAlternatively, you can use 'Forgot Password' below to reset your password and unlock your account immediately.`,
         type: 'general'
       });
       setShowErrorDialog(true);
+      return;
     }
+
+    if (!isAccountLocked && (error.status === 401 ||
+        error.message?.includes("Invalid credentials") || 
+        error.message?.includes("invalid username or password") || 
+        error.message?.includes("Invalid username or password") ||
+        error.message?.includes("Incorrect password") ||
+        error.message?.includes("Incorrect username") ||
+        error.message?.includes("Login failed") ||
+        error.errorType === "Invalid username or password" ||
+        error.errorType === "Login failed")) {
+      setErrorDetails({
+        title: "Invalid Login Credentials", 
+        message: "The username or password you entered is incorrect. Please double-check your credentials and try again. If you forgot your password, use the 'Reset Password' link below.",
+        type: 'general'
+      });
+      setShowErrorDialog(true);
+      return;
+    }
+
+    if (error.message?.includes("User not found") || error.message?.includes("does not exist")) {
+      setErrorDetails({
+        title: "Username Not Found",
+        message: "No account was found with this username. Please check your username or create a new account by switching to the 'Register' tab.",
+        type: 'username'
+      });
+      setShowErrorDialog(true);
+      return;
+    }
+
+    const isNetworkError = error instanceof TypeError || 
+      error.message?.includes('Failed to fetch') ||
+      error.message?.includes('NetworkError') ||
+      !navigator.onLine;
+
+    if (isNetworkError) {
+      setErrorDetails({
+        title: "Connection Problem",
+        message: "We couldn't reach the server. Please check your internet connection and try again.",
+        type: 'general'
+      });
+    } else {
+      setErrorDetails({
+        title: "Sign In Problem",
+        message: "Something went wrong while signing you in. Please try again. If the problem continues, contact support.",
+        type: 'general'
+      });
+    }
+    setShowErrorDialog(true);
   };
 
   // Handle registration

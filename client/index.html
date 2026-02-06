@@ -54,17 +54,32 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     
-    <!-- PWA Service Worker Registration for PWA Builder Detection -->
+    <!-- PWA Service Worker Registration with forced update -->
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then((registration) => {
-              console.log('[PWA] Service Worker registered successfully:', registration);
-            })
-            .catch((error) => {
-              console.error('[PWA] Service Worker registration failed:', error);
+        window.addEventListener('load', async () => {
+          try {
+            var regs = await navigator.serviceWorker.getRegistrations();
+            for (var reg of regs) {
+              await reg.update();
+              console.log('[PWA] Forced SW update check');
+            }
+            var registration = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+            console.log('[PWA] Service Worker registered v9:', registration);
+            registration.addEventListener('updatefound', function() {
+              var newWorker = registration.installing;
+              if (newWorker) {
+                newWorker.addEventListener('statechange', function() {
+                  if (newWorker.state === 'activated') {
+                    console.log('[PWA] New SW activated, reloading');
+                    window.location.reload();
+                  }
+                });
+              }
             });
+          } catch (error) {
+            console.error('[PWA] Service Worker registration failed:', error);
+          }
         });
       }
     </script>

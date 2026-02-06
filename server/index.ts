@@ -89,14 +89,7 @@ app.use('/attached_assets', express.static('attached_assets'));
 // Serve uploaded files (receipts and profiles)
 app.use('/uploads', express.static('uploads'));
 
-// Serve static files from public directory (logos, icons, etc.)
-app.use(express.static('public'));
-
-// Explicitly serve manifest.json and other PWA files from public directory
-app.get('/manifest.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.sendFile(path.resolve(process.cwd(), 'public/manifest.json'));
-});
+// Serve sw.js and clear-cache.html BEFORE static middleware to ensure no-cache headers
 app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -111,6 +104,15 @@ app.get('/clear-cache.html', (req, res) => {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   res.sendFile(path.resolve(process.cwd(), 'public/clear-cache.html'));
+});
+
+// Serve static files from public directory (logos, icons, etc.)
+app.use(express.static('public'));
+
+// Explicitly serve manifest.json from public directory
+app.get('/manifest.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.sendFile(path.resolve(process.cwd(), 'public/manifest.json'));
 });
 
 app.use('/favicon.ico', express.static('public/favicon.ico'));

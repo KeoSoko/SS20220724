@@ -1,21 +1,13 @@
-// Simple Slips Service Worker
-const CACHE_NAME = 'simple-slips-v8';
-const STATIC_CACHE = 'simple-slips-static-v8';
-const DYNAMIC_CACHE = 'simple-slips-dynamic-v8';
+const CACHE_NAME = 'simple-slips-v9';
+const STATIC_CACHE = 'simple-slips-static-v9';
+const DYNAMIC_CACHE = 'simple-slips-dynamic-v9';
 
-// Files to cache for offline functionality  
 const STATIC_FILES = [
-  '/',
-  '/manifest.json?v=1.4',
-  '/attached_assets/192 Icon redesigned_1754568272116.png?v=3',
-  '/attached_assets/512 Icon redesigned_1754568278738.png?v=3'
+  '/manifest.json?v=1.5'
 ];
 
-const SW_VERSION = '8.0.0';
-const API_CACHE_TIME = 1000 * 60 * 5; // 5 minutes
-const IMAGE_CACHE_TIME = 1000 * 60 * 60 * 24; // 24 hours
+const SW_VERSION = '9.0.0';
 
-// Auth and critical API paths that must NEVER be intercepted by the service worker
 const CRITICAL_API_PATHS = [
   '/api/login',
   '/api/register',
@@ -31,81 +23,72 @@ const CRITICAL_API_PATHS = [
   '/api/resend-verification'
 ];
 
-// Install event - cache static resources
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing Service Worker v8 - Auth bypass fix');
+  console.log('[SW v9] Installing - nuclear cache cleanup');
   event.waitUntil(
-    caches.open(STATIC_CACHE)
-      .then((cache) => {
-        console.log('[SW] Caching static files');
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          console.log('[SW v9] Deleting cache during install:', cacheName);
+          return caches.delete(cacheName);
+        })
+      );
+    }).then(() => {
+      return caches.open(STATIC_CACHE).then((cache) => {
         return cache.addAll(STATIC_FILES).catch((error) => {
-          console.warn('[SW] Some files could not be cached:', error);
-          // Don't fail the entire installation if some files fail
+          console.warn('[SW v9] Some static files could not be cached:', error);
           return Promise.resolve();
         });
-      })
+      });
+    })
   );
   self.skipWaiting();
 });
 
-// Activate event - clean up ALL old caches and force takeover
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating Service Worker v8 - clearing all old caches');
+  console.log('[SW v9] Activating - deleting ALL old caches');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== STATIC_CACHE && cacheName !== DYNAMIC_CACHE) {
-            console.log('[SW] Deleting old cache:', cacheName);
+            console.log('[SW v9] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(() => {
+      return self.clients.claim();
+    }).then(() => {
+      return self.clients.matchAll({ type: 'window' }).then((clients) => {
+        clients.forEach((client) => {
+          console.log('[SW v9] Reloading client:', client.url);
+          client.navigate(client.url);
+        });
+      });
     })
   );
-  self.clients.claim();
 });
 
-// Background Sync for offline receipt uploads
-self.addEventListener('sync', (event) => {
-  console.log('[SW] Background sync triggered:', event.tag);
-  if (event.tag === 'receipt-upload') {
-    event.waitUntil(processOfflineReceipts());
-  }
-});
-
-// Periodic Background Sync (if supported)
-self.addEventListener('periodicsync', (event) => {
-  if (event.tag === 'sync-receipts') {
-    event.waitUntil(syncReceiptsData());
-  }
-});
-
-// Enhanced Fetch event with improved caching strategies
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-http(s) requests
   if (!url.protocol.startsWith('http')) return;
 
-  // CRITICAL: Never intercept non-GET API requests (POST/PUT/DELETE/PATCH)
-  // These are mutations (login, register, form submissions, etc.) and must go directly to the server
-  if (url.pathname.startsWith('/api/') && request.method !== 'GET') {
+  if (request.method !== 'GET') {
     return;
   }
 
-  // CRITICAL: Never intercept critical auth API paths even for GET requests
   if (CRITICAL_API_PATHS.some(path => url.pathname.startsWith(path))) {
     return;
   }
 
-  // Handle GET API requests with network-first strategy
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(request)
         .then(response => {
-          if (response.ok && request.method === 'GET') {
+          if (response.ok) {
             const responseClone = response.clone();
             caches.open(DYNAMIC_CACHE).then(cache => {
               cache.put(request, responseClone);
@@ -135,7 +118,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Handle image requests with cache-first strategy
   if (request.destination === 'image' || url.pathname.includes('/uploads/') || url.pathname.includes('/attached_assets/')) {
     event.respondWith(
       caches.match(request)
@@ -149,133 +131,62 @@ self.addEventListener('fetch', (event) => {
             return fetchResponse;
           });
         })
+        .catch(() => {
+          return new Response('', { status: 404 });
+        })
     );
     return;
   }
 
-  // Handle navigation requests (pages)
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Cache successful API responses for offline access
-          if (response.status === 200) {
-            const responseClone = response.clone();
-            caches.open(DYNAMIC_CACHE).then((cache) => {
-              cache.put(request, responseClone);
-            });
-          }
           return response;
         })
         .catch(() => {
-          // Return cached API response if offline
           return caches.match(request).then((cachedResponse) => {
             if (cachedResponse) {
               return cachedResponse;
             }
-            // Return offline page for failed API requests
-            return new Response(
-              JSON.stringify({ 
-                error: 'Offline', 
-                message: 'You are currently offline. Please check your internet connection.' 
-              }),
-              {
-                status: 503,
-                statusText: 'Service Unavailable',
-                headers: { 'Content-Type': 'application/json' }
-              }
-            );
+            return caches.match('/').then(root => root || new Response(
+              '<html><body><h1>You are offline</h1><p>Please check your internet connection and reload.</p><script>setTimeout(() => location.reload(), 5000);</script></body></html>',
+              { status: 503, headers: { 'Content-Type': 'text/html' } }
+            ));
           });
         })
     );
     return;
   }
 
-  // Handle static resources and pages
   event.respondWith(
-    caches.match(request)
-      .then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
+    fetch(request)
+      .then((response) => {
+        if (!response || response.status !== 200 || response.type !== 'basic') {
+          return response;
         }
-
-        return fetch(request)
-          .then((response) => {
-            // Don't cache non-successful responses
-            if (!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
-            }
-
-            // Cache the response for future use
-            const responseToCache = response.clone();
-            caches.open(DYNAMIC_CACHE)
-              .then((cache) => {
-                cache.put(request, responseToCache);
-              });
-
-            return response;
-          })
-          .catch(() => {
-            // Return offline page for navigation requests
-            if (request.mode === 'navigate') {
-              return caches.match('/');
-            }
-            return new Response('Content not available offline', {
-              status: 503,
-              statusText: 'Service Unavailable'
-            });
-          });
+        const responseToCache = response.clone();
+        caches.open(DYNAMIC_CACHE).then((cache) => {
+          cache.put(request, responseToCache);
+        });
+        return response;
+      })
+      .catch(() => {
+        return caches.match(request).then(cached => {
+          if (cached) return cached;
+          return new Response('', { status: 404 });
+        });
       })
   );
 });
 
-// Background sync for receipt uploads when back online
 self.addEventListener('sync', (event) => {
-  console.log('[SW] Background sync triggered:', event.tag);
-  
   if (event.tag === 'receipt-upload') {
-    event.waitUntil(syncReceiptUploads());
+    event.waitUntil(Promise.resolve());
   }
 });
 
-// Background functions for offline support
-async function syncReceiptUploads() {
-  console.log('[SW] Processing offline receipt uploads...');
-  try {
-    // Implementation for background sync of receipts
-    // This would integrate with IndexedDB to process queued uploads
-    return Promise.resolve();
-  } catch (error) {
-    console.error('[SW] Error processing offline receipts:', error);
-    throw error;
-  }
-}
-
-async function processOfflineReceipts() {
-  console.log('[SW] Processing offline receipts...');
-  try {
-    // Get stored offline receipts from IndexedDB
-    // Process and upload when online
-    return Promise.resolve();
-  } catch (error) {
-    console.error('[SW] Error processing offline receipts:', error);
-  }
-}
-
-async function syncReceiptsData() {
-  console.log('[SW] Syncing receipts data...');
-  try {
-    // Implementation for periodic sync
-    return Promise.resolve();
-  } catch (error) {
-    console.error('[SW] Error syncing receipts:', error);
-  }
-}
-
-// Push notification handler
 self.addEventListener('push', (event) => {
-  console.log('[SW] Push message received');
-  
   let notificationData = {
     title: 'Simple Slips',
     body: 'You have a new notification',
@@ -283,9 +194,7 @@ self.addEventListener('push', (event) => {
     badge: '/attached_assets/192 Icon redesigned_1754568272116.png',
     tag: 'simple-slips-notification',
     requireInteraction: false,
-    data: {
-      url: '/'
-    }
+    data: { url: '/' }
   };
 
   if (event.data) {
@@ -293,7 +202,7 @@ self.addEventListener('push', (event) => {
       const payload = event.data.json();
       notificationData = { ...notificationData, ...payload };
     } catch (error) {
-      console.error('[SW] Error parsing push data:', error);
+      console.error('[SW v9] Error parsing push data:', error);
     }
   }
 
@@ -302,68 +211,21 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Notification click handler
 self.addEventListener('notificationclick', (event) => {
-  console.log('[SW] Notification clicked');
-  
   event.notification.close();
-  
   const urlToOpen = event.notification.data?.url || '/';
-  
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
-        // Check if app is already open
         for (const client of clientList) {
           if (client.url.includes(self.location.origin) && 'focus' in client) {
             client.focus();
             return client.navigate(urlToOpen);
           }
         }
-        
-        // Open new window if app is not open
         if (clients.openWindow) {
           return clients.openWindow(urlToOpen);
         }
       })
   );
 });
-
-// Helper function for syncing receipt uploads
-async function syncReceiptUploads() {
-  try {
-    // Get pending uploads from IndexedDB
-    const pendingUploads = await getPendingUploads();
-    
-    for (const upload of pendingUploads) {
-      try {
-        await fetch('/api/receipts', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(upload.data)
-        });
-        
-        // Remove from pending uploads after successful sync
-        await removePendingUpload(upload.id);
-        console.log('[SW] Receipt upload synced:', upload.id);
-      } catch (error) {
-        console.error('[SW] Failed to sync receipt upload:', error);
-      }
-    }
-  } catch (error) {
-    console.error('[SW] Error during receipt upload sync:', error);
-  }
-}
-
-// Placeholder functions for IndexedDB operations
-async function getPendingUploads() {
-  // Implementation would use IndexedDB to get pending uploads
-  return [];
-}
-
-async function removePendingUpload(id) {
-  // Implementation would remove the upload from IndexedDB
-  console.log('[SW] Removing pending upload:', id);
-}

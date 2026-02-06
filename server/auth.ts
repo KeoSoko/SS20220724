@@ -304,14 +304,6 @@ export function setupAuth(app: Express) {
   // Add JWT authentication middleware
   app.use(jwtAuthMiddleware);
   
-  // Add session debugging middleware
-  app.use((req, res, next) => {
-    console.log('[SESSION] Current Session ID:', req.sessionID);
-    console.log('[SESSION] Authenticated User:', req.user?.username, '(ID:', req.user?.id, ')');
-    console.log('[SESSION] JWT User:', req.jwtUser?.username, '(ID:', req.jwtUser?.id, ')');
-    console.log('[SESSION] isAuthenticated:', req.isAuthenticated());
-    next();
-  });
   
 
 
@@ -840,59 +832,19 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Login a user
   app.post("/api/login", async (req: Request, res: Response, next: NextFunction) => {
-    console.log('[AUTH] ======== LOGIN ATTEMPT START ========');
-    log(`Login attempt for username: ${req.body.username}`, 'auth');
+    log(`Login attempt for: ${req.body.username}`, 'auth');
     
-    // Comprehensive request fingerprinting for diagnostics
-    console.log('--- REQUEST FINGERPRINT ---');
-    console.log('IP:', req.ip);
-    console.log('Headers:', JSON.stringify({
-      contentType: req.headers['content-type'],
-      userAgent: req.headers['user-agent'],
-      cookie: req.headers.cookie ? 'Set' : 'Not set',
-      authorization: req.headers.authorization ? 'Set' : 'Not set',
-      xDebugInfo: req.headers['x-debug-info'] || 'Not set',
-    }, null, 2));
-    
-    console.log('Body:', JSON.stringify({ 
-      username: req.body.username, 
-      password: !!req.body.password,
-      passwordLength: req.body.password ? req.body.password.length : 0,
-      rememberMe: !!req.body.rememberMe 
-    }));
-    
-    console.log('Cookies:', typeof req.cookies === 'object' ? Object.keys(req.cookies).length : 0, 'cookies');
-    console.log('Session ID:', req.sessionID);
-    console.log('Auth User:', req.user?.username, '(ID:', req.user?.id, ')');
-    console.log('JWT User:', req.jwtUser?.username, '(ID:', req.jwtUser?.id, ')');
-    console.log('Authenticated:', req.isAuthenticated());
-    console.log('Timestamp:', new Date().toISOString());
-    
-    // Nuclear session reset to eliminate any contamination
-    console.log('[AUTH] Performing nuclear session reset');
-    
-    // First force logout to clear any existing authentication
     await new Promise<void>((resolve) => {
       req.logout((err) => {
-        if (err) {
-          console.error('[AUTH] Error during session logout:', err);
-        } else {
-          console.log('[AUTH] Successfully logged out any existing session');
-        }
+        if (err) log(`Session logout error: ${err}`, 'auth');
         resolve();
       });
     });
     
-    // Then regenerate the session to get a fresh session ID
     await new Promise<void>((resolve) => {
       req.session.regenerate((err) => {
-        if (err) {
-          console.error('[AUTH] Session regeneration failed:', err);
-        } else {
-          console.log('[AUTH] Session regenerated with new ID:', req.sessionID);
-        }
+        if (err) log(`Session regeneration failed: ${err}`, 'auth');
         resolve();
       });
     });
@@ -901,8 +853,7 @@ export function setupAuth(app: Express) {
     const rememberMe = !!req.body.rememberMe;
     
     try {
-      // Check if username exists first
-      const username = req.body.username;
+      const username = req.body.username?.trim();
       if (!username) {
         return res.status(400).json({ 
           error: "Username required",
@@ -911,33 +862,14 @@ export function setupAuth(app: Express) {
         });
       }
       
-      // Check for special headers
-      const isSpecialAccount = req.headers["x-special-account"] === "true";
-      const forceExactCase = req.headers["x-exact-case"] === "true";
-      
-      // Find user in database - different methods depending on headers
       let user;
       
-      if (isSpecialAccount || forceExactCase || username === "KeoSoko") {
-        // Use direct database query with exact case match for special accounts
-        console.log(`[AUTH] Using direct DB query with exact case match for: "${username}"`);
-        const [exactUser] = await db.select().from(users).where(eq(users.username, username));
-        user = exactUser;
+      if (username.includes('@')) {
+        const normalizedEmail = username.toLowerCase().trim();
+        const foundUsers = await storage.findUsersByEmail?.(normalizedEmail);
+        user = foundUsers?.[0];
       } else {
-        // Check if input looks like an email (contains @)
-        if (username.includes('@')) {
-          const normalizedEmail = username.toLowerCase().trim();
-          console.log(`[AUTH] Input appears to be email, looking up by email: "${normalizedEmail}" (original: "${username}")`);
-          const foundUsers = await storage.findUsersByEmail?.(normalizedEmail);
-          console.log(`[AUTH] Email lookup result: found ${foundUsers?.length || 0} users`);
-          user = foundUsers?.[0]; // Take first matching user
-          if (user) {
-            console.log(`[AUTH] Found user by email: ${user.username} (ID: ${user.id})`);
-          }
-        } else {
-          console.log(`[AUTH] Input appears to be username, looking up by username: ${username}`);
-          user = await storage.getUserByUsername(username);
-        }
+        user = await storage.getUserByUsername(username);
       }
       
       // If user not found, just return generic message
@@ -1060,8 +992,6 @@ export function setupAuth(app: Express) {
             }
           }
           
-          console.log(`[AUTH] Testuser login successful, new session: ${req.sessionID}`);
-          
           // Return user data, token, and expiration
           res.status(200).json({
             user,
@@ -1074,10 +1004,6 @@ export function setupAuth(app: Express) {
         return;
       }
       
-      // For all other accounts, regenerate session to prevent session fixation attacks
-      console.log('[AUTH] Using secure session regeneration for:', user.username);
-      
-      // Choose the simplest approach for session security
       req.login(user, async (loginErr) => {
         if (loginErr) {
           log(`Session login error: ${loginErr}`, 'auth');
@@ -1118,26 +1044,13 @@ export function setupAuth(app: Express) {
           }
         }
         
-        // Add detailed auth monitoring logs
-        console.log(`Auth Attempt: 
-          Input: ${req.body.username} 
-          Found: ${user.username} 
-          Match: ${user.username === req.body.username}
-          Session: ${req.sessionID}`);
+        log(`Login successful: ${user.username} (ID: ${user.id})`, 'auth');
         
-        // Return user data, token, and expiration
         res.status(200).json({
           user,
           token,
           expiresIn,
-          rememberMe,
-          debugInfo: {
-            username: user.username,
-            userId: user.id,
-            requestedUsername: req.body.username,
-            isKeoSokoAccount: user.username === 'KeoSoko',
-            isTestuserAccount: user.username === 'testuser'
-          }
+          rememberMe
         });
       });
     } catch (error) {

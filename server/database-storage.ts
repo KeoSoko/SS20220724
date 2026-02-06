@@ -82,24 +82,16 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getUserByUsername(username: string): Promise<User | undefined> {
-    // First get all users with a potential case-insensitive match
-    console.log(`[DB] Looking up user by username: "${username}"`);
-    
-    const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+    const trimmed = username.trim();
+    const result = await db.select().from(users).where(
+      sql`LOWER(${users.username}) = ${trimmed.toLowerCase()}`
+    ).limit(1);
     
     if (result.length === 0) {
-      console.log(`[DB] No users found for username: "${username}"`);
       return undefined;
     }
     
-    const user = result[0];
-    
-    // Critical check: Ensure exact case match
-    const exactMatch = user.username === username;
-    console.log(`[DB] Found username: "${user.username}", requested: "${username}", exactMatch: ${exactMatch}`);
-    
-    // Only return the user if the username matches exactly
-    return exactMatch ? user : undefined;
+    return result[0];
   }
   
   async getUserByEmail(email: string): Promise<User | undefined> {

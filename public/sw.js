@@ -1,7 +1,7 @@
 // Simple Slips Service Worker
-const CACHE_NAME = 'simple-slips-v7';
-const STATIC_CACHE = 'simple-slips-static-v7';
-const DYNAMIC_CACHE = 'simple-slips-dynamic-v7';
+const CACHE_NAME = 'simple-slips-v8';
+const STATIC_CACHE = 'simple-slips-static-v8';
+const DYNAMIC_CACHE = 'simple-slips-dynamic-v8';
 
 // Files to cache for offline functionality  
 const STATIC_FILES = [
@@ -11,14 +11,29 @@ const STATIC_FILES = [
   '/attached_assets/512 Icon redesigned_1754568278738.png?v=3'
 ];
 
-// Enhanced PWA Features for PWA Builder compatibility
-const SW_VERSION = '7.0.0';
+const SW_VERSION = '8.0.0';
 const API_CACHE_TIME = 1000 * 60 * 5; // 5 minutes
 const IMAGE_CACHE_TIME = 1000 * 60 * 60 * 24; // 24 hours
 
+// Auth and critical API paths that must NEVER be intercepted by the service worker
+const CRITICAL_API_PATHS = [
+  '/api/login',
+  '/api/register',
+  '/api/logout',
+  '/api/forgot-password',
+  '/api/forgot-username',
+  '/api/reset-password',
+  '/api/verify-email',
+  '/api/check-email',
+  '/api/user',
+  '/api/emergency-login',
+  '/api/log-error',
+  '/api/resend-verification'
+];
+
 // Install event - cache static resources
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing Service Worker v7 - Fixed Icon Paths & Cache-Busting');
+  console.log('[SW] Installing Service Worker v8 - Auth bypass fix');
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then((cache) => {
@@ -33,9 +48,9 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up ALL old caches and force takeover
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating Service Worker');
+  console.log('[SW] Activating Service Worker v8 - clearing all old caches');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -74,12 +89,22 @@ self.addEventListener('fetch', (event) => {
   // Skip non-http(s) requests
   if (!url.protocol.startsWith('http')) return;
 
-  // Handle API requests with network-first strategy
+  // CRITICAL: Never intercept non-GET API requests (POST/PUT/DELETE/PATCH)
+  // These are mutations (login, register, form submissions, etc.) and must go directly to the server
+  if (url.pathname.startsWith('/api/') && request.method !== 'GET') {
+    return;
+  }
+
+  // CRITICAL: Never intercept critical auth API paths even for GET requests
+  if (CRITICAL_API_PATHS.some(path => url.pathname.startsWith(path))) {
+    return;
+  }
+
+  // Handle GET API requests with network-first strategy
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(request)
         .then(response => {
-          // Cache successful API responses for short time
           if (response.ok && request.method === 'GET') {
             const responseClone = response.clone();
             caches.open(DYNAMIC_CACHE).then(cache => {
@@ -89,32 +114,14 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
         .catch(() => {
-          // For receipt uploads, return a special offline response that the app can handle
-          if (url.pathname === '/api/receipts' && request.method === 'POST') {
-            return new Response(
-              JSON.stringify({ 
-                offline: true,
-                message: 'Receipt saved offline - will upload when connection returns'
-              }),
-              {
-                status: 202, // Accepted for processing
-                statusText: 'Accepted',
-                headers: { 'Content-Type': 'application/json' }
-              }
-            );
-          }
-          
-          // For other API requests, try to serve from cache
           return caches.match(request).then(cachedResponse => {
             if (cachedResponse) {
               return cachedResponse;
             }
-            
-            // Return a more gentle offline message
             return new Response(
               JSON.stringify({ 
                 offline: true,
-                message: 'This feature requires an internet connection'
+                message: 'This data is not available offline'
               }),
               {
                 status: 503,

@@ -76,6 +76,14 @@ export const customCategories = pgTable("custom_categories", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Define the workspaces table
+export const workspaces = pgTable("workspaces", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  ownerId: integer("owner_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Define the users table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -105,6 +113,7 @@ export const users = pgTable("users", {
   trialEndDate: timestamp("trial_end_date"), // When trial period ends
   subscriptionTier: text("subscription_tier").default("free"),
   subscriptionExpiresAt: timestamp("subscription_expires_at"),
+  workspaceId: integer("workspace_id").references(() => workspaces.id),
   receiptEmailId: text("receipt_email_id").unique(), // Unique ID for email-to-receipt forwarding (e.g., abc123@receipts.simpleslips.app)
   verificationEmailResentAt: timestamp("verification_email_resent_at"), // Tracks when verification email was resent (prevents multiple resends)
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -418,6 +427,15 @@ export const promoCodes = pgTable("promo_codes", {
 });
 
 // Define table relations
+export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [workspaces.ownerId],
+    references: [users.id],
+    relationName: "workspaceOwner",
+  }),
+  members: many(users, { relationName: "workspaceMember" }),
+}));
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   receipts: many(receipts),
   tags: many(tags),
@@ -430,6 +448,12 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   taxSettings: one(taxSettings),
   subscriptions: many(userSubscriptions),
   paymentTransactions: many(paymentTransactions),
+  workspace: one(workspaces, {
+    fields: [users.workspaceId],
+    references: [workspaces.id],
+    relationName: "workspaceMember",
+  }),
+  ownedWorkspaces: many(workspaces, { relationName: "workspaceOwner" }),
 }));
 
 export const customCategoriesRelations = relations(customCategories, ({ one }) => ({
@@ -811,6 +835,13 @@ export const insertUserPreferencesSchema = z.object({
   defaultCurrency: z.string().default("ZAR"),
   taxYear: z.number().default(2025),
 });
+
+export const insertWorkspaceSchema = createInsertSchema(workspaces).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertWorkspace = z.infer<typeof insertWorkspaceSchema>;
+export type Workspace = typeof workspaces.$inferSelect;
 
 // Export types for TypeScript
 export type InsertUser = z.infer<typeof insertUserSchema>;

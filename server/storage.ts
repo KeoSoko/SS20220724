@@ -261,6 +261,9 @@ export class MemStorage implements IStorage {
       tokenVersion: 1, // Initial token version
       promoCodeUsed: null,
       trialEndDate: null,
+      subscriptionTier: "free",
+      subscriptionExpiresAt: null,
+      workspaceId: 0,
       receiptEmailId: null,
       verificationEmailResentAt: null,
       createdAt: now,

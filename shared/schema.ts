@@ -113,7 +113,7 @@ export const users = pgTable("users", {
   trialEndDate: timestamp("trial_end_date"), // When trial period ends
   subscriptionTier: text("subscription_tier").default("free"),
   subscriptionExpiresAt: timestamp("subscription_expires_at"),
-  workspaceId: integer("workspace_id").references(() => workspaces.id),
+  workspaceId: integer("workspace_id").notNull().references(() => workspaces.id),
   receiptEmailId: text("receipt_email_id").unique(), // Unique ID for email-to-receipt forwarding (e.g., abc123@receipts.simpleslips.app)
   verificationEmailResentAt: timestamp("verification_email_resent_at"), // Tracks when verification email was resent (prevents multiple resends)
   createdAt: timestamp("created_at").notNull().defaultNow(),

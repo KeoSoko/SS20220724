@@ -35,7 +35,8 @@ import {
   paymentTransactions,
   billingEvents,
   promoCodes,
-  emailEvents
+  emailEvents,
+  workspaces
 } from "@shared/schema";
 
 import { db, pool, initializeDatabase } from "./db";
@@ -100,24 +101,38 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values({
-      username: insertUser.username,
-      password: insertUser.password,
-      email: insertUser.email || null,
-      fullName: insertUser.fullName || null,
-      birthdate: insertUser.birthdate || null,
-      gender: insertUser.gender || null,
-      phoneNumber: insertUser.phoneNumber || null,
-      address: insertUser.address || null,
-      profilePicture: insertUser.profilePicture || null,
-      isActive: true,
-      emailVerificationToken: insertUser.emailVerificationToken || null,
-      isEmailVerified: insertUser.isEmailVerified || false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }).returning();
-    
-    return user;
+    const result = await db.transaction(async (tx) => {
+      const [workspace] = await tx.insert(workspaces).values({
+        name: `${insertUser.username}'s Workspace`,
+        ownerId: 0,
+      }).returning();
+
+      const [user] = await tx.insert(users).values({
+        username: insertUser.username,
+        password: insertUser.password,
+        email: insertUser.email || null,
+        fullName: insertUser.fullName || null,
+        birthdate: insertUser.birthdate || null,
+        gender: insertUser.gender || null,
+        phoneNumber: insertUser.phoneNumber || null,
+        address: insertUser.address || null,
+        profilePicture: insertUser.profilePicture || null,
+        isActive: true,
+        emailVerificationToken: insertUser.emailVerificationToken || null,
+        isEmailVerified: insertUser.isEmailVerified || false,
+        workspaceId: workspace.id,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }).returning();
+
+      await tx.update(workspaces)
+        .set({ ownerId: user.id })
+        .where(eq(workspaces.id, workspace.id));
+
+      return user;
+    });
+
+    return result;
   }
   
   async updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined> {

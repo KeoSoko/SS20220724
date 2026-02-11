@@ -6869,11 +6869,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (invite.acceptedAt) {
-        return res.status(400).json({ error: "This invitation has already been accepted" });
+        return res.status(400).json({ error: "Invite already accepted." });
       }
 
       if (new Date() > invite.expiresAt) {
-        return res.status(400).json({ error: "This invitation has expired" });
+        return res.status(400).json({ error: "Invite has expired." });
       }
 
       if (!isAuthenticated(req)) {
@@ -6889,28 +6889,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) return res.status(401).json({ error: "User not found" });
 
       if (user.email?.toLowerCase() !== invite.email.toLowerCase()) {
-        return res.status(403).json({
-          error: "This invitation was sent to a different email address",
-          inviteEmail: invite.email,
-        });
+        return res.status(403).json({ error: "Invite email does not match logged-in user." });
       }
 
-      await db.insert(workspaceMembers).values({
-        workspaceId: invite.workspaceId,
-        userId,
-        role: invite.role,
-        invitedByUserId: invite.invitedByUserId,
+      const [existingMembership] = await db
+        .select({ id: workspaceMembers.id })
+        .from(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, invite.workspaceId),
+            eq(workspaceMembers.userId, userId)
+          )
+        )
+        .limit(1);
+
+      if (existingMembership) {
+        return res.status(400).json({ error: "User is already a member of this workspace." });
+      }
+
+      if (user.workspaceId !== invite.workspaceId) {
+        const [currentOwnership] = await db
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(
+            and(
+              eq(workspaces.id, user.workspaceId),
+              eq(workspaces.ownerId, userId)
+            )
+          )
+          .limit(1);
+
+        if (currentOwnership) {
+          return res.status(400).json({ error: "Owners must transfer ownership before joining another workspace." });
+        }
+      }
+
+      await db.transaction(async (tx) => {
+        await tx.insert(workspaceMembers).values({
+          workspaceId: invite.workspaceId,
+          userId,
+          role: invite.role,
+          invitedByUserId: invite.invitedByUserId,
+        });
+
+        await tx
+          .update(users)
+          .set({ workspaceId: invite.workspaceId })
+          .where(eq(users.id, userId));
+
+        await tx
+          .update(workspaceInvites)
+          .set({ acceptedAt: new Date() })
+          .where(eq(workspaceInvites.id, invite.id));
       });
-
-      await db
-        .update(users)
-        .set({ workspaceId: invite.workspaceId })
-        .where(eq(users.id, userId));
-
-      await db
-        .update(workspaceInvites)
-        .set({ acceptedAt: new Date() })
-        .where(eq(workspaceInvites.id, invite.id));
 
       log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role}`, "workspace");
       res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role });

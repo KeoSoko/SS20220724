@@ -728,7 +728,7 @@ export class BillingService {
             subscriptionTier: subscriptionTier,
             subscriptionExpiresAt: nextBillingDate,
             updatedAt: now
-          } as any)
+          })
           .where(eq(users.id, userId));
         
         log(`Updated users table: subscription_tier=${subscriptionTier}, expires_at=${nextBillingDate.toISOString()}`, 'billing');

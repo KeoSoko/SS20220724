@@ -36,7 +36,8 @@ import {
   billingEvents,
   promoCodes,
   emailEvents,
-  workspaces
+  workspaces,
+  workspaceMembers
 } from "@shared/schema";
 
 import { db, pool, initializeDatabase } from "./db";
@@ -134,6 +135,13 @@ export class DatabaseStorage implements IStorage {
       await tx.update(workspaces)
         .set({ ownerId: user.id })
         .where(eq(workspaces.id, workspace.id));
+
+      await tx.insert(workspaceMembers).values({
+        workspaceId: workspace.id,
+        userId: user.id,
+        role: "owner",
+        invitedByUserId: user.id,
+      });
 
       return user;
     });

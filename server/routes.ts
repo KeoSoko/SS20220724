@@ -36,6 +36,7 @@ import {
   BusinessProfile,
   LineItem,
   InvoicePayment,
+  workspaces,
   workspaceMembers,
   workspaceInvites
 } from "@shared/schema";
@@ -6702,6 +6703,255 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to send pre-due reminder" });
     }
   });
+
+  // ===== WORKSPACE TEAM INVITATION ENDPOINTS =====
+
+  app.post("/api/workspace/invite", requireWorkspaceRole("owner"), async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const { email, role } = req.body;
+      if (!email || typeof email !== "string") {
+        return res.status(400).json({ error: "Email is required" });
+      }
+      if (!role || !["editor", "viewer"].includes(role)) {
+        return res.status(400).json({ error: "Role must be 'editor' or 'viewer'" });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      const existingMembers = await db
+        .select({ id: workspaceMembers.id })
+        .from(workspaceMembers)
+        .innerJoin(users, eq(users.id, workspaceMembers.userId))
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, user.workspaceId),
+            eq(users.email, normalizedEmail)
+          )
+        )
+        .limit(1);
+
+      if (existingMembers.length > 0) {
+        return res.status(409).json({ error: "This user is already a workspace member" });
+      }
+
+      const existingInvite = await db
+        .select({ id: workspaceInvites.id })
+        .from(workspaceInvites)
+        .where(
+          and(
+            eq(workspaceInvites.workspaceId, user.workspaceId),
+            eq(workspaceInvites.email, normalizedEmail),
+            isNull(workspaceInvites.acceptedAt),
+            gte(workspaceInvites.expiresAt, new Date())
+          )
+        )
+        .limit(1);
+
+      if (existingInvite.length > 0) {
+        return res.status(409).json({ error: "A pending invite already exists for this email" });
+      }
+
+      const token = randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      const [invite] = await db
+        .insert(workspaceInvites)
+        .values({
+          workspaceId: user.workspaceId,
+          email: normalizedEmail,
+          role,
+          token,
+          invitedByUserId: userId,
+          expiresAt,
+        })
+        .returning();
+
+      const workspace = await db
+        .select({ name: workspaces.name })
+        .from(workspaces)
+        .where(eq(workspaces.id, user.workspaceId))
+        .limit(1);
+
+      const workspaceName = workspace[0]?.name || "a workspace";
+      const inviteUrl = `${req.protocol}://${req.get("host")}/accept-invite?token=${token}`;
+
+      try {
+        await emailService.sendEmail(
+          normalizedEmail,
+          `You've been invited to join ${workspaceName} on Simple Slips`,
+          `Hi there!\n\n${user.fullName || user.username} has invited you to join "${workspaceName}" as ${role === "editor" ? "an editor" : "a viewer"} on Simple Slips.\n\nClick the link below to accept the invitation:\n${inviteUrl}\n\nThis invitation expires in 7 days.\n\nIf you don't have a Simple Slips account, you'll need to sign up first, then accept the invitation.`
+        );
+      } catch (emailError) {
+        log(`Failed to send invite email to ${normalizedEmail}: ${emailError}`, "workspace");
+      }
+
+      log(`Workspace invite sent: ${normalizedEmail} → workspace ${user.workspaceId} as ${role} by user ${userId}`, "workspace");
+      res.json({ success: true, invite: { id: invite.id, email: normalizedEmail, role, expiresAt } });
+    } catch (error: any) {
+      log(`Error creating workspace invite: ${error.message}`, "workspace");
+      res.status(500).json({ error: "Failed to create invitation" });
+    }
+  });
+
+  app.get("/api/workspace/invites", requireWorkspaceRole("owner"), async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const pendingInvites = await db
+        .select({
+          id: workspaceInvites.id,
+          email: workspaceInvites.email,
+          role: workspaceInvites.role,
+          expiresAt: workspaceInvites.expiresAt,
+          createdAt: workspaceInvites.createdAt,
+          acceptedAt: workspaceInvites.acceptedAt,
+        })
+        .from(workspaceInvites)
+        .where(eq(workspaceInvites.workspaceId, user.workspaceId))
+        .orderBy(workspaceInvites.createdAt);
+
+      res.json(pendingInvites);
+    } catch (error: any) {
+      log(`Error fetching workspace invites: ${error.message}`, "workspace");
+      res.status(500).json({ error: "Failed to fetch invitations" });
+    }
+  });
+
+  app.get("/api/workspace/members", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const members = await db
+        .select({
+          id: workspaceMembers.id,
+          userId: workspaceMembers.userId,
+          role: workspaceMembers.role,
+          joinedAt: workspaceMembers.joinedAt,
+          username: users.username,
+          email: users.email,
+          fullName: users.fullName,
+        })
+        .from(workspaceMembers)
+        .innerJoin(users, eq(users.id, workspaceMembers.userId))
+        .where(eq(workspaceMembers.workspaceId, user.workspaceId))
+        .orderBy(workspaceMembers.joinedAt);
+
+      res.json(members);
+    } catch (error: any) {
+      log(`Error fetching workspace members: ${error.message}`, "workspace");
+      res.status(500).json({ error: "Failed to fetch members" });
+    }
+  });
+
+  app.post("/api/workspace/accept-invite", async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token || typeof token !== "string") {
+        return res.status(400).json({ error: "Invitation token is required" });
+      }
+
+      const [invite] = await db
+        .select()
+        .from(workspaceInvites)
+        .where(eq(workspaceInvites.token, token))
+        .limit(1);
+
+      if (!invite) {
+        return res.status(404).json({ error: "Invitation not found" });
+      }
+
+      if (invite.acceptedAt) {
+        return res.status(400).json({ error: "This invitation has already been accepted" });
+      }
+
+      if (new Date() > invite.expiresAt) {
+        return res.status(400).json({ error: "This invitation has expired" });
+      }
+
+      if (!isAuthenticated(req)) {
+        return res.status(401).json({
+          error: "login_required",
+          message: "Please sign up or log in first, then accept the invitation.",
+          inviteEmail: invite.email,
+        });
+      }
+
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      if (user.email?.toLowerCase() !== invite.email.toLowerCase()) {
+        return res.status(403).json({
+          error: "This invitation was sent to a different email address",
+          inviteEmail: invite.email,
+        });
+      }
+
+      await db.insert(workspaceMembers).values({
+        workspaceId: invite.workspaceId,
+        userId,
+        role: invite.role,
+        invitedByUserId: invite.invitedByUserId,
+      });
+
+      await db
+        .update(users)
+        .set({ workspaceId: invite.workspaceId })
+        .where(eq(users.id, userId));
+
+      await db
+        .update(workspaceInvites)
+        .set({ acceptedAt: new Date() })
+        .where(eq(workspaceInvites.id, invite.id));
+
+      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role}`, "workspace");
+      res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role });
+    } catch (error: any) {
+      log(`Error accepting workspace invite: ${error.message}`, "workspace");
+      res.status(500).json({ error: "Failed to accept invitation" });
+    }
+  });
+
+  app.delete("/api/workspace/invite/:inviteId", requireWorkspaceRole("owner"), async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const inviteId = parseInt(req.params.inviteId);
+      if (isNaN(inviteId)) return res.status(400).json({ error: "Invalid invite ID" });
+
+      const [invite] = await db
+        .select()
+        .from(workspaceInvites)
+        .where(
+          and(
+            eq(workspaceInvites.id, inviteId),
+            eq(workspaceInvites.workspaceId, user.workspaceId)
+          )
+        )
+        .limit(1);
+
+      if (!invite) return res.status(404).json({ error: "Invitation not found" });
+
+      await db.delete(workspaceInvites).where(eq(workspaceInvites.id, inviteId));
+      log(`Workspace invite ${inviteId} revoked by user ${userId}`, "workspace");
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Error revoking workspace invite: ${error.message}`, "workspace");
+      res.status(500).json({ error: "Failed to revoke invitation" });
+    }
+  });
+
+  // ===== END WORKSPACE ENDPOINTS =====
 
   // 404 handler for undefined API routes - must be last
   app.use('/api/*', (req, res) => {

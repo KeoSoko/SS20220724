@@ -913,7 +913,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== RECEIPT ENDPOINTS =====
 
   // Get all receipts for the authenticated user
-  app.get("/api/receipts", (req, res) => {
+  app.get("/api/receipts", requireWorkspaceRole("owner", "editor", "viewer"), (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     storage.getReceiptsByUser(getUserId(req)).then(receipts => {
@@ -939,7 +939,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get a specific receipt
-  app.get("/api/receipts/:id", (req, res) => {
+  app.get("/api/receipts/:id", requireWorkspaceRole("owner", "editor", "viewer"), (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -960,7 +960,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Check for duplicate receipts before saving
-  app.post("/api/receipts/check-duplicate", async (req, res) => {
+  app.post("/api/receipts/check-duplicate", requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -998,7 +998,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create a new receipt
-  app.post("/api/receipts", checkFeatureAccess('receipt_upload'), async (req, res) => {
+  app.post("/api/receipts", checkFeatureAccess('receipt_upload'), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -1386,7 +1386,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Process receipt with OCR
-  app.post("/api/receipts/scan", checkFeatureAccess('receipt_upload'), async (req, res) => {
+  app.post("/api/receipts/scan", checkFeatureAccess('receipt_upload'), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
     try {
@@ -1654,7 +1654,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update a receipt
-  app.patch("/api/receipts/:id", async (req, res) => {
+  app.patch("/api/receipts/:id", requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -1726,7 +1726,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete a receipt
-  app.delete("/api/receipts/:id", async (req, res) => {
+  app.delete("/api/receipts/:id", requireWorkspaceRole("owner"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -1929,7 +1929,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Split receipt into multiple receipts
-  app.post("/api/receipts/:id/split", async (req, res) => {
+  app.post("/api/receipts/:id/split", requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
     try {
@@ -2247,7 +2247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Generate a new SAS URL for a blob (when the old one expires)
-  app.get("/api/receipts/:id/refresh-image-url", async (req, res) => {
+  app.get("/api/receipts/:id/refresh-image-url", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -2288,7 +2288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Proxy endpoint to fetch image data (bypasses CORS for PDF export)
-  app.get("/api/receipts/:id/image-data", async (req, res) => {
+  app.get("/api/receipts/:id/image-data", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -2332,7 +2332,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Single receipt PDF export (uses same logic as bulk export)
   // Requires email verification - sensitive export action
-  app.post("/api/receipts/:id/export-pdf", requireVerifiedEmail, async (req, res) => {
+  app.post("/api/receipts/:id/export-pdf", requireVerifiedEmail, requireWorkspaceRole("owner", "editor"), async (req, res) => {
 
     try {
       const receiptId = validateReceiptId(req.params.id);
@@ -2379,7 +2379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== RECURRING EXPENSE ENDPOINTS =====
 
   // Analyze recurring pattern for a new receipt
-  app.post("/api/receipts/:id/analyze-recurring", async (req, res) => {
+  app.post("/api/receipts/:id/analyze-recurring", requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
     try {
@@ -2418,7 +2418,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Mark receipt as recurring
-  app.post("/api/receipts/:id/mark-recurring", async (req, res) => {
+  app.post("/api/receipts/:id/mark-recurring", requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
     try {
@@ -2470,7 +2470,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== SMART FEATURES API ENDPOINTS =====
 
   // AI Receipt Categorization
-  app.post("/api/receipts/:id/categorize", async (req, res) => {
+  app.post("/api/receipts/:id/categorize", requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
     try {
@@ -4801,7 +4801,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== CLIENT ROUTES =====
 
   // Get all clients for current user
-  app.get("/api/clients", requireSubscription(), async (req, res) => {
+  app.get("/api/clients", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4826,7 +4826,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get single client
-  app.get("/api/clients/:id", requireSubscription(), async (req, res) => {
+  app.get("/api/clients/:id", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4859,7 +4859,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new client
-  app.post("/api/clients", requireSubscription(), async (req, res) => {
+  app.post("/api/clients", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4891,7 +4891,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update client
-  app.patch("/api/clients/:id", requireSubscription(), async (req, res) => {
+  app.patch("/api/clients/:id", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4932,7 +4932,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete client (soft delete with cascade)
-  app.delete("/api/clients/:id", requireSubscription(), async (req, res) => {
+  app.delete("/api/clients/:id", requireSubscription(), requireWorkspaceRole("owner"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -4985,7 +4985,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== QUOTATION ROUTES =====
 
   // Get all quotations for current user
-  app.get("/api/quotations", requireSubscription(), async (req, res) => {
+  app.get("/api/quotations", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5013,7 +5013,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get single quotation with line items
-  app.get("/api/quotations/:id", requireSubscription(), async (req, res) => {
+  app.get("/api/quotations/:id", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5052,7 +5052,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create quotation with line items
-  app.post("/api/quotations", requireSubscription(), async (req, res) => {
+  app.post("/api/quotations", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5150,7 +5150,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update quotation
-  app.put("/api/quotations/:id", requireSubscription(), async (req, res) => {
+  app.put("/api/quotations/:id", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5227,7 +5227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // PATCH quotation status
-  app.patch("/api/quotations/:id", requireSubscription(), async (req, res) => {
+  app.patch("/api/quotations/:id", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5275,7 +5275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete quotation (soft delete)
-  app.delete("/api/quotations/:id", requireSubscription(), async (req, res) => {
+  app.delete("/api/quotations/:id", requireSubscription(), requireWorkspaceRole("owner"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5310,7 +5310,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Convert quotation to invoice
-  app.post("/api/quotations/:id/convert-to-invoice", requireSubscription(), async (req, res) => {
+  app.post("/api/quotations/:id/convert-to-invoice", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5443,7 +5443,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Export quotation to PDF
-  app.get("/api/quotations/:id/pdf", requireSubscription(), async (req, res) => {
+  app.get("/api/quotations/:id/pdf", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5507,7 +5507,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Preview quotation email
-  app.get("/api/quotations/:id/preview-email", requireSubscription(), async (req, res) => {
+  app.get("/api/quotations/:id/preview-email", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5592,7 +5592,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send quotation via email
-  app.post("/api/quotations/:id/send", requireSubscription(), async (req, res) => {
+  app.post("/api/quotations/:id/send", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5693,7 +5693,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== INVOICE ROUTES =====
 
   // Get invoice stats
-  app.get("/api/invoices/stats", async (req, res) => {
+  app.get("/api/invoices/stats", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5742,7 +5742,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get all invoices for current user
-  app.get("/api/invoices", requireSubscription(), async (req, res) => {
+  app.get("/api/invoices", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5770,7 +5770,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get single invoice with line items and payments
-  app.get("/api/invoices/:id", requireSubscription(), async (req, res) => {
+  app.get("/api/invoices/:id", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5815,7 +5815,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create invoice with line items
-  app.post("/api/invoices", requireSubscription(), async (req, res) => {
+  app.post("/api/invoices", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5912,7 +5912,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update invoice
-  app.put("/api/invoices/:id", requireSubscription(), async (req, res) => {
+  app.put("/api/invoices/:id", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -5989,7 +5989,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // PATCH invoice status
-  app.patch("/api/invoices/:id", requireSubscription(), async (req, res) => {
+  app.patch("/api/invoices/:id", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -6037,7 +6037,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete invoice (soft delete)
-  app.delete("/api/invoices/:id", requireSubscription(), async (req, res) => {
+  app.delete("/api/invoices/:id", requireSubscription(), requireWorkspaceRole("owner"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -6072,7 +6072,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Export invoice to PDF
-  app.get("/api/invoices/:id/pdf", requireSubscription(), async (req, res) => {
+  app.get("/api/invoices/:id/pdf", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -6142,7 +6142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Preview invoice email
-  app.get("/api/invoices/:id/preview-email", requireSubscription(), async (req, res) => {
+  app.get("/api/invoices/:id/preview-email", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -6234,7 +6234,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send invoice via email
-  app.post("/api/invoices/:id/send", requireSubscription(), async (req, res) => {
+  app.post("/api/invoices/:id/send", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -6334,7 +6334,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Record payment for invoice
-  app.post("/api/invoices/:id/payments", requireSubscription(), async (req, res) => {
+  app.post("/api/invoices/:id/payments", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -6467,7 +6467,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send payment reminder for an invoice
-  app.post("/api/invoices/:id/send-reminder", requireSubscription(), async (req, res) => {
+  app.post("/api/invoices/:id/send-reminder", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -6561,7 +6561,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get payment prediction for an invoice
-  app.get("/api/invoices/:id/payment-prediction", requireSubscription(), async (req, res) => {
+  app.get("/api/invoices/:id/payment-prediction", requireSubscription(), requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -6615,7 +6615,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send pre-due reminder for an invoice
-  app.post("/api/invoices/:id/send-pre-due-reminder", requireSubscription(), async (req, res) => {
+  app.post("/api/invoices/:id/send-pre-due-reminder", requireSubscription(), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {

@@ -1,0 +1,182 @@
+PHASE 3A — IMPLEMENT TEAM INVITATION SYSTEM
+
+We are implementing workspace team invitations.
+
+STRICT RULES:
+
+Do NOT modify billing logic
+
+Do NOT modify receipt/client/invoice queries
+
+Do NOT change authentication logic
+
+Additive changes only
+
+Maintain backward compatibility
+
+1️⃣ Database Schema Changes (shared/schema.ts)
+
+Create two new tables:
+
+workspace_members
+
+id (PK)
+
+workspaceId (FK → workspaces.id)
+
+userId (FK → users.id)
+
+role (text: 'owner' | 'editor' | 'viewer')
+
+invitedByUserId (FK → users.id)
+
+joinedAt (timestamp defaultNow)
+
+Constraints:
+
+UNIQUE (workspaceId, userId)
+
+workspace_invites
+
+id (PK)
+
+workspaceId (FK → workspaces.id)
+
+email (text)
+
+role (text: 'editor' | 'viewer')
+
+token (text unique)
+
+invitedByUserId (FK → users.id)
+
+expiresAt (timestamp)
+
+acceptedAt (timestamp nullable)
+
+createdAt (timestamp defaultNow)
+
+Indexes:
+
+index on email
+
+index on workspaceId
+
+2️⃣ Migration Logic
+
+For all existing users:
+
+Insert into workspace_members:
+
+workspaceId = user.workspaceId
+
+userId = user.id
+
+role = 'owner'
+
+invitedByUserId = user.id
+
+Ensure every existing user becomes owner of their workspace.
+
+3️⃣ Backend Routes (server/routes.ts)
+
+Add:
+
+POST /api/workspace/invite
+Owner only
+
+Body:
+{
+email: string,
+role: 'editor' | 'viewer'
+}
+
+Logic:
+
+Must be workspace owner
+
+Generate secure token (crypto.randomBytes(32))
+
+expiresAt = now + 7 days
+
+Insert into workspace_invites
+
+Send invite email (reuse email service)
+
+Return success
+
+GET /api/workspace/invites
+Owner only
+Return pending invites for workspace
+
+POST /api/workspace/accept-invite
+Body:
+{
+token: string
+}
+
+Logic:
+
+Find invite
+
+Validate not expired
+
+If user logged in:
+
+Add to workspace_members
+
+Update user.workspaceId
+
+Mark invite acceptedAt
+
+If not logged in:
+
+Return response instructing signup first
+
+Do NOT auto-create users
+
+Return success
+
+4️⃣ Permission Guard
+
+Create middleware:
+
+requireWorkspaceRole(role: 'owner' | 'editor' | 'viewer')
+
+For now only enforce:
+
+/api/workspace/invite requires owner
+
+/api/workspace/invites requires owner
+
+No other routes changed yet.
+
+5️⃣ DO NOT:
+
+Touch receipt logic
+
+Touch billing logic
+
+Touch subscription logic
+
+Modify existing data queries
+
+Add frontend yet
+
+Backend foundation only.
+
+6️⃣ After Completion
+
+Provide:
+
+Full schema diff
+
+Migration confirmation
+
+Route list
+
+Example invite flow
+
+Example accept flow
+
+Confirmation no existing user flow was broken

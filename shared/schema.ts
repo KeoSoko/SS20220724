@@ -84,6 +84,29 @@ export const workspaces = pgTable("workspaces", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const workspaceMembers = pgTable("workspace_members", {
+  id: serial("id").primaryKey(),
+  workspaceId: integer("workspace_id").notNull().references(() => workspaces.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+  role: text("role").notNull().default("viewer"),
+  invitedByUserId: integer("invited_by_user_id").notNull().references(() => users.id),
+  joinedAt: timestamp("joined_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueMember: unique().on(table.workspaceId, table.userId),
+}));
+
+export const workspaceInvites = pgTable("workspace_invites", {
+  id: serial("id").primaryKey(),
+  workspaceId: integer("workspace_id").notNull().references(() => workspaces.id),
+  email: text("email").notNull(),
+  role: text("role").notNull().default("viewer"),
+  token: text("token").notNull().unique(),
+  invitedByUserId: integer("invited_by_user_id").notNull().references(() => users.id),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Define the users table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -846,6 +869,20 @@ export const insertWorkspaceSchema = createInsertSchema(workspaces).omit({
 });
 export type InsertWorkspace = z.infer<typeof insertWorkspaceSchema>;
 export type Workspace = typeof workspaces.$inferSelect;
+
+export const insertWorkspaceMemberSchema = createInsertSchema(workspaceMembers).omit({
+  id: true,
+  joinedAt: true,
+});
+export type InsertWorkspaceMember = z.infer<typeof insertWorkspaceMemberSchema>;
+export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
+
+export const insertWorkspaceInviteSchema = createInsertSchema(workspaceInvites).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertWorkspaceInvite = z.infer<typeof insertWorkspaceInviteSchema>;
+export type WorkspaceInvite = typeof workspaceInvites.$inferSelect;
 
 // Export types for TypeScript
 export type InsertUser = z.infer<typeof insertUserSchema>;

@@ -35,7 +35,9 @@ import {
   Quotation,
   BusinessProfile,
   LineItem,
-  InvoicePayment
+  InvoicePayment,
+  workspaceMembers,
+  workspaceInvites
 } from "@shared/schema";
 import { azureStorage } from "./azure-storage";
 import { azureFormRecognizer } from "./azure-form-recognizer";
@@ -60,7 +62,7 @@ import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
 import { and, asc, eq, gte, lt, lte, sql, isNull, isNotNull } from "drizzle-orm";
 import multer from "multer";
-import { scrypt, timingSafeEqual } from 'crypto';
+import { scrypt, timingSafeEqual, randomBytes } from 'crypto';
 import { promisify } from 'util';
 
 const scryptAsync = promisify(scrypt);
@@ -536,6 +538,33 @@ const requireVerifiedEmail = (req: Request, res: Response, next: NextFunction) =
   }
   
   next();
+};
+
+const requireWorkspaceRole = (...allowedRoles: string[]) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!isAuthenticated(req)) {
+      return res.sendStatus(401);
+    }
+    const userId = getUserId(req);
+    const user = await storage.getUser(userId);
+    if (!user) {
+      return res.status(401).json({ error: "User not found" });
+    }
+    const [membership] = await db
+      .select()
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, user.workspaceId),
+          eq(workspaceMembers.userId, userId)
+        )
+      )
+      .limit(1);
+    if (!membership || !allowedRoles.includes(membership.role)) {
+      return res.status(403).json({ error: "Insufficient workspace permissions" });
+    }
+    next();
+  };
 };
 
 //Assumed to exist elsewhere in the codebase

@@ -170,6 +170,10 @@ export const receipts = pgTable("receipts", {
   source: text("source").default("scan"), // 'scan', 'email', 'gallery', 'manual'
   sourceEmailId: integer("source_email_id"), // Reference to emailReceipts if imported via email
   
+  // Workspace scoping
+  workspaceId: integer("workspace_id").notNull().references(() => workspaces.id),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  
   // Timestamps
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at"),
@@ -1082,6 +1086,7 @@ export const clients = pgTable("clients", {
   country: text("country").default("South Africa"),
   notes: text("notes"),
   isActive: boolean("is_active").default(true).notNull(),
+  workspaceId: integer("workspace_id").notNull().references(() => workspaces.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1103,6 +1108,8 @@ export const quotations = pgTable("quotations", {
   convertedToInvoiceId: integer("converted_to_invoice_id"),
   sentAt: timestamp("sent_at"),
   isActive: boolean("is_active").default(true).notNull(),
+  workspaceId: integer("workspace_id").notNull().references(() => workspaces.id),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [
@@ -1132,6 +1139,8 @@ export const invoices = pgTable("invoices", {
   lastPreDueReminderSent: timestamp("last_pre_due_reminder_sent"),
   preDueRemindersSent: integer("pre_due_reminders_sent").notNull().default(0),
   isActive: boolean("is_active").default(true).notNull(),
+  workspaceId: integer("workspace_id").notNull().references(() => workspaces.id),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [

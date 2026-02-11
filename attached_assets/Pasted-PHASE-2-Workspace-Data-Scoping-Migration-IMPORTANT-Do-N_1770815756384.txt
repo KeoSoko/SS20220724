@@ -1,0 +1,94 @@
+PHASE 2 – Workspace Data Scoping Migration
+
+IMPORTANT:
+Do NOT modify billing, subscriptions, authentication, or frontend.
+Do NOT change existing logic behavior.
+Do NOT remove userId from any table.
+All changes must be backward-safe and production-safe.
+
+We are introducing workspace-level data ownership.
+
+STEP 1 – Schema Updates
+
+Add workspaceId (NOT NULL after backfill) to the following tables:
+
+- receipts
+- clients
+- quotations
+- invoices
+
+Also add createdByUserId (nullable for now) to:
+
+- receipts
+- quotations
+- invoices
+
+Rules:
+- workspaceId references workspaces.id
+- createdByUserId references users.id
+- Keep existing userId column untouched
+
+Update shared/schema.ts accordingly with relations and types.
+
+STEP 2 – Data Backfill
+
+For each of the affected tables:
+
+Populate workspaceId using:
+SELECT users.workspace_id FROM users WHERE users.id = [table].user_id
+
+Set createdByUserId = existing userId
+
+After verifying zero NULL workspaceId rows:
+Enforce workspaceId NOT NULL constraint.
+
+Do this in a safe migration sequence:
+1. Add column nullable
+2. Backfill
+3. Validate
+4. Set NOT NULL
+
+STEP 3 – Query Updates (Server Only)
+
+Update ALL data fetch queries for:
+
+- receipts
+- clients
+- quotations
+- invoices
+
+Replace:
+where(eq(table.userId, userId))
+
+With:
+1. Fetch user first
+2. Use user.workspaceId
+3. Query by workspaceId instead
+
+Example:
+
+const user = await storage.getUser(userId);
+where(eq(receipts.workspaceId, user.workspaceId))
+
+Do NOT change create logic yet.
+Do NOT modify billing.
+Do NOT modify subscription queries.
+
+STEP 4 – Write Operations
+
+When creating new records:
+- Set workspaceId from the logged-in user
+- Set createdByUserId = logged-in user id
+- Keep userId for compatibility
+
+STEP 5 – Safety Checks
+
+Ensure:
+- All existing users still see their own data
+- No cross-workspace leakage
+- App compiles
+- No TypeScript errors
+- No runtime errors
+
+STOP after completing this phase.
+Do NOT begin team invitation logic yet.

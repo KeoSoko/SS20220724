@@ -104,34 +104,57 @@ function SplashLogo() {
 export default function SplashScreen() {
   const [, setLocation] = useLocation();
   const [showContent, setShowContent] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const { user, isLoading } = useAuth();
   
   console.log("[SplashScreen] Rendering with user:", !!user, "isLoading:", isLoading, "showContent:", showContent);
   
   useEffect(() => {
-    // Show content animation first
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const handleMotionPreferenceChange = () => {
+      setPrefersReducedMotion(mediaQuery.matches);
+    };
+
+    handleMotionPreferenceChange();
+    mediaQuery.addEventListener("change", handleMotionPreferenceChange);
+
+    return () => {
+      mediaQuery.removeEventListener("change", handleMotionPreferenceChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      setShowContent(true);
+      return;
+    }
+
     const contentTimer = setTimeout(() => {
       setShowContent(true);
-    }, 500);
-    
-    // Navigation logic with proper auth check
-    const navigationTimer = setTimeout(() => {
-      if (!isLoading) {
-        if (user) {
-          console.log("[SplashScreen] Authenticated user, redirecting to home");
-          setLocation("/home");
-        } else {
-          console.log("[SplashScreen] No user, redirecting to auth");
-          setLocation("/auth");
-        }
-      }
-    }, 3000); // 3 second splash duration
-    
+    }, 150);
+
     return () => {
       clearTimeout(contentTimer);
+    };
+  }, [prefersReducedMotion]);
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    const destination = user ? "/home" : "/auth";
+    const redirectDelay = prefersReducedMotion ? 0 : 75;
+
+    const navigationTimer = setTimeout(() => {
+      console.log(`[SplashScreen] Auth resolved, redirecting to ${destination}`);
+      setLocation(destination);
+    }, redirectDelay);
+
+    return () => {
       clearTimeout(navigationTimer);
     };
-  }, [setLocation, user, isLoading]);
+  }, [isLoading, prefersReducedMotion, setLocation, user]);
   
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -157,7 +180,10 @@ export default function SplashScreen() {
         }}
       />
       
-      <div className={`transform transition-all duration-1000 relative z-10 ${showContent ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-10 opacity-0 scale-95'}`} style={{ visibility: showContent ? 'visible' : 'hidden' }}>
+      <div
+        className={`transform relative z-10 ${prefersReducedMotion ? "transition-none" : "transition-all duration-1000"} ${showContent ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-10 opacity-0 scale-95'}`}
+        style={{ visibility: showContent ? 'visible' : 'hidden' }}
+      >
         <SplashLogo />
         
         <h1 className="text-center text-xl tracking-wide mt-8 font-medium text-gray-800">

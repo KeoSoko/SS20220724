@@ -57,7 +57,13 @@ const PostgresSessionStore = connectPg(session);
  */
 export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
-  
+
+  private async getUserWorkspaceId(userId: number): Promise<number> {
+    const [user] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) throw new Error(`User ${userId} not found`);
+    return user.workspaceId;
+  }
+
   constructor() {
     // Set up PostgreSQL session store for Express using the shared pool
     this.sessionStore = new PostgresSessionStore({
@@ -448,9 +454,10 @@ export class DatabaseStorage implements IStorage {
   async getReceiptByClientUploadId(userId: number, clientUploadId: string): Promise<Receipt | undefined> {
     if (!clientUploadId) return undefined;
     try {
+      const workspaceId = await this.getUserWorkspaceId(userId);
       const result = await db.select()
         .from(receipts)
-        .where(and(eq(receipts.userId, userId), eq(receipts.clientUploadId, clientUploadId)))
+        .where(and(eq(receipts.workspaceId, workspaceId), eq(receipts.clientUploadId, clientUploadId)))
         .limit(1);
       return result[0];
     } catch (error) {
@@ -460,10 +467,11 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getReceiptsByUser(userId: number, limit?: number, offset: number = 0): Promise<Receipt[]> {
+    const workspaceId = await this.getUserWorkspaceId(userId);
     // Base query with required filters and sorting
     const baseQuery = db.select()
       .from(receipts)
-      .where(eq(receipts.userId, userId))
+      .where(eq(receipts.workspaceId, workspaceId))
       .orderBy(desc(receipts.createdAt));
       
     // Execute with limit and offset as needed
@@ -476,6 +484,7 @@ export class DatabaseStorage implements IStorage {
   
   async createReceipt(insertReceipt: InsertReceipt): Promise<Receipt> {
     const now = new Date();
+    const workspaceId = await this.getUserWorkspaceId(insertReceipt.userId);
     
     try {
       log(`Creating receipt for userId: ${insertReceipt.userId}, store: ${insertReceipt.storeName}`, 'debug');
@@ -549,12 +558,14 @@ export class DatabaseStorage implements IStorage {
             "blob_name", "image_data", "category", "tags", "notes", 
             "confidence_score", "raw_ocr_data", "latitude", "longitude",
             "is_tax_deductible", "is_recurring",
-            "created_at", "updated_at", "processed_at"
+            "created_at", "updated_at", "processed_at",
+            "workspace_id", "created_by_user_id"
           ) VALUES (
             $1, $2, $3, $4, $5, $6::jsonb, $7, 
             $8, $9, $10, $11, $12, 
             $13, $14, $15, $16,
-            $17, $18, $19, $20, $21
+            $17, $18, $19, $20, $21,
+            $22, $23
           )
           RETURNING *;
         `;
@@ -588,7 +599,9 @@ export class DatabaseStorage implements IStorage {
           insertValues.isRecurring,
           insertValues.createdAt,
           insertValues.updatedAt,
-          insertValues.processedAt
+          insertValues.processedAt,
+          workspaceId,
+          insertValues.userId,
         ];
 
         log(`Executing direct SQL with explicit type casting`, 'db');
@@ -806,7 +819,8 @@ export class DatabaseStorage implements IStorage {
       const normalizedTotal = parseFloat(total.replace(/[^0-9.-]/g, '')) || 0;
       
       // Get all receipts for user and filter in memory for flexible matching
-      const userReceipts = await db.select().from(receipts).where(eq(receipts.userId, userId));
+      const workspaceId = await this.getUserWorkspaceId(userId);
+      const userReceipts = await db.select().from(receipts).where(eq(receipts.workspaceId, workspaceId));
       
       const targetDate = new Date(date);
       targetDate.setHours(0, 0, 0, 0);
@@ -1091,7 +1105,7 @@ export class DatabaseStorage implements IStorage {
         total: receipts.total,
       })
       .from(receipts)
-      .where(eq(receipts.userId, userId));
+      .where(eq(receipts.workspaceId, await this.getUserWorkspaceId(userId)));
     
     const categoryMap = new Map<string, { category: string, count: number, total: number }>();
     
@@ -1127,7 +1141,7 @@ export class DatabaseStorage implements IStorage {
         total: sql<number>`sum(cast(${receipts.total} as float))`,
       })
       .from(receipts)
-      .where(eq(receipts.userId, userId))
+      .where(eq(receipts.workspaceId, await this.getUserWorkspaceId(userId)))
       .groupBy(monthExpression)
       .orderBy(asc(monthExpression));
     

@@ -107,6 +107,11 @@ export class TaxService {
     // Get current quarter
     const currentQuarter = Math.ceil((currentDate.getMonth() + 1) / 3);
     
+    // Get user's workspace ID
+    const [userRecord] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
+    if (!userRecord) throw new Error(`User ${userId} not found`);
+    const workspaceId = userRecord.workspaceId;
+    
     // Get user's tax settings
     const userTaxSettings = await this.getUserTaxSettings(userId);
     
@@ -116,7 +121,7 @@ export class TaxService {
       .from(receipts)
       .where(
         and(
-          eq(receipts.userId, userId),
+          eq(receipts.workspaceId, workspaceId),
           gte(receipts.date, yearStart),
           lte(receipts.date, yearEnd)
         )
@@ -230,6 +235,11 @@ export class TaxService {
   async generateAuditKit(userId: number): Promise<Buffer> {
     const currentYear = new Date().getFullYear();
     
+    // Get user's workspace ID
+    const [userRecord] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
+    if (!userRecord) throw new Error(`User ${userId} not found`);
+    const workspaceId = userRecord.workspaceId;
+    
     // Get all deductible receipts for the year
     const yearStart = new Date(currentYear, 0, 1);
     const yearEnd = new Date(currentYear, 11, 31);
@@ -239,7 +249,7 @@ export class TaxService {
       .from(receipts)
       .where(
         and(
-          eq(receipts.userId, userId),
+          eq(receipts.workspaceId, workspaceId),
           eq(receipts.isTaxDeductible, true),
           gte(receipts.date, yearStart),
           lte(receipts.date, yearEnd)
@@ -569,6 +579,11 @@ export class TaxService {
     }>;
     provisionalTaxEstimate: number;
   }> {
+    // Get user's workspace ID
+    const [userRecord] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
+    if (!userRecord) throw new Error(`User ${userId} not found`);
+    const workspaceId = userRecord.workspaceId;
+    
     const { startDate, endDate } = getTaxYearDates(taxYear);
     
     const yearReceipts = await db
@@ -576,7 +591,7 @@ export class TaxService {
       .from(receipts)
       .where(
         and(
-          eq(receipts.userId, userId),
+          eq(receipts.workspaceId, workspaceId),
           gte(receipts.date, startDate),
           lte(receipts.date, endDate)
         )

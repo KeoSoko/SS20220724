@@ -1,5 +1,5 @@
 import { db } from './db';
-import { invoices, invoicePayments, clients } from '@shared/schema';
+import { invoices, invoicePayments, clients, users } from '@shared/schema';
 import { eq, and, lt, isNull, or, sql } from 'drizzle-orm';
 import { log } from './vite';
 import { aiEmailAssistant } from './ai-email-assistant.js';
@@ -33,9 +33,13 @@ export class SmartReminderService {
   async getOverdueInvoices(userId: number): Promise<Invoice[]> {
     const today = new Date();
     
+    const [userData] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
+    if (!userData) throw new Error(`User ${userId} not found`);
+    const workspaceId = userData.workspaceId;
+
     const overdueInvoices = await db.query.invoices.findMany({
       where: and(
-        eq(invoices.userId, userId),
+        eq(invoices.workspaceId, workspaceId),
         lt(invoices.dueDate, today),
         or(
           eq(invoices.status, 'unpaid'),
@@ -58,9 +62,13 @@ export class SmartReminderService {
     const endOfToday = new Date(today);
     endOfToday.setHours(23, 59, 59, 999); // End of today
     
+    const [userData] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
+    if (!userData) throw new Error(`User ${userId} not found`);
+    const workspaceId = userData.workspaceId;
+
     const preDueInvoices = await db.query.invoices.findMany({
       where: and(
-        eq(invoices.userId, userId),
+        eq(invoices.workspaceId, workspaceId),
         sql`DATE(${invoices.dueDate}) >= DATE(${today})`,
         sql`DATE(${invoices.dueDate}) <= DATE(${sevenDaysFromNow})`,
         or(

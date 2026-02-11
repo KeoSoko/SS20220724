@@ -1,6 +1,6 @@
 import { storage } from './storage.js';
 import { db } from './db';
-import { invoices, clients } from '../shared/schema.js';
+import { invoices, clients, users } from '../shared/schema.js';
 import { eq } from 'drizzle-orm';
 import type { Invoice, Receipt } from '../shared/schema.js';
 import { getReportingCategory } from './reporting-utils.js';
@@ -75,9 +75,14 @@ export class ProfitLossService {
     includePreviousPeriod: boolean = true
   ): Promise<ProfitLossData> {
     try {
+      // Fetch user's workspaceId for workspace-scoped queries
+      const [userData] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
+      if (!userData) throw new Error(`User ${userId} not found`);
+      const workspaceId = userData.workspaceId;
+
       // Fetch invoices and receipts for the period
       const allInvoices = await db.query.invoices.findMany({
-        where: eq(invoices.userId, userId)
+        where: eq(invoices.workspaceId, workspaceId)
       });
       const receipts = await storage.getReceiptsByUser(userId, 10000);
 

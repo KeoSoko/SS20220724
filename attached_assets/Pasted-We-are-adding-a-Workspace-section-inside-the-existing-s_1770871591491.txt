@@ -1,0 +1,173 @@
+We are adding a Workspace section inside the existing /settings Profile page.
+
+IMPORTANT CONSTRAINTS:
+- Only 2 roles exist: "owner" and "assistant"
+- Maximum 1 assistant per workspace
+- No avatars
+- Do NOT modify billing logic
+- Do NOT modify authentication
+- Do NOT modify backend role enforcement
+- Use existing workspace endpoints only
+
+This is a frontend-only implementation.
+
+------------------------------------------------
+STRUCTURE
+------------------------------------------------
+
+Inside the Profile settings page, add a new section below existing profile fields:
+
+SECTION TITLE:
+"Workspace"
+
+Use the same layout style as other Profile sections (cards, spacing, etc.)
+
+------------------------------------------------
+1) WORKSPACE OVERVIEW CARD
+------------------------------------------------
+
+Display:
+
+- Workspace name (editable inline if user is owner)
+- Owner email
+- Current subscription plan name
+- Seat usage (1/2 or 2/2)
+
+Design:
+- Clean card
+- Rounded corners
+- Subtle shadow
+- Consistent spacing with existing profile UI
+
+Editable behavior:
+- Only owner can edit workspace name
+- Inline edit with Save / Cancel
+- Use existing update endpoint if available
+- Assistant sees workspace name but cannot edit
+
+------------------------------------------------
+2) TEAM MEMBERS SECTION
+------------------------------------------------
+
+Title: "Team Members"
+
+Use stacked member cards (NOT table layout).
+
+Each member card contains:
+
+- Circular initial badge (first letter of email)
+- Name or email
+- Email in muted gray text
+- Role badge:
+    Owner → gold badge
+    Assistant → blue badge
+- Last active (from users.lastLogin)
+
+------------------------------------------------
+3) EMPTY STATE
+------------------------------------------------
+
+If no assistant exists:
+
+Show centered message:
+
+"You're working solo."
+"Invite an assistant to collaborate on receipts and invoices."
+
+Button: Invite Assistant (owner only)
+
+If assistant exists:
+- Show owner card
+- Show assistant card
+- Hide invite button
+
+------------------------------------------------
+4) INVITE ASSISTANT MODAL
+------------------------------------------------
+
+Owner only.
+
+Modal contains:
+
+- Email input
+- Helper text:
+  "Your assistant will have full access to receipts, invoices and clients, but cannot manage billing or account settings."
+
+Primary button: Send Invite
+
+On submit:
+- POST /api/workspace/invite
+- role automatically set to "assistant"
+- On success:
+    - Refresh member list
+    - Close modal
+    - Show success toast
+
+------------------------------------------------
+5) PENDING INVITE DISPLAY
+------------------------------------------------
+
+If invite exists and not accepted:
+
+Show assistant card with:
+- Status badge: "Pending"
+- Expires in X days
+- Cancel button (owner only)
+
+Cancel:
+- DELETE /api/workspace/invite/:id
+- Refresh list
+
+------------------------------------------------
+6) REMOVE ASSISTANT
+------------------------------------------------
+
+Owner only.
+
+Remove button on assistant card.
+
+On click:
+- Show confirmation modal
+- Require typing REMOVE
+- On confirm:
+    - Call existing remove member endpoint
+    - Refresh list
+    - Show toast
+
+------------------------------------------------
+7) PERMISSION RULES
+------------------------------------------------
+
+Owner:
+- Can edit workspace name
+- Can invite assistant
+- Can cancel invite
+- Can remove assistant
+
+Assistant:
+- Can view workspace members
+- Cannot see invite/remove buttons
+- Cannot edit workspace name
+
+------------------------------------------------
+DESIGN RULES
+------------------------------------------------
+
+- No avatars
+- Use initial badge circle only
+- Clean SaaS styling
+- Subtle left border accent optional
+- Match Command Center design system
+- No new routes
+- No backend changes
+
+------------------------------------------------
+DO NOT:
+------------------------------------------------
+
+- Add multiple assistants
+- Add role dropdown
+- Modify billing
+- Modify subscription
+- Add new permission logic
+- Add new database tables

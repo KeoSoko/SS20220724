@@ -23,7 +23,7 @@ import { PageLayout } from '@/components/page-layout';
 import { ContentCard, Section, StatusBadge } from '@/components/design-system';
 // import { StorageMonitor } from '@/components/storage-monitor';
 import { useToast } from '@/hooks/use-toast';
-import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2, Copy, RefreshCw, Inbox, MessageCircle, HelpCircle, Send, Camera, Monitor, Smartphone } from 'lucide-react';
+import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2, Copy, RefreshCw, Inbox, MessageCircle, HelpCircle, Send, Camera, Monitor, Smartphone, Users, UserPlus, Clock, XCircle } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -556,6 +556,434 @@ function ContactSupportDialog() {
         </Form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface WorkspaceInfo {
+  id: number;
+  name: string;
+  ownerId: number;
+  ownerEmail: string;
+  planName: string;
+  memberCount: number;
+  maxMembers: number;
+  myRole: string;
+}
+
+interface WorkspaceMember {
+  id: number;
+  userId: number;
+  role: string;
+  joinedAt: string;
+  username: string;
+  email: string;
+  fullName: string | null;
+  lastLogin: string | null;
+}
+
+interface WorkspaceInvite {
+  id: number;
+  email: string;
+  role: string;
+  expiresAt: string;
+  createdAt: string;
+  acceptedAt: string | null;
+}
+
+function WorkspaceSection() {
+  const { toast } = useToast();
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [isRemoveOpen, setIsRemoveOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<WorkspaceMember | null>(null);
+  const [removeConfirmText, setRemoveConfirmText] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+
+  const { data: workspace, isLoading: wsLoading } = useQuery<WorkspaceInfo>({
+    queryKey: ['/api/workspace'],
+  });
+
+  const { data: members = [], isLoading: membersLoading } = useQuery<WorkspaceMember[]>({
+    queryKey: ['/api/workspace/members'],
+  });
+
+  const { data: invites = [] } = useQuery<WorkspaceInvite[]>({
+    queryKey: ['/api/workspace/invites'],
+    enabled: workspace?.myRole === 'owner',
+  });
+
+  const isOwner = workspace?.myRole === 'owner';
+  const pendingInvites = invites.filter(i => !i.acceptedAt && new Date(i.expiresAt) > new Date());
+  const assistant = members.find(m => m.role !== 'owner');
+  const owner = members.find(m => m.role === 'owner');
+  const hasAssistant = !!assistant;
+  const hasPendingInvite = pendingInvites.length > 0;
+
+  const updateNameMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const response = await apiRequest("PATCH", "/api/workspace", { name });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to update');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/workspace'] });
+      setIsEditingName(false);
+      toast({ title: "Workspace updated", description: "Name saved successfully." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const inviteMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const response = await apiRequest("POST", "/api/workspace/invite", { email, role: "editor" });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to send invite');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/workspace/invites'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/workspace/members'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/workspace'] });
+      setIsInviteOpen(false);
+      setInviteEmail('');
+      toast({ title: "Invite sent", description: "Your assistant will receive an email invitation." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Invite failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const cancelInviteMutation = useMutation({
+    mutationFn: async (inviteId: number) => {
+      const response = await apiRequest("DELETE", `/api/workspace/invite/${inviteId}`);
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to cancel invite');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/workspace/invites'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/workspace'] });
+      toast({ title: "Invite cancelled", description: "The invitation has been revoked." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Cancel failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: async (memberId: number) => {
+      const response = await apiRequest("DELETE", `/api/workspace/members/${memberId}`);
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to remove member');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/workspace/members'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/workspace'] });
+      setIsRemoveOpen(false);
+      setRemoveTarget(null);
+      setRemoveConfirmText('');
+      toast({ title: "Assistant removed", description: "The team member has been removed from your workspace." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Remove failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const formatLastActive = (date: string | null) => {
+    if (!date) return "Never";
+    const d = new Date(date);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return d.toLocaleDateString();
+  };
+
+  const getDaysUntilExpiry = (expiresAt: string) => {
+    const now = new Date();
+    const expiry = new Date(expiresAt);
+    const diffMs = expiry.getTime() - now.getTime();
+    return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  };
+
+  if (wsLoading || membersLoading) {
+    return (
+      <Section title="Workspace" description="Manage your team and workspace settings">
+        <ContentCard>
+          <div className="space-y-4 animate-pulse">
+            <div className="h-6 bg-gray-200 rounded w-1/3"></div>
+            <div className="h-20 bg-gray-100 rounded"></div>
+            <div className="h-20 bg-gray-100 rounded"></div>
+          </div>
+        </ContentCard>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="Workspace" description="Manage your team and workspace settings">
+      <ContentCard>
+        <div className="space-y-6">
+          <div className="border rounded-lg p-5 bg-white shadow-sm">
+            <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Workspace Overview</h4>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">Workspace Name</span>
+                {isEditingName ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={editedName}
+                      onChange={(e) => setEditedName(e.target.value)}
+                      className="h-8 w-48 text-sm"
+                      autoFocus
+                    />
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => updateNameMutation.mutate(editedName)} disabled={updateNameMutation.isPending}>
+                      <Check className="h-4 w-4 text-green-600" />
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => setIsEditingName(false)}>
+                      <X className="h-4 w-4 text-gray-400" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{workspace?.name || 'My Workspace'}</span>
+                    {isOwner && (
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditedName(workspace?.name || ''); setIsEditingName(true); }}>
+                        <Edit2 className="h-3.5 w-3.5 text-gray-400" />
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">Owner</span>
+                <span className="text-sm font-medium">{workspace?.ownerEmail}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">Plan</span>
+                <span className="text-sm font-medium">{workspace?.planName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">Seats</span>
+                <span className="text-sm font-medium">{workspace?.memberCount}/{workspace?.maxMembers}</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Team Members</h4>
+              {isOwner && !hasAssistant && !hasPendingInvite && (
+                <Button size="sm" onClick={() => setIsInviteOpen(true)} className="gap-1.5">
+                  <UserPlus className="h-4 w-4" />
+                  Invite Assistant
+                </Button>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {owner && (
+                <div className="border rounded-lg p-4 bg-white shadow-sm border-l-4 border-l-amber-400">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                      {(owner.email || owner.username || 'O')[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm truncate">{owner.fullName || owner.username}</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Owner</span>
+                      </div>
+                      <p className="text-xs text-gray-500 truncate">{owner.email}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-xs text-gray-400">Last active</p>
+                      <p className="text-xs text-gray-600">{formatLastActive(owner.lastLogin)}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {assistant && (
+                <div className="border rounded-lg p-4 bg-white shadow-sm border-l-4 border-l-blue-400">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                      {(assistant.email || assistant.username || 'A')[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm truncate">{assistant.fullName || assistant.username}</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Assistant</span>
+                      </div>
+                      <p className="text-xs text-gray-500 truncate">{assistant.email}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-xs text-gray-400">Last active</p>
+                        <p className="text-xs text-gray-600">{formatLastActive(assistant.lastLogin)}</p>
+                      </div>
+                      {isOwner && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 px-2"
+                          onClick={() => { setRemoveTarget(assistant); setIsRemoveOpen(true); }}
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {pendingInvites.map((invite) => (
+                <div key={invite.id} className="border rounded-lg p-4 bg-gray-50 shadow-sm border-l-4 border-l-gray-300 border-dashed">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                      {invite.email[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm truncate">{invite.email}</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Pending</span>
+                      </div>
+                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                        <Clock className="h-3 w-3" />
+                        Expires in {getDaysUntilExpiry(invite.expiresAt)} days
+                      </p>
+                    </div>
+                    {isOwner && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-gray-500 hover:text-red-600 hover:bg-red-50 h-8 px-2"
+                        onClick={() => cancelInviteMutation.mutate(invite.id)}
+                        disabled={cancelInviteMutation.isPending}
+                      >
+                        <X className="h-4 w-4" />
+                        <span className="ml-1 text-xs">Cancel</span>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {!hasAssistant && !hasPendingInvite && (
+                <div className="border rounded-lg p-8 bg-gray-50 text-center">
+                  <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                  <p className="font-medium text-gray-700 mb-1">You're working solo.</p>
+                  <p className="text-sm text-gray-500 mb-4">Invite an assistant to collaborate on receipts and invoices.</p>
+                  {isOwner && (
+                    <Button size="sm" onClick={() => setIsInviteOpen(true)} className="gap-1.5">
+                      <UserPlus className="h-4 w-4" />
+                      Invite Assistant
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </ContentCard>
+
+      <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-blue-600" />
+              Invite Assistant
+            </DialogTitle>
+            <DialogDescription>
+              Your assistant will have full access to receipts, invoices and clients, but cannot manage billing or account settings.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="invite-email" className="text-sm font-medium">Email address</Label>
+              <Input
+                id="invite-email"
+                type="email"
+                placeholder="assistant@example.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                data-testid="input-invite-email"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsInviteOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => inviteMutation.mutate(inviteEmail)}
+              disabled={!inviteEmail || inviteMutation.isPending}
+              data-testid="button-send-invite"
+            >
+              {inviteMutation.isPending ? (
+                <div className="flex items-center gap-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Sending...
+                </div>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  Send Invite
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isRemoveOpen} onOpenChange={(open) => { setIsRemoveOpen(open); if (!open) { setRemoveConfirmText(''); setRemoveTarget(null); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Remove Assistant</DialogTitle>
+            <DialogDescription>
+              This will remove <span className="font-medium">{removeTarget?.fullName || removeTarget?.email}</span> from your workspace. They will lose access to all shared data.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Type REMOVE to confirm</Label>
+              <Input
+                value={removeConfirmText}
+                onChange={(e) => setRemoveConfirmText(e.target.value)}
+                placeholder="REMOVE"
+                data-testid="input-remove-confirm"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRemoveOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => removeTarget && removeMemberMutation.mutate(removeTarget.id)}
+              disabled={removeConfirmText !== 'REMOVE' || removeMemberMutation.isPending}
+              data-testid="button-confirm-remove"
+            >
+              {removeMemberMutation.isPending ? 'Removing...' : 'Remove Assistant'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Section>
   );
 }
 
@@ -1170,6 +1598,9 @@ export default function ProfilePage() {
             </Form>
           </ContentCard>
         </Section>
+
+        {/* Workspace Section */}
+        <WorkspaceSection />
 
         {/* Account Settings Section */}
         <Section title="Account Settings" description="Customize your account preferences and categories">

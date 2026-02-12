@@ -38,7 +38,8 @@ import {
   InvoicePayment,
   workspaces,
   workspaceMembers,
-  workspaceInvites
+  workspaceInvites,
+  subscriptionPlans
 } from "@shared/schema";
 import { azureStorage } from "./azure-storage";
 import { azureFormRecognizer } from "./azure-form-recognizer";
@@ -6838,6 +6839,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           username: users.username,
           email: users.email,
           fullName: users.fullName,
+          lastLogin: users.lastLogin,
         })
         .from(workspaceMembers)
         .innerJoin(users, eq(users.id, workspaceMembers.userId))
@@ -6979,6 +6981,126 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error revoking workspace invite: ${error.message}`, "workspace");
       res.status(500).json({ error: "Failed to revoke invitation" });
+    }
+  });
+
+  app.get("/api/workspace", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const [workspace] = await db
+        .select({
+          id: workspaces.id,
+          name: workspaces.name,
+          ownerId: workspaces.ownerId,
+          createdAt: workspaces.createdAt,
+        })
+        .from(workspaces)
+        .where(eq(workspaces.id, user.workspaceId))
+        .limit(1);
+
+      if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+      const owner = await storage.getUser(workspace.ownerId);
+      const ownerEmail = owner?.email || "";
+
+      const memberCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(workspaceMembers)
+        .where(eq(workspaceMembers.workspaceId, workspace.id));
+
+      let planName = "Free Trial";
+      try {
+        const [sub] = await db
+          .select({ displayName: subscriptionPlans.displayName })
+          .from(userSubscriptions)
+          .innerJoin(subscriptionPlans, eq(subscriptionPlans.id, userSubscriptions.planId))
+          .where(eq(userSubscriptions.userId, workspace.ownerId))
+          .limit(1);
+        if (sub) planName = sub.displayName;
+      } catch {}
+
+      const [myMembership] = await db
+        .select({ role: workspaceMembers.role })
+        .from(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, workspace.id),
+            eq(workspaceMembers.userId, userId)
+          )
+        )
+        .limit(1);
+
+      res.json({
+        ...workspace,
+        ownerEmail,
+        planName,
+        memberCount: Number(memberCount[0]?.count || 1),
+        maxMembers: 2,
+        myRole: myMembership?.role || "viewer",
+      });
+    } catch (error: any) {
+      log(`Error fetching workspace: ${error.message}`, "workspace");
+      res.status(500).json({ error: "Failed to fetch workspace" });
+    }
+  });
+
+  app.patch("/api/workspace", requireWorkspaceRole("owner"), async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const { name } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "Workspace name is required" });
+      }
+
+      await db
+        .update(workspaces)
+        .set({ name: name.trim() })
+        .where(eq(workspaces.id, user.workspaceId));
+
+      log(`Workspace ${user.workspaceId} name updated to "${name.trim()}" by user ${userId}`, "workspace");
+      res.json({ success: true, name: name.trim() });
+    } catch (error: any) {
+      log(`Error updating workspace: ${error.message}`, "workspace");
+      res.status(500).json({ error: "Failed to update workspace" });
+    }
+  });
+
+  app.delete("/api/workspace/members/:memberId", requireWorkspaceRole("owner"), async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const memberId = parseInt(req.params.memberId);
+      if (isNaN(memberId)) return res.status(400).json({ error: "Invalid member ID" });
+
+      const [member] = await db
+        .select()
+        .from(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.id, memberId),
+            eq(workspaceMembers.workspaceId, user.workspaceId)
+          )
+        )
+        .limit(1);
+
+      if (!member) return res.status(404).json({ error: "Member not found" });
+      if (member.role === "owner") return res.status(400).json({ error: "Cannot remove workspace owner" });
+
+      await db.delete(workspaceMembers).where(eq(workspaceMembers.id, memberId));
+
+      log(`Workspace member ${memberId} (user ${member.userId}) removed by owner ${userId}`, "workspace");
+      res.json({ success: true });
+    } catch (error: any) {
+      log(`Error removing workspace member: ${error.message}`, "workspace");
+      res.status(500).json({ error: "Failed to remove member" });
     }
   });
 

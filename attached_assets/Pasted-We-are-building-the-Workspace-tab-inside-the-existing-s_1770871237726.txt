@@ -1,0 +1,154 @@
+We are building the Workspace tab inside the existing /settings page.
+
+IMPORTANT CONSTRAINTS:
+- Only 2 roles exist: "owner" and "assistant"
+- Maximum 1 assistant per workspace
+- No avatars
+- Do NOT modify billing, auth, or backend logic
+- Use existing workspace endpoints only
+- Keep the UI polished SaaS-level but simple
+
+-----------------------------------
+UI STRUCTURE
+-----------------------------------
+
+1) Add a new tab: "Workspace" inside /settings
+
+-----------------------------------
+2) WORKSPACE OVERVIEW CARD
+-----------------------------------
+
+Display:
+
+- Workspace name (editable inline if owner)
+- Owner email
+- Current plan name
+- Seat usage (1/2 or 2/2)
+
+Layout:
+- Clean white card
+- Rounded corners
+- Subtle shadow
+- Section title: "Workspace Overview"
+
+Editable behavior:
+- Only owner can edit workspace name
+- Use inline edit with save + cancel
+- Use existing PATCH endpoint if available
+
+-----------------------------------
+3) TEAM MEMBERS SECTION
+-----------------------------------
+
+Section title: "Team Members"
+
+Display stacked cards (NOT a table).
+
+Each member card includes:
+- Initial circle badge (first letter of email, styled circle)
+- Full name or email
+- Email (subtle gray text)
+- Role badge:
+    Owner → gold badge
+    Assistant → blue badge
+- Last active (users.lastLogin)
+
+If assistant does NOT exist:
+- Show empty state block:
+  "You're working solo."
+  Button: Invite Assistant
+
+If assistant exists:
+- Show owner card
+- Show assistant card
+- Hide invite button
+
+-----------------------------------
+4) INVITE ASSISTANT MODAL
+-----------------------------------
+
+Owner only.
+
+Modal contains:
+- Email input
+- Helper text:
+  "Your assistant will have full access to receipts, invoices and clients, but cannot manage billing or account settings."
+- Primary button: Send Invite
+
+On submit:
+- POST /api/workspace/invite
+- role automatically set to "assistant"
+- On success:
+    - Refresh member list
+    - Close modal
+    - Show success toast
+
+-----------------------------------
+5) PENDING INVITE DISPLAY
+-----------------------------------
+
+If assistant invite is pending:
+- Show assistant card with:
+    Status badge: "Pending"
+    Expires in X days
+    Cancel button (owner only)
+
+Cancel:
+- DELETE /api/workspace/invite/:id
+- Refresh list
+
+-----------------------------------
+6) REMOVE ASSISTANT
+-----------------------------------
+
+Owner only.
+
+Remove button on assistant card.
+
+On click:
+- Show confirmation modal
+- Require typing REMOVE
+- On confirm:
+    - Call existing remove member endpoint
+    - Refresh list
+    - Show toast
+
+-----------------------------------
+7) PERMISSIONS
+-----------------------------------
+
+Owner:
+- Can edit workspace name
+- Can invite assistant
+- Can cancel invite
+- Can remove assistant
+
+Assistant:
+- Can view workspace members
+- Cannot see invite/remove buttons
+- Cannot edit workspace name
+
+-----------------------------------
+DESIGN GUIDELINES
+-----------------------------------
+
+- Clean spacing
+- Soft shadows
+- Rounded cards
+- No avatars
+- Use subtle left border accent for visual structure
+- Keep everything minimal and premium
+- Match styling of Command Center
+
+-----------------------------------
+DO NOT:
+-----------------------------------
+
+- Add new backend endpoints
+- Modify role logic
+- Modify billing logic
+- Modify authentication
+- Add multi-role system
+- Add multiple assistants
+
+Only build frontend UI using existing APIs.

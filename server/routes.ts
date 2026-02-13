@@ -6903,7 +6903,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isAuthenticated(req)) {
         const userId = getUserId(req);
         const invitedUser = await storage.getUser(userId);
-        if (invitedUser && invitedUser.email?.toLowerCase() === invite.email.toLowerCase() && invitedUser.workspaceId !== invite.workspaceId) {
+        if (invitedUser && invitedUser.workspaceId !== invite.workspaceId) {
           const [receiptCount] = await db
             .select({ count: sql<number>`count(*)::int` })
             .from(receipts)
@@ -6997,10 +6997,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       const user = await storage.getUser(userId);
       if (!user) return res.status(401).json({ error: "User not found" });
-
-      if (user.email?.toLowerCase() !== invite.email.toLowerCase()) {
-        return res.status(403).json({ error: "Invite email does not match logged-in user." });
-      }
 
       const [existingMembership] = await db
         .select({ id: workspaceMembers.id })

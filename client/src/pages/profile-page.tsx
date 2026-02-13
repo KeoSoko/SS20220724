@@ -854,33 +854,26 @@ function WorkspaceSection() {
 
               {pendingInvites.map((invite) => (
                 <div key={invite.id} className="border rounded-none p-4 bg-gray-50 shadow-sm border-l-4 border-l-gray-300 border-dashed">
-                  <div className="flex items-start gap-3">
-                    <div className="h-10 w-10 rounded-none bg-gray-200 text-gray-500 flex items-center justify-center font-semibold text-sm flex-shrink-0">
-                      {invite.email[0].toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-yellow-100 text-yellow-800">Pending</span>
-                      </div>
-                      <p className="font-medium text-sm mt-1 break-all">{invite.email}</p>
-                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                        <Clock className="h-3 w-3 flex-shrink-0" />
-                        Expires in {getDaysUntilExpiry(invite.expiresAt)} days
-                      </p>
-                    </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-yellow-100 text-yellow-800">Pending Invite</span>
                     {isOwner && (
                       <Button
                         size="sm"
                         variant="outline"
-                        className="text-gray-500 hover:text-red-600 hover:bg-red-50 h-8 px-3 flex-shrink-0"
+                        className="text-gray-500 hover:text-red-600 hover:bg-red-50 h-7 px-2 text-xs"
                         onClick={() => cancelInviteMutation.mutate(invite.id)}
                         disabled={cancelInviteMutation.isPending}
                       >
-                        <X className="h-3.5 w-3.5 mr-1" />
+                        <X className="h-3 w-3 mr-1" />
                         Cancel
                       </Button>
                     )}
                   </div>
+                  <p className="font-medium text-sm truncate">{invite.email}</p>
+                  <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                    <Clock className="h-3 w-3 flex-shrink-0" />
+                    Expires in {getDaysUntilExpiry(invite.expiresAt)} days
+                  </p>
                 </div>
               ))}
 

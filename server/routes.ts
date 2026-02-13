@@ -6948,7 +6948,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/workspace/accept-invite", async (req, res) => {
     try {
-      const { token } = req.body;
+      const { token, migrateData } = req.body;
       if (!token || typeof token !== "string") {
         return res.status(400).json({ error: "Invitation token is required" });
       }
@@ -7034,8 +7034,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const oldWorkspaceId = user.workspaceId;
 
+      let migratedCounts = null;
+
       await db.transaction(async (tx) => {
         if (oldWorkspaceId !== invite.workspaceId) {
+          if (migrateData) {
+            const [rCount] = await tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(receipts)
+              .where(eq(receipts.workspaceId, oldWorkspaceId));
+            const [cCount] = await tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(clients)
+              .where(eq(clients.workspaceId, oldWorkspaceId));
+            const [qCount] = await tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(quotations)
+              .where(eq(quotations.workspaceId, oldWorkspaceId));
+            const [iCount] = await tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(invoices)
+              .where(eq(invoices.workspaceId, oldWorkspaceId));
+
+            if ((rCount?.count || 0) > 0) {
+              await tx.update(receipts).set({ workspaceId: invite.workspaceId }).where(eq(receipts.workspaceId, oldWorkspaceId));
+            }
+            if ((cCount?.count || 0) > 0) {
+              await tx.update(clients).set({ workspaceId: invite.workspaceId }).where(eq(clients.workspaceId, oldWorkspaceId));
+            }
+            if ((qCount?.count || 0) > 0) {
+              await tx.update(quotations).set({ workspaceId: invite.workspaceId }).where(eq(quotations.workspaceId, oldWorkspaceId));
+            }
+            if ((iCount?.count || 0) > 0) {
+              await tx.update(invoices).set({ workspaceId: invite.workspaceId }).where(eq(invoices.workspaceId, oldWorkspaceId));
+            }
+
+            migratedCounts = {
+              receipts: rCount?.count || 0,
+              clients: cCount?.count || 0,
+              quotations: qCount?.count || 0,
+              invoices: iCount?.count || 0,
+            };
+          }
+
           await tx
             .delete(workspaceMembers)
             .where(
@@ -7064,8 +7105,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(workspaceInvites.id, invite.id));
       });
 
-      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role} (old workspace: ${oldWorkspaceId})`, "workspace");
-      res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role });
+      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role} (old workspace: ${oldWorkspaceId}, migrated: ${!!migrateData})`, "workspace");
+      res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role, migratedCounts });
     } catch (error: any) {
       log(`Error accepting workspace invite: ${error.message}`, "workspace");
       res.status(500).json({ error: "Failed to accept invitation" });

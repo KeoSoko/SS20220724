@@ -289,7 +289,7 @@ export default function AcceptInvitePage() {
               {!user && (
                 <div className="bg-amber-50 border border-amber-200 p-3 rounded-none">
                   <p className="text-sm text-amber-800">
-                    You need to log in or sign up first before accepting this invitation. Make sure you use the email address: <strong>{inviteDetails.email}</strong>
+                    You need to log in or sign up first before accepting this invitation.
                   </p>
                 </div>
               )}

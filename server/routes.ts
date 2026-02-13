@@ -6900,26 +6900,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let existingData = null;
       let activeSubscription = null;
+      let isWorkspaceOwner = false;
       if (isAuthenticated(req)) {
         const userId = getUserId(req);
         const invitedUser = await storage.getUser(userId);
         if (invitedUser && invitedUser.workspaceId !== invite.workspaceId) {
-          const [receiptCount] = await db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(receipts)
-            .where(eq(receipts.workspaceId, invitedUser.workspaceId));
-          const [clientCount] = await db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(clients)
-            .where(eq(clients.workspaceId, invitedUser.workspaceId));
-          const [quotationCount] = await db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(quotations)
-            .where(eq(quotations.workspaceId, invitedUser.workspaceId));
-          const [invoiceCount] = await db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(invoices)
-            .where(eq(invoices.workspaceId, invitedUser.workspaceId));
+          const [ownerCheck] = await db
+            .select({ id: workspaces.id })
+            .from(workspaces)
+            .where(and(eq(workspaces.id, invitedUser.workspaceId), eq(workspaces.ownerId, userId)))
+            .limit(1);
+          isWorkspaceOwner = !!ownerCheck;
+
+          let receiptCount, clientCount, quotationCount, invoiceCount;
+
+          if (isWorkspaceOwner) {
+            [receiptCount] = await db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(receipts)
+              .where(eq(receipts.workspaceId, invitedUser.workspaceId));
+            [clientCount] = await db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(clients)
+              .where(eq(clients.workspaceId, invitedUser.workspaceId));
+            [quotationCount] = await db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(quotations)
+              .where(eq(quotations.workspaceId, invitedUser.workspaceId));
+            [invoiceCount] = await db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(invoices)
+              .where(eq(invoices.workspaceId, invitedUser.workspaceId));
+          } else {
+            [receiptCount] = await db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(receipts)
+              .where(and(eq(receipts.workspaceId, invitedUser.workspaceId), eq(receipts.createdByUserId, userId)));
+            [clientCount] = await db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(clients)
+              .where(and(eq(clients.workspaceId, invitedUser.workspaceId), eq(clients.userId, userId)));
+            [quotationCount] = await db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(quotations)
+              .where(and(eq(quotations.workspaceId, invitedUser.workspaceId), eq(quotations.createdByUserId, userId)));
+            [invoiceCount] = await db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(invoices)
+              .where(and(eq(invoices.workspaceId, invitedUser.workspaceId), eq(invoices.createdByUserId, userId)));
+          }
 
           const totalItems = (receiptCount?.count || 0) + (clientCount?.count || 0) + (quotationCount?.count || 0) + (invoiceCount?.count || 0);
           if (totalItems > 0) {

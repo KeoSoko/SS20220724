@@ -7074,47 +7074,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const oldWorkspaceId = user.workspaceId;
 
+      const [ownerCheck] = await db
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(and(eq(workspaces.id, oldWorkspaceId), eq(workspaces.ownerId, userId)))
+        .limit(1);
+      const isOwnerOfOldWorkspace = !!ownerCheck;
+
       let migratedCounts = null;
 
       await db.transaction(async (tx) => {
         if (oldWorkspaceId !== invite.workspaceId) {
           if (migrateData) {
-            const [rCount] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(receipts)
-              .where(eq(receipts.workspaceId, oldWorkspaceId));
-            const [cCount] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(clients)
-              .where(eq(clients.workspaceId, oldWorkspaceId));
-            const [qCount] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(quotations)
-              .where(eq(quotations.workspaceId, oldWorkspaceId));
-            const [iCount] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(invoices)
-              .where(eq(invoices.workspaceId, oldWorkspaceId));
+            if (isOwnerOfOldWorkspace) {
+              const [rCount] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(receipts)
+                .where(eq(receipts.workspaceId, oldWorkspaceId));
+              const [cCount] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(clients)
+                .where(eq(clients.workspaceId, oldWorkspaceId));
+              const [qCount] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(quotations)
+                .where(eq(quotations.workspaceId, oldWorkspaceId));
+              const [iCount] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(invoices)
+                .where(eq(invoices.workspaceId, oldWorkspaceId));
 
-            if ((rCount?.count || 0) > 0) {
-              await tx.update(receipts).set({ workspaceId: invite.workspaceId }).where(eq(receipts.workspaceId, oldWorkspaceId));
-            }
-            if ((cCount?.count || 0) > 0) {
-              await tx.update(clients).set({ workspaceId: invite.workspaceId }).where(eq(clients.workspaceId, oldWorkspaceId));
-            }
-            if ((qCount?.count || 0) > 0) {
-              await tx.update(quotations).set({ workspaceId: invite.workspaceId }).where(eq(quotations.workspaceId, oldWorkspaceId));
-            }
-            if ((iCount?.count || 0) > 0) {
-              await tx.update(invoices).set({ workspaceId: invite.workspaceId }).where(eq(invoices.workspaceId, oldWorkspaceId));
-            }
+              if ((rCount?.count || 0) > 0) {
+                await tx.update(receipts).set({ workspaceId: invite.workspaceId }).where(eq(receipts.workspaceId, oldWorkspaceId));
+              }
+              if ((cCount?.count || 0) > 0) {
+                await tx.update(clients).set({ workspaceId: invite.workspaceId }).where(eq(clients.workspaceId, oldWorkspaceId));
+              }
+              if ((qCount?.count || 0) > 0) {
+                await tx.update(quotations).set({ workspaceId: invite.workspaceId }).where(eq(quotations.workspaceId, oldWorkspaceId));
+              }
+              if ((iCount?.count || 0) > 0) {
+                await tx.update(invoices).set({ workspaceId: invite.workspaceId }).where(eq(invoices.workspaceId, oldWorkspaceId));
+              }
 
-            migratedCounts = {
-              receipts: rCount?.count || 0,
-              clients: cCount?.count || 0,
-              quotations: qCount?.count || 0,
-              invoices: iCount?.count || 0,
-            };
+              migratedCounts = {
+                receipts: rCount?.count || 0,
+                clients: cCount?.count || 0,
+                quotations: qCount?.count || 0,
+                invoices: iCount?.count || 0,
+              };
+            } else {
+              const [rCount] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(receipts)
+                .where(and(eq(receipts.workspaceId, oldWorkspaceId), eq(receipts.createdByUserId, userId)));
+              const [cCount] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(clients)
+                .where(and(eq(clients.workspaceId, oldWorkspaceId), eq(clients.userId, userId)));
+              const [qCount] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(quotations)
+                .where(and(eq(quotations.workspaceId, oldWorkspaceId), eq(quotations.createdByUserId, userId)));
+              const [iCount] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(invoices)
+                .where(and(eq(invoices.workspaceId, oldWorkspaceId), eq(invoices.createdByUserId, userId)));
+
+              if ((rCount?.count || 0) > 0) {
+                await tx.update(receipts).set({ workspaceId: invite.workspaceId }).where(and(eq(receipts.workspaceId, oldWorkspaceId), eq(receipts.createdByUserId, userId)));
+              }
+              if ((cCount?.count || 0) > 0) {
+                await tx.update(clients).set({ workspaceId: invite.workspaceId }).where(and(eq(clients.workspaceId, oldWorkspaceId), eq(clients.userId, userId)));
+              }
+              if ((qCount?.count || 0) > 0) {
+                await tx.update(quotations).set({ workspaceId: invite.workspaceId }).where(and(eq(quotations.workspaceId, oldWorkspaceId), eq(quotations.createdByUserId, userId)));
+              }
+              if ((iCount?.count || 0) > 0) {
+                await tx.update(invoices).set({ workspaceId: invite.workspaceId }).where(and(eq(invoices.workspaceId, oldWorkspaceId), eq(invoices.createdByUserId, userId)));
+              }
+
+              migratedCounts = {
+                receipts: rCount?.count || 0,
+                clients: cCount?.count || 0,
+                quotations: qCount?.count || 0,
+                invoices: iCount?.count || 0,
+              };
+            }
           }
 
           await tx

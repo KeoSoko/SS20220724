@@ -6898,12 +6898,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(workspaceInvites.token, token))
         .limit(1);
 
+      let existingData = null;
+      if (isAuthenticated(req)) {
+        const userId = getUserId(req);
+        const invitedUser = await storage.getUser(userId);
+        if (invitedUser && invitedUser.email?.toLowerCase() === invite.email.toLowerCase() && invitedUser.workspaceId !== invite.workspaceId) {
+          const [receiptCount] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(receipts)
+            .where(eq(receipts.workspaceId, invitedUser.workspaceId));
+          const [clientCount] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(clients)
+            .where(eq(clients.workspaceId, invitedUser.workspaceId));
+          const [quotationCount] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(quotations)
+            .where(eq(quotations.workspaceId, invitedUser.workspaceId));
+          const [invoiceCount] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(invoices)
+            .where(eq(invoices.workspaceId, invitedUser.workspaceId));
+
+          const totalItems = (receiptCount?.count || 0) + (clientCount?.count || 0) + (quotationCount?.count || 0) + (invoiceCount?.count || 0);
+          if (totalItems > 0) {
+            existingData = {
+              receipts: receiptCount?.count || 0,
+              clients: clientCount?.count || 0,
+              quotations: quotationCount?.count || 0,
+              invoices: invoiceCount?.count || 0,
+            };
+          }
+        }
+      }
+
       res.json({
         email: invite.email,
         role: invite.role,
         workspaceName: workspace[0]?.name || "Unknown Workspace",
         invitedBy: inviter[0]?.fullName || inviter[0]?.username || "Unknown",
         expiresAt: invite.expiresAt,
+        existingData,
       });
     } catch (error: any) {
       log(`Error fetching invite details: ${error.message}`, "workspace");

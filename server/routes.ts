@@ -62,7 +62,7 @@ import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "
 import { log } from "./vite";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
-import { and, asc, eq, gte, lt, lte, sql, isNull, isNotNull } from "drizzle-orm";
+import { and, asc, eq, gte, lt, lte, ne, sql, isNull, isNotNull } from "drizzle-orm";
 import multer from "multer";
 import { scrypt, timingSafeEqual, randomBytes } from 'crypto';
 import { promisify } from 'util';
@@ -6853,6 +6853,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/workspace/invite-details/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      if (!token || typeof token !== "string") {
+        return res.status(400).json({ error: "Token is required" });
+      }
+
+      const [invite] = await db
+        .select({
+          id: workspaceInvites.id,
+          email: workspaceInvites.email,
+          role: workspaceInvites.role,
+          expiresAt: workspaceInvites.expiresAt,
+          acceptedAt: workspaceInvites.acceptedAt,
+          workspaceId: workspaceInvites.workspaceId,
+        })
+        .from(workspaceInvites)
+        .where(eq(workspaceInvites.token, token))
+        .limit(1);
+
+      if (!invite) {
+        return res.status(404).json({ error: "Invitation not found or invalid link." });
+      }
+
+      if (invite.acceptedAt) {
+        return res.status(400).json({ error: "This invitation has already been accepted." });
+      }
+
+      if (new Date() > invite.expiresAt) {
+        return res.status(400).json({ error: "This invitation has expired. Please ask the workspace owner to send a new one." });
+      }
+
+      const workspace = await db
+        .select({ name: workspaces.name })
+        .from(workspaces)
+        .where(eq(workspaces.id, invite.workspaceId))
+        .limit(1);
+
+      const inviter = await db
+        .select({ fullName: users.fullName, username: users.username })
+        .from(users)
+        .innerJoin(workspaceInvites, eq(workspaceInvites.invitedByUserId, users.id))
+        .where(eq(workspaceInvites.token, token))
+        .limit(1);
+
+      res.json({
+        email: invite.email,
+        role: invite.role,
+        workspaceName: workspace[0]?.name || "Unknown Workspace",
+        invitedBy: inviter[0]?.fullName || inviter[0]?.username || "Unknown",
+        expiresAt: invite.expiresAt,
+      });
+    } catch (error: any) {
+      log(`Error fetching invite details: ${error.message}`, "workspace");
+      res.status(500).json({ error: "Failed to load invitation details" });
+    }
+  });
+
   app.post("/api/workspace/accept-invite", async (req, res) => {
     try {
       const { token } = req.body;
@@ -6922,11 +6980,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .limit(1);
 
         if (currentOwnership) {
-          return res.status(400).json({ error: "Owners must transfer ownership before joining another workspace." });
+          const otherMembers = await db
+            .select({ id: workspaceMembers.id })
+            .from(workspaceMembers)
+            .where(
+              and(
+                eq(workspaceMembers.workspaceId, user.workspaceId),
+                ne(workspaceMembers.userId, userId)
+              )
+            )
+            .limit(1);
+
+          if (otherMembers.length > 0) {
+            return res.status(400).json({ error: "You have other team members in your workspace. Please transfer ownership or remove them before joining another workspace." });
+          }
         }
       }
 
+      const oldWorkspaceId = user.workspaceId;
+
       await db.transaction(async (tx) => {
+        if (oldWorkspaceId !== invite.workspaceId) {
+          await tx
+            .delete(workspaceMembers)
+            .where(
+              and(
+                eq(workspaceMembers.workspaceId, oldWorkspaceId),
+                eq(workspaceMembers.userId, userId)
+              )
+            );
+        }
+
         await tx.insert(workspaceMembers).values({
           workspaceId: invite.workspaceId,
           userId,
@@ -6945,7 +7029,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(workspaceInvites.id, invite.id));
       });
 
-      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role}`, "workspace");
+      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role} (old workspace: ${oldWorkspaceId})`, "workspace");
       res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role });
     } catch (error: any) {
       log(`Error accepting workspace invite: ${error.message}`, "workspace");

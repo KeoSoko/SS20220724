@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Crown, Calendar, CreditCard, Check, X, AlertCircle, Smartphone, Receipt, ArrowRight, Sparkles } from 'lucide-react';
+import { Loader2, Crown, Calendar, CreditCard, Check, X, AlertCircle, Smartphone, Receipt, ArrowRight, Sparkles, Users, ShieldCheck } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -157,6 +157,23 @@ export function SubscriptionPage() {
       </PageLayout>
     );
   }
+
+  const { data: statusData } = useQuery<{
+    hasActiveSubscription: boolean;
+    isInTrial: boolean;
+    subscriptionType: string;
+    workspaceContext: {
+      isOwner: boolean;
+      workspaceName?: string;
+      ownerName?: string;
+    } | null;
+  }>({
+    queryKey: ['/api/subscription/status'],
+    retry: 2,
+    enabled: !!user,
+  });
+
+  const isWorkspaceMember = statusData?.workspaceContext && !statusData.workspaceContext.isOwner;
 
   // Fetch subscription plans
   const { data: plansData, isLoading: plansLoading, error: plansError } = useQuery({
@@ -483,6 +500,28 @@ export function SubscriptionPage() {
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span className="text-sm text-muted-foreground">Loading subscription status...</span>
               </div>
+            ) : isWorkspaceMember ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-green-100 flex items-center justify-center">
+                    <ShieldCheck className="h-5 w-5 text-green-600" />
+                  </div>
+                  <div>
+                    <Badge variant="default" className="bg-green-600 text-white">
+                      Covered by workspace
+                    </Badge>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Your access is managed by <strong>{statusData?.workspaceContext?.ownerName}</strong> through the <strong>{statusData?.workspaceContext?.workspaceName}</strong> workspace.
+                    </p>
+                  </div>
+                </div>
+                <Alert className="border-green-200 bg-green-50">
+                  <Users className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-800">
+                    You have full access to all features as a workspace member. Billing is handled by the workspace owner.
+                  </AlertDescription>
+                </Alert>
+              </div>
             ) : (
               <div className="flex items-center justify-between">
                 <div>
@@ -514,8 +553,8 @@ export function SubscriptionPage() {
           </CardContent>
         </Card>
 
-        {/* Available Plans */}
-        {plans.length > 0 ? (
+        {/* Available Plans - hidden for workspace members since billing is managed by owner */}
+        {!isWorkspaceMember && plans.length > 0 ? (
           <div className="space-y-6">
             {/* Billing Period Toggle */}
             <Card className="bg-gradient-to-r from-primary/5 to-primary/10">
@@ -613,7 +652,7 @@ export function SubscriptionPage() {
               );
             })()}
           </div>
-        ) : (
+        ) : !isWorkspaceMember ? (
           <Card>
             <CardContent className="pt-6">
               <div className="text-center">
@@ -622,10 +661,10 @@ export function SubscriptionPage() {
               </div>
             </CardContent>
           </Card>
-        )}
+        ) : null}
 
         {/* Trial Information & Mobile App CTA */}
-        {!subscription && (
+        {!subscription && !isWorkspaceMember && (
           <div className="space-y-4">
             <Alert>
               <Calendar className="h-4 w-4" />
@@ -708,8 +747,8 @@ export function SubscriptionPage() {
           </div>
         )}
 
-        {/* Recent Payment History - only show when payments exist */}
-        {subscription && transactions.length > 0 && (
+        {/* Recent Payment History - only show when payments exist and not workspace member */}
+        {!isWorkspaceMember && subscription && transactions.length > 0 && (
           <div className="mt-8">
             <ContentCard>
               <h3 className="text-lg font-semibold mb-4">Recent Payments</h3>
@@ -762,8 +801,8 @@ export function SubscriptionPage() {
           </div>
         )}
         
-        {/* App Store Required Subscription Information */}
-        <div className="mt-8 pt-6 border-t border-gray-200">
+        {/* App Store Required Subscription Information - hidden for workspace members */}
+        {!isWorkspaceMember && <div className="mt-8 pt-6 border-t border-gray-200">
           <div className="text-center">
             <h3 className="text-lg font-semibold mb-4">Subscription Information</h3>
             <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm text-gray-700 max-w-2xl mx-auto">
@@ -797,7 +836,7 @@ export function SubscriptionPage() {
               </a>
             </div>
           </div>
-        </div>
+        </div>}
       </div>
     </PageLayout>
   );

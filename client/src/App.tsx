@@ -41,6 +41,7 @@ import CommandCenter from "@/pages/command-center";
 import BusinessHubPage from "@/pages/business-hub-page";
 import BusinessProfilePage from "@/pages/business-profile-page";
 import ProfitLossPage from "@/pages/profit-loss-page";
+import AcceptInvitePage from "@/pages/accept-invite-page";
 import ClientsPage from "@/pages/clients-page";
 import QuotationsPage from "@/pages/quotations-page";
 import QuotationFormPage from "@/pages/quotation-form-page";
@@ -87,6 +88,7 @@ function Router() {
       <ProtectedRoute path="/invoices/:id/edit" component={InvoiceFormPage} />
       <ProtectedRoute path="/profile" component={() => <ProfilePage />} />
       <Route path="/auth" component={AuthPage} />
+      <Route path="/accept-invite" component={AcceptInvitePage} />
       <Route path="/verify-email" component={VerifyEmailPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/mobile" component={MobilePage} />

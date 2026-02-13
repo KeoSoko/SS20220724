@@ -147,9 +147,14 @@ export default function AuthPage() {
     },
   });
 
+  const getRedirectUrl = () => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("redirect") || "/home";
+  };
+
   useEffect(() => {
     if (user) {
-      setLocation('/home');
+      setLocation(getRedirectUrl());
     }
   }, [user, setLocation]);
 
@@ -189,7 +194,7 @@ export default function AuthPage() {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         await loginMutation.mutateAsync(data);
-        setLocation("/home");
+        setLocation(getRedirectUrl());
         return;
       } catch (error: any) {
         lastError = error;

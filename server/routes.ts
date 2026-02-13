@@ -6982,6 +6982,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         invitedBy: inviter[0]?.fullName || inviter[0]?.username || "Unknown",
         expiresAt: invite.expiresAt,
         existingData,
+        isWorkspaceOwner,
         activeSubscription,
       });
     } catch (error: any) {

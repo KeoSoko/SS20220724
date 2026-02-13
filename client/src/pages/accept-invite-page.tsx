@@ -26,6 +26,7 @@ interface InviteDetails {
   invitedBy: string;
   expiresAt: string;
   existingData: ExistingData | null;
+  isWorkspaceOwner: boolean;
   activeSubscription: ActiveSubscription | null;
 }
 
@@ -206,7 +207,11 @@ export default function AcceptInvitePage() {
                 <div className="bg-amber-50 border border-amber-200 p-4 rounded-none space-y-3">
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-amber-800 font-medium">You have existing data in your current workspace</p>
+                    <p className="text-sm text-amber-800 font-medium">
+                      {inviteDetails.isWorkspaceOwner
+                        ? "You have existing data in your current workspace"
+                        : "You have data you created in your current workspace"}
+                    </p>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {inviteDetails.existingData!.receipts > 0 && (
@@ -245,7 +250,11 @@ export default function AcceptInvitePage() {
                       </div>
                       <div>
                         <span className="text-sm font-medium text-amber-900">Bring my data along</span>
-                        <p className="text-xs text-amber-700">Your receipts, clients, quotations and invoices will be moved to the new workspace where your team can see them.</p>
+                        <p className="text-xs text-amber-700">
+                          {inviteDetails.isWorkspaceOwner
+                            ? "All receipts, clients, quotations and invoices from your workspace will be moved to the new workspace."
+                            : "Only the data you personally created will be moved. The workspace owner's data stays behind."}
+                        </p>
                       </div>
                     </label>
 
@@ -258,7 +267,11 @@ export default function AcceptInvitePage() {
                       </div>
                       <div>
                         <span className="text-sm font-medium text-amber-900">Leave my data behind</span>
-                        <p className="text-xs text-amber-700">Your existing data will remain in your old workspace. You'll start fresh in the new workspace.</p>
+                        <p className="text-xs text-amber-700">
+                          {inviteDetails.isWorkspaceOwner
+                            ? "Your existing data will remain in your old workspace. You'll start fresh in the new workspace."
+                            : "Your data will stay in the current workspace. You'll start fresh in the new workspace."}
+                        </p>
                       </div>
                     </label>
                   </div>

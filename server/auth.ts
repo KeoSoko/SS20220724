@@ -581,6 +581,13 @@ export function setupAuth(app: Express) {
       if (storage.clearPasswordResetToken) {
         await storage.clearPasswordResetToken(user.id);
       }
+
+      if (storage.updateUser) {
+        await storage.updateUser(user.id, {
+          failedLoginAttempts: 0,
+          accountLockedUntil: null,
+        } as any);
+      }
       
       log(`Password reset successful for user: ${user.username}`, 'auth');
       

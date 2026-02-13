@@ -179,24 +179,24 @@ export default function AcceptInvitePage() {
           {!loading && !success && inviteDetails && (
             <div className="space-y-5">
               <div className="bg-gray-50 border p-4 rounded-none space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Workspace</span>
-                  <span className="text-sm font-medium">{inviteDetails.workspaceName}</span>
+                <div className="flex justify-between items-start gap-4">
+                  <span className="text-xs text-gray-500 uppercase tracking-wide flex-shrink-0 pt-0.5">Workspace</span>
+                  <span className="text-sm font-medium text-right break-words min-w-0">{inviteDetails.workspaceName}</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Invited by</span>
-                  <span className="text-sm font-medium">{inviteDetails.invitedBy}</span>
+                <div className="flex justify-between items-start gap-4">
+                  <span className="text-xs text-gray-500 uppercase tracking-wide flex-shrink-0 pt-0.5">Invited by</span>
+                  <span className="text-sm font-medium text-right break-words min-w-0">{inviteDetails.invitedBy}</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Your role</span>
+                <div className="flex justify-between items-center gap-4">
+                  <span className="text-xs text-gray-500 uppercase tracking-wide flex-shrink-0">Your role</span>
                   <div className="flex items-center gap-1.5">
                     {roleIcon}
                     <span className="text-sm font-medium">{roleLabel}</span>
                   </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Invite for</span>
-                  <span className="text-sm font-medium truncate ml-2">{inviteDetails.email}</span>
+                <div className="flex justify-between items-start gap-4">
+                  <span className="text-xs text-gray-500 uppercase tracking-wide flex-shrink-0 pt-0.5">Invite for</span>
+                  <span className="text-sm font-medium text-right break-all min-w-0">{inviteDetails.email}</span>
                 </div>
               </div>
 

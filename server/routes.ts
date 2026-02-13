@@ -6899,6 +6899,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
 
       let existingData = null;
+      let activeSubscription = null;
       if (isAuthenticated(req)) {
         const userId = getUserId(req);
         const invitedUser = await storage.getUser(userId);
@@ -6929,6 +6930,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
               invoices: invoiceCount?.count || 0,
             };
           }
+
+          try {
+            const subStatus = await billingService.getSubscriptionStatus(userId);
+            if (subStatus.hasSubscription && (subStatus.status === 'active' || subStatus.status === 'trial')) {
+              activeSubscription = {
+                status: subStatus.status,
+                planName: subStatus.plan?.name || 'Simple Slips',
+                trialDaysRemaining: subStatus.trialDaysRemaining || 0,
+              };
+            }
+          } catch (subErr) {
+            log(`Error checking subscription for invite details: ${subErr}`, "workspace");
+          }
         }
       }
 
@@ -6939,6 +6953,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         invitedBy: inviter[0]?.fullName || inviter[0]?.username || "Unknown",
         expiresAt: invite.expiresAt,
         existingData,
+        activeSubscription,
       });
     } catch (error: any) {
       log(`Error fetching invite details: ${error.message}`, "workspace");
@@ -7105,8 +7120,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(workspaceInvites.id, invite.id));
       });
 
-      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role} (old workspace: ${oldWorkspaceId}, migrated: ${!!migrateData})`, "workspace");
-      res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role, migratedCounts });
+      let subscriptionCancelled = false;
+      if (oldWorkspaceId !== invite.workspaceId) {
+        try {
+          const subStatus = await billingService.getSubscriptionStatus(userId);
+          if (subStatus.hasSubscription && (subStatus.status === 'active' || subStatus.status === 'trial')) {
+            await billingService.cancelSubscription(userId);
+            subscriptionCancelled = true;
+            log(`Auto-cancelled subscription for user ${userId} after workspace migration`, "billing");
+          }
+        } catch (cancelErr) {
+          log(`Warning: Failed to auto-cancel subscription for user ${userId} after workspace migration: ${cancelErr}`, "billing");
+        }
+      }
+
+      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role} (old workspace: ${oldWorkspaceId}, migrated: ${!!migrateData}, subCancelled: ${subscriptionCancelled})`, "workspace");
+      res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role, migratedCounts, subscriptionCancelled });
     } catch (error: any) {
       log(`Error accepting workspace invite: ${error.message}`, "workspace");
       res.status(500).json({ error: "Failed to accept invitation" });

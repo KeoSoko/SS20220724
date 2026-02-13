@@ -742,7 +742,7 @@ function WorkspaceSection() {
     <Section title="Workspace" description="Manage your team and workspace settings">
       <ContentCard>
         <div className="space-y-6">
-          <div className="border rounded-lg p-5 bg-white shadow-sm">
+          <div className="border rounded-none p-5 bg-white shadow-sm">
             <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Workspace Overview</h4>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -801,15 +801,15 @@ function WorkspaceSection() {
 
             <div className="space-y-3">
               {owner && (
-                <div className="border rounded-lg p-4 bg-white shadow-sm border-l-4 border-l-amber-400">
+                <div className="border rounded-none p-4 bg-white shadow-sm border-l-4 border-l-amber-400">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                    <div className="h-10 w-10 rounded-none bg-amber-100 text-amber-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
                       {(owner.email || owner.username || 'O')[0].toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{owner.fullName || owner.username}</span>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Owner</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-amber-100 text-amber-800">Owner</span>
                       </div>
                       <p className="text-xs text-gray-500 truncate">{owner.email}</p>
                     </div>
@@ -822,15 +822,15 @@ function WorkspaceSection() {
               )}
 
               {assistant && (
-                <div className="border rounded-lg p-4 bg-white shadow-sm border-l-4 border-l-blue-400">
+                <div className="border rounded-none p-4 bg-white shadow-sm border-l-4 border-l-blue-400">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                    <div className="h-10 w-10 rounded-none bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
                       {(assistant.email || assistant.username || 'A')[0].toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{assistant.fullName || assistant.username}</span>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Assistant</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-blue-100 text-blue-800">Assistant</span>
                       </div>
                       <p className="text-xs text-gray-500 truncate">{assistant.email}</p>
                     </div>
@@ -855,15 +855,15 @@ function WorkspaceSection() {
               )}
 
               {pendingInvites.map((invite) => (
-                <div key={invite.id} className="border rounded-lg p-4 bg-gray-50 shadow-sm border-l-4 border-l-gray-300 border-dashed">
+                <div key={invite.id} className="border rounded-none p-4 bg-gray-50 shadow-sm border-l-4 border-l-gray-300 border-dashed">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                    <div className="h-10 w-10 rounded-none bg-gray-200 text-gray-500 flex items-center justify-center font-semibold text-sm flex-shrink-0">
                       {invite.email[0].toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{invite.email}</span>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Pending</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-yellow-100 text-yellow-800">Pending</span>
                       </div>
                       <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
                         <Clock className="h-3 w-3" />
@@ -887,7 +887,7 @@ function WorkspaceSection() {
               ))}
 
               {!hasAssistant && !hasPendingInvite && (
-                <div className="border rounded-lg p-8 bg-gray-50 text-center">
+                <div className="border rounded-none p-8 bg-gray-50 text-center">
                   <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
                   <p className="font-medium text-gray-700 mb-1">You're working solo.</p>
                   <p className="text-sm text-gray-500 mb-4">Invite an assistant to collaborate on receipts and invoices.</p>

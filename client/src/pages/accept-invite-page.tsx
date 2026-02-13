@@ -54,20 +54,22 @@ export default function AcceptInvitePage() {
       return;
     }
 
-    fetch(`/api/workspace/invite-details/${t}`)
+    setLoading(true);
+    setError(null);
+
+    apiRequest("GET", `/api/workspace/invite-details/${t}`)
       .then(async (res) => {
         const data = await res.json();
-        if (!res.ok) {
-          setError(data.error || "Failed to load invitation.");
-        } else {
-          setInviteDetails(data);
+        setInviteDetails(data);
+      })
+      .catch((err) => {
+        const msg = err?.message || "Failed to load invitation details. Please try again.";
+        if (!inviteDetails) {
+          setError(msg);
         }
       })
-      .catch(() => {
-        setError("Failed to load invitation details. Please try again.");
-      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [user]);
 
   const handleAccept = async () => {
     if (!token) return;

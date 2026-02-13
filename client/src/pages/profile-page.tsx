@@ -744,15 +744,15 @@ function WorkspaceSection() {
         <div className="space-y-6">
           <div className="border rounded-none p-5 bg-white shadow-sm">
             <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Workspace Overview</h4>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Workspace Name</span>
+            <div className="space-y-4">
+              <div>
+                <span className="text-xs text-gray-500 uppercase tracking-wide">Workspace Name</span>
                 {isEditingName ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 mt-1">
                     <Input
                       value={editedName}
                       onChange={(e) => setEditedName(e.target.value)}
-                      className="h-8 w-48 text-sm"
+                      className="h-8 text-sm flex-1"
                       autoFocus
                     />
                     <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => updateNameMutation.mutate(editedName)} disabled={updateNameMutation.isPending}>
@@ -763,7 +763,7 @@ function WorkspaceSection() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-sm font-medium">{workspace?.name || 'My Workspace'}</span>
                     {isOwner && (
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditedName(workspace?.name || ''); setIsEditingName(true); }}>
@@ -773,17 +773,19 @@ function WorkspaceSection() {
                   </div>
                 )}
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Owner</span>
-                <span className="text-sm font-medium">{workspace?.ownerEmail}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Plan</span>
-                <span className="text-sm font-medium">{workspace?.planName}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Seats</span>
-                <span className="text-sm font-medium">{workspace?.memberCount}/{workspace?.maxMembers}</span>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Owner</span>
+                  <p className="text-sm font-medium mt-0.5 truncate">{workspace?.ownerEmail}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Plan</span>
+                  <p className="text-sm font-medium mt-0.5">{workspace?.planName}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Seats</span>
+                  <p className="text-sm font-medium mt-0.5">{workspace?.memberCount}/{workspace?.maxMembers}</p>
+                </div>
               </div>
             </div>
           </div>

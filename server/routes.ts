@@ -904,7 +904,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       const subscriptionStatus = await getSubscriptionStatus(userId);
-      res.json(subscriptionStatus);
+
+      const user = await storage.getUser(userId);
+      let workspaceContext = null;
+      if (user) {
+        const [workspace] = await db
+          .select({ id: workspaces.id, name: workspaces.name, ownerId: workspaces.ownerId })
+          .from(workspaces)
+          .where(eq(workspaces.id, user.workspaceId))
+          .limit(1);
+        if (workspace) {
+          const isOwner = workspace.ownerId === userId;
+          if (!isOwner) {
+            const owner = await storage.getUser(workspace.ownerId);
+            workspaceContext = {
+              isOwner: false,
+              workspaceName: workspace.name,
+              ownerName: owner?.fullName || owner?.username || "the workspace owner",
+            };
+          } else {
+            workspaceContext = { isOwner: true };
+          }
+        }
+      }
+
+      res.json({ ...subscriptionStatus, workspaceContext });
     } catch (error) {
       log(`Error getting subscription status: ${error}`, "api");
       res.status(500).json({ error: "Failed to get subscription status" });

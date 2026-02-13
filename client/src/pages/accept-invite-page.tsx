@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle, XCircle, Users, Shield, Eye, Edit, AlertTriangle, Receipt, UserCheck, FileText, FileSpreadsheet } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Users, Shield, Eye, Edit, AlertTriangle, Receipt, UserCheck, FileText, FileSpreadsheet, CreditCard } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 interface ExistingData {
@@ -13,6 +13,12 @@ interface ExistingData {
   invoices: number;
 }
 
+interface ActiveSubscription {
+  status: string;
+  planName: string;
+  trialDaysRemaining: number;
+}
+
 interface InviteDetails {
   email: string;
   role: string;
@@ -20,6 +26,7 @@ interface InviteDetails {
   invitedBy: string;
   expiresAt: string;
   existingData: ExistingData | null;
+  activeSubscription: ActiveSubscription | null;
 }
 
 export default function AcceptInvitePage() {
@@ -34,6 +41,7 @@ export default function AcceptInvitePage() {
   const [success, setSuccess] = useState(false);
   const [migrateData, setMigrateData] = useState(true);
   const [migratedCounts, setMigratedCounts] = useState<ExistingData | null>(null);
+  const [subscriptionCancelled, setSubscriptionCancelled] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -81,6 +89,9 @@ export default function AcceptInvitePage() {
 
       if (data.migratedCounts) {
         setMigratedCounts(data.migratedCounts);
+      }
+      if (data.subscriptionCancelled) {
+        setSubscriptionCancelled(true);
       }
       setSuccess(true);
       setTimeout(() => {
@@ -154,6 +165,11 @@ export default function AcceptInvitePage() {
                     {migratedCounts.quotations > 0 && <span>{migratedCounts.quotations} quotation{migratedCounts.quotations !== 1 ? "s" : ""}</span>}
                     {migratedCounts.invoices > 0 && <span>{migratedCounts.invoices} invoice{migratedCounts.invoices !== 1 ? "s" : ""}</span>}
                   </div>
+                </div>
+              )}
+              {subscriptionCancelled && (
+                <div className="bg-blue-50 border border-blue-200 p-3 rounded-none w-full">
+                  <p className="text-xs text-blue-800">Your previous subscription has been cancelled. Billing is now managed by the workspace owner.</p>
                 </div>
               )}
               <p className="text-xs text-gray-500">Redirecting to your dashboard...</p>
@@ -243,6 +259,23 @@ export default function AcceptInvitePage() {
                         <p className="text-xs text-amber-700">Your existing data will remain in your old workspace. You'll start fresh in the new workspace.</p>
                       </div>
                     </label>
+                  </div>
+                </div>
+              )}
+
+              {user && inviteDetails.activeSubscription && (
+                <div className="bg-blue-50 border border-blue-200 p-4 rounded-none space-y-2">
+                  <div className="flex items-start gap-2">
+                    <CreditCard className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-blue-900 font-medium">Your subscription will be cancelled</p>
+                      <p className="text-xs text-blue-700 mt-1">
+                        {inviteDetails.activeSubscription.status === 'trial'
+                          ? `You have ${inviteDetails.activeSubscription.trialDaysRemaining} day${inviteDetails.activeSubscription.trialDaysRemaining !== 1 ? "s" : ""} remaining on your free trial. `
+                          : `You have an active ${inviteDetails.activeSubscription.planName} subscription. `}
+                        It will be automatically cancelled when you join this workspace, since billing is managed by the workspace owner. You won't be charged going forward.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}

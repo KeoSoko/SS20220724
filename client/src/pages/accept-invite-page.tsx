@@ -3,9 +3,15 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle, XCircle, Users, Shield, Eye, Edit } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Users, Shield, Eye, Edit, AlertTriangle, Receipt, UserCheck, FileText, FileSpreadsheet } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
-import { useIsMobile } from "@/hooks/use-mobile";
+
+interface ExistingData {
+  receipts: number;
+  clients: number;
+  quotations: number;
+  invoices: number;
+}
 
 interface InviteDetails {
   email: string;
@@ -13,12 +19,12 @@ interface InviteDetails {
   workspaceName: string;
   invitedBy: string;
   expiresAt: string;
+  existingData: ExistingData | null;
 }
 
 export default function AcceptInvitePage() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const isMobile = useIsMobile();
 
   const [token, setToken] = useState<string | null>(null);
   const [inviteDetails, setInviteDetails] = useState<InviteDetails | null>(null);
@@ -26,6 +32,8 @@ export default function AcceptInvitePage() {
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [migrateData, setMigrateData] = useState(true);
+  const [migratedCounts, setMigratedCounts] = useState<ExistingData | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -59,7 +67,7 @@ export default function AcceptInvitePage() {
     setError(null);
 
     try {
-      const res = await apiRequest("POST", "/api/workspace/accept-invite", { token });
+      const res = await apiRequest("POST", "/api/workspace/accept-invite", { token, migrateData });
       const data = await res.json();
 
       if (!res.ok) {
@@ -71,10 +79,13 @@ export default function AcceptInvitePage() {
         return;
       }
 
+      if (data.migratedCounts) {
+        setMigratedCounts(data.migratedCounts);
+      }
       setSuccess(true);
       setTimeout(() => {
         window.location.href = "/home";
-      }, 2000);
+      }, 3000);
     } catch (err: any) {
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
@@ -84,6 +95,12 @@ export default function AcceptInvitePage() {
 
   const roleIcon = inviteDetails?.role === "editor" ? <Edit className="h-4 w-4" /> : <Eye className="h-4 w-4" />;
   const roleLabel = inviteDetails?.role === "editor" ? "Editor" : "Viewer";
+  const hasExistingData = inviteDetails?.existingData && (
+    inviteDetails.existingData.receipts > 0 ||
+    inviteDetails.existingData.clients > 0 ||
+    inviteDetails.existingData.quotations > 0 ||
+    inviteDetails.existingData.invoices > 0
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -128,6 +145,17 @@ export default function AcceptInvitePage() {
               <p className="text-sm text-center text-gray-700">
                 You've successfully joined <strong>{inviteDetails?.workspaceName}</strong> as {roleLabel === "Editor" ? "an" : "a"} {roleLabel}.
               </p>
+              {migratedCounts && (
+                <div className="bg-green-50 border border-green-200 p-3 rounded-none w-full">
+                  <p className="text-xs text-green-800 font-medium mb-1">Data migrated successfully:</p>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-green-700">
+                    {migratedCounts.receipts > 0 && <span>{migratedCounts.receipts} receipt{migratedCounts.receipts !== 1 ? "s" : ""}</span>}
+                    {migratedCounts.clients > 0 && <span>{migratedCounts.clients} client{migratedCounts.clients !== 1 ? "s" : ""}</span>}
+                    {migratedCounts.quotations > 0 && <span>{migratedCounts.quotations} quotation{migratedCounts.quotations !== 1 ? "s" : ""}</span>}
+                    {migratedCounts.invoices > 0 && <span>{migratedCounts.invoices} invoice{migratedCounts.invoices !== 1 ? "s" : ""}</span>}
+                  </div>
+                </div>
+              )}
               <p className="text-xs text-gray-500">Redirecting to your dashboard...</p>
             </div>
           )}
@@ -152,9 +180,72 @@ export default function AcceptInvitePage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-500 uppercase tracking-wide">Invite for</span>
-                  <span className="text-sm font-medium">{inviteDetails.email}</span>
+                  <span className="text-sm font-medium truncate ml-2">{inviteDetails.email}</span>
                 </div>
               </div>
+
+              {user && hasExistingData && (
+                <div className="bg-amber-50 border border-amber-200 p-4 rounded-none space-y-3">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-amber-800 font-medium">You have existing data in your current workspace</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {inviteDetails.existingData!.receipts > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-700">
+                        <Receipt className="h-3.5 w-3.5" />
+                        <span>{inviteDetails.existingData!.receipts} receipt{inviteDetails.existingData!.receipts !== 1 ? "s" : ""}</span>
+                      </div>
+                    )}
+                    {inviteDetails.existingData!.clients > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-700">
+                        <UserCheck className="h-3.5 w-3.5" />
+                        <span>{inviteDetails.existingData!.clients} client{inviteDetails.existingData!.clients !== 1 ? "s" : ""}</span>
+                      </div>
+                    )}
+                    {inviteDetails.existingData!.quotations > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-700">
+                        <FileText className="h-3.5 w-3.5" />
+                        <span>{inviteDetails.existingData!.quotations} quotation{inviteDetails.existingData!.quotations !== 1 ? "s" : ""}</span>
+                      </div>
+                    )}
+                    {inviteDetails.existingData!.invoices > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-700">
+                        <FileSpreadsheet className="h-3.5 w-3.5" />
+                        <span>{inviteDetails.existingData!.invoices} invoice{inviteDetails.existingData!.invoices !== 1 ? "s" : ""}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t border-amber-200 pt-3 space-y-2">
+                    <label
+                      className="flex items-start gap-2.5 cursor-pointer"
+                      onClick={() => setMigrateData(true)}
+                    >
+                      <div className={`mt-0.5 h-4 w-4 border-2 rounded-none flex items-center justify-center flex-shrink-0 ${migrateData ? "bg-[#0073AA] border-[#0073AA]" : "border-gray-400"}`}>
+                        {migrateData && <CheckCircle className="h-3 w-3 text-white" />}
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-amber-900">Bring my data along</span>
+                        <p className="text-xs text-amber-700">Your receipts, clients, quotations and invoices will be moved to the new workspace where your team can see them.</p>
+                      </div>
+                    </label>
+
+                    <label
+                      className="flex items-start gap-2.5 cursor-pointer"
+                      onClick={() => setMigrateData(false)}
+                    >
+                      <div className={`mt-0.5 h-4 w-4 border-2 rounded-none flex items-center justify-center flex-shrink-0 ${!migrateData ? "bg-[#0073AA] border-[#0073AA]" : "border-gray-400"}`}>
+                        {!migrateData && <CheckCircle className="h-3 w-3 text-white" />}
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-amber-900">Leave my data behind</span>
+                        <p className="text-xs text-amber-700">Your existing data will remain in your old workspace. You'll start fresh in the new workspace.</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               {error && (
                 <div className="bg-red-50 border border-red-200 p-3 rounded-none">

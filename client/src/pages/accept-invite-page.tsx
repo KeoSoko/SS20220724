@@ -28,7 +28,7 @@ export default function AcceptInvitePage() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(location.split("?")[1] || "");
+    const params = new URLSearchParams(window.location.search);
     const t = params.get("token");
     setToken(t);
 
@@ -51,7 +51,7 @@ export default function AcceptInvitePage() {
         setError("Failed to load invitation details. Please try again.");
       })
       .finally(() => setLoading(false));
-  }, [location]);
+  }, []);
 
   const handleAccept = async () => {
     if (!token) return;

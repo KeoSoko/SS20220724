@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 
@@ -10,16 +10,20 @@ interface PendingUpload {
   retryCount: number;
 }
 
+const CONSECUTIVE_FAILURES_THRESHOLD = 3;
+const HEALTH_CHECK_TIMEOUT_MS = 8000;
+const HEALTH_CHECK_INTERVAL_MS = 30000;
+
 export function useOfflineSync() {
-  const [isOnline, setIsOnline] = useState(true); // Default to true, verify with actual check
+  const [isOnline, setIsOnline] = useState(true);
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const queryClient = useQueryClient();
+  const failureCountRef = useRef(0);
 
-  // Check actual connectivity by pinging the API
   const checkConnectivity = async () => {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
       
       const response = await fetch('/api/health', {
         method: 'HEAD',
@@ -27,24 +31,34 @@ export function useOfflineSync() {
       });
       
       clearTimeout(timeoutId);
-      const online = response.ok || response.status === 404; // 404 means server is reachable
-      setIsOnline(online);
-      return online;
+      const reachable = response.ok || response.status === 404;
+
+      if (reachable) {
+        failureCountRef.current = 0;
+        setIsOnline(true);
+        return true;
+      }
+
+      failureCountRef.current += 1;
+      if (failureCountRef.current >= CONSECUTIVE_FAILURES_THRESHOLD) {
+        setIsOnline(false);
+      }
+      return false;
     } catch (error) {
-      console.log('[OfflineSync] Connectivity check failed, assuming offline');
-      setIsOnline(false);
+      failureCountRef.current += 1;
+      console.log(`[OfflineSync] Connectivity check failed (${failureCountRef.current}/${CONSECUTIVE_FAILURES_THRESHOLD})`);
+      if (failureCountRef.current >= CONSECUTIVE_FAILURES_THRESHOLD) {
+        setIsOnline(false);
+      }
       return false;
     }
   };
 
   useEffect(() => {
-    // Initial connectivity check
     checkConnectivity();
     
-    // Check connectivity every 30 seconds
-    const interval = setInterval(checkConnectivity, 30000);
+    const interval = setInterval(checkConnectivity, HEALTH_CHECK_INTERVAL_MS);
 
-    // Load pending uploads from storage
     const stored = localStorage.getItem('pendingUploads');
     if (stored) {
       const loadedUploads = JSON.parse(stored);
@@ -56,7 +70,6 @@ export function useOfflineSync() {
       console.log('[OfflineSync] Browser reports online, verifying...');
       const actuallyOnline = await checkConnectivity();
       if (actuallyOnline) {
-        // Delay processing to ensure state is updated
         setTimeout(() => {
           processPendingUploads();
         }, 1000);
@@ -65,6 +78,7 @@ export function useOfflineSync() {
 
     const handleOffline = () => {
       console.log('[OfflineSync] Browser reports offline');
+      failureCountRef.current = CONSECUTIVE_FAILURES_THRESHOLD;
       setIsOnline(false);
     };
 
@@ -78,7 +92,6 @@ export function useOfflineSync() {
     };
   }, []);
   
-  // Also try to process uploads when the pendingUploads state changes and we're online
   useEffect(() => {
     if (isOnline && pendingUploads.length > 0) {
       console.log(`[OfflineSync] State changed - ${pendingUploads.length} uploads pending, attempting sync...`);
@@ -111,7 +124,6 @@ export function useOfflineSync() {
       try {
         console.log(`[OfflineSync] Syncing upload ${upload.id} to ${upload.endpoint}`);
         
-        // Use apiRequest instead of fetch to include authentication headers
         const response = await apiRequest('POST', upload.endpoint, upload.data);
 
         if (response.ok) {

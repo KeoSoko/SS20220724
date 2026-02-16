@@ -207,7 +207,7 @@ export class InboundEmailService {
 
       for (const attachment of validAttachments) {
         try {
-          const result = await this.processAttachment(user.id, attachment, emailReceiptRecord.id);
+          const result = await this.processAttachment(user.id, user.workspaceId!, attachment, emailReceiptRecord.id);
           if (result.receiptId) {
             processedReceipts.push(result.receiptId);
           }
@@ -292,6 +292,7 @@ export class InboundEmailService {
 
   private async processAttachment(
     userId: number,
+    workspaceId: number,
     attachment: { content: Buffer; contentType: string; filename: string },
     emailReceiptId: number
   ): Promise<{ success: boolean; receiptId?: number }> {
@@ -373,6 +374,8 @@ export class InboundEmailService {
         .insert(receipts)
         .values({
           userId,
+          workspaceId,
+          createdByUserId: userId,
           storeName: receiptStoreName,
           date: receiptDate,
           total: receiptTotal,

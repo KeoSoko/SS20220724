@@ -7,7 +7,8 @@ import {
   userSubscriptions, 
   billingEvents, 
   paymentTransactions,
-  emailEvents
+  emailEvents,
+  inboundEmailLogs
 } from "@shared/schema";
 import { and, eq, gte, lt, lte, sql, isNull, isNotNull, desc, or, ilike, count } from "drizzle-orm";
 import { log } from "./vite";
@@ -1063,6 +1064,36 @@ Respond ONLY with valid JSON.`;
     } catch (error: any) {
       log(`Error in /api/admin/ai/summarize-events: ${error.message}`, 'admin');
       res.status(500).json({ error: "Failed to summarize events" });
+    }
+  });
+
+  // ========================================
+  // INBOUND EMAIL LOGS
+  // ========================================
+  app.get("/api/admin/inbound-email-logs", requireAdmin, async (req, res) => {
+    try {
+      const { userId, status, limit: limitStr } = req.query;
+      const rowLimit = Math.min(parseInt(limitStr as string) || 50, 200);
+
+      const conditions = [];
+      if (userId) {
+        conditions.push(eq(inboundEmailLogs.userId, parseInt(userId as string)));
+      }
+      if (status) {
+        conditions.push(eq(inboundEmailLogs.status, status as string));
+      }
+
+      const logs = await db
+        .select()
+        .from(inboundEmailLogs)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(inboundEmailLogs.createdAt))
+        .limit(rowLimit);
+
+      res.json({ logs, count: logs.length });
+    } catch (error: any) {
+      log(`Error fetching inbound email logs: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to fetch inbound email logs" });
     }
   });
 }

@@ -35,7 +35,9 @@ import {
   Eye,
   Send,
   X,
-  Info
+  Info,
+  Inbox,
+  Paperclip
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -182,6 +184,22 @@ interface AIEventSummary {
   needsAttention: boolean;
 }
 
+interface InboundEmailLog {
+  id: number;
+  fromEmail: string;
+  toAddress: string;
+  receiptEmailId: string | null;
+  userId: number | null;
+  subject: string | null;
+  attachmentCount: number;
+  validAttachmentCount: number;
+  receiptsCreated: number;
+  status: string;
+  errorMessage: string | null;
+  processingTimeMs: number | null;
+  createdAt: string;
+}
+
 type FilterType = 'all' | 'unverified' | 'stuck_trials' | 'failed_24h' | 'failed_7d' | 'webhooks_24h' | 'azure_failures' | 'email_failures' | null;
 
 const FILTER_LABELS: Record<Exclude<FilterType, null>, string> = {
@@ -288,6 +306,8 @@ export default function CommandCenter() {
   const [previewTemplate, setPreviewTemplate] = useState<EmailTemplateType | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const pageLimit = 50;
+  const [showInboundLogs, setShowInboundLogs] = useState(false);
+  const [inboundStatusFilter, setInboundStatusFilter] = useState<string>("all");
 
   const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery<SystemHealth>({
     queryKey: ['/api/admin/command-center/health'],
@@ -326,6 +346,11 @@ export default function CommandCenter() {
   const { data: userDetail, isLoading: userDetailLoading, refetch: refetchUserDetail } = useQuery<UserDetail>({
     queryKey: [`/api/admin/users/${selectedUserId}`],
     enabled: !!selectedUserId,
+  });
+
+  const { data: inboundLogsData, isLoading: inboundLogsLoading } = useQuery<{ logs: InboundEmailLog[]; count: number }>({
+    queryKey: ['/api/admin/inbound-email-logs', { status: inboundStatusFilter === 'all' ? undefined : inboundStatusFilter, limit: 50 }],
+    enabled: showInboundLogs,
   });
 
   const { data: aiAnalysis, isLoading: aiAnalysisLoading, refetch: analyzeUser } = useQuery<AIAnalysis>({
@@ -669,6 +694,129 @@ export default function CommandCenter() {
       </div>
 
       <Separator />
+
+      {/* Inbound Email Logs */}
+      <Card>
+        <CardHeader 
+          className="cursor-pointer hover:bg-muted/50 transition-colors py-4"
+          onClick={() => setShowInboundLogs(!showInboundLogs)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Inbox className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">Inbound Email Logs</CardTitle>
+              {inboundLogsData && (
+                <Badge variant="secondary" className="ml-2">{inboundLogsData.count} entries</Badge>
+              )}
+            </div>
+            {showInboundLogs ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </div>
+          <CardDescription>Track every email-to-receipt attempt with status and error details</CardDescription>
+        </CardHeader>
+        {showInboundLogs && (
+          <CardContent className="pt-0">
+            <div className="flex gap-2 mb-4 flex-wrap">
+              {["all", "success", "partial", "failed", "user_not_found", "no_attachments", "invalid_address"].map((status) => (
+                <Button
+                  key={status}
+                  variant={inboundStatusFilter === status ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setInboundStatusFilter(status)}
+                >
+                  {status === "all" ? "All" : status.replace(/_/g, " ")}
+                </Button>
+              ))}
+            </div>
+
+            {inboundLogsLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+              </div>
+            ) : !inboundLogsData?.logs?.length ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Inbox className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No inbound email logs found</p>
+              </div>
+            ) : (
+              <ScrollArea className="h-[400px]">
+                <div className="space-y-2">
+                  {inboundLogsData.logs.map((log) => {
+                    const statusColor = {
+                      success: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+                      partial: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+                      failed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+                      user_not_found: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
+                      no_attachments: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
+                      invalid_address: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+                      received: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+                      processing: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+                    }[log.status] || "bg-gray-100 text-gray-800";
+
+                    return (
+                      <div key={log.id} className="border rounded-lg p-3 text-sm hover:bg-muted/30 transition-colors">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>
+                                {log.status.replace(/_/g, " ")}
+                              </span>
+                              <span className="text-muted-foreground text-xs">
+                                {format(new Date(log.createdAt), "MMM d, yyyy HH:mm:ss")}
+                              </span>
+                              {log.processingTimeMs !== null && (
+                                <span className="text-muted-foreground text-xs">
+                                  ({log.processingTimeMs}ms)
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 flex items-center gap-1">
+                              <Mail className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                              <span className="truncate font-medium">{log.fromEmail}</span>
+                              <span className="text-muted-foreground mx-1">→</span>
+                              <span className="truncate text-muted-foreground">{log.toAddress}</span>
+                            </div>
+                            {log.subject && (
+                              <div className="text-muted-foreground text-xs mt-0.5 truncate">
+                                Subject: {log.subject}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Paperclip className="h-3 w-3" />
+                                {log.attachmentCount} attachment{log.attachmentCount !== 1 ? "s" : ""}
+                                {log.validAttachmentCount !== log.attachmentCount && (
+                                  <span>({log.validAttachmentCount} valid)</span>
+                                )}
+                              </span>
+                              {log.receiptsCreated > 0 && (
+                                <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                  <Receipt className="h-3 w-3" />
+                                  {log.receiptsCreated} receipt{log.receiptsCreated !== 1 ? "s" : ""} created
+                                </span>
+                              )}
+                              {log.userId && (
+                                <span className="flex items-center gap-1">
+                                  <User className="h-3 w-3" />
+                                  User #{log.userId}
+                                </span>
+                              )}
+                            </div>
+                            {log.errorMessage && (
+                              <div className="mt-1.5 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 rounded px-2 py-1">
+                                {log.errorMessage}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            )}
+          </CardContent>
+        )}
+      </Card>
 
       {/* User Search */}
       <div className="flex gap-4">

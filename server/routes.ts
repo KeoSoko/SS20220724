@@ -4366,18 +4366,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       log(`Inbound email from: ${emailData.from} to: ${emailData.to}`, 'inbound-email');
       
+      // Parse attachment-info for inline detection (content-id mapping)
+      let attachmentInfoMap: Record<string, any> = {};
+      try {
+        if (emailData['attachment-info']) {
+          attachmentInfoMap = JSON.parse(emailData['attachment-info']);
+        }
+      } catch (e) {
+        log(`Failed to parse attachment-info: ${e}`, 'inbound-email');
+      }
+
       // Parse attachments from multer
-      const attachments = new Map<string, { content: Buffer; contentType: string; filename: string }>();
+      const attachments = new Map<string, { content: Buffer; contentType: string; filename: string; size: number; contentId?: string }>();
       
       if (req.files && Array.isArray(req.files)) {
         log(`Processing ${req.files.length} files from multer`, 'inbound-email');
         for (const file of req.files) {
+          const info = attachmentInfoMap[file.fieldname];
+          const contentId = info?.['content-id'] || undefined;
           attachments.set(file.fieldname, {
             content: file.buffer,
             contentType: file.mimetype,
             filename: file.originalname || file.fieldname,
+            size: file.size,
+            contentId,
           });
-          log(`Attachment: ${file.fieldname} - ${file.mimetype} (${file.size} bytes)`, 'inbound-email');
+          log(`Attachment: ${file.fieldname} - ${file.mimetype} (${file.size} bytes)${contentId ? ` [inline: ${contentId}]` : ''}`, 'inbound-email');
         }
       } else {
         log(`No files array from multer. req.files type: ${typeof req.files}`, 'inbound-email');

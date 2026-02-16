@@ -71,6 +71,47 @@ export class InboundEmailService {
     return validTypes.some(type => contentType.toLowerCase().includes(type));
   }
 
+  private static MIN_RECEIPT_SIZE_BYTES = 15000; // 15KB - real receipt photos are much larger
+
+  private static SIGNATURE_FILENAME_PATTERNS = [
+    /^image\d{3}\.\w+$/i,          // image001.png, image002.jpg
+    /logo/i,                        // company-logo.png, logo.jpg
+    /icon/i,                        // facebook-icon.png, mail-icon.png
+    /banner/i,                      // email-banner.jpg
+    /signature/i,                   // signature.png
+    /badge/i,                       // badge.png
+    /avatar/i,                      // avatar.jpg
+    /^(?:facebook|twitter|linkedin|instagram|youtube|tiktok|x|whatsapp|telegram)/i,
+    /social/i,                      // social-media.png
+    /spacer/i,                      // spacer.gif
+    /divider/i,                     // divider.png
+    /^unnamed/i,                    // unnamed inline images
+  ];
+
+  isLikelySignatureImage(attachment: { content: Buffer; contentType: string; filename: string; size?: number; contentId?: string }): { isSignature: boolean; reason: string } {
+    const size = attachment.size || attachment.content.length;
+    const filename = attachment.filename || '';
+
+    if (attachment.contentId) {
+      if (size < 100000) {
+        return { isSignature: true, reason: `Inline image with content-id (${Math.round(size / 1024)}KB)` };
+      }
+      log(`Inline image but large (${Math.round(size / 1024)}KB) - treating as receipt`, 'inbound-email');
+    }
+
+    if (size < InboundEmailService.MIN_RECEIPT_SIZE_BYTES) {
+      return { isSignature: true, reason: `Too small for a receipt (${Math.round(size / 1024)}KB < ${Math.round(InboundEmailService.MIN_RECEIPT_SIZE_BYTES / 1024)}KB minimum)` };
+    }
+
+    for (const pattern of InboundEmailService.SIGNATURE_FILENAME_PATTERNS) {
+      if (pattern.test(filename)) {
+        return { isSignature: true, reason: `Filename matches signature pattern: "${filename}"` };
+      }
+    }
+
+    return { isSignature: false, reason: '' };
+  }
+
   private async createLog(data: {
     fromEmail: string;
     toAddress: string;
@@ -105,7 +146,7 @@ export class InboundEmailService {
 
   async processInboundEmail(
     emailData: InboundEmailData,
-    attachments: Map<string, { content: Buffer; contentType: string; filename: string }>
+    attachments: Map<string, { content: Buffer; contentType: string; filename: string; size?: number; contentId?: string }>
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
     const startTime = Date.now();
     const totalAttachments = attachments.size;
@@ -158,16 +199,29 @@ export class InboundEmailService {
         })
         .returning();
 
-      const validAttachments: Array<{ content: Buffer; contentType: string; filename: string }> = [];
+      const validAttachments: Array<{ content: Buffer; contentType: string; filename: string; size?: number; contentId?: string }> = [];
+      let skippedSignatures = 0;
       
       attachments.forEach((attachment, key) => {
-        if (this.isValidImageType(attachment.contentType)) {
-          validAttachments.push(attachment);
-          log(`Found valid attachment: ${attachment.filename} (${attachment.contentType})`, 'inbound-email');
-        } else {
+        if (!this.isValidImageType(attachment.contentType)) {
           log(`Skipping non-image attachment: ${attachment.filename} (${attachment.contentType})`, 'inbound-email');
+          return;
         }
+
+        const signatureCheck = this.isLikelySignatureImage(attachment);
+        if (signatureCheck.isSignature) {
+          skippedSignatures++;
+          log(`Skipping signature/decorative image: ${attachment.filename} - ${signatureCheck.reason}`, 'inbound-email');
+          return;
+        }
+
+        validAttachments.push(attachment);
+        log(`Found valid receipt attachment: ${attachment.filename} (${attachment.contentType}, ${Math.round((attachment.size || attachment.content.length) / 1024)}KB)`, 'inbound-email');
       });
+      
+      if (skippedSignatures > 0) {
+        log(`Filtered out ${skippedSignatures} signature/decorative image(s)`, 'inbound-email');
+      }
 
       if (validAttachments.length === 0) {
         await db

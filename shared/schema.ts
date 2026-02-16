@@ -271,6 +271,22 @@ export const emailReceipts = pgTable("email_receipts", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const inboundEmailLogs = pgTable("inbound_email_logs", {
+  id: serial("id").primaryKey(),
+  fromEmail: text("from_email").notNull(),
+  toAddress: text("to_address").notNull(),
+  receiptEmailId: text("receipt_email_id"),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  subject: text("subject"),
+  attachmentCount: integer("attachment_count").default(0).notNull(),
+  validAttachmentCount: integer("valid_attachment_count").default(0).notNull(),
+  receiptsCreated: integer("receipts_created").default(0).notNull(),
+  status: text("status").notNull(), // received, user_not_found, no_attachments, processing, success, partial, failed
+  errorMessage: text("error_message"),
+  processingTimeMs: integer("processing_time_ms"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // User preferences and settings
 export const userPreferences = pgTable("user_preferences", {
   id: serial("id").primaryKey(),

@@ -93,10 +93,7 @@ export class InboundEmailService {
     const filename = attachment.filename || '';
 
     if (attachment.contentId) {
-      if (size < 100000) {
-        return { isSignature: true, reason: `Inline image with content-id (${Math.round(size / 1024)}KB)` };
-      }
-      log(`Inline image but large (${Math.round(size / 1024)}KB) - treating as receipt`, 'inbound-email');
+      return { isSignature: true, reason: `Inline/embedded image with content-id (${Math.round(size / 1024)}KB) - receipts should be attached, not embedded` };
     }
 
     if (size < InboundEmailService.MIN_RECEIPT_SIZE_BYTES) {

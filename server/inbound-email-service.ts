@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { users, receipts, emailReceipts } from "@shared/schema";
+import { users, receipts, emailReceipts, inboundEmailLogs } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { azureFormRecognizer } from "./azure-form-recognizer";
 import { azureStorage } from "./azure-storage";
@@ -45,23 +45,14 @@ export class InboundEmailService {
   }
 
   extractReceiptEmailId(toAddress: string): string | null {
-    // Handle various email formats:
-    // 1. Simple: e0e73ae6c369@receipts.simpleslips.app
-    // 2. With display name: Display Name <e0e73ae6c369@receipts.simpleslips.app>
-    // 3. Outlook format: "e0e73ae6c369@receipts.simpleslips.app"<e0e73ae6c369@receipts.simpleslips.app>
-    // 4. Multiple recipients separated by comma
-    
-    // First, try to extract email from angle brackets (most common format from email clients)
     const angleBracketMatch = toAddress.match(/<([^>]+)>/);
     const emailPart = angleBracketMatch ? angleBracketMatch[1] : toAddress;
     
-    // Now extract the local part (before @) from the email
     const emailMatch = emailPart.match(/([a-z0-9]+)@receipts\.simpleslips\.(app|co\.za)/i);
     if (emailMatch) {
       return emailMatch[1].toLowerCase();
     }
     
-    // Fallback: try to find any alphanumeric string followed by @ at the start
     const simpleMatch = emailPart.match(/^([a-z0-9]+)@/i);
     return simpleMatch ? simpleMatch[1].toLowerCase() : null;
   }
@@ -80,22 +71,75 @@ export class InboundEmailService {
     return validTypes.some(type => contentType.toLowerCase().includes(type));
   }
 
+  private async createLog(data: {
+    fromEmail: string;
+    toAddress: string;
+    receiptEmailId?: string | null;
+    userId?: number | null;
+    subject?: string | null;
+    attachmentCount: number;
+    validAttachmentCount?: number;
+    receiptsCreated?: number;
+    status: string;
+    errorMessage?: string | null;
+    processingTimeMs?: number | null;
+  }) {
+    try {
+      await db.insert(inboundEmailLogs).values({
+        fromEmail: data.fromEmail,
+        toAddress: data.toAddress,
+        receiptEmailId: data.receiptEmailId || null,
+        userId: data.userId || null,
+        subject: data.subject || null,
+        attachmentCount: data.attachmentCount,
+        validAttachmentCount: data.validAttachmentCount || 0,
+        receiptsCreated: data.receiptsCreated || 0,
+        status: data.status,
+        errorMessage: data.errorMessage || null,
+        processingTimeMs: data.processingTimeMs || null,
+      });
+    } catch (logError: any) {
+      log(`Failed to write inbound email log: ${logError.message}`, 'inbound-email');
+    }
+  }
+
   async processInboundEmail(
     emailData: InboundEmailData,
     attachments: Map<string, { content: Buffer; contentType: string; filename: string }>
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
+    const startTime = Date.now();
+    const totalAttachments = attachments.size;
+
     try {
       log(`Processing inbound email from: ${emailData.from} to: ${emailData.to}`, 'inbound-email');
 
       const receiptEmailId = this.extractReceiptEmailId(emailData.to);
       if (!receiptEmailId) {
         log(`Could not extract receipt email ID from: ${emailData.to}`, 'inbound-email');
+        await this.createLog({
+          fromEmail: emailData.from,
+          toAddress: emailData.to,
+          attachmentCount: totalAttachments,
+          status: 'invalid_address',
+          errorMessage: 'Could not extract receipt email ID from address',
+          processingTimeMs: Date.now() - startTime,
+        });
         return { success: false, error: 'Invalid recipient address format' };
       }
 
       const user = await this.getUserByReceiptEmailId(receiptEmailId);
       if (!user) {
         log(`No user found for receipt email ID: ${receiptEmailId}`, 'inbound-email');
+        await this.createLog({
+          fromEmail: emailData.from,
+          toAddress: emailData.to,
+          receiptEmailId,
+          subject: emailData.subject,
+          attachmentCount: totalAttachments,
+          status: 'user_not_found',
+          errorMessage: `No user found for receipt email ID: ${receiptEmailId}`,
+          processingTimeMs: Date.now() - startTime,
+        });
         return { success: false, error: 'Unknown recipient' };
       }
 
@@ -134,6 +178,19 @@ export class InboundEmailService {
           })
           .where(eq(emailReceipts.id, emailReceiptRecord.id));
 
+        await this.createLog({
+          fromEmail: emailData.from,
+          toAddress: emailData.to,
+          receiptEmailId,
+          userId: user.id,
+          subject: emailData.subject,
+          attachmentCount: totalAttachments,
+          validAttachmentCount: 0,
+          status: 'no_attachments',
+          errorMessage: 'No valid receipt images found in email attachments',
+          processingTimeMs: Date.now() - startTime,
+        });
+
         if (user.email) {
           await this.sendProcessingFailureEmail(
             user.email,
@@ -168,6 +225,21 @@ export class InboundEmailService {
           })
           .where(eq(emailReceipts.id, emailReceiptRecord.id));
 
+        const status = processedReceipts.length === validAttachments.length ? 'success' : 'partial';
+        await this.createLog({
+          fromEmail: emailData.from,
+          toAddress: emailData.to,
+          receiptEmailId,
+          userId: user.id,
+          subject: emailData.subject,
+          attachmentCount: totalAttachments,
+          validAttachmentCount: validAttachments.length,
+          receiptsCreated: processedReceipts.length,
+          status,
+          errorMessage: status === 'partial' ? `${validAttachments.length - processedReceipts.length} attachment(s) failed to process` : null,
+          processingTimeMs: Date.now() - startTime,
+        });
+
         if (user.email) {
           await this.sendProcessingSuccessEmail(
             user.email,
@@ -186,11 +258,34 @@ export class InboundEmailService {
           })
           .where(eq(emailReceipts.id, emailReceiptRecord.id));
 
+        await this.createLog({
+          fromEmail: emailData.from,
+          toAddress: emailData.to,
+          receiptEmailId,
+          userId: user.id,
+          subject: emailData.subject,
+          attachmentCount: totalAttachments,
+          validAttachmentCount: validAttachments.length,
+          receiptsCreated: 0,
+          status: 'failed',
+          errorMessage: 'All attachments failed to process (OCR/upload errors)',
+          processingTimeMs: Date.now() - startTime,
+        });
+
         return { success: false, error: 'Failed to process receipt images' };
       }
 
     } catch (error: any) {
       log(`Error processing inbound email: ${error.message}`, 'inbound-email');
+      await this.createLog({
+        fromEmail: emailData.from || 'unknown',
+        toAddress: emailData.to || 'unknown',
+        subject: emailData.subject,
+        attachmentCount: totalAttachments,
+        status: 'failed',
+        errorMessage: `Unhandled error: ${error.message}`,
+        processingTimeMs: Date.now() - startTime,
+      });
       return { success: false, error: error.message };
     }
   }
@@ -257,7 +352,6 @@ export class InboundEmailService {
         log(`Azure upload failed, storing locally: ${uploadError.message}`, 'inbound-email');
       }
 
-      // Check for potential duplicates before saving
       let isPotentialDuplicate = false;
       const receiptDate = date ? new Date(date) : new Date();
       const receiptTotal = total || '0.00';

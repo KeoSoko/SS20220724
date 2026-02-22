@@ -1292,26 +1292,34 @@ Only return valid JSON, no markdown or explanation.`
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
     log(`[processPdfAttachment] Processing PDF: ${attachment.filename} (${attachment.content.length} bytes)`, 'inbound-email');
     log(`[STAGE] PDF_ATTACHMENT_DETECTED: ${attachment.filename} (${attachment.content.length} bytes)`, 'inbound-email');
+    console.log(JSON.stringify({ stage: "PDF_ATTACHMENT_DETECTED", filename: attachment.filename, size: attachment.content.length, mimetype: attachment.contentType }));
 
     let pdfBlobUrl: string | null = null;
     let pdfBlobName: string | null = null;
     try {
+      console.log(JSON.stringify({ stage: "AZURE_UPLOAD_ATTEMPTED", filename: attachment.filename }));
       const pdfBase64 = `data:application/pdf;base64,${attachment.content.toString('base64')}`;
       const uploadResult = await azureStorage.uploadFile(pdfBase64, attachment.filename || `receipt_${userId}_${Date.now()}.pdf`);
       if (uploadResult) {
         pdfBlobUrl = uploadResult.blobUrl;
         pdfBlobName = uploadResult.blobName;
         log(`[processPdfAttachment] Uploaded original PDF to Azure: ${pdfBlobName}`, 'inbound-email');
+        console.log(JSON.stringify({ stage: "AZURE_UPLOAD_SUCCESS", blobName: pdfBlobName }));
+      } else {
+        console.log(JSON.stringify({ stage: "AZURE_UPLOAD_FAILED", error: "uploadFile returned null/undefined" }));
       }
     } catch (pdfUploadError: any) {
       log(`[processPdfAttachment] Failed to upload original PDF: ${pdfUploadError.message}`, 'inbound-email');
+      console.log(JSON.stringify({ stage: "AZURE_UPLOAD_FAILED", error: pdfUploadError.message }));
     }
 
     log(`[STAGE] PDF_TEXT_EXTRACTION_ATTEMPTED`, 'inbound-email');
+    console.log(JSON.stringify({ stage: "PDF_TEXT_EXTRACTION_ATTEMPTED" }));
     try {
       const pdfText = await extractTextFromPdf(attachment.content);
       log(`[processPdfAttachment] pdf-parse extracted ${pdfText?.length || 0} chars`, 'inbound-email');
       log(`[processPdfAttachment] pdf-parse text preview (first 300 chars): ${pdfText?.substring(0, 300)}`, 'inbound-email');
+      console.log(JSON.stringify({ stage: "PDF_TEXT_EXTRACTION_RESULT", textLength: pdfText?.length || 0, preview: pdfText?.substring(0, 300) || null }));
 
       if (pdfText && pdfText.length >= 100) {
         log(`[STAGE] PDF_TEXT_SUCCESS: ${pdfText.length} chars extracted, sending to AI`, 'inbound-email');
@@ -1325,31 +1333,40 @@ Only return valid JSON, no markdown or explanation.`
           pdfBlobName
         );
         if (result.success) {
+          console.log(JSON.stringify({ stage: "PDF_TEXT_AI_SUCCESS", receiptId: result.receiptId }));
           log(`[STAGE] FINAL_DECISION: PDF_TEXT path succeeded`, 'inbound-email');
           return result;
         }
+        console.log(JSON.stringify({ stage: "PDF_TEXT_AI_FAILED", error: result.error }));
         log(`[processPdfAttachment] AI extraction from text failed: ${result.error}, falling back to image conversion...`, 'inbound-email');
         log(`[STAGE] PDF_TEXT_FAILED: AI extraction failed (${result.error}), trying OCR fallback`, 'inbound-email');
       } else {
+        console.log(JSON.stringify({ stage: "PDF_TEXT_TOO_SHORT", textLength: pdfText?.length || 0 }));
         log(`[processPdfAttachment] Text too short (${pdfText?.length || 0} chars < 100), falling back to image conversion...`, 'inbound-email');
         log(`[STAGE] PDF_TEXT_FAILED: text too short (${pdfText?.length || 0} chars), trying OCR fallback`, 'inbound-email');
       }
     } catch (textError: any) {
       log(`[processPdfAttachment] pdf-parse failed: ${textError.message}, falling back to image conversion...`, 'inbound-email');
       log(`[STAGE] PDF_TEXT_FAILED: pdf-parse exception: ${textError.message}`, 'inbound-email');
+      console.log(JSON.stringify({ stage: "PDF_TEXT_EXTRACTION_FAILED", error: textError.message, stack: textError.stack?.substring(0, 500) }));
     }
 
     log(`[STAGE] OCR_FALLBACK_TRIGGERED`, 'inbound-email');
+    console.log(JSON.stringify({ stage: "PDF2PIC_CONVERSION_ATTEMPTED" }));
     try {
       const imageBase64 = await convertPdfToImage(attachment.content);
       log(`[processPdfAttachment] PDF-to-image conversion succeeded, running OCR...`, 'inbound-email');
       log(`[STAGE] OCR_IMAGE_CONVERSION_SUCCESS`, 'inbound-email');
+      console.log(JSON.stringify({ stage: "PDF2PIC_CONVERSION_SUCCESS", imageLength: imageBase64?.length || 0 }));
+      console.log(JSON.stringify({ stage: "OCR_ATTEMPTED" }));
       return await this.processImageAttachment(userId, workspaceId, imageBase64, emailReceiptId);
     } catch (imgError: any) {
       log(`[processPdfAttachment] PDF-to-image conversion also failed: ${imgError.message}`, 'inbound-email');
       log(`[STAGE] OCR_FALLBACK_FAILED: ${imgError.message}`, 'inbound-email');
+      console.log(JSON.stringify({ stage: "PDF2PIC_CONVERSION_FAILED", error: imgError.message, stack: imgError.stack?.substring(0, 500) }));
     }
 
+    console.log(JSON.stringify({ stage: "PDF_PIPELINE_FAILED", error: "Both text extraction and image conversion failed", filename: attachment.filename }));
     log(`[STAGE] FINAL_DECISION: BOTH paths failed (text extraction + image conversion)`, 'inbound-email');
     if (pdfBlobUrl) {
       return { success: false, error: `PDF processing failed (text extraction + image conversion). Original PDF stored at Azure.` };
@@ -1457,6 +1474,7 @@ Only return valid JSON, no markdown or explanation.`
     try {
       log(`[processAttachment] ${attachment.filename} (${attachment.contentType}, ${attachment.content.length} bytes)`, 'inbound-email');
       const isPdf = attachment.contentType === 'application/pdf' || isPdfBuffer(attachment.content);
+      console.log(JSON.stringify({ stage: "ATTACHMENT_DETECTED", filename: attachment.filename, size: attachment.content.length, mimetype: attachment.contentType, isPdf, magicBytes: attachment.content.slice(0, 5).toString('hex') }));
       log(`[STAGE] ATTACHMENT_ROUTING: ${attachment.filename} -> ${isPdf ? 'PDF pipeline' : 'IMAGE pipeline'}`, 'inbound-email');
 
       if (isPdf) {
@@ -1470,6 +1488,7 @@ Only return valid JSON, no markdown or explanation.`
     } catch (error: any) {
       log(`[processAttachment] Error processing ${attachment.filename}: ${error.message}`, 'inbound-email');
       log(`[STAGE] ATTACHMENT_FAILED: ${attachment.filename} - ${error.message}`, 'inbound-email');
+      console.log(JSON.stringify({ stage: "ATTACHMENT_PROCESSING_EXCEPTION", filename: attachment.filename, error: error.message, stack: error.stack?.substring(0, 500) }));
       return { success: false, error: error.message };
     }
   }

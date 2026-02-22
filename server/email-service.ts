@@ -72,7 +72,7 @@ export class EmailService {
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'keo@nine28.co.za',
+          email: 'admin@simpleslips.co.za',
           name: 'Simple Slips Support Team'
         },
         templateId: 'd-f13c8e5c302e4405904fa5366443f766',
@@ -161,7 +161,7 @@ export class EmailService {
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'keo@nine28.co.za',
+          email: 'admin@simpleslips.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: 'Your Simple Slips account is ready!',
@@ -245,7 +245,7 @@ Need help? Visit our Tax Professionals section to connect with certified account
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'keo@nine28.co.za',
+          email: 'admin@simpleslips.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: 'Reset your Simple Slips password',
@@ -335,7 +335,7 @@ Security Notice: This link expires in 1 hour. If you didn't request this reset, 
           name: 'Simple Slips Billing'
         },
         replyTo: {
-          email: 'keo@nine28.co.za',
+          email: 'admin@simpleslips.co.za',
           name: 'Simple Slips Support Team'
         },
         subject,
@@ -383,7 +383,7 @@ Security Notice: This link expires in 1 hour. If you didn't request this reset, 
             
             <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
             <p style="color: #999; font-size: 12px;">
-              Need help? Contact our support team at keo@nine28.co.za
+              Need help? Contact our support team at admin@simpleslips.co.za
             </p>
           </div>
         `,
@@ -406,7 +406,7 @@ ${notificationType === 'subscription_cancelled'
 
 ${notificationType === 'subscription_cancelled' ? 'Resubscribe' : 'Update your payment method'} at: ${this.appUrl}/subscription
 
-Need help? Contact support at keo@nine28.co.za
+Need help? Contact support at admin@simpleslips.co.za
         `
       });
 
@@ -637,7 +637,7 @@ If you have any questions or need help getting started, just reply to this email
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'keo@nine28.co.za',
+          email: 'admin@simpleslips.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: `${sharedByUsername} shared a receipt with you`,
@@ -720,7 +720,7 @@ ${share.expiresAt ? `This link expires on ${share.expiresAt.toLocaleDateString()
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'keo@nine28.co.za',
+          email: 'admin@simpleslips.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: `Budget Alert: ${budgetName} ${alertType}`,
@@ -795,7 +795,7 @@ Manage your budgets: ${this.appUrl}/budgets
           name: 'Simple Slips Support'
         },
         replyTo: {
-          email: 'keo@nine28.co.za',
+          email: 'admin@simpleslips.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: 'Time to backup your receipts',
@@ -1338,7 +1338,7 @@ ${aiMessage}
           name: 'Simple Slips'
         },
         replyTo: {
-          email: 'keo@nine28.co.za',
+          email: 'admin@simpleslips.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: `Receipt${receiptCount > 1 ? 's' : ''} Successfully Imported`,
@@ -1426,7 +1426,7 @@ to automatically add them to your account.
           name: 'Simple Slips'
         },
         replyTo: {
-          email: 'keo@nine28.co.za',
+          email: 'admin@simpleslips.co.za',
           name: 'Simple Slips Support Team'
         },
         subject: 'Receipt Import - Action Required',

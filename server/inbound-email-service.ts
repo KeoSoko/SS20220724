@@ -8,7 +8,7 @@ import { imagePreprocessor } from "./image-preprocessing";
 import { emailService } from "./email-service";
 import { log } from "./vite";
 import crypto from "crypto";
-import { convertPdfToImage, isPdfBuffer } from "./pdf-converter";
+import { convertPdfToImage, extractTextFromPdf, isPdfBuffer } from "./pdf-converter";
 import { storage } from "./storage";
 import OpenAI from "openai";
 
@@ -333,6 +333,134 @@ Only return valid JSON, no markdown or explanation.`
       log(`AI email body extraction failed: ${error.message}`, 'inbound-email');
       return { success: false, error: `AI extraction failed: ${error.message}` };
     }
+  }
+
+  private async extractReceiptFromPdfText(
+    userId: number,
+    workspaceId: number,
+    pdfText: string,
+    filename: string,
+    emailReceiptId: number
+  ): Promise<{ success: boolean; receiptId?: number }> {
+    const truncatedText = pdfText.substring(0, 8000);
+
+    log(`Attempting to extract receipt data from PDF text (${pdfText.length} chars)`, 'inbound-email');
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert at extracting receipt and invoice data from PDF text content.
+Extract the following fields from the PDF text. This is typically a receipt, invoice, order confirmation, or payment notification from a South African or international retailer/service.
+
+Return a JSON object with these fields:
+- storeName: The merchant/store/company name (string)
+- total: The total amount paid as a string (just the number, no currency symbol, e.g. "299.99")
+- date: The transaction date in ISO format (YYYY-MM-DD). If no date found, use today's date.
+- items: An array of item descriptions (strings). Extract individual line items if visible. If none found, use an empty array.
+- currency: The currency code (e.g. "ZAR", "USD"). Default to "ZAR" if South African.
+- confidence: A number from 0 to 1 indicating how confident you are in the extraction.
+
+If you cannot find a valid receipt/invoice/order in the text, return {"error": "No receipt data found"}.
+Only return valid JSON, no markdown or explanation.`
+        },
+        {
+          role: "user",
+          content: `PDF filename: ${filename}\n\nPDF text content:\n${truncatedText}`
+        }
+      ],
+      temperature: 0.1,
+      max_tokens: 1000,
+    });
+
+    const content = response.choices[0]?.message?.content?.trim();
+    if (!content) {
+      throw new Error('AI returned empty response for PDF text');
+    }
+
+    let parsed: any;
+    try {
+      const jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      parsed = JSON.parse(jsonStr);
+    } catch (parseError) {
+      log(`Failed to parse AI response for PDF: ${content}`, 'inbound-email');
+      throw new Error('Failed to parse AI extraction result from PDF text');
+    }
+
+    if (parsed.error) {
+      log(`AI could not extract receipt from PDF: ${parsed.error}`, 'inbound-email');
+      throw new Error(parsed.error);
+    }
+
+    const storeName = parsed.storeName || 'Unknown Store';
+    const total = parsed.total || '0.00';
+    const dateStr = parsed.date;
+    const items = Array.isArray(parsed.items) ? parsed.items : [];
+    const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;
+
+    let receiptDate: Date;
+    try {
+      receiptDate = dateStr ? new Date(dateStr) : new Date();
+      if (isNaN(receiptDate.getTime())) receiptDate = new Date();
+    } catch {
+      receiptDate = new Date();
+    }
+
+    log(`AI extracted from PDF text: ${storeName}, R${total}, ${items.length} items, confidence: ${confidence}`, 'inbound-email');
+
+    let category = 'other';
+    try {
+      const categorization = await aiCategorizationService.categorizeReceipt(
+        storeName,
+        items,
+        total
+      );
+      category = categorization.category;
+      log(`AI categorized as: ${category}`, 'inbound-email');
+    } catch (catError: any) {
+      log(`AI categorization failed, using default: ${catError.message}`, 'inbound-email');
+    }
+
+    let isPotentialDuplicate = false;
+    try {
+      if (storage.findDuplicateReceipts) {
+        const duplicates = await storage.findDuplicateReceipts(userId, storeName, receiptDate, total);
+        if (duplicates.length > 0) {
+          isPotentialDuplicate = true;
+          log(`Found ${duplicates.length} potential duplicate(s) for PDF receipt: ${storeName}, ${total}`, 'inbound-email');
+        }
+      }
+    } catch (dupError: any) {
+      log(`Duplicate check failed: ${dupError.message}`, 'inbound-email');
+    }
+
+    const [receipt] = await db
+      .insert(receipts)
+      .values({
+        userId,
+        workspaceId,
+        createdByUserId: userId,
+        storeName,
+        date: receiptDate,
+        total,
+        items,
+        category: category as any,
+        confidenceScore: Math.round(confidence * 100).toString(),
+        blobUrl: null,
+        blobName: null,
+        imageData: null,
+        source: 'email',
+        sourceEmailId: emailReceiptId || null,
+        processedAt: new Date(),
+        isPotentialDuplicate,
+        notes: `Extracted from PDF attachment via text extraction (image conversion unavailable). File: ${filename}`,
+      })
+      .returning();
+
+    log(`Created receipt ${receipt.id} from PDF text extraction${isPotentialDuplicate ? ' (flagged as potential duplicate)' : ''}`, 'inbound-email');
+
+    return { success: true, receiptId: receipt.id };
   }
 
   isLikelySignatureImage(attachment: { content: Buffer; contentType: string; filename: string; size?: number; contentId?: string }): { isSignature: boolean; reason: string } {
@@ -706,9 +834,31 @@ Only return valid JSON, no markdown or explanation.`
           log('PDF successfully converted to image', 'inbound-email');
           console.log('[inbound-email] PDF successfully converted to image');
         } catch (pdfError: any) {
-          log(`PDF conversion failed: ${pdfError.message}`, 'inbound-email');
-          console.error(`[inbound-email] PDF conversion failed:`, pdfError);
-          throw new Error(`Failed to process PDF: ${pdfError.message}`);
+          log(`PDF image conversion failed: ${pdfError.message}. Trying text extraction fallback...`, 'inbound-email');
+          console.log(`[inbound-email] PDF image conversion failed, trying text extraction fallback...`);
+          
+          try {
+            const pdfText = await extractTextFromPdf(attachment.content);
+            if (pdfText && pdfText.length >= 50) {
+              log(`PDF text extracted (${pdfText.length} chars), using AI to parse receipt data...`, 'inbound-email');
+              console.log(`[inbound-email] PDF text extracted (${pdfText.length} chars), sending to AI...`);
+              
+              const result = await this.extractReceiptFromPdfText(
+                userId,
+                workspaceId,
+                pdfText,
+                attachment.filename,
+                emailReceiptId
+              );
+              return result;
+            } else {
+              throw new Error(`PDF text too short (${pdfText?.length || 0} chars) to extract receipt data`);
+            }
+          } catch (textError: any) {
+            log(`PDF text extraction also failed: ${textError.message}`, 'inbound-email');
+            console.error(`[inbound-email] PDF text extraction failed:`, textError);
+            throw new Error(`Failed to process PDF: image conversion and text extraction both failed`);
+          }
         }
       } else {
         const rawBase64 = `data:${attachment.contentType};base64,${attachment.content.toString('base64')}`;

@@ -1,0 +1,172 @@
+I need you to refactor and fix my SendGrid inbound email receipt processing pipeline.
+
+This is a production Express server using:
+
+SendGrid Inbound Parse (webhook POST → multipart/form-data)
+
+multer.any() for parsing
+
+Azure Blob Storage for file uploads
+
+pdf-parse for PDF text extraction
+
+pdf2pic + Ghostscript for PDF → image conversion fallback
+
+Custom receipt extraction logic from text
+
+We currently have TWO issues:
+
+🚨 ISSUE 1 — pdf-parse ESM/CJS Import Bug
+
+In production (ESM environment), this import:
+
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
+
+
+resolves to:
+
+{ default: [Function] }
+
+
+So calling:
+
+pdfParse(buffer)
+
+
+throws:
+
+pdfParse is not a function
+
+FIX REQUIREMENT:
+
+Refactor the import so it works in BOTH:
+
+Local dev
+
+Production ESM runtime
+
+Use a safe resolution pattern like:
+
+const pdfParseModule = require('pdf-parse');
+const pdfParse = pdfParseModule.default || pdfParseModule;
+
+
+OR convert fully to clean ESM if stable.
+
+🚨 ISSUE 2 — Incorrect Email Body Receipt Extraction
+
+When a receipt is forwarded in the email body:
+
+The parser sometimes extracts merchant/amount from OLD forwarded thread content.
+
+It does not isolate the newest message block.
+
+It accepted “Uber Eats, R0.00” incorrectly.
+
+FIX REQUIREMENTS:
+
+Strip forwarded/quoted content before extraction.
+Remove content after markers like:
+
+"-----Original Message-----"
+
+"----- Forwarded message -----"
+
+"From:"
+
+Common reply chains
+
+Only run receipt extraction on the cleaned body.
+
+Add validation before saving:
+Receipt must:
+
+Contain a valid currency amount (e.g. R 123.45)
+
+Contain transaction keywords (total, vat, amount, tax)
+
+Have reasonable length
+
+If validation fails → do NOT save receipt.
+
+🔁 REQUIRED PROCESSING ORDER (IMPORTANT)
+
+Refactor the processing flow to:
+
+IF email has attachment:
+IF PDF:
+1. Try pdf-parse text extraction FIRST
+2. If extracted text length > 100 and passes receipt validation → use it
+3. Else fallback to image conversion (pdf2pic) and OCR
+IF image:
+OCR directly
+
+ELSE:
+Parse cleaned email body
+
+DO NOT convert PDF to image first.
+
+🧱 ARCHITECTURE REQUIREMENTS
+
+Refactor into clean, isolated functions:
+
+resolvePdfParse()
+
+stripForwardedContent()
+
+looksLikeReceipt()
+
+processPdfAttachment()
+
+processImageAttachment()
+
+processEmailBody()
+
+validateExtractedReceipt()
+
+Make code production-safe.
+Handle async errors.
+Add structured logging.
+
+🧪 ALSO ADD
+
+Defensive checks for missing req.body.text
+
+Defensive checks for req.files length
+
+Logging for each stage:
+
+PDF parse success/fail
+
+Fallback triggered
+
+Body extraction triggered
+
+Validation pass/fail
+
+🚫 DO NOT
+
+Rewrite unrelated logic
+
+Change database schema
+
+Modify Azure upload logic
+
+Remove existing logging system
+
+Only fix and harden the email processing pipeline.
+
+After refactoring, explain:
+
+What was broken
+
+Why it failed in production
+
+What the new execution order is
+
+How the validation layer prevents bad receipts
+
+Be precise.
+Do not guess.
+Work only with the existing structure.

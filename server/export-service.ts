@@ -406,7 +406,10 @@ export class ExportService {
                 doc.setFontSize(8);
                 doc.text('Original email receipt available in the app.', 20, metaY + 10);
                 doc.setTextColor(0, 0, 0);
+                metaY += 20;
               }
+
+              const contentStartY = metaY + 5;
               
               let imageData = null;
               
@@ -450,21 +453,17 @@ export class ExportService {
                 }
               }
               
-              // Add image to PDF if we have image data
               if (imageData) {
                 try {
-                  // Use receipt-like aspect ratio: width=120, height=160 (3:4 ratio)
-                  doc.addImage(imageData, 'JPEG', 20, 80, 120, 160);
+                  doc.addImage(imageData, 'JPEG', 20, contentStartY, 120, 160);
                 } catch (imgError) {
                   console.error('Failed to add image to PDF:', imgError);
-                  // Add placeholder text instead
                   doc.setFontSize(10);
-                  doc.text('Receipt image could not be loaded', 20, 80);
+                  doc.text('Receipt image could not be loaded', 20, contentStartY);
                 }
               } else {
-                // Add placeholder text if no image available
                 doc.setFontSize(10);
-                doc.text('Receipt image not available', 20, 80);
+                doc.text('Receipt image not available', 20, contentStartY);
               }
               
               // Add notes if available

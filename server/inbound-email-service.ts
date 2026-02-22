@@ -125,6 +125,8 @@ export class InboundEmailService {
   private stripEmailSignature(text: string): string {
     if (!text) return text;
 
+    const originalLength = text.length;
+
     const signatureMarkers = [
       /^\s*(thanks|thank you|kind regards|regards|best regards|warm regards|cheers|sincerely|sent from my)/i,
       /^\s*--\s*$/,
@@ -134,19 +136,40 @@ export class InboundEmailService {
       /^\s*powered by/i,
     ];
 
-    const lines = text.split(/\r?\n/);
-    let cutIndex = lines.length;
-    const minCutLine = Math.floor(lines.length * 0.7);
+    const bottomThreshold = Math.max(
+      Math.floor(text.length * 0.7),
+      text.length - 800
+    );
 
-    for (let i = minCutLine; i < lines.length; i++) {
-      const line = lines[i].trim();
+    const searchRegion = text.substring(bottomThreshold);
+    const searchLines = searchRegion.split(/\r?\n/);
+    let cutOffset = -1;
+    let charsBeforeCut = bottomThreshold;
+
+    for (let i = 0; i < searchLines.length; i++) {
+      const line = searchLines[i].trim();
       if (signatureMarkers.some((marker) => marker.test(line))) {
-        cutIndex = i;
+        cutOffset = charsBeforeCut;
         break;
       }
+      charsBeforeCut += searchLines[i].length + 1;
     }
 
-    return lines.slice(0, cutIndex).join('\n').trim();
+    let result = text;
+    if (cutOffset !== -1) {
+      result = text.substring(0, cutOffset).trim();
+    }
+
+    const strippedLength = result.length;
+    const charsRemoved = originalLength - strippedLength;
+
+    if (charsRemoved / originalLength > 0.8) {
+      log(`[stripEmailSignature] Aborted — excessive removal (${charsRemoved}/${originalLength} chars, ${Math.round(charsRemoved / originalLength * 100)}%)`, 'inbound-email');
+      return text;
+    }
+
+    log(`[stripEmailSignature] originalLength=${originalLength} strippedLength=${strippedLength} charsRemoved=${charsRemoved}`, 'inbound-email');
+    return result;
   }
 
   stripForwardedContent(text: string): string {

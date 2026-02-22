@@ -153,18 +153,20 @@ export default function ReceiptDetail() {
   const isEmailBodyReceipt = receipt?.source === 'email';
 
   const { data: emailDocData } = useQuery<{ emailDocumentId: number }>({
-    queryKey: ['/api/receipts', id, 'email-document'],
-    queryFn: async () => {
-      const res = await fetch(`/api/receipts/${id}/email-document`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-      });
-      if (!res.ok) return null;
-      return res.json();
-    },
+    queryKey: [`/api/receipts/${id}/email-document`],
     enabled: isValidId && !!receipt && isEmailBodyReceipt,
   });
 
   const emailDocumentId = emailDocData?.emailDocumentId;
+
+  const { data: emailHtmlContent } = useQuery<string>({
+    queryKey: ['/api/email-documents', emailDocumentId, 'render'],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/email-documents/${emailDocumentId}/render`);
+      return await res.text();
+    },
+    enabled: !!emailDocumentId,
+  });
 
   // Query for custom categories
   const { data: customCategories = [], isLoading: customCategoriesLoading, error: customCategoriesError } = useQuery<Array<{ id: number; name: string; isActive: boolean }>>({
@@ -988,7 +990,7 @@ export default function ReceiptDetail() {
         {/* Receipt image card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle>{emailDocumentId ? 'Original Email Receipt' : 'Receipt Image'}</CardTitle>
+            <CardTitle>{emailHtmlContent ? 'Original Email Receipt' : 'Receipt Image'}</CardTitle>
             <div className="flex items-center gap-2">
               {imageUrl && (imageUrl.includes('.pdf') || imageUrl.includes('application/pdf')) && (
                 <a
@@ -1002,7 +1004,7 @@ export default function ReceiptDetail() {
                   </Button>
                 </a>
               )}
-              {!emailDocumentId && receipt.blobName && !receipt.imageData && (
+              {!emailHtmlContent && receipt.blobName && !receipt.imageData && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -1020,11 +1022,11 @@ export default function ReceiptDetail() {
             </div>
           </CardHeader>
           <CardContent className="flex justify-center">
-            {emailDocumentId ? (
+            {emailHtmlContent ? (
               <div className="w-full">
                 <iframe
-                  src={`/api/email-documents/${emailDocumentId}/render?token=${localStorage.getItem('token')}`}
-                  sandbox="allow-same-origin"
+                  srcDoc={emailHtmlContent}
+                  sandbox=""
                   className="w-full border border-gray-200 rounded-none bg-white"
                   style={{ minHeight: '500px', height: '700px' }}
                   title="Original email receipt"

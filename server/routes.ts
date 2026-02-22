@@ -2464,7 +2464,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Single receipt PDF export (uses same logic as bulk export)
+  // Single receipt PDF export - fetches receipt by ID, no date-range filtering
   // Requires email verification - sensitive export action
   app.post("/api/receipts/:id/export-pdf", requireVerifiedEmail, requireWorkspaceRole("owner", "editor"), async (req, res) => {
 
@@ -2476,23 +2476,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!receipt) return res.status(404).json({ error: "Receipt not found" });
       if (receipt.userId !== userId) return res.status(403).json({ error: "Unauthorized" });
 
-      // Use the same export service logic as bulk export
-      const { includeImages = true, includeSummary = false } = req.body;
+      const pdfBuffer = await exportService.exportSingleReceiptToPDF(receipt);
       
-      const options = {
-        includeImages,
-        includeSummary,
-        format: 'pdf' as const
-      };
-
-      // Use the existing method with userId and filter to this specific receipt
-      const pdfBuffer = await exportService.exportReceiptsToPDF(userId, {
-        ...options,
-        startDate: new Date(receipt.date.getTime() - 1000), // Just before receipt date
-        endDate: new Date(receipt.date.getTime() + 1000)    // Just after receipt date
-      });
-      
-      // Set response headers for PDF download  
       const { format } = await import('date-fns');
       const filename = `receipt_${receipt.storeName.replace(/\s+/g, "_")}_${format(new Date(receipt.date), "yyyy-MM-dd")}.pdf`;
       

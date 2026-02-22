@@ -455,10 +455,160 @@ export class ExportService {
         this.addBrandedFooter(doc, i, totalPages, generatedDate);
       }
 
+      console.log(JSON.stringify({
+        stage: "EXPORT_RECEIPTS_BY_DATE_RANGE",
+        userId,
+        receiptCount: filteredReceipts.length,
+        startDate: options.startDate?.toISOString() || null,
+        endDate: options.endDate?.toISOString() || null,
+        category: options.category || null,
+        includeImages: options.includeImages || false,
+        timestamp: new Date().toISOString()
+      }));
+
       return Buffer.from(doc.output('arraybuffer'));
     } catch (error) {
       console.error('Failed to export receipts to PDF:', error);
       throw new Error('Export failed');
+    }
+  }
+
+  /**
+   * Export a single receipt to PDF by direct receipt reference.
+   * No date filtering — uses the receipt object directly.
+   */
+  async exportSingleReceiptToPDF(receipt: Receipt): Promise<Buffer> {
+    try {
+      console.log(JSON.stringify({
+        stage: "EXPORT_SINGLE_RECEIPT_BY_ID",
+        receiptId: receipt.id,
+        storeName: receipt.storeName,
+        total: receipt.total,
+        date: receipt.date.toISOString(),
+        timestamp: new Date().toISOString()
+      }));
+
+      const doc = new jsPDF();
+
+      const primaryBlue = [0, 115, 170];
+      const darkGray = [60, 60, 60];
+
+      const logoBase64 = await this.getSimpleSlipsLogoBase64();
+      if (logoBase64) {
+        doc.addImage(logoBase64, 'PNG', 15, 8, 50, 12);
+      }
+
+      doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+      doc.setFontSize(20);
+      doc.text('Receipt Export', logoBase64 ? 75 : 20, 20);
+
+      doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+      doc.setFontSize(14);
+      doc.text(sanitizeTextForPDF(receipt.storeName), 20, 40);
+
+      doc.setFontSize(11);
+      let yPos = 52;
+      doc.text(`Date: ${receipt.date.toLocaleDateString('en-ZA')}`, 20, yPos);
+      yPos += 10;
+      doc.text(`Total: R ${receipt.total}`, 20, yPos);
+      yPos += 10;
+      doc.text(`Category: ${this.getReceiptCategoryLabel(receipt)}`, 20, yPos);
+      yPos += 10;
+      if (receipt.paymentMethod) {
+        doc.text(`Payment Method: ${sanitizeTextForPDF(receipt.paymentMethod)}`, 20, yPos);
+        yPos += 10;
+      }
+      if (receipt.notes) {
+        doc.text(`Notes: ${sanitizeTextForPDF(receipt.notes)}`, 20, yPos);
+        yPos += 10;
+      }
+
+      if (receipt.items && receipt.items.length > 0) {
+        yPos += 5;
+        autoTable(doc, {
+          head: [['Item', 'Price']],
+          body: receipt.items.map(item => [
+            sanitizeTextForPDF(item.name),
+            `R ${item.price}`
+          ]),
+          startY: yPos,
+          margin: { bottom: 35 },
+          styles: { fontSize: 9, cellPadding: 3 },
+          headStyles: {
+            fillColor: [primaryBlue[0], primaryBlue[1], primaryBlue[2]] as [number, number, number],
+            textColor: [255, 255, 255] as [number, number, number],
+            fontStyle: 'bold'
+          }
+        });
+        const lastTable = (doc as any).lastAutoTable;
+        yPos = lastTable ? lastTable.finalY + 10 : yPos + 10;
+      }
+
+      let imageData: string | null = null;
+
+      if (receipt.imageData) {
+        imageData = receipt.imageData;
+      } else if (receipt.blobUrl && receipt.blobUrl.startsWith('/uploads/')) {
+        const fs = require('fs');
+        const path = require('path');
+        const filePath = path.join(process.cwd(), receipt.blobUrl);
+        try {
+          if (fs.existsSync(filePath)) {
+            const fileBuffer = fs.readFileSync(filePath);
+            const base64 = fileBuffer.toString('base64');
+            const ext = path.extname(filePath).toLowerCase();
+            const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+            imageData = `data:${mimeType};base64,${base64}`;
+          }
+        } catch (fileError) {
+          console.error(`Failed to read local file: ${filePath}`, fileError);
+        }
+      } else if (receipt.blobName) {
+        const blobNameStr = receipt.blobName as string;
+        const isPdfBlob = blobNameStr.toLowerCase().endsWith('.pdf');
+
+        if (!isPdfBlob) {
+          const imageUrl = await azureStorage.generateSasUrl(blobNameStr, 1);
+          if (imageUrl) {
+            try {
+              const response = await fetch(imageUrl);
+              if (response.ok) {
+                const arrayBuffer = await response.arrayBuffer();
+                const base64 = Buffer.from(arrayBuffer).toString('base64');
+                imageData = `data:image/jpeg;base64,${base64}`;
+              }
+            } catch (fetchError) {
+              console.error(`Failed to fetch Azure image: ${blobNameStr}`, fetchError);
+            }
+          }
+        }
+      }
+
+      if (imageData) {
+        if (yPos > 200) {
+          doc.addPage();
+          yPos = 20;
+        }
+        try {
+          doc.addImage(imageData, 'JPEG', 20, yPos, 120, 160);
+        } catch (imgError) {
+          console.error('Failed to add image to PDF:', imgError);
+          doc.setFontSize(10);
+          doc.text('Receipt image could not be loaded', 20, yPos);
+        }
+      }
+
+      const totalPages = doc.getNumberOfPages();
+      const generatedDate = new Date();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        this.addBrandedFooter(doc, i, totalPages, generatedDate);
+      }
+
+      return Buffer.from(doc.output('arraybuffer'));
+    } catch (error) {
+      console.error('Failed to export single receipt to PDF:', error);
+      throw new Error('Single receipt export failed');
     }
   }
 

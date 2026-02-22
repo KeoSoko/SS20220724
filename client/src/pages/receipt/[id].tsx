@@ -1017,9 +1017,10 @@ export default function ReceiptDetail() {
 
         {/* Receipt image card */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="pb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <CardTitle>{emailHtmlContent ? 'Original Email Receipt' : 'Receipt Image'}</CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {emailDocumentId && (
                 <Button
                   variant="outline"
@@ -1082,6 +1083,7 @@ export default function ReceiptDetail() {
                   Refresh URL
                 </Button>
               )}
+            </div>
             </div>
           </CardHeader>
           <CardContent className="flex justify-center">

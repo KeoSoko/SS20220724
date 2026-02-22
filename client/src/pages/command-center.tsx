@@ -716,14 +716,14 @@ export default function CommandCenter() {
         {showInboundLogs && (
           <CardContent className="pt-0">
             <div className="flex gap-2 mb-4 flex-wrap">
-              {["all", "success", "partial", "failed", "user_not_found", "no_attachments", "invalid_address"].map((status) => (
+              {["all", "success", "success_email_body", "partial", "failed", "user_not_found", "no_attachments", "invalid_address"].map((status) => (
                 <Button
                   key={status}
                   variant={inboundStatusFilter === status ? "default" : "outline"}
                   size="sm"
                   onClick={() => setInboundStatusFilter(status)}
                 >
-                  {status === "all" ? "All" : status.replace(/_/g, " ")}
+                  {status === "all" ? "All" : status === "success_email_body" ? "email body" : status.replace(/_/g, " ")}
                 </Button>
               ))}
             </div>
@@ -743,6 +743,7 @@ export default function CommandCenter() {
                   {inboundLogsData.logs.map((log) => {
                     const statusColor = {
                       success: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+                      success_email_body: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400",
                       partial: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
                       failed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
                       user_not_found: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",

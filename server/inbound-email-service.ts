@@ -421,11 +421,62 @@ Only return valid JSON, no markdown or explanation.`
       }
 
       if (validAttachments.length === 0) {
+        log(`No valid attachments found. Checking email body for receipt content...`, 'inbound-email');
+
+        const hasReceiptContent = this.isEmailBodyReceiptLike(emailData.subject, emailData.html, emailData.text);
+
+        if (hasReceiptContent) {
+          log(`Email body looks like a receipt/invoice - attempting AI extraction`, 'inbound-email');
+
+          const bodyResult = await this.extractReceiptFromEmailBody(
+            user.id,
+            user.workspaceId!,
+            emailData.subject,
+            emailData.html,
+            emailData.text,
+            emailReceiptRecord.id
+          );
+
+          if (bodyResult.success && bodyResult.receiptId) {
+            await db
+              .update(emailReceipts)
+              .set({
+                processed: true,
+                receiptId: bodyResult.receiptId,
+              })
+              .where(eq(emailReceipts.id, emailReceiptRecord.id));
+
+            await this.createLog({
+              fromEmail: emailData.from,
+              toAddress: emailData.to,
+              receiptEmailId,
+              userId: user.id,
+              subject: emailData.subject,
+              attachmentCount: totalAttachments,
+              validAttachmentCount: 0,
+              receiptsCreated: 1,
+              status: 'success_email_body',
+              errorMessage: null,
+              processingTimeMs: Date.now() - startTime,
+            });
+
+            if (user.email) {
+              await this.sendProcessingSuccessEmail(user.email, user.username, 1);
+            }
+
+            return { success: true, receiptId: bodyResult.receiptId };
+          } else {
+            log(`Email body extraction failed: ${bodyResult.error}`, 'inbound-email');
+          }
+        } else {
+          log(`Email body does not appear to contain receipt/invoice content`, 'inbound-email');
+        }
+
         await db
           .update(emailReceipts)
           .set({
             processed: true,
-            errorMessage: 'No valid receipt images found in email attachments',
+            errorMessage: 'No valid receipt images found in email attachments and email body extraction failed',
           })
           .where(eq(emailReceipts.id, emailReceiptRecord.id));
 
@@ -438,7 +489,9 @@ Only return valid JSON, no markdown or explanation.`
           attachmentCount: totalAttachments,
           validAttachmentCount: 0,
           status: 'no_attachments',
-          errorMessage: 'No valid receipt images found in email attachments',
+          errorMessage: hasReceiptContent 
+            ? 'Email body looked like a receipt but AI extraction failed' 
+            : 'No valid receipt images found and email body does not contain receipt content',
           processingTimeMs: Date.now() - startTime,
         });
 
@@ -447,7 +500,7 @@ Only return valid JSON, no markdown or explanation.`
             user.email,
             user.username,
             'No receipt images found',
-            'We couldn\'t find any receipt images in your email. Please attach a photo or PDF of your receipt and try again.'
+            'We couldn\'t find any receipt images in your email. If your receipt is embedded in the email body, we tried to extract it but couldn\'t find enough data. Please attach a photo or PDF of your receipt and try again.'
           );
         }
 

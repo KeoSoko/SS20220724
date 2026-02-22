@@ -150,6 +150,22 @@ export default function ReceiptDetail() {
     enabled: isValidId, // Only run query if ID is valid
   });
 
+  const isEmailBodyReceipt = receipt?.source === 'email';
+
+  const { data: emailDocData } = useQuery<{ emailDocumentId: number }>({
+    queryKey: ['/api/receipts', id, 'email-document'],
+    queryFn: async () => {
+      const res = await fetch(`/api/receipts/${id}/email-document`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+      });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: isValidId && !!receipt && isEmailBodyReceipt,
+  });
+
+  const emailDocumentId = emailDocData?.emailDocumentId;
+
   // Query for custom categories
   const { data: customCategories = [], isLoading: customCategoriesLoading, error: customCategoriesError } = useQuery<Array<{ id: number; name: string; isActive: boolean }>>({
     queryKey: ["/api/custom-categories"],
@@ -972,7 +988,7 @@ export default function ReceiptDetail() {
         {/* Receipt image card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle>Receipt Image</CardTitle>
+            <CardTitle>{emailDocumentId ? 'Original Email Receipt' : 'Receipt Image'}</CardTitle>
             <div className="flex items-center gap-2">
               {imageUrl && (imageUrl.includes('.pdf') || imageUrl.includes('application/pdf')) && (
                 <a
@@ -986,7 +1002,7 @@ export default function ReceiptDetail() {
                   </Button>
                 </a>
               )}
-              {receipt.blobName && !receipt.imageData && (
+              {!emailDocumentId && receipt.blobName && !receipt.imageData && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -1004,7 +1020,17 @@ export default function ReceiptDetail() {
             </div>
           </CardHeader>
           <CardContent className="flex justify-center">
-            {isRefreshingImage ? (
+            {emailDocumentId ? (
+              <div className="w-full">
+                <iframe
+                  src={`/api/email-documents/${emailDocumentId}/render?token=${localStorage.getItem('token')}`}
+                  sandbox="allow-same-origin"
+                  className="w-full border border-gray-200 rounded-none bg-white"
+                  style={{ minHeight: '500px', height: '700px' }}
+                  title="Original email receipt"
+                />
+              </div>
+            ) : isRefreshingImage ? (
               <div className="flex items-center justify-center h-[400px] w-full">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 <span className="ml-2 text-muted-foreground">Loading image...</span>

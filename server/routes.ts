@@ -39,7 +39,8 @@ import {
   workspaces,
   workspaceMembers,
   workspaceInvites,
-  subscriptionPlans
+  subscriptionPlans,
+  emailDocuments
 } from "@shared/schema";
 import { azureStorage } from "./azure-storage";
 import { azureFormRecognizer } from "./azure-form-recognizer";
@@ -2272,6 +2273,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Generate a new SAS URL for a blob (when the old one expires)
+  app.get("/api/receipts/:id/email-document", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    const receiptId = parseInt(req.params.id, 10);
+    if (isNaN(receiptId)) return res.status(400).json({ error: "Invalid receipt ID" });
+
+    try {
+      const [doc] = await db.select({ id: emailDocuments.id })
+        .from(emailDocuments)
+        .where(eq(emailDocuments.receiptId, receiptId))
+        .limit(1);
+
+      if (!doc) {
+        return res.status(404).json({ error: "No email document found for this receipt" });
+      }
+      return res.json({ emailDocumentId: doc.id });
+    } catch (error: any) {
+      return res.status(500).json({ error: "Failed to look up email document" });
+    }
+  });
+
+  app.get("/api/email-documents/:id/render", (req, _res, next) => {
+    if (!req.headers.authorization && req.query.token) {
+      req.headers.authorization = `Bearer ${req.query.token}`;
+    }
+    next();
+  }, requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    const docId = parseInt(req.params.id, 10);
+    if (isNaN(docId)) return res.status(400).json({ error: "Invalid document ID" });
+
+    try {
+      const [doc] = await db.select({
+        id: emailDocuments.id,
+        rawHtml: emailDocuments.rawHtml,
+        rawText: emailDocuments.rawText,
+        userId: emailDocuments.userId,
+        workspaceId: emailDocuments.workspaceId,
+      })
+        .from(emailDocuments)
+        .where(eq(emailDocuments.id, docId))
+        .limit(1);
+
+      if (!doc) {
+        return res.status(404).send("<html><body><p>Email document not found.</p></body></html>");
+      }
+
+      const user = req.user as any;
+      if (doc.workspaceId !== user.workspaceId) {
+        return res.status(403).send("<html><body><p>Access denied.</p></body></html>");
+      }
+
+      let html = doc.rawHtml;
+      if (!html) {
+        const escapedText = (doc.rawText || "No content available")
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+        html = `<html><body style="font-family: sans-serif; padding: 20px; color: #333;">${escapedText}</body></html>`;
+      }
+
+      html = html.replace(/<script[\s\S]*?<\/script>/gi, "");
+      html = html.replace(/<noscript[\s\S]*?<\/noscript>/gi, "");
+      html = html.replace(/\son\w+\s*=\s*["'][^"']*["']/gi, "");
+      html = html.replace(/\son\w+\s*=\s*[^\s>]*/gi, "");
+      html = html.replace(/javascript\s*:/gi, "void:");
+      html = html.replace(/data\s*:\s*text\/html/gi, "void:");
+      html = html.replace(/<link[^>]*rel\s*=\s*["']?import["']?[^>]*>/gi, "");
+      html = html.replace(/<meta[^>]*http-equiv\s*=\s*["']?refresh["']?[^>]*>/gi, "");
+      html = html.replace(/<form[\s\S]*?<\/form>/gi, "");
+      html = html.replace(/<iframe[\s\S]*?<\/iframe>/gi, "");
+      html = html.replace(/<object[\s\S]*?<\/object>/gi, "");
+      html = html.replace(/<embed[^>]*>/gi, "");
+
+      const styleOverride = `<style>
+        body { max-width: 100% !important; overflow-x: hidden !important; margin: 0 !important; padding: 8px !important; }
+        img { max-width: 100% !important; height: auto !important; }
+        table { max-width: 100% !important; }
+        * { box-sizing: border-box !important; }
+      </style>`;
+
+      if (html.includes("</head>")) {
+        html = html.replace("</head>", `${styleOverride}</head>`);
+      } else if (html.includes("<body")) {
+        html = html.replace("<body", `${styleOverride}<body`);
+      } else {
+        html = styleOverride + html;
+      }
+
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Content-Security-Policy",
+        "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; font-src https: data:;"
+      );
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      return res.send(html);
+    } catch (error: any) {
+      return res.status(500).send("<html><body><p>Failed to render email document.</p></body></html>");
+    }
+  });
+
   app.get("/api/receipts/:id/refresh-image-url", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 

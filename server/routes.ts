@@ -2337,8 +2337,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       html = html.replace(/\son\w+\s*=\s*[^\s>]*/gi, "");
       html = html.replace(/javascript\s*:/gi, "void:");
       html = html.replace(/data\s*:\s*text\/html/gi, "void:");
-      html = html.replace(/<link[^>]*rel\s*=\s*["']?import["']?[^>]*>/gi, "");
-      html = html.replace(/<meta[^>]*http-equiv\s*=\s*["']?refresh["']?[^>]*>/gi, "");
+      html = html.replace(/<link\b[^>]*>/gi, "");
+      html = html.replace(/<meta[^>]*http-equiv\s*=\s*["'][^"']*["'][^>]*>/gi, "");
+      html = html.replace(/<base\b[^>]*>/gi, "");
       html = html.replace(/<form[\s\S]*?<\/form>/gi, "");
       html = html.replace(/<iframe[\s\S]*?<\/iframe>/gi, "");
       html = html.replace(/<object[\s\S]*?<\/object>/gi, "");

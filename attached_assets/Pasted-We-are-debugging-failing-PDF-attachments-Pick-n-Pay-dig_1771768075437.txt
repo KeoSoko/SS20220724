@@ -1,0 +1,133 @@
+We are debugging failing PDF attachments (Pick n Pay digital receipts).
+
+The error shown is:
+
+"All attachments failed to process (OCR/upload errors)"
+
+We need full observability into the PDF processing pipeline.
+
+⚠️ Do NOT refactor logic.
+⚠️ Do NOT change extraction rules.
+⚠️ Do NOT modify vendor engine.
+⚠️ Do NOT modify HTML rendering.
+⚠️ Do NOT change storage logic.
+
+This step is pure instrumentation.
+
+🎯 Objective
+
+For a single failing PNP PDF attachment, log the full execution path:
+
+Was PDF detected?
+
+Did pdf-parse run?
+
+What was extracted text length?
+
+Did Azure upload run?
+
+Did pdf2pic conversion run?
+
+Did OCR run?
+
+What exact error was thrown?
+
+At which stage did failure occur?
+
+🧱 Add Structured Stage Logs
+
+Inside the PDF attachment handler, add ONE structured JSON log per stage.
+
+At attachment detection:
+console.log(JSON.stringify({
+  stage: "PDF_ATTACHMENT_DETECTED",
+  filename: file.originalname,
+  size: file.size,
+  mimetype: file.mimetype
+}));
+
+Before pdf-parse:
+console.log(JSON.stringify({
+  stage: "PDF_TEXT_EXTRACTION_ATTEMPTED"
+}));
+
+After pdf-parse:
+console.log(JSON.stringify({
+  stage: "PDF_TEXT_EXTRACTION_RESULT",
+  textLength: extractedText?.length || 0,
+  preview: extractedText?.substring(0, 300) || null
+}));
+
+Before Azure upload:
+console.log(JSON.stringify({
+  stage: "AZURE_UPLOAD_ATTEMPTED"
+}));
+
+After Azure upload:
+console.log(JSON.stringify({
+  stage: "AZURE_UPLOAD_SUCCESS"
+}));
+
+
+If it fails:
+
+console.log(JSON.stringify({
+  stage: "AZURE_UPLOAD_FAILED",
+  error: error.message
+}));
+
+Before pdf2pic conversion:
+console.log(JSON.stringify({
+  stage: "PDF2PIC_CONVERSION_ATTEMPTED"
+}));
+
+Before OCR:
+console.log(JSON.stringify({
+  stage: "OCR_ATTEMPTED"
+}));
+
+Final catch block:
+
+In the main try/catch of the PDF pipeline:
+
+console.log(JSON.stringify({
+  stage: "PDF_PIPELINE_FAILED",
+  error: error.message,
+  stack: error.stack
+}));
+
+🚫 Important
+
+Each stage must log in ONE JSON block.
+
+Do not log multiple console lines per stage.
+
+Do not modify pipeline flow.
+
+Do not suppress errors.
+
+We want raw truth.
+
+After Instrumentation
+
+Deploy.
+Send ONE failing PNP PDF again.
+Copy the full structured log sequence for that request.
+Paste it here raw.
+
+Do not summarize.
+Do not interpret.
+
+This will tell us:
+
+Whether pdf-parse is failing
+
+Whether Azure upload is failing
+
+Whether OCR is unnecessarily triggered
+
+Whether pipeline ordering is wrong
+
+Whether an exception is aborting early
+
+We’re isolating the exact break point.

@@ -5,6 +5,9 @@ import type { Receipt, Budget } from '../shared/schema.js';
 import { storage } from './storage.js';
 import { azureStorage } from './azure-storage.js';
 import { formatReportingCategory, getReportingCategory } from './reporting-utils.js';
+import { db } from './db.js';
+import { emailDocuments } from '../shared/schema.js';
+import { eq } from 'drizzle-orm';
 
 /**
  * Compress and resize logo image to reduce PDF size for email attachments
@@ -479,12 +482,32 @@ export class ExportService {
    */
   async exportSingleReceiptToPDF(receipt: Receipt): Promise<Buffer> {
     try {
+      let isEmailHtmlReceipt = false;
+      if (receipt.source === 'email') {
+        const [emailDoc] = await db.select({ id: emailDocuments.id, sourceType: emailDocuments.sourceType })
+          .from(emailDocuments)
+          .where(eq(emailDocuments.receiptId, receipt.id))
+          .limit(1);
+        if (emailDoc && emailDoc.sourceType === 'email_body') {
+          isEmailHtmlReceipt = true;
+        }
+      }
+
+      if (isEmailHtmlReceipt) {
+        console.log(JSON.stringify({
+          stage: "EXPORT_HTML_RECEIPT_SUMMARY_ONLY",
+          receiptId: receipt.id,
+          timestamp: new Date().toISOString()
+        }));
+      }
+
       console.log(JSON.stringify({
         stage: "EXPORT_SINGLE_RECEIPT_BY_ID",
         receiptId: receipt.id,
         storeName: receipt.storeName,
         total: receipt.total,
         date: receipt.date.toISOString(),
+        isEmailHtml: isEmailHtmlReceipt,
         timestamp: new Date().toISOString()
       }));
 
@@ -521,6 +544,21 @@ export class ExportService {
       if (receipt.notes) {
         doc.text(`Notes: ${sanitizeTextForPDF(receipt.notes)}`, 20, yPos);
         yPos += 10;
+      }
+
+      if (isEmailHtmlReceipt) {
+        yPos += 5;
+        doc.setFillColor(240, 248, 255);
+        doc.rect(15, yPos - 5, 180, 25, 'F');
+        doc.setDrawColor(0, 115, 170);
+        doc.rect(15, yPos - 5, 180, 25, 'S');
+        doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+        doc.setFontSize(10);
+        doc.text('Document Source: Email (HTML)', 20, yPos + 3);
+        doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+        doc.setFontSize(9);
+        doc.text('Original email receipt available in the app.', 20, yPos + 13);
+        yPos += 30;
       }
 
       if (receipt.items && receipt.items.length > 0) {

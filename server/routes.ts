@@ -2293,6 +2293,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/email-documents/:id/download", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    const docId = parseInt(req.params.id, 10);
+    if (isNaN(docId)) return res.status(400).json({ error: "Invalid document ID" });
+
+    try {
+      const [doc] = await db.select({
+        id: emailDocuments.id,
+        rawHtml: emailDocuments.rawHtml,
+        rawText: emailDocuments.rawText,
+        userId: emailDocuments.userId,
+        workspaceId: emailDocuments.workspaceId,
+        subject: emailDocuments.subject,
+        vendor: emailDocuments.vendor,
+      })
+        .from(emailDocuments)
+        .where(eq(emailDocuments.id, docId))
+        .limit(1);
+
+      if (!doc) {
+        return res.status(404).json({ error: "Email document not found" });
+      }
+
+      const user = req.user as any;
+      if (doc.workspaceId !== user.workspaceId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      let html = doc.rawHtml;
+      if (!html) {
+        const escapedText = (doc.rawText || "No content available")
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+        html = `<html><body style="font-family: sans-serif; padding: 20px; color: #333;">${escapedText}</body></html>`;
+      }
+
+      html = html.replace(/<script[\s\S]*?<\/script>/gi, "");
+      html = html.replace(/<noscript[\s\S]*?<\/noscript>/gi, "");
+      html = html.replace(/\son\w+\s*=\s*["'][^"']*["']/gi, "");
+      html = html.replace(/\son\w+\s*=\s*[^\s>]*/gi, "");
+      html = html.replace(/javascript\s*:/gi, "void:");
+
+      const safeName = (doc.vendor || doc.subject || 'email_receipt').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
+      const filename = `${safeName}.html`;
+
+      res.set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      });
+      res.send(html);
+    } catch (error: any) {
+      log(`Error downloading email document: ${error}`, "api");
+      return res.status(500).json({ error: "Failed to download email document" });
+    }
+  });
+
   app.get("/api/email-documents/:id/render", (req, _res, next) => {
     if (!req.headers.authorization && req.query.token) {
       req.headers.authorization = `Bearer ${req.query.token}`;

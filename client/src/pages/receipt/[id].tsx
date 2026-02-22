@@ -25,6 +25,7 @@ import {
   Edit2, 
   FileText, 
   Loader2, 
+  Mail,
   Plus,
   RefreshCcw,
   Save, 
@@ -685,8 +686,35 @@ export default function ReceiptDetail() {
                     <CardTitle className="text-2xl">{receipt.storeName}</CardTitle>
                     <CardDescription className="mt-1 flex items-center">
                       <Calendar className="h-4 w-4 mr-1" />
-                      {format(new Date(receipt.date), "d MMMM yyyy")} {/* South African format: day month year */}
+                      {format(new Date(receipt.date), "d MMMM yyyy")}
                     </CardDescription>
+                    {isEmailBodyReceipt && (
+                      <Badge variant="outline" className="mt-1 w-fit text-xs border-blue-300 text-blue-600 bg-blue-50">
+                        <Mail className="h-3 w-3 mr-1" />
+                        Source: Email Receipt (HTML)
+                      </Badge>
+                    )}
+                    {!isEmailBodyReceipt && receipt.source === 'email' && (
+                      <Badge variant="outline" className="mt-1 w-fit text-xs border-gray-300 text-gray-600 bg-gray-50">
+                        <Mail className="h-3 w-3 mr-1" />
+                        Source: Email Attachment
+                      </Badge>
+                    )}
+                    {receipt.source === 'scan' && (
+                      <Badge variant="outline" className="mt-1 w-fit text-xs border-green-300 text-green-600 bg-green-50">
+                        Source: Camera Scan
+                      </Badge>
+                    )}
+                    {receipt.source === 'gallery' && (
+                      <Badge variant="outline" className="mt-1 w-fit text-xs border-purple-300 text-purple-600 bg-purple-50">
+                        Source: Gallery Upload
+                      </Badge>
+                    )}
+                    {receipt.source === 'manual' && (
+                      <Badge variant="outline" className="mt-1 w-fit text-xs border-orange-300 text-orange-600 bg-orange-50">
+                        Source: Manual Entry
+                      </Badge>
+                    )}
                   </div>
                   <Badge 
                     className={`${getCategoryColor(receipt.category)}`}
@@ -992,6 +1020,41 @@ export default function ReceiptDetail() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle>{emailHtmlContent ? 'Original Email Receipt' : 'Receipt Image'}</CardTitle>
             <div className="flex items-center gap-2">
+              {emailDocumentId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      const token = localStorage.getItem('auth_token');
+                      const res = await fetch(`/api/email-documents/${emailDocumentId}/download`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                      });
+                      if (!res.ok) throw new Error('Download failed');
+                      const blob = await res.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      const disposition = res.headers.get('Content-Disposition');
+                      const filename = disposition?.match(/filename="(.+)"/)?.[1] || 'email_receipt.html';
+                      link.download = filename;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      window.URL.revokeObjectURL(url);
+                    } catch (error) {
+                      toast({
+                        title: "Download Failed",
+                        description: "Could not download original email document",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                >
+                  <Mail className="h-4 w-4 mr-2" />
+                  Download Original Email
+                </Button>
+              )}
               {imageUrl && (imageUrl.includes('.pdf') || imageUrl.includes('application/pdf')) && (
                 <a
                   href={imageUrl}

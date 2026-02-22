@@ -350,14 +350,31 @@ export class ExportService {
 
       // Add individual receipts with images if requested
       if (options.includeImages) {
+        const emailReceiptIds = filteredReceipts
+          .filter(r => r.source === 'email')
+          .map(r => r.id);
+        const emailHtmlReceiptIds = new Set<number>();
+        if (emailReceiptIds.length > 0) {
+          const emailDocs = await db.select({
+            receiptId: emailDocuments.receiptId,
+            sourceType: emailDocuments.sourceType,
+          })
+            .from(emailDocuments)
+            .where(
+              eq(emailDocuments.sourceType, 'email_body')
+            );
+          for (const doc_ of emailDocs) {
+            if (doc_.receiptId && emailReceiptIds.includes(doc_.receiptId)) {
+              emailHtmlReceiptIds.add(doc_.receiptId);
+            }
+          }
+        }
+
         for (const receipt of filteredReceipts) {
-          // Check if receipt has image data (either local file or Azure blob)
           if (receipt.imageData || receipt.blobUrl || receipt.blobName) {
             try {
-              // Add new page for each receipt
               doc.addPage();
               
-              // Receipt header
               doc.setFontSize(16);
               doc.text(`Receipt: ${receipt.storeName}`, 20, 20);
               
@@ -365,8 +382,30 @@ export class ExportService {
               doc.text(`Date: ${receipt.date.toLocaleDateString()}`, 20, 35);
               doc.text(`Total: R ${receipt.total}`, 20, 45);
               doc.text(`Category: ${this.getReceiptCategoryLabel(receipt)}`, 20, 55);
+              let metaY = 65;
               if (receipt.paymentMethod) {
-                doc.text(`Payment: ${receipt.paymentMethod}`, 20, 65);
+                doc.text(`Payment: ${receipt.paymentMethod}`, 20, metaY);
+                metaY += 10;
+              }
+
+              if (emailHtmlReceiptIds.has(receipt.id)) {
+                console.log(JSON.stringify({
+                  stage: "EXPORT_HTML_RECEIPT_IN_BULK",
+                  receiptId: receipt.id,
+                  timestamp: new Date().toISOString()
+                }));
+                metaY += 2;
+                doc.setFillColor(240, 248, 255);
+                doc.rect(15, metaY - 5, 180, 20, 'F');
+                doc.setDrawColor(0, 115, 170);
+                doc.rect(15, metaY - 5, 180, 20, 'S');
+                doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+                doc.setFontSize(9);
+                doc.text('Document Source: Email (HTML)', 20, metaY + 2);
+                doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+                doc.setFontSize(8);
+                doc.text('Original email receipt available in the app.', 20, metaY + 10);
+                doc.setTextColor(0, 0, 0);
               }
               
               let imageData = null;

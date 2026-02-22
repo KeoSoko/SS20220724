@@ -1,0 +1,130 @@
+We are now in production-stable state.
+
+Transport layer is confirmed working:
+
+SendGrid sending correct multipart
+
+Multer parsing correctly
+
+req.files populated
+
+Buffer present
+
+OCR works on some PDFs
+
+However, some receipts are still failing or extracting incorrectly.
+
+DO NOT refactor.
+DO NOT rewrite architecture.
+DO NOT change validation thresholds yet.
+
+This task is STRICTLY to trace execution for a single failing receipt.
+
+🎯 OBJECTIVE
+
+Instrument the receipt processing pipeline so we can see:
+
+Which branch was taken (PDF text vs OCR vs body)
+
+Text length extracted
+
+First 500 characters of extracted text
+
+Validation decision + exact reason
+
+AI extraction output
+
+AI confidence score
+
+Final save decision
+
+1️⃣ Add Structured Stage Logging
+
+Add logs like this:
+
+console.log("STAGE: Attachment detected");
+console.log("STAGE: PDF text extraction attempted");
+console.log("Extracted text length:", text.length);
+console.log("Text preview:", text.substring(0, 500));
+console.log("Validation result:", isValid);
+console.log("Validation failure reason:", reason);
+console.log("AI output:", aiResult);
+console.log("AI confidence:", aiResult?.confidence);
+console.log("FINAL DECISION:", decision);
+
+
+Each log must clearly identify which processing branch ran:
+
+PDF_TEXT_SUCCESS
+
+PDF_TEXT_FAILED
+
+OCR_FALLBACK_TRIGGERED
+
+BODY_PARSING_TRIGGERED
+
+VALIDATION_REJECTED
+
+RECEIPT_SAVED
+
+2️⃣ Log Validation Internals
+
+Inside looksLikeReceipt() (or equivalent), log:
+
+Currency match result
+
+Keyword match result
+
+Merchant detection result
+
+Text length
+
+Which rule failed
+
+3️⃣ Log AI Input
+
+Before calling AI extraction, log:
+
+Text length sent to AI
+
+First 300 characters
+
+We need to verify we are not sending:
+
+Empty string
+
+Stripped header only
+
+Truncated text
+
+4️⃣ Do NOT Modify Logic
+
+No threshold changes.
+No regex changes.
+No prompt changes.
+No refactors.
+
+This step is pure observability.
+
+5️⃣ After Logging Is Added
+
+Explain clearly:
+
+Exact execution path for a failing receipt
+
+Why it failed
+
+Whether failure was validation or extraction
+
+Whether text extraction returned insufficient content
+
+Do not guess.
+Base explanation only on logs.
+
+Stop after instrumentation + analysis.
+
+Then:
+
+Send one known failing receipt.
+Copy full log block.
+Paste it back to me.

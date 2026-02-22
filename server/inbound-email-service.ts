@@ -214,22 +214,29 @@ export class InboundEmailService {
     const storeName = parsed.storeName || '';
     const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
 
+    log(`[VALIDATION] Input: storeName="${storeName}", total="${total}" (parsed: ${totalNum}), confidence=${confidence}, items=${parsed.items?.length || 0}`, 'inbound-email');
+
     if (isNaN(totalNum) || totalNum <= 0) {
+      log(`[VALIDATION] REJECTED: Invalid or zero total amount: "${total}"`, 'inbound-email');
       return { valid: false, reason: `Invalid or zero total amount: "${total}"` };
     }
 
     if (totalNum > 500000) {
+      log(`[VALIDATION] REJECTED: Total unreasonably high: R${total}`, 'inbound-email');
       return { valid: false, reason: `Total amount unreasonably high: R${total}` };
     }
 
     if (!storeName || storeName === 'Unknown Store' || storeName.length < 2) {
+      log(`[VALIDATION] REJECTED: Missing or invalid store name: "${storeName}"`, 'inbound-email');
       return { valid: false, reason: `Missing or invalid store name: "${storeName}"` };
     }
 
     if (confidence < 0.3) {
+      log(`[VALIDATION] REJECTED: AI confidence too low: ${confidence}`, 'inbound-email');
       return { valid: false, reason: `AI confidence too low: ${confidence}` };
     }
 
+    log(`[VALIDATION] PASSED: All checks OK`, 'inbound-email');
     return { valid: true, reason: 'Passed all validation checks' };
   }
 
@@ -271,13 +278,15 @@ export class InboundEmailService {
     const bodyText = normalizedBody.toLowerCase();
     const combined = subjectLower + ' ' + bodyText;
 
-    let matchCount = 0;
+    const matchedKeywords: string[] = [];
     for (const keyword of InboundEmailService.RECEIPT_KEYWORDS) {
       if (combined.includes(keyword.toLowerCase())) {
-        matchCount++;
+        matchedKeywords.push(keyword);
       }
     }
-    return matchCount >= 2;
+    const result = matchedKeywords.length >= 2;
+    log(`[isEmailBodyReceiptLike] Subject: "${subject}", bodyLength: ${normalizedBody.length}, matchedKeywords: [${matchedKeywords.join(', ')}] (${matchedKeywords.length}/2 needed), result: ${result}`, 'inbound-email');
+    return result;
   }
 
 
@@ -337,18 +346,24 @@ export class InboundEmailService {
     textBody?: string,
     emailReceiptId?: number
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
+    log(`[STAGE] BODY_PARSING_TRIGGERED`, 'inbound-email');
     const rawBody = textBody || (htmlBody ? this.stripHtml(htmlBody) : '');
+    log(`[processEmailBody] Raw body length: ${rawBody.length}, source: ${textBody ? 'textBody' : 'htmlBody stripped'}`, 'inbound-email');
     const signatureStripped = this.stripEmailSignature(rawBody);
+    log(`[processEmailBody] After signature strip: ${signatureStripped.length} chars (removed ${rawBody.length - signatureStripped.length})`, 'inbound-email');
     const bodyText = this.stripForwardedContent(signatureStripped);
+    log(`[processEmailBody] After forwarded strip: ${bodyText.length} chars (removed ${signatureStripped.length - bodyText.length})`, 'inbound-email');
 
     if (!bodyText || bodyText.length < 50) {
       log(`[processEmailBody] Body too short after stripping (${bodyText?.length || 0} chars), skipping`, 'inbound-email');
+      log(`[STAGE] BODY_PARSING_FAILED: body too short (${bodyText?.length || 0} chars)`, 'inbound-email');
       return { success: false, error: 'Email body too short to extract receipt data' };
     }
 
     const truncatedBody = bodyText.substring(0, 8000);
 
     log(`[processEmailBody] Attempting AI extraction from email body (${bodyText.length} chars, truncated to ${truncatedBody.length})`, 'inbound-email');
+    log(`[processEmailBody] AI input preview (first 300 chars): ${truncatedBody.substring(0, 300)}`, 'inbound-email');
 
     try {
       const response = await openai.chat.completions.create({
@@ -382,8 +397,10 @@ Only return valid JSON, no markdown or explanation.`
       });
 
       const content = response.choices[0]?.message?.content?.trim();
+      log(`[processEmailBody] AI raw response: ${content?.substring(0, 500)}`, 'inbound-email');
       if (!content) {
         log(`[processEmailBody] AI returned empty response`, 'inbound-email');
+        log(`[STAGE] BODY_PARSING_FAILED: AI returned empty response`, 'inbound-email');
         return { success: false, error: 'AI returned empty response' };
       }
 
@@ -393,11 +410,13 @@ Only return valid JSON, no markdown or explanation.`
         parsed = JSON.parse(jsonStr);
       } catch (parseError) {
         log(`[processEmailBody] Failed to parse AI response: ${content}`, 'inbound-email');
+        log(`[STAGE] BODY_PARSING_FAILED: AI response not valid JSON`, 'inbound-email');
         return { success: false, error: 'Failed to parse AI extraction result' };
       }
 
       if (parsed.error) {
         log(`[processEmailBody] AI could not extract receipt: ${parsed.error}`, 'inbound-email');
+        log(`[STAGE] BODY_PARSING_FAILED: AI said "${parsed.error}"`, 'inbound-email');
         return { success: false, error: parsed.error };
       }
 
@@ -407,11 +426,12 @@ Only return valid JSON, no markdown or explanation.`
       const items = Array.isArray(parsed.items) ? parsed.items : [];
       const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;
 
-      log(`[processEmailBody] AI extracted: ${storeName}, R${total}, ${items.length} items, confidence: ${confidence}`, 'inbound-email');
+      log(`[processEmailBody] AI output: storeName="${storeName}", total="${total}", date="${dateStr}", items=${items.length}, confidence=${confidence}`, 'inbound-email');
 
       const validation = this.validateExtractedReceipt({ storeName, total, confidence, items });
       if (!validation.valid) {
         log(`[processEmailBody] VALIDATION FAILED: ${validation.reason} — receipt NOT saved`, 'inbound-email');
+        log(`[STAGE] VALIDATION_REJECTED (body): ${validation.reason}`, 'inbound-email');
         return { success: false, error: `Validation failed: ${validation.reason}` };
       }
       log(`[processEmailBody] Validation passed: ${validation.reason}`, 'inbound-email');
@@ -498,11 +518,13 @@ Only return valid JSON, no markdown or explanation.`
         .returning();
 
       log(`[processEmailBody] Created receipt #${receipt.id}${isPotentialDuplicate ? ' (potential duplicate)' : ''}`, 'inbound-email');
+      log(`[STAGE] RECEIPT_SAVED (body): receipt #${receipt.id}, store="${storeName}", total=R${total}, confidence=${confidence}`, 'inbound-email');
 
       return { success: true, receiptId: receipt.id };
 
     } catch (error: any) {
       log(`[processEmailBody] AI extraction failed: ${error.message}`, 'inbound-email');
+      log(`[STAGE] BODY_PARSING_FAILED: exception: ${error.message}`, 'inbound-email');
       return { success: false, error: `AI extraction failed: ${error.message}` };
     }
   }
@@ -519,6 +541,7 @@ Only return valid JSON, no markdown or explanation.`
     const truncatedText = pdfText.substring(0, 8000);
 
     log(`[processPdfAttachment] Attempting AI extraction from PDF text (${pdfText.length} chars, truncated to ${truncatedText.length})`, 'inbound-email');
+    log(`[processPdfAttachment] AI input preview (first 300 chars): ${truncatedText.substring(0, 300)}`, 'inbound-email');
 
     const response = await openai.chat.completions.create({
       model: "gpt-4.1",
@@ -549,7 +572,9 @@ Only return valid JSON, no markdown or explanation.`
     });
 
     const content = response.choices[0]?.message?.content?.trim();
+    log(`[processPdfAttachment] AI raw response: ${content?.substring(0, 500)}`, 'inbound-email');
     if (!content) {
+      log(`[STAGE] PDF_TEXT_FAILED: AI returned empty response`, 'inbound-email');
       throw new Error('AI returned empty response for PDF text');
     }
 
@@ -559,11 +584,13 @@ Only return valid JSON, no markdown or explanation.`
       parsed = JSON.parse(jsonStr);
     } catch (parseError) {
       log(`[processPdfAttachment] Failed to parse AI response: ${content}`, 'inbound-email');
+      log(`[STAGE] PDF_TEXT_FAILED: AI response not valid JSON`, 'inbound-email');
       throw new Error('Failed to parse AI extraction result from PDF text');
     }
 
     if (parsed.error) {
       log(`[processPdfAttachment] AI could not extract receipt: ${parsed.error}`, 'inbound-email');
+      log(`[STAGE] PDF_TEXT_FAILED: AI said "${parsed.error}"`, 'inbound-email');
       throw new Error(parsed.error);
     }
 
@@ -573,11 +600,12 @@ Only return valid JSON, no markdown or explanation.`
     const items = Array.isArray(parsed.items) ? parsed.items : [];
     const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;
 
-    log(`[processPdfAttachment] AI extracted: ${storeName}, R${total}, ${items.length} items, confidence: ${confidence}`, 'inbound-email');
+    log(`[processPdfAttachment] AI output: storeName="${storeName}", total="${total}", date="${dateStr}", items=${items.length}, confidence=${confidence}`, 'inbound-email');
 
     const validation = this.validateExtractedReceipt({ storeName, total, confidence, items });
     if (!validation.valid) {
       log(`[processPdfAttachment] VALIDATION FAILED: ${validation.reason} — receipt NOT saved`, 'inbound-email');
+      log(`[STAGE] VALIDATION_REJECTED (pdf_text): ${validation.reason}`, 'inbound-email');
       throw new Error(`Validation failed: ${validation.reason}`);
     }
     log(`[processPdfAttachment] Validation passed: ${validation.reason}`, 'inbound-email');
@@ -640,6 +668,7 @@ Only return valid JSON, no markdown or explanation.`
       .returning();
 
     log(`[processPdfAttachment] Created receipt #${receipt.id} (PDF stored: ${!!pdfBlobUrl})${isPotentialDuplicate ? ' (potential duplicate)' : ''}`, 'inbound-email');
+    log(`[STAGE] RECEIPT_SAVED (pdf_text): receipt #${receipt.id}, store="${storeName}", total=R${total}, confidence=${confidence}`, 'inbound-email');
 
     return { success: true, receiptId: receipt.id };
   }
@@ -1052,6 +1081,7 @@ Only return valid JSON, no markdown or explanation.`
     emailReceiptId: number
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
     log(`[processPdfAttachment] Processing PDF: ${attachment.filename} (${attachment.content.length} bytes)`, 'inbound-email');
+    log(`[STAGE] PDF_ATTACHMENT_DETECTED: ${attachment.filename} (${attachment.content.length} bytes)`, 'inbound-email');
 
     let pdfBlobUrl: string | null = null;
     let pdfBlobName: string | null = null;
@@ -1067,12 +1097,14 @@ Only return valid JSON, no markdown or explanation.`
       log(`[processPdfAttachment] Failed to upload original PDF: ${pdfUploadError.message}`, 'inbound-email');
     }
 
+    log(`[STAGE] PDF_TEXT_EXTRACTION_ATTEMPTED`, 'inbound-email');
     try {
       const pdfText = await extractTextFromPdf(attachment.content);
       log(`[processPdfAttachment] pdf-parse extracted ${pdfText?.length || 0} chars`, 'inbound-email');
+      log(`[processPdfAttachment] pdf-parse text preview (first 300 chars): ${pdfText?.substring(0, 300)}`, 'inbound-email');
 
       if (pdfText && pdfText.length >= 100) {
-        log(`[processPdfAttachment] Text extraction successful (${pdfText.length} chars), sending to AI...`, 'inbound-email');
+        log(`[STAGE] PDF_TEXT_SUCCESS: ${pdfText.length} chars extracted, sending to AI`, 'inbound-email');
         const result = await this.extractReceiptFromPdfText(
           userId,
           workspaceId,
@@ -1083,24 +1115,32 @@ Only return valid JSON, no markdown or explanation.`
           pdfBlobName
         );
         if (result.success) {
+          log(`[STAGE] FINAL_DECISION: PDF_TEXT path succeeded`, 'inbound-email');
           return result;
         }
         log(`[processPdfAttachment] AI extraction from text failed: ${result.error}, falling back to image conversion...`, 'inbound-email');
+        log(`[STAGE] PDF_TEXT_FAILED: AI extraction failed (${result.error}), trying OCR fallback`, 'inbound-email');
       } else {
         log(`[processPdfAttachment] Text too short (${pdfText?.length || 0} chars < 100), falling back to image conversion...`, 'inbound-email');
+        log(`[STAGE] PDF_TEXT_FAILED: text too short (${pdfText?.length || 0} chars), trying OCR fallback`, 'inbound-email');
       }
     } catch (textError: any) {
       log(`[processPdfAttachment] pdf-parse failed: ${textError.message}, falling back to image conversion...`, 'inbound-email');
+      log(`[STAGE] PDF_TEXT_FAILED: pdf-parse exception: ${textError.message}`, 'inbound-email');
     }
 
+    log(`[STAGE] OCR_FALLBACK_TRIGGERED`, 'inbound-email');
     try {
       const imageBase64 = await convertPdfToImage(attachment.content);
       log(`[processPdfAttachment] PDF-to-image conversion succeeded, running OCR...`, 'inbound-email');
+      log(`[STAGE] OCR_IMAGE_CONVERSION_SUCCESS`, 'inbound-email');
       return await this.processImageAttachment(userId, workspaceId, imageBase64, emailReceiptId);
     } catch (imgError: any) {
       log(`[processPdfAttachment] PDF-to-image conversion also failed: ${imgError.message}`, 'inbound-email');
+      log(`[STAGE] OCR_FALLBACK_FAILED: ${imgError.message}`, 'inbound-email');
     }
 
+    log(`[STAGE] FINAL_DECISION: BOTH paths failed (text extraction + image conversion)`, 'inbound-email');
     if (pdfBlobUrl) {
       return { success: false, error: `PDF processing failed (text extraction + image conversion). Original PDF stored at Azure.` };
     }
@@ -1114,15 +1154,17 @@ Only return valid JSON, no markdown or explanation.`
     emailReceiptId: number
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
     log(`[processImageAttachment] Running OCR...`, 'inbound-email');
+    log(`[STAGE] OCR_PROCESSING: sending image to Azure Form Recognizer`, 'inbound-email');
     const ocrResult = await azureFormRecognizer.analyzeReceipt(imageBase64);
 
     if (!ocrResult) {
+      log(`[STAGE] OCR_FAILED: Azure returned null/empty result`, 'inbound-email');
       throw new Error('OCR failed to extract receipt data');
     }
 
     const { storeName, total, date, items, confidenceScore } = ocrResult;
 
-    log(`[processImageAttachment] OCR extracted: ${storeName}, R${total}, ${items?.length || 0} items`, 'inbound-email');
+    log(`[processImageAttachment] OCR output: storeName="${storeName}", total="${total}", date="${date}", items=${items?.length || 0}, confidenceScore="${confidenceScore}"`, 'inbound-email');
 
     let category = 'other';
     try {
@@ -1191,6 +1233,7 @@ Only return valid JSON, no markdown or explanation.`
       .returning();
 
     log(`[processImageAttachment] Created receipt #${receipt.id}${isPotentialDuplicate ? ' (potential duplicate)' : ''}`, 'inbound-email');
+    log(`[STAGE] RECEIPT_SAVED (ocr): receipt #${receipt.id}, store="${receiptStoreName}", total=R${receiptTotal}`, 'inbound-email');
 
     return { success: true, receiptId: receipt.id };
   }
@@ -1203,16 +1246,20 @@ Only return valid JSON, no markdown or explanation.`
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
     try {
       log(`[processAttachment] ${attachment.filename} (${attachment.contentType}, ${attachment.content.length} bytes)`, 'inbound-email');
+      const isPdf = attachment.contentType === 'application/pdf' || isPdfBuffer(attachment.content);
+      log(`[STAGE] ATTACHMENT_ROUTING: ${attachment.filename} -> ${isPdf ? 'PDF pipeline' : 'IMAGE pipeline'}`, 'inbound-email');
 
-      if (attachment.contentType === 'application/pdf' || isPdfBuffer(attachment.content)) {
+      if (isPdf) {
         return await this.processPdfAttachment(userId, workspaceId, attachment, emailReceiptId);
       } else {
         const rawBase64 = `data:${attachment.contentType};base64,${attachment.content.toString('base64')}`;
+        log(`[STAGE] IMAGE_PREPROCESSING: enhancing image before OCR`, 'inbound-email');
         const imageBase64 = await imagePreprocessor.enhanceImage(rawBase64);
         return await this.processImageAttachment(userId, workspaceId, imageBase64, emailReceiptId);
       }
     } catch (error: any) {
       log(`[processAttachment] Error processing ${attachment.filename}: ${error.message}`, 'inbound-email');
+      log(`[STAGE] ATTACHMENT_FAILED: ${attachment.filename} - ${error.message}`, 'inbound-email');
       return { success: false, error: error.message };
     }
   }

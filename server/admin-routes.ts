@@ -1134,6 +1134,20 @@ Respond ONLY with valid JSON.`;
 
       log(`Admin reprocessing inbound email log #${logId} for user ${user.id} (${user.username})`, 'admin');
 
+      const hasReceiptContent = inboundEmailService.isEmailBodyReceiptLike(
+        logEntry.subject || '',
+        logEntry.htmlBody || undefined,
+        logEntry.textBody || undefined,
+      );
+
+      if (!hasReceiptContent) {
+        const bodyLen = (logEntry.htmlBody?.length || 0) + (logEntry.textBody?.length || 0);
+        log(`Reprocess log #${logId}: email body does not contain receipt-like content (${bodyLen} chars). Original had ${logEntry.attachmentCount} attachment(s).`, 'admin');
+        return res.status(400).json({ 
+          error: `Email body does not contain receipt data (${bodyLen} chars). The receipt was likely in a PDF/image attachment which cannot be reprocessed from stored data. Ask the user to forward the email again.`
+        });
+      }
+
       const result = await inboundEmailService.extractReceiptFromEmailBody(
         user.id,
         user.workspaceId,

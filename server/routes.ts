@@ -4346,14 +4346,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       log('Received inbound email webhook', 'inbound-email');
       
       const { inboundEmailService } = await import('./inbound-email-service');
+
+      if (!req.body) {
+        log('[webhook] No request body received', 'inbound-email');
+        return res.status(200).send('OK');
+      }
       
-      // Debug: Log all body fields
-      log(`Body fields: ${Object.keys(req.body).join(', ')}`, 'inbound-email');
-      log(`Attachments count from body: ${req.body.attachments || '0'}`, 'inbound-email');
-      log(`Attachment-info: ${req.body['attachment-info'] || 'none'}`, 'inbound-email');
-      log(`Files received: ${req.files ? (Array.isArray(req.files) ? req.files.length : Object.keys(req.files).length) : 0}`, 'inbound-email');
+      const bodyFields = Object.keys(req.body);
+      const filesCount = req.files ? (Array.isArray(req.files) ? req.files.length : Object.keys(req.files).length) : 0;
+      log(`[webhook] Body fields: ${bodyFields.join(', ')}`, 'inbound-email');
+      log(`[webhook] Attachments (body): ${req.body.attachments || '0'}, Files (multer): ${filesCount}`, 'inbound-email');
+      log(`[webhook] Attachment-info: ${req.body['attachment-info'] || 'none'}`, 'inbound-email');
       
-      // SendGrid Inbound Parse sends data as multipart form
       const emailData = {
         to: req.body.to || '',
         from: req.body.from || '',
@@ -4363,6 +4367,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         attachments: parseInt(req.body.attachments || '0'),
         'attachment-info': req.body['attachment-info'] || '',
       };
+
+      if (!emailData.to) {
+        log('[webhook] Missing "to" field, skipping', 'inbound-email');
+        return res.status(200).send('OK');
+      }
       
       log(`Inbound email from: ${emailData.from} to: ${emailData.to}`, 'inbound-email');
       

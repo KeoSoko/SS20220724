@@ -148,6 +148,91 @@ export class InboundEmailService {
     return lines.slice(0, cutIndex).join('\n').trim();
   }
 
+  stripForwardedContent(text: string): string {
+    if (!text) return text;
+
+    const forwardedMarkers = [
+      /^-{2,}\s*forwarded message\s*-{2,}/im,
+      /^-{3,}\s*original message\s*-{3,}/im,
+      /^-{5,}\s*original message\s*-{5,}/im,
+      /^begin forwarded message:/im,
+      /^>\s*from:/im,
+      /^on\s+.{10,80}\s+wrote:$/im,
+      /^from:\s+.+$/im,
+    ];
+
+    const lines = text.split(/\r?\n/);
+    let cutIndex = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      for (const marker of forwardedMarkers) {
+        if (marker.test(line)) {
+          if (i > 5) {
+            cutIndex = i;
+            break;
+          }
+        }
+      }
+      if (cutIndex !== -1) break;
+    }
+
+    if (cutIndex !== -1) {
+      const forwardedSection = lines.slice(cutIndex).join('\n');
+      const mainSection = lines.slice(0, cutIndex).join('\n').trim();
+
+      const forwardedReceiptKeywords = ['total', 'amount', 'vat', 'subtotal', 'tax invoice', 'receipt', 'invoice'];
+      const forwardedLower = forwardedSection.toLowerCase();
+      const mainLower = mainSection.toLowerCase();
+      let forwardedScore = 0;
+      let mainScore = 0;
+      for (const kw of forwardedReceiptKeywords) {
+        if (forwardedLower.includes(kw)) forwardedScore++;
+        if (mainLower.includes(kw)) mainScore++;
+      }
+
+      if (forwardedScore > mainScore && forwardedScore >= 2) {
+        log(`stripForwardedContent: forwarded section has more receipt content (${forwardedScore} vs ${mainScore} keywords), using forwarded section`, 'inbound-email');
+        return forwardedSection;
+      }
+
+      if (mainSection.length > 100 && mainScore >= 2) {
+        log(`stripForwardedContent: main section has receipt content (${mainScore} keywords), using main section only`, 'inbound-email');
+        return mainSection;
+      }
+
+      log(`stripForwardedContent: returning full text (main: ${mainScore} keywords, forwarded: ${forwardedScore} keywords)`, 'inbound-email');
+      return text;
+    }
+
+    return text;
+  }
+
+  validateExtractedReceipt(parsed: { storeName?: string; total?: string; confidence?: number; items?: string[] }): { valid: boolean; reason: string } {
+    const total = parsed.total || '0.00';
+    const totalNum = parseFloat(total);
+    const storeName = parsed.storeName || '';
+    const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
+
+    if (isNaN(totalNum) || totalNum <= 0) {
+      return { valid: false, reason: `Invalid or zero total amount: "${total}"` };
+    }
+
+    if (totalNum > 500000) {
+      return { valid: false, reason: `Total amount unreasonably high: R${total}` };
+    }
+
+    if (!storeName || storeName === 'Unknown Store' || storeName.length < 2) {
+      return { valid: false, reason: `Missing or invalid store name: "${storeName}"` };
+    }
+
+    if (confidence < 0.3) {
+      return { valid: false, reason: `AI confidence too low: ${confidence}` };
+    }
+
+    return { valid: true, reason: 'Passed all validation checks' };
+  }
+
   private stripHtml(html: string): string {
     let text = html
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -252,15 +337,18 @@ export class InboundEmailService {
     textBody?: string,
     emailReceiptId?: number
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
-    const bodyText = this.stripEmailSignature(textBody || (htmlBody ? this.stripHtml(htmlBody) : ''));
+    const rawBody = textBody || (htmlBody ? this.stripHtml(htmlBody) : '');
+    const signatureStripped = this.stripEmailSignature(rawBody);
+    const bodyText = this.stripForwardedContent(signatureStripped);
 
     if (!bodyText || bodyText.length < 50) {
+      log(`[processEmailBody] Body too short after stripping (${bodyText?.length || 0} chars), skipping`, 'inbound-email');
       return { success: false, error: 'Email body too short to extract receipt data' };
     }
 
     const truncatedBody = bodyText.substring(0, 8000);
 
-    log(`Attempting to extract receipt data from email body (${bodyText.length} chars)`, 'inbound-email');
+    log(`[processEmailBody] Attempting AI extraction from email body (${bodyText.length} chars, truncated to ${truncatedBody.length})`, 'inbound-email');
 
     try {
       const response = await openai.chat.completions.create({
@@ -271,15 +359,17 @@ export class InboundEmailService {
             content: `You are an expert at extracting receipt and invoice data from email text content. 
 Extract the following fields from the email body text. This is typically a forwarded email receipt, invoice, order confirmation, or payment notification from a South African or international retailer/service.
 
+IMPORTANT: Only extract data from the ACTUAL receipt/invoice/order content. Ignore forwarding headers, email signatures, reply chains, and promotional footers. Focus on the core transaction data.
+
 Return a JSON object with these fields:
 - storeName: The merchant/store/company name (string)
-- total: The total amount paid as a string (just the number, no currency symbol, e.g. "299.99")
+- total: The total amount paid as a string (just the number, no currency symbol, e.g. "299.99"). Must be > 0.
 - date: The transaction date in ISO format (YYYY-MM-DD). If no date found, use today's date.
 - items: An array of item descriptions (strings). Extract individual line items if visible. If none found, use an empty array.
 - currency: The currency code (e.g. "ZAR", "USD"). Default to "ZAR" if South African.
-- confidence: A number from 0 to 1 indicating how confident you are in the extraction.
+- confidence: A number from 0 to 1 indicating how confident you are in the extraction. Use low confidence (< 0.3) if the text doesn't clearly contain a transaction.
 
-If you cannot find a valid receipt/invoice/order in the text, return {"error": "No receipt data found"}.
+If you cannot find a valid receipt/invoice/order with a real monetary amount in the text, return {"error": "No receipt data found"}.
 Only return valid JSON, no markdown or explanation.`
           },
           {
@@ -293,6 +383,7 @@ Only return valid JSON, no markdown or explanation.`
 
       const content = response.choices[0]?.message?.content?.trim();
       if (!content) {
+        log(`[processEmailBody] AI returned empty response`, 'inbound-email');
         return { success: false, error: 'AI returned empty response' };
       }
 
@@ -301,12 +392,12 @@ Only return valid JSON, no markdown or explanation.`
         const jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         parsed = JSON.parse(jsonStr);
       } catch (parseError) {
-        log(`Failed to parse AI response: ${content}`, 'inbound-email');
+        log(`[processEmailBody] Failed to parse AI response: ${content}`, 'inbound-email');
         return { success: false, error: 'Failed to parse AI extraction result' };
       }
 
       if (parsed.error) {
-        log(`AI could not extract receipt: ${parsed.error}`, 'inbound-email');
+        log(`[processEmailBody] AI could not extract receipt: ${parsed.error}`, 'inbound-email');
         return { success: false, error: parsed.error };
       }
 
@@ -316,6 +407,15 @@ Only return valid JSON, no markdown or explanation.`
       const items = Array.isArray(parsed.items) ? parsed.items : [];
       const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;
 
+      log(`[processEmailBody] AI extracted: ${storeName}, R${total}, ${items.length} items, confidence: ${confidence}`, 'inbound-email');
+
+      const validation = this.validateExtractedReceipt({ storeName, total, confidence, items });
+      if (!validation.valid) {
+        log(`[processEmailBody] VALIDATION FAILED: ${validation.reason} — receipt NOT saved`, 'inbound-email');
+        return { success: false, error: `Validation failed: ${validation.reason}` };
+      }
+      log(`[processEmailBody] Validation passed: ${validation.reason}`, 'inbound-email');
+
       let receiptDate: Date;
       try {
         receiptDate = dateStr ? new Date(dateStr) : new Date();
@@ -323,8 +423,6 @@ Only return valid JSON, no markdown or explanation.`
       } catch {
         receiptDate = new Date();
       }
-
-      log(`AI extracted from email body: ${storeName}, R${total}, ${items.length} items, confidence: ${confidence}`, 'inbound-email');
 
       let previewImageBase64: string | null = null;
       let blobUrl: string | null = null;
@@ -344,10 +442,10 @@ Only return valid JSON, no markdown or explanation.`
           blobUrl = uploadResult.blobUrl;
           blobName = uploadResult.blobName;
           previewImageBase64 = null;
-          log(`Uploaded email body preview image to Azure: ${blobName}`, 'inbound-email');
+          log(`[processEmailBody] Uploaded preview image to Azure: ${blobName}`, 'inbound-email');
         }
       } catch (previewError: any) {
-        log(`Failed to generate/upload email body preview image: ${previewError.message}`, 'inbound-email');
+        log(`[processEmailBody] Failed to generate/upload preview image: ${previewError.message}`, 'inbound-email');
       }
 
       let category = 'other';
@@ -358,9 +456,9 @@ Only return valid JSON, no markdown or explanation.`
           total
         );
         category = categorization.category;
-        log(`AI categorized as: ${category}`, 'inbound-email');
+        log(`[processEmailBody] AI categorized as: ${category}`, 'inbound-email');
       } catch (catError: any) {
-        log(`AI categorization failed, using default: ${catError.message}`, 'inbound-email');
+        log(`[processEmailBody] AI categorization failed, using default: ${catError.message}`, 'inbound-email');
       }
 
       let isPotentialDuplicate = false;
@@ -369,11 +467,11 @@ Only return valid JSON, no markdown or explanation.`
           const duplicates = await storage.findDuplicateReceipts(userId, storeName, receiptDate, total);
           if (duplicates.length > 0) {
             isPotentialDuplicate = true;
-            log(`Found ${duplicates.length} potential duplicate(s) for email body receipt: ${storeName}, ${total}`, 'inbound-email');
+            log(`[processEmailBody] Found ${duplicates.length} potential duplicate(s): ${storeName}, R${total}`, 'inbound-email');
           }
         }
       } catch (dupError: any) {
-        log(`Duplicate check failed: ${dupError.message}`, 'inbound-email');
+        log(`[processEmailBody] Duplicate check failed: ${dupError.message}`, 'inbound-email');
       }
 
       const [receipt] = await db
@@ -399,12 +497,12 @@ Only return valid JSON, no markdown or explanation.`
         })
         .returning();
 
-      log(`Created receipt ${receipt.id} from email body extraction${isPotentialDuplicate ? ' (flagged as potential duplicate)' : ''}`, 'inbound-email');
+      log(`[processEmailBody] Created receipt #${receipt.id}${isPotentialDuplicate ? ' (potential duplicate)' : ''}`, 'inbound-email');
 
       return { success: true, receiptId: receipt.id };
 
     } catch (error: any) {
-      log(`AI email body extraction failed: ${error.message}`, 'inbound-email');
+      log(`[processEmailBody] AI extraction failed: ${error.message}`, 'inbound-email');
       return { success: false, error: `AI extraction failed: ${error.message}` };
     }
   }
@@ -417,10 +515,10 @@ Only return valid JSON, no markdown or explanation.`
     emailReceiptId: number,
     pdfBlobUrl: string | null = null,
     pdfBlobName: string | null = null
-  ): Promise<{ success: boolean; receiptId?: number }> {
+  ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
     const truncatedText = pdfText.substring(0, 8000);
 
-    log(`Attempting to extract receipt data from PDF text (${pdfText.length} chars)`, 'inbound-email');
+    log(`[processPdfAttachment] Attempting AI extraction from PDF text (${pdfText.length} chars, truncated to ${truncatedText.length})`, 'inbound-email');
 
     const response = await openai.chat.completions.create({
       model: "gpt-4.1",
@@ -432,11 +530,11 @@ Extract the following fields from the PDF text. This is typically a receipt, inv
 
 Return a JSON object with these fields:
 - storeName: The merchant/store/company name (string)
-- total: The total amount paid as a string (just the number, no currency symbol, e.g. "299.99")
+- total: The total amount paid as a string (just the number, no currency symbol, e.g. "299.99"). Must be > 0.
 - date: The transaction date in ISO format (YYYY-MM-DD). If no date found, use today's date.
 - items: An array of item descriptions (strings). Extract individual line items if visible. If none found, use an empty array.
 - currency: The currency code (e.g. "ZAR", "USD"). Default to "ZAR" if South African.
-- confidence: A number from 0 to 1 indicating how confident you are in the extraction.
+- confidence: A number from 0 to 1 indicating how confident you are in the extraction. Use low confidence (< 0.3) if data is ambiguous.
 
 If you cannot find a valid receipt/invoice/order in the text, return {"error": "No receipt data found"}.
 Only return valid JSON, no markdown or explanation.`
@@ -460,12 +558,12 @@ Only return valid JSON, no markdown or explanation.`
       const jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       parsed = JSON.parse(jsonStr);
     } catch (parseError) {
-      log(`Failed to parse AI response for PDF: ${content}`, 'inbound-email');
+      log(`[processPdfAttachment] Failed to parse AI response: ${content}`, 'inbound-email');
       throw new Error('Failed to parse AI extraction result from PDF text');
     }
 
     if (parsed.error) {
-      log(`AI could not extract receipt from PDF: ${parsed.error}`, 'inbound-email');
+      log(`[processPdfAttachment] AI could not extract receipt: ${parsed.error}`, 'inbound-email');
       throw new Error(parsed.error);
     }
 
@@ -475,6 +573,15 @@ Only return valid JSON, no markdown or explanation.`
     const items = Array.isArray(parsed.items) ? parsed.items : [];
     const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;
 
+    log(`[processPdfAttachment] AI extracted: ${storeName}, R${total}, ${items.length} items, confidence: ${confidence}`, 'inbound-email');
+
+    const validation = this.validateExtractedReceipt({ storeName, total, confidence, items });
+    if (!validation.valid) {
+      log(`[processPdfAttachment] VALIDATION FAILED: ${validation.reason} — receipt NOT saved`, 'inbound-email');
+      throw new Error(`Validation failed: ${validation.reason}`);
+    }
+    log(`[processPdfAttachment] Validation passed: ${validation.reason}`, 'inbound-email');
+
     let receiptDate: Date;
     try {
       receiptDate = dateStr ? new Date(dateStr) : new Date();
@@ -482,8 +589,6 @@ Only return valid JSON, no markdown or explanation.`
     } catch {
       receiptDate = new Date();
     }
-
-    log(`AI extracted from PDF text: ${storeName}, R${total}, ${items.length} items, confidence: ${confidence}`, 'inbound-email');
 
     let category = 'other';
     try {
@@ -493,9 +598,9 @@ Only return valid JSON, no markdown or explanation.`
         total
       );
       category = categorization.category;
-      log(`AI categorized as: ${category}`, 'inbound-email');
+      log(`[processPdfAttachment] AI categorized as: ${category}`, 'inbound-email');
     } catch (catError: any) {
-      log(`AI categorization failed, using default: ${catError.message}`, 'inbound-email');
+      log(`[processPdfAttachment] AI categorization failed, using default: ${catError.message}`, 'inbound-email');
     }
 
     let isPotentialDuplicate = false;
@@ -504,11 +609,11 @@ Only return valid JSON, no markdown or explanation.`
         const duplicates = await storage.findDuplicateReceipts(userId, storeName, receiptDate, total);
         if (duplicates.length > 0) {
           isPotentialDuplicate = true;
-          log(`Found ${duplicates.length} potential duplicate(s) for PDF receipt: ${storeName}, ${total}`, 'inbound-email');
+          log(`[processPdfAttachment] Found ${duplicates.length} potential duplicate(s): ${storeName}, R${total}`, 'inbound-email');
         }
       }
     } catch (dupError: any) {
-      log(`Duplicate check failed: ${dupError.message}`, 'inbound-email');
+      log(`[processPdfAttachment] Duplicate check failed: ${dupError.message}`, 'inbound-email');
     }
 
     const [receipt] = await db
@@ -534,7 +639,7 @@ Only return valid JSON, no markdown or explanation.`
       })
       .returning();
 
-    log(`Created receipt ${receipt.id} from PDF text extraction (PDF stored: ${!!pdfBlobUrl})${isPotentialDuplicate ? ' (flagged as potential duplicate)' : ''}`, 'inbound-email');
+    log(`[processPdfAttachment] Created receipt #${receipt.id} (PDF stored: ${!!pdfBlobUrl})${isPotentialDuplicate ? ' (potential duplicate)' : ''}`, 'inbound-email');
 
     return { success: true, receiptId: receipt.id };
   }
@@ -837,43 +942,25 @@ Only return valid JSON, no markdown or explanation.`
       for (const attachment of validAttachments) {
         const isPdfAttachment = attachment.contentType === 'application/pdf' || isPdfBuffer(attachment.content);
 
-        try {
-          const result = await this.processAttachment(user.id, user.workspaceId!, attachment, emailReceiptRecord.id);
-          if (result.receiptId) {
-            processedReceipts.push(result.receiptId);
-            continue;
-          }
+        const result = await this.processAttachment(user.id, user.workspaceId!, attachment, emailReceiptRecord.id);
+        if (result.receiptId) {
+          processedReceipts.push(result.receiptId);
+          continue;
+        }
 
-          if (!result.success && isPdfAttachment && !emailBodyFallbackUsed) {
-            const fallbackResult = await this.tryEmailBodyFallbackForFailedPdf(
-              user,
-              emailData,
-              emailReceiptRecord.id,
-              attachment.filename,
-              result.error || 'unknown error'
-            );
+        if (!result.success && isPdfAttachment && !emailBodyFallbackUsed) {
+          log(`[processInboundEmail] PDF attachment failed, trying email body fallback for ${attachment.filename}...`, 'inbound-email');
+          const fallbackResult = await this.tryEmailBodyFallbackForFailedPdf(
+            user,
+            emailData,
+            emailReceiptRecord.id,
+            attachment.filename,
+            result.error || 'unknown error'
+          );
 
-            if (fallbackResult.receiptId) {
-              processedReceipts.push(fallbackResult.receiptId);
-              emailBodyFallbackUsed = true;
-            }
-          }
-        } catch (attachmentError: any) {
-          log(`Error processing attachment ${attachment.filename}: ${attachmentError.message}`, 'inbound-email');
-
-          if (isPdfAttachment && !emailBodyFallbackUsed) {
-            const fallbackResult = await this.tryEmailBodyFallbackForFailedPdf(
-              user,
-              emailData,
-              emailReceiptRecord.id,
-              attachment.filename,
-              attachmentError.message || 'unknown error'
-            );
-
-            if (fallbackResult.receiptId) {
-              processedReceipts.push(fallbackResult.receiptId);
-              emailBodyFallbackUsed = true;
-            }
+          if (fallbackResult.receiptId) {
+            processedReceipts.push(fallbackResult.receiptId);
+            emailBodyFallbackUsed = true;
           }
         }
       }
@@ -958,6 +1045,156 @@ Only return valid JSON, no markdown or explanation.`
     }
   }
 
+  private async processPdfAttachment(
+    userId: number,
+    workspaceId: number,
+    attachment: { content: Buffer; contentType: string; filename: string },
+    emailReceiptId: number
+  ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
+    log(`[processPdfAttachment] Processing PDF: ${attachment.filename} (${attachment.content.length} bytes)`, 'inbound-email');
+
+    let pdfBlobUrl: string | null = null;
+    let pdfBlobName: string | null = null;
+    try {
+      const pdfBase64 = `data:application/pdf;base64,${attachment.content.toString('base64')}`;
+      const uploadResult = await azureStorage.uploadFile(pdfBase64, attachment.filename || `receipt_${userId}_${Date.now()}.pdf`);
+      if (uploadResult) {
+        pdfBlobUrl = uploadResult.blobUrl;
+        pdfBlobName = uploadResult.blobName;
+        log(`[processPdfAttachment] Uploaded original PDF to Azure: ${pdfBlobName}`, 'inbound-email');
+      }
+    } catch (pdfUploadError: any) {
+      log(`[processPdfAttachment] Failed to upload original PDF: ${pdfUploadError.message}`, 'inbound-email');
+    }
+
+    try {
+      const pdfText = await extractTextFromPdf(attachment.content);
+      log(`[processPdfAttachment] pdf-parse extracted ${pdfText?.length || 0} chars`, 'inbound-email');
+
+      if (pdfText && pdfText.length >= 100) {
+        log(`[processPdfAttachment] Text extraction successful (${pdfText.length} chars), sending to AI...`, 'inbound-email');
+        const result = await this.extractReceiptFromPdfText(
+          userId,
+          workspaceId,
+          pdfText,
+          attachment.filename,
+          emailReceiptId,
+          pdfBlobUrl,
+          pdfBlobName
+        );
+        if (result.success) {
+          return result;
+        }
+        log(`[processPdfAttachment] AI extraction from text failed: ${result.error}, falling back to image conversion...`, 'inbound-email');
+      } else {
+        log(`[processPdfAttachment] Text too short (${pdfText?.length || 0} chars < 100), falling back to image conversion...`, 'inbound-email');
+      }
+    } catch (textError: any) {
+      log(`[processPdfAttachment] pdf-parse failed: ${textError.message}, falling back to image conversion...`, 'inbound-email');
+    }
+
+    try {
+      const imageBase64 = await convertPdfToImage(attachment.content);
+      log(`[processPdfAttachment] PDF-to-image conversion succeeded, running OCR...`, 'inbound-email');
+      return await this.processImageAttachment(userId, workspaceId, imageBase64, emailReceiptId);
+    } catch (imgError: any) {
+      log(`[processPdfAttachment] PDF-to-image conversion also failed: ${imgError.message}`, 'inbound-email');
+    }
+
+    if (pdfBlobUrl) {
+      return { success: false, error: `PDF processing failed (text extraction + image conversion). Original PDF stored at Azure.` };
+    }
+    return { success: false, error: 'Failed to process PDF: text extraction and image conversion both failed' };
+  }
+
+  private async processImageAttachment(
+    userId: number,
+    workspaceId: number,
+    imageBase64: string,
+    emailReceiptId: number
+  ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
+    log(`[processImageAttachment] Running OCR...`, 'inbound-email');
+    const ocrResult = await azureFormRecognizer.analyzeReceipt(imageBase64);
+
+    if (!ocrResult) {
+      throw new Error('OCR failed to extract receipt data');
+    }
+
+    const { storeName, total, date, items, confidenceScore } = ocrResult;
+
+    log(`[processImageAttachment] OCR extracted: ${storeName}, R${total}, ${items?.length || 0} items`, 'inbound-email');
+
+    let category = 'other';
+    try {
+      const categorization = await aiCategorizationService.categorizeReceipt(
+        storeName,
+        items || [],
+        total || '0'
+      );
+      category = categorization.category;
+      log(`[processImageAttachment] AI categorized as: ${category}`, 'inbound-email');
+    } catch (catError: any) {
+      log(`[processImageAttachment] AI categorization failed, using default: ${catError.message}`, 'inbound-email');
+    }
+
+    let blobUrl: string | null = null;
+    let blobName: string | null = null;
+
+    try {
+      const uploadResult = await azureStorage.uploadFile(imageBase64, `receipt_${userId}_${Date.now()}.jpg`);
+      if (uploadResult) {
+        blobUrl = uploadResult.blobUrl;
+        blobName = uploadResult.blobName;
+        log(`[processImageAttachment] Uploaded to Azure: ${blobName}`, 'inbound-email');
+      }
+    } catch (uploadError: any) {
+      log(`[processImageAttachment] Azure upload failed, storing locally: ${uploadError.message}`, 'inbound-email');
+    }
+
+    let isPotentialDuplicate = false;
+    const receiptDate = date ? new Date(date) : new Date();
+    const receiptTotal = total || '0.00';
+    const receiptStoreName = storeName || 'Unknown Store';
+
+    try {
+      if (storage.findDuplicateReceipts) {
+        const duplicates = await storage.findDuplicateReceipts(userId, receiptStoreName, receiptDate, receiptTotal);
+        if (duplicates.length > 0) {
+          isPotentialDuplicate = true;
+          log(`[processImageAttachment] Found ${duplicates.length} potential duplicate(s): ${receiptStoreName}, R${receiptTotal}`, 'inbound-email');
+        }
+      }
+    } catch (dupError: any) {
+      log(`[processImageAttachment] Duplicate check failed: ${dupError.message}`, 'inbound-email');
+    }
+
+    const [receipt] = await db
+      .insert(receipts)
+      .values({
+        userId,
+        workspaceId,
+        createdByUserId: userId,
+        storeName: receiptStoreName,
+        date: receiptDate,
+        total: receiptTotal,
+        items: items || [],
+        category: category as any,
+        confidenceScore: confidenceScore || null,
+        blobUrl,
+        blobName,
+        imageData: blobUrl ? null : imageBase64,
+        source: 'email',
+        sourceEmailId: emailReceiptId,
+        processedAt: new Date(),
+        isPotentialDuplicate,
+      })
+      .returning();
+
+    log(`[processImageAttachment] Created receipt #${receipt.id}${isPotentialDuplicate ? ' (potential duplicate)' : ''}`, 'inbound-email');
+
+    return { success: true, receiptId: receipt.id };
+  }
+
   private async processAttachment(
     userId: number,
     workspaceId: number,
@@ -965,152 +1202,17 @@ Only return valid JSON, no markdown or explanation.`
     emailReceiptId: number
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
     try {
-      log(`Processing attachment: ${attachment.filename} (${attachment.contentType}, ${attachment.content.length} bytes)`, 'inbound-email');
-      console.log(`[inbound-email] Processing attachment: ${attachment.filename} (${attachment.contentType}, ${attachment.content.length} bytes)`);
-
-      let imageBase64: string;
+      log(`[processAttachment] ${attachment.filename} (${attachment.contentType}, ${attachment.content.length} bytes)`, 'inbound-email');
 
       if (attachment.contentType === 'application/pdf' || isPdfBuffer(attachment.content)) {
-        log('PDF attachment detected - converting to image...', 'inbound-email');
-        console.log('[inbound-email] PDF attachment detected - converting to image...');
-        try {
-          imageBase64 = await convertPdfToImage(attachment.content);
-          log('PDF successfully converted to image', 'inbound-email');
-          console.log('[inbound-email] PDF successfully converted to image');
-        } catch (pdfError: any) {
-          log(`PDF image conversion failed: ${pdfError.message}. Trying text extraction fallback...`, 'inbound-email');
-          console.log(`[inbound-email] PDF image conversion failed, trying text extraction fallback...`);
-          
-          let pdfBlobUrl: string | null = null;
-          let pdfBlobName: string | null = null;
-          try {
-            const pdfBase64 = `data:application/pdf;base64,${attachment.content.toString('base64')}`;
-            const uploadResult = await azureStorage.uploadFile(pdfBase64, attachment.filename || `receipt_${userId}_${Date.now()}.pdf`);
-            if (uploadResult) {
-              pdfBlobUrl = uploadResult.blobUrl;
-              pdfBlobName = uploadResult.blobName;
-              log(`Uploaded original PDF to Azure: ${pdfBlobName}`, 'inbound-email');
-            }
-          } catch (pdfUploadError: any) {
-            log(`Failed to upload original PDF: ${pdfUploadError.message}`, 'inbound-email');
-          }
-
-          try {
-            const pdfText = await extractTextFromPdf(attachment.content);
-            if (pdfText && pdfText.length >= 50) {
-              log(`PDF text extracted (${pdfText.length} chars), using AI to parse receipt data...`, 'inbound-email');
-              console.log(`[inbound-email] PDF text extracted (${pdfText.length} chars), sending to AI...`);
-              
-              const result = await this.extractReceiptFromPdfText(
-                userId,
-                workspaceId,
-                pdfText,
-                attachment.filename,
-                emailReceiptId,
-                pdfBlobUrl,
-                pdfBlobName
-              );
-              return result;
-            } else {
-              throw new Error(`PDF text too short (${pdfText?.length || 0} chars) to extract receipt data`);
-            }
-          } catch (textError: any) {
-            log(`PDF text extraction also failed: ${textError.message}`, 'inbound-email');
-            console.error(`[inbound-email] PDF text extraction failed:`, textError);
-            if (pdfBlobUrl) {
-              return { success: false, error: `PDF processing failed but original PDF stored at ${pdfBlobUrl}` };
-            }
-            throw new Error(`Failed to process PDF: image conversion and text extraction both failed`);
-          }
-        }
+        return await this.processPdfAttachment(userId, workspaceId, attachment, emailReceiptId);
       } else {
         const rawBase64 = `data:${attachment.contentType};base64,${attachment.content.toString('base64')}`;
-        imageBase64 = await imagePreprocessor.enhanceImage(rawBase64);
+        const imageBase64 = await imagePreprocessor.enhanceImage(rawBase64);
+        return await this.processImageAttachment(userId, workspaceId, imageBase64, emailReceiptId);
       }
-
-      log('Running OCR on attachment...', 'inbound-email');
-      const ocrResult = await azureFormRecognizer.analyzeReceipt(imageBase64);
-
-      if (!ocrResult) {
-        throw new Error('OCR failed to extract receipt data');
-      }
-
-      const { storeName, total, date, items, confidenceScore } = ocrResult;
-
-      log(`OCR extracted: ${storeName}, R${total}, ${items?.length || 0} items`, 'inbound-email');
-
-      let category = 'other';
-      try {
-        const categorization = await aiCategorizationService.categorizeReceipt(
-          storeName,
-          items || [],
-          total || '0'
-        );
-        category = categorization.category;
-        log(`AI categorized as: ${category}`, 'inbound-email');
-      } catch (catError: any) {
-        log(`AI categorization failed, using default: ${catError.message}`, 'inbound-email');
-      }
-
-      let blobUrl: string | null = null;
-      let blobName: string | null = null;
-
-      try {
-        const uploadResult = await azureStorage.uploadFile(imageBase64, `receipt_${userId}_${Date.now()}.jpg`);
-        if (uploadResult) {
-          blobUrl = uploadResult.blobUrl;
-          blobName = uploadResult.blobName;
-          log(`Uploaded to Azure: ${blobName}`, 'inbound-email');
-        }
-      } catch (uploadError: any) {
-        log(`Azure upload failed, storing locally: ${uploadError.message}`, 'inbound-email');
-      }
-
-      let isPotentialDuplicate = false;
-      const receiptDate = date ? new Date(date) : new Date();
-      const receiptTotal = total || '0.00';
-      const receiptStoreName = storeName || 'Unknown Store';
-
-      try {
-        if (storage.findDuplicateReceipts) {
-          const duplicates = await storage.findDuplicateReceipts(userId, receiptStoreName, receiptDate, receiptTotal);
-          if (duplicates.length > 0) {
-            isPotentialDuplicate = true;
-            log(`Found ${duplicates.length} potential duplicate(s) for emailed receipt: ${receiptStoreName}, ${receiptTotal}`, 'inbound-email');
-          }
-        }
-      } catch (dupError: any) {
-        log(`Duplicate check failed, proceeding anyway: ${dupError.message}`, 'inbound-email');
-      }
-
-      const [receipt] = await db
-        .insert(receipts)
-        .values({
-          userId,
-          workspaceId,
-          createdByUserId: userId,
-          storeName: receiptStoreName,
-          date: receiptDate,
-          total: receiptTotal,
-          items: items || [],
-          category: category as any,
-          confidenceScore: confidenceScore || null,
-          blobUrl,
-          blobName,
-          imageData: blobUrl ? null : imageBase64,
-          source: 'email',
-          sourceEmailId: emailReceiptId,
-          processedAt: new Date(),
-          isPotentialDuplicate,
-        })
-        .returning();
-
-      log(`Created receipt ${receipt.id} from email attachment${isPotentialDuplicate ? ' (flagged as potential duplicate)' : ''}`, 'inbound-email');
-
-      return { success: true, receiptId: receipt.id };
-
     } catch (error: any) {
-      log(`Error processing attachment: ${error.message}`, 'inbound-email');
+      log(`[processAttachment] Error processing ${attachment.filename}: ${error.message}`, 'inbound-email');
       return { success: false, error: error.message };
     }
   }

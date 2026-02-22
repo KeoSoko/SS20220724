@@ -411,8 +411,9 @@ export class ExportService {
               }
 
               const hasItems = receipt.items && receipt.items.length > 0;
+              const suppressContent = isThisEmailHtmlEntry && !hasItems;
 
-              if (isThisEmailHtmlEntry && !hasItems) {
+              if (suppressContent) {
                 console.log(JSON.stringify({
                   stage: "EXPORT_HTML_RECEIPT_SUPPRESS_EMPTY_ITEMS",
                   receiptId: receipt.id,
@@ -420,74 +421,73 @@ export class ExportService {
                 }));
               }
 
-              const contentStartY = metaY + 5;
-              
-              let imageData = null;
-              
-              // Try to get image data from different sources
-              if (receipt.imageData) {
-                // Base64 image data stored directly in database
-                imageData = receipt.imageData;
-              } else if (receipt.blobUrl && receipt.blobUrl.startsWith('/uploads/')) {
-                // Local file storage
-                const fs = require('fs');
-                const path = require('path');
-                const filePath = path.join(process.cwd(), receipt.blobUrl);
+              if (!suppressContent) {
+                const contentStartY = metaY + 5;
                 
-                try {
-                  if (fs.existsSync(filePath)) {
-                    const fileBuffer = fs.readFileSync(filePath);
-                    const base64 = fileBuffer.toString('base64');
-                    // Determine MIME type from file extension
-                    const ext = path.extname(filePath).toLowerCase();
-                    const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
-                    imageData = `data:${mimeType};base64,${base64}`;
-                  }
-                } catch (fileError) {
-                  console.error(`Failed to read local file: ${filePath}`, fileError);
-                }
-              } else if (receipt.blobName) {
-                // Azure blob storage
-                const imageUrl = await azureStorage.generateSasUrl(receipt.blobName, 1);
+                let imageData = null;
                 
-                if (imageUrl) {
+                if (receipt.imageData) {
+                  imageData = receipt.imageData;
+                } else if (receipt.blobUrl && receipt.blobUrl.startsWith('/uploads/')) {
+                  const fs = require('fs');
+                  const path = require('path');
+                  const filePath = path.join(process.cwd(), receipt.blobUrl);
+                  
                   try {
-                    const response = await fetch(imageUrl);
-                    if (response.ok) {
-                      const arrayBuffer = await response.arrayBuffer();
-                      const base64 = Buffer.from(arrayBuffer).toString('base64');
-                      imageData = `data:image/jpeg;base64,${base64}`;
+                    if (fs.existsSync(filePath)) {
+                      const fileBuffer = fs.readFileSync(filePath);
+                      const base64 = fileBuffer.toString('base64');
+                      const ext = path.extname(filePath).toLowerCase();
+                      const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+                      imageData = `data:${mimeType};base64,${base64}`;
                     }
-                  } catch (fetchError) {
-                    console.error(`Failed to fetch Azure image: ${imageUrl}`, fetchError);
+                  } catch (fileError) {
+                    console.error(`Failed to read local file: ${filePath}`, fileError);
+                  }
+                } else if (receipt.blobName) {
+                  const imageUrl = await azureStorage.generateSasUrl(receipt.blobName, 1);
+                  
+                  if (imageUrl) {
+                    try {
+                      const response = await fetch(imageUrl);
+                      if (response.ok) {
+                        const arrayBuffer = await response.arrayBuffer();
+                        const base64 = Buffer.from(arrayBuffer).toString('base64');
+                        imageData = `data:image/jpeg;base64,${base64}`;
+                      }
+                    } catch (fetchError) {
+                      console.error(`Failed to fetch Azure image: ${imageUrl}`, fetchError);
+                    }
                   }
                 }
-              }
-              
-              if (imageData) {
-                try {
-                  doc.addImage(imageData, 'JPEG', 20, contentStartY, 120, 160);
-                } catch (imgError) {
-                  console.error('Failed to add image to PDF:', imgError);
+                
+                if (imageData) {
+                  try {
+                    doc.addImage(imageData, 'JPEG', 20, contentStartY, 120, 160);
+                  } catch (imgError) {
+                    console.error('Failed to add image to PDF:', imgError);
+                    doc.setFontSize(10);
+                    doc.text('Receipt image could not be loaded', 20, contentStartY);
+                  }
+                } else {
                   doc.setFontSize(10);
-                  doc.text('Receipt image could not be loaded', 20, contentStartY);
-                }
-              } else if (!isThisEmailHtmlEntry) {
-                doc.setFontSize(10);
-                doc.text('Receipt image not available', 20, contentStartY);
-              }
-              
-              // Add notes if available
-              if (receipt.notes) {
-                let yPos = imageData ? 250 : (isThisEmailHtmlEntry ? contentStartY : contentStartY + 15);
-                
-                if (yPos > 280) {
-                  doc.addPage();
-                  yPos = 20;
+                  doc.text('Receipt image not available', 20, contentStartY);
                 }
                 
+                if (receipt.notes) {
+                  let yPos = imageData ? 250 : contentStartY + 15;
+                  
+                  if (yPos > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                  }
+                  
+                  doc.setFontSize(10);
+                  doc.text(`Notes: ${sanitizeTextForPDF(receipt.notes)}`, 20, yPos);
+                }
+              } else if (receipt.notes) {
                 doc.setFontSize(10);
-                doc.text(`Notes: ${sanitizeTextForPDF(receipt.notes)}`, 20, yPos);
+                doc.text(`Notes: ${sanitizeTextForPDF(receipt.notes)}`, 20, metaY + 5);
               }
               
             } catch (imageError) {
@@ -610,84 +610,90 @@ export class ExportService {
         yPos += 30;
       }
 
-      if (isEmailHtmlReceipt && (!receipt.items || receipt.items.length === 0)) {
+      const suppressSingleContent = isEmailHtmlReceipt && (!receipt.items || receipt.items.length === 0);
+
+      if (suppressSingleContent) {
         console.log(JSON.stringify({
           stage: "EXPORT_HTML_RECEIPT_SUPPRESS_EMPTY_ITEMS",
           receiptId: receipt.id,
           timestamp: new Date().toISOString()
         }));
-      } else if (receipt.items && receipt.items.length > 0) {
-        yPos += 5;
-        autoTable(doc, {
-          head: [['Item', 'Price']],
-          body: receipt.items.map(item => [
-            sanitizeTextForPDF(item.name),
-            `R ${item.price}`
-          ]),
-          startY: yPos,
-          margin: { bottom: 35 },
-          styles: { fontSize: 9, cellPadding: 3 },
-          headStyles: {
-            fillColor: [primaryBlue[0], primaryBlue[1], primaryBlue[2]] as [number, number, number],
-            textColor: [255, 255, 255] as [number, number, number],
-            fontStyle: 'bold'
-          }
-        });
-        const lastTable = (doc as any).lastAutoTable;
-        yPos = lastTable ? lastTable.finalY + 10 : yPos + 10;
       }
 
-      let imageData: string | null = null;
-
-      if (receipt.imageData) {
-        imageData = receipt.imageData;
-      } else if (receipt.blobUrl && receipt.blobUrl.startsWith('/uploads/')) {
-        const fs = require('fs');
-        const path = require('path');
-        const filePath = path.join(process.cwd(), receipt.blobUrl);
-        try {
-          if (fs.existsSync(filePath)) {
-            const fileBuffer = fs.readFileSync(filePath);
-            const base64 = fileBuffer.toString('base64');
-            const ext = path.extname(filePath).toLowerCase();
-            const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
-            imageData = `data:${mimeType};base64,${base64}`;
-          }
-        } catch (fileError) {
-          console.error(`Failed to read local file: ${filePath}`, fileError);
+      if (!suppressSingleContent) {
+        if (receipt.items && receipt.items.length > 0) {
+          yPos += 5;
+          autoTable(doc, {
+            head: [['Item', 'Price']],
+            body: receipt.items.map(item => [
+              sanitizeTextForPDF(item.name),
+              `R ${item.price}`
+            ]),
+            startY: yPos,
+            margin: { bottom: 35 },
+            styles: { fontSize: 9, cellPadding: 3 },
+            headStyles: {
+              fillColor: [primaryBlue[0], primaryBlue[1], primaryBlue[2]] as [number, number, number],
+              textColor: [255, 255, 255] as [number, number, number],
+              fontStyle: 'bold'
+            }
+          });
+          const lastTable = (doc as any).lastAutoTable;
+          yPos = lastTable ? lastTable.finalY + 10 : yPos + 10;
         }
-      } else if (receipt.blobName) {
-        const blobNameStr = receipt.blobName as string;
-        const isPdfBlob = blobNameStr.toLowerCase().endsWith('.pdf');
 
-        if (!isPdfBlob) {
-          const imageUrl = await azureStorage.generateSasUrl(blobNameStr, 1);
-          if (imageUrl) {
-            try {
-              const response = await fetch(imageUrl);
-              if (response.ok) {
-                const arrayBuffer = await response.arrayBuffer();
-                const base64 = Buffer.from(arrayBuffer).toString('base64');
-                imageData = `data:image/jpeg;base64,${base64}`;
+        let imageData: string | null = null;
+
+        if (receipt.imageData) {
+          imageData = receipt.imageData;
+        } else if (receipt.blobUrl && receipt.blobUrl.startsWith('/uploads/')) {
+          const fs = require('fs');
+          const path = require('path');
+          const filePath = path.join(process.cwd(), receipt.blobUrl);
+          try {
+            if (fs.existsSync(filePath)) {
+              const fileBuffer = fs.readFileSync(filePath);
+              const base64 = fileBuffer.toString('base64');
+              const ext = path.extname(filePath).toLowerCase();
+              const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+              imageData = `data:${mimeType};base64,${base64}`;
+            }
+          } catch (fileError) {
+            console.error(`Failed to read local file: ${filePath}`, fileError);
+          }
+        } else if (receipt.blobName) {
+          const blobNameStr = receipt.blobName as string;
+          const isPdfBlob = blobNameStr.toLowerCase().endsWith('.pdf');
+
+          if (!isPdfBlob) {
+            const imageUrl = await azureStorage.generateSasUrl(blobNameStr, 1);
+            if (imageUrl) {
+              try {
+                const response = await fetch(imageUrl);
+                if (response.ok) {
+                  const arrayBuffer = await response.arrayBuffer();
+                  const base64 = Buffer.from(arrayBuffer).toString('base64');
+                  imageData = `data:image/jpeg;base64,${base64}`;
+                }
+              } catch (fetchError) {
+                console.error(`Failed to fetch Azure image: ${blobNameStr}`, fetchError);
               }
-            } catch (fetchError) {
-              console.error(`Failed to fetch Azure image: ${blobNameStr}`, fetchError);
             }
           }
         }
-      }
 
-      if (imageData) {
-        if (yPos > 200) {
-          doc.addPage();
-          yPos = 20;
-        }
-        try {
-          doc.addImage(imageData, 'JPEG', 20, yPos, 120, 160);
-        } catch (imgError) {
-          console.error('Failed to add image to PDF:', imgError);
-          doc.setFontSize(10);
-          doc.text('Receipt image could not be loaded', 20, yPos);
+        if (imageData) {
+          if (yPos > 200) {
+            doc.addPage();
+            yPos = 20;
+          }
+          try {
+            doc.addImage(imageData, 'JPEG', 20, yPos, 120, 160);
+          } catch (imgError) {
+            console.error('Failed to add image to PDF:', imgError);
+            doc.setFontSize(10);
+            doc.text('Receipt image could not be loaded', 20, yPos);
+          }
         }
       }
 

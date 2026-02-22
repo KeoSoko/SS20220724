@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { users, receipts, emailReceipts, inboundEmailLogs } from "@shared/schema";
+import { users, receipts, emailReceipts, inboundEmailLogs, emailDocuments } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { azureFormRecognizer } from "./azure-form-recognizer";
 import { azureStorage } from "./azure-storage";
@@ -12,6 +12,8 @@ import { convertPdfToImage, extractTextFromPdf, isPdfBuffer } from "./pdf-conver
 import { storage } from "./storage";
 import OpenAI from "openai";
 import sharp from "sharp";
+import { detectVendor } from "./vendor-detection";
+import { deterministicExtract, type DeterministicExtractionResult } from "./deterministic-extraction";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -362,48 +364,65 @@ export class InboundEmailService {
     return `data:image/jpeg;base64,${buffer.toString('base64')}`;
   }
 
-  async extractReceiptFromEmailBody(
-    userId: number,
-    workspaceId: number,
-    subject: string,
-    htmlBody?: string,
-    textBody?: string,
-    emailReceiptId?: number
-  ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
-    log(`[STAGE] BODY_PARSING_TRIGGERED`, 'inbound-email');
-    const bodySource = textBody ? 'textBody' : 'htmlBody stripped';
-    const rawBody = textBody || (htmlBody ? this.stripHtml(htmlBody) : '');
+  private async storeDocument(params: {
+    userId: number;
+    workspaceId: number;
+    sourceType: 'email_body' | 'attachment';
+    subject?: string;
+    fromEmail?: string;
+    rawHtml?: string;
+    rawText?: string;
+    attachmentUrl?: string;
+    attachmentFilename?: string;
+  }): Promise<number> {
+    const [doc] = await db
+      .insert(emailDocuments)
+      .values({
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        sourceType: params.sourceType,
+        subject: params.subject || null,
+        fromEmail: params.fromEmail || null,
+        rawHtml: params.rawHtml || null,
+        rawText: params.rawText || null,
+        attachmentUrl: params.attachmentUrl || null,
+        attachmentFilename: params.attachmentFilename || null,
+        status: 'processing',
+        receivedAt: new Date(),
+      })
+      .returning();
 
-    try {
-      log(`===BODY_BEFORE_STRIP=== source=${bodySource} length=${rawBody.length} preview="${rawBody.substring(0, 200)}"`, 'inbound-email');
-    } catch (e) { /* logging must not break processing */ }
+    log(`[DOCUMENT_STORED] id=${doc.id} sourceType=${params.sourceType} textLen=${params.rawText?.length || 0} htmlLen=${params.rawHtml?.length || 0}`, 'inbound-email');
+    return doc.id;
+  }
 
-    const signatureStripped = this.stripEmailSignature(rawBody);
-    const bodyText = this.stripForwardedContent(signatureStripped);
+  private async updateDocumentStatus(documentId: number, updates: {
+    status?: string;
+    vendor?: string;
+    extractionMethod?: string;
+    receiptId?: number;
+    errorMessage?: string;
+  }) {
+    await db.update(emailDocuments).set(updates).where(eq(emailDocuments.id, documentId));
+  }
 
-    try {
-      log(`===BODY_AFTER_STRIP=== original=${rawBody.length} afterSig=${signatureStripped.length} afterFwd=${bodyText.length} sigRemoved=${rawBody.length - signatureStripped.length} fwdRemoved=${signatureStripped.length - bodyText.length} preview="${bodyText.substring(0, 200)}"`, 'inbound-email');
-    } catch (e) { /* logging must not break processing */ }
-
-    if (!bodyText || bodyText.length < 50) {
-      log(`[processEmailBody] Body too short after stripping (${bodyText?.length || 0} chars), skipping`, 'inbound-email');
-      log(`[STAGE] BODY_PARSING_FAILED: body too short (${bodyText?.length || 0} chars)`, 'inbound-email');
-      return { success: false, error: 'Email body too short to extract receipt data' };
-    }
-
+  private async aiExtractFromBody(bodyText: string, subject: string): Promise<{
+    storeName: string;
+    total: string;
+    date: string;
+    items: string[];
+    currency: string;
+    confidence: number;
+  } | { error: string }> {
     const truncatedBody = bodyText.substring(0, 8000);
+    log(`[AI_FALLBACK_TRIGGERED] subject="${subject}" textLength=${truncatedBody.length}`, 'inbound-email');
 
-    try {
-      log(`===BODY_AI_INPUT=== subject="${subject}" textLength=${truncatedBody.length} fullLength=${bodyText.length} preview="${truncatedBody.substring(0, 200)}"`, 'inbound-email');
-    } catch (e) { /* logging must not break processing */ }
-
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4.1",
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert at extracting receipt and invoice data from email text content. 
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert at extracting receipt and invoice data from email text content. 
 Extract the following fields from the email body text. This is typically a forwarded email receipt, invoice, order confirmation, or payment notification from a South African or international retailer/service.
 
 IMPORTANT: Only extract data from the ACTUAL receipt/invoice/order content. Ignore forwarding headers, email signatures, reply chains, and promotional footers. Focus on the core transaction data.
@@ -418,145 +437,262 @@ Return a JSON object with these fields:
 
 If you cannot find a valid receipt/invoice/order with a real monetary amount in the text, return {"error": "No receipt data found"}.
 Only return valid JSON, no markdown or explanation.`
-          },
-          {
-            role: "user",
-            content: `Subject: ${subject}\n\nEmail body:\n${truncatedBody}`
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 1000,
+        },
+        {
+          role: "user",
+          content: `Subject: ${subject}\n\nEmail body:\n${truncatedBody}`
+        }
+      ],
+      temperature: 0.1,
+      max_tokens: 1000,
+    });
+
+    const content = response.choices[0]?.message?.content?.trim();
+    if (!content) {
+      return { error: 'AI returned empty response' };
+    }
+
+    let parsed: any;
+    try {
+      const jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      return { error: 'Failed to parse AI extraction result' };
+    }
+
+    if (parsed.error) {
+      return { error: parsed.error };
+    }
+
+    return {
+      storeName: parsed.storeName || 'Unknown Store',
+      total: parsed.total || '0.00',
+      date: parsed.date || new Date().toISOString().substring(0, 10),
+      items: Array.isArray(parsed.items) ? parsed.items : [],
+      currency: parsed.currency || 'ZAR',
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+    };
+  }
+
+  private async createReceiptFromExtraction(params: {
+    userId: number;
+    workspaceId: number;
+    storeName: string;
+    total: string;
+    date: string;
+    items: string[];
+    confidence: number;
+    subject: string;
+    emailReceiptId?: number;
+    extractionMethod: string;
+  }): Promise<{ receiptId: number }> {
+    let receiptDate: Date;
+    try {
+      receiptDate = params.date ? new Date(params.date) : new Date();
+      if (isNaN(receiptDate.getTime())) receiptDate = new Date();
+    } catch {
+      receiptDate = new Date();
+    }
+
+    let previewImageBase64: string | null = null;
+    let blobUrl: string | null = null;
+    let blobName: string | null = null;
+
+    try {
+      previewImageBase64 = await this.createEmailBodyReceiptPreviewImage({
+        storeName: params.storeName,
+        total: params.total,
+        receiptDate,
+        items: params.items,
+        subject: params.subject,
       });
 
-      const content = response.choices[0]?.message?.content?.trim();
-      log(`[processEmailBody] AI raw response: ${content?.substring(0, 500)}`, 'inbound-email');
-      if (!content) {
-        log(`[processEmailBody] AI returned empty response`, 'inbound-email');
-        log(`[STAGE] BODY_PARSING_FAILED: AI returned empty response`, 'inbound-email');
-        return { success: false, error: 'AI returned empty response' };
+      const uploadResult = await azureStorage.uploadFile(previewImageBase64, `email_receipt_${params.userId}_${Date.now()}.jpg`);
+      if (uploadResult) {
+        blobUrl = uploadResult.blobUrl;
+        blobName = uploadResult.blobName;
+        previewImageBase64 = null;
       }
+    } catch (previewError: any) {
+      log(`[createReceipt] Preview image failed: ${previewError.message}`, 'inbound-email');
+    }
 
-      let parsed: any;
-      try {
-        const jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        parsed = JSON.parse(jsonStr);
-      } catch (parseError) {
-        log(`[processEmailBody] Failed to parse AI response: ${content}`, 'inbound-email');
-        log(`[STAGE] BODY_PARSING_FAILED: AI response not valid JSON`, 'inbound-email');
-        return { success: false, error: 'Failed to parse AI extraction result' };
+    let category = 'other';
+    try {
+      const categorization = await aiCategorizationService.categorizeReceipt(
+        params.storeName,
+        params.items,
+        params.total
+      );
+      category = categorization.category;
+    } catch (catError: any) {
+      log(`[createReceipt] Categorization failed, using default: ${catError.message}`, 'inbound-email');
+    }
+
+    let isPotentialDuplicate = false;
+    try {
+      if (storage.findDuplicateReceipts) {
+        const duplicates = await storage.findDuplicateReceipts(params.userId, params.storeName, receiptDate, params.total);
+        if (duplicates.length > 0) {
+          isPotentialDuplicate = true;
+        }
       }
+    } catch {}
 
-      if (parsed.error) {
-        log(`[processEmailBody] AI could not extract receipt: ${parsed.error}`, 'inbound-email');
-        log(`[STAGE] BODY_PARSING_FAILED: AI said "${parsed.error}"`, 'inbound-email');
-        return { success: false, error: parsed.error };
-      }
+    const [receipt] = await db
+      .insert(receipts)
+      .values({
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        createdByUserId: params.userId,
+        storeName: params.storeName,
+        date: receiptDate,
+        total: params.total,
+        items: params.items,
+        category: category as any,
+        confidenceScore: Math.round(params.confidence * 100).toString(),
+        blobUrl,
+        blobName,
+        imageData: blobUrl ? null : previewImageBase64,
+        source: 'email',
+        sourceEmailId: params.emailReceiptId || null,
+        processedAt: new Date(),
+        isPotentialDuplicate,
+        notes: `Extracted via ${params.extractionMethod}. Subject: ${params.subject}`,
+      })
+      .returning();
 
-      const storeName = parsed.storeName || 'Unknown Store';
-      const total = parsed.total || '0.00';
-      const dateStr = parsed.date;
-      const items = Array.isArray(parsed.items) ? parsed.items : [];
-      const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;
+    log(`[RECEIPT_METADATA_SAVED] receipt=#${receipt.id} store="${params.storeName}" total=R${params.total} method=${params.extractionMethod} category=${category}`, 'inbound-email');
+    return { receiptId: receipt.id };
+  }
 
-      log(`[processEmailBody] AI output: storeName="${storeName}", total="${total}", date="${dateStr}", items=${items.length}, confidence=${confidence}`, 'inbound-email');
+  async extractReceiptFromEmailBody(
+    userId: number,
+    workspaceId: number,
+    subject: string,
+    htmlBody?: string,
+    textBody?: string,
+    emailReceiptId?: number,
+    fromEmail?: string
+  ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
+    const bodySource = textBody ? 'textBody' : 'htmlBody stripped';
+    const rawBody = textBody || (htmlBody ? this.stripHtml(htmlBody) : '');
 
-      const validation = this.validateExtractedReceipt({ storeName, total, confidence, items });
-      if (!validation.valid) {
-        log(`[processEmailBody] VALIDATION FAILED: ${validation.reason} — receipt NOT saved`, 'inbound-email');
-        log(`[STAGE] VALIDATION_REJECTED (body): ${validation.reason}`, 'inbound-email');
-        return { success: false, error: `Validation failed: ${validation.reason}` };
-      }
-      log(`[processEmailBody] Validation passed: ${validation.reason}`, 'inbound-email');
+    const documentId = await this.storeDocument({
+      userId,
+      workspaceId,
+      sourceType: 'email_body',
+      subject,
+      fromEmail,
+      rawHtml: htmlBody,
+      rawText: textBody,
+    });
 
-      let receiptDate: Date;
-      try {
-        receiptDate = dateStr ? new Date(dateStr) : new Date();
-        if (isNaN(receiptDate.getTime())) receiptDate = new Date();
-      } catch {
-        receiptDate = new Date();
-      }
+    const signatureStripped = this.stripEmailSignature(rawBody);
+    const bodyText = this.stripForwardedContent(signatureStripped);
 
-      let previewImageBase64: string | null = null;
-      let blobUrl: string | null = null;
-      let blobName: string | null = null;
+    log(`[PIPELINE] doc=${documentId} source=${bodySource} raw=${rawBody.length} afterStrip=${bodyText.length}`, 'inbound-email');
 
-      try {
-        previewImageBase64 = await this.createEmailBodyReceiptPreviewImage({
-          storeName,
-          total,
-          receiptDate,
-          items,
-          subject,
+    if (!bodyText || bodyText.length < 50) {
+      await this.updateDocumentStatus(documentId, { status: 'failed', errorMessage: `Body too short after stripping (${bodyText?.length || 0} chars)` });
+      return { success: false, error: 'Email body too short to extract receipt data' };
+    }
+
+    const vendorResult = detectVendor({ subject, from: fromEmail, rawText: bodyText });
+
+    if (vendorResult.vendor && vendorResult.confidence >= 0.5) {
+      await this.updateDocumentStatus(documentId, { vendor: vendorResult.vendor });
+
+      const deterministicResult = deterministicExtract(vendorResult.vendor, bodyText, subject);
+
+      if (deterministicResult && deterministicResult.confidence >= 0.8) {
+        const validation = this.validateExtractedReceipt({
+          storeName: deterministicResult.storeName,
+          total: deterministicResult.total,
+          confidence: deterministicResult.confidence,
+          items: deterministicResult.items,
         });
 
-        const uploadResult = await azureStorage.uploadFile(previewImageBase64, `email_receipt_${userId}_${Date.now()}.jpg`);
-        if (uploadResult) {
-          blobUrl = uploadResult.blobUrl;
-          blobName = uploadResult.blobName;
-          previewImageBase64 = null;
-          log(`[processEmailBody] Uploaded preview image to Azure: ${blobName}`, 'inbound-email');
+        if (validation.valid) {
+          const { receiptId } = await this.createReceiptFromExtraction({
+            userId,
+            workspaceId,
+            storeName: deterministicResult.storeName,
+            total: deterministicResult.total,
+            date: deterministicResult.date,
+            items: deterministicResult.items,
+            confidence: deterministicResult.confidence,
+            subject,
+            emailReceiptId,
+            extractionMethod: `deterministic:${vendorResult.vendor}`,
+          });
+
+          await this.updateDocumentStatus(documentId, {
+            status: 'extracted',
+            extractionMethod: 'deterministic',
+            receiptId,
+          });
+
+          return { success: true, receiptId };
         }
-      } catch (previewError: any) {
-        log(`[processEmailBody] Failed to generate/upload preview image: ${previewError.message}`, 'inbound-email');
       }
 
-      let category = 'other';
-      try {
-        const categorization = await aiCategorizationService.categorizeReceipt(
-          storeName,
-          items,
-          total
-        );
-        category = categorization.category;
-        log(`[processEmailBody] AI categorized as: ${category}`, 'inbound-email');
-      } catch (catError: any) {
-        log(`[processEmailBody] AI categorization failed, using default: ${catError.message}`, 'inbound-email');
+      log(`[DETERMINISTIC_EXTRACTION_FAILED] vendor="${vendorResult.vendor}" — falling back to AI`, 'inbound-email');
+    }
+
+    try {
+      const aiResult = await this.aiExtractFromBody(bodyText, subject);
+
+      if ('error' in aiResult) {
+        await this.updateDocumentStatus(documentId, { status: 'needs_review', extractionMethod: 'ai', errorMessage: aiResult.error });
+        log(`[MARKED_NEEDS_REVIEW] doc=${documentId} reason="AI: ${aiResult.error}"`, 'inbound-email');
+        return { success: false, error: aiResult.error };
       }
 
-      let isPotentialDuplicate = false;
-      try {
-        if (storage.findDuplicateReceipts) {
-          const duplicates = await storage.findDuplicateReceipts(userId, storeName, receiptDate, total);
-          if (duplicates.length > 0) {
-            isPotentialDuplicate = true;
-            log(`[processEmailBody] Found ${duplicates.length} potential duplicate(s): ${storeName}, R${total}`, 'inbound-email');
-          }
-        }
-      } catch (dupError: any) {
-        log(`[processEmailBody] Duplicate check failed: ${dupError.message}`, 'inbound-email');
+      const validation = this.validateExtractedReceipt({
+        storeName: aiResult.storeName,
+        total: aiResult.total,
+        confidence: aiResult.confidence,
+        items: aiResult.items,
+      });
+
+      if (!validation.valid) {
+        await this.updateDocumentStatus(documentId, { status: 'needs_review', extractionMethod: 'ai', errorMessage: `Validation: ${validation.reason}` });
+        log(`[MARKED_NEEDS_REVIEW] doc=${documentId} reason="Validation: ${validation.reason}"`, 'inbound-email');
+        return { success: false, error: `Validation failed: ${validation.reason}` };
       }
 
-      const [receipt] = await db
-        .insert(receipts)
-        .values({
-          userId,
-          workspaceId,
-          createdByUserId: userId,
-          storeName,
-          date: receiptDate,
-          total,
-          items,
-          category: category as any,
-          confidenceScore: Math.round(confidence * 100).toString(),
-          blobUrl,
-          blobName,
-          imageData: blobUrl ? null : previewImageBase64,
-          source: 'email',
-          sourceEmailId: emailReceiptId || null,
-          processedAt: new Date(),
-          isPotentialDuplicate,
-          notes: `Extracted from email body (no image attachment). Subject: ${subject}`,
-        })
-        .returning();
+      if (aiResult.confidence < 0.5) {
+        await this.updateDocumentStatus(documentId, { status: 'needs_review', extractionMethod: 'ai', errorMessage: `Low AI confidence: ${aiResult.confidence}` });
+        log(`[MARKED_NEEDS_REVIEW] doc=${documentId} reason="Low AI confidence: ${aiResult.confidence}"`, 'inbound-email');
+        return { success: false, error: `AI confidence too low for auto-creation: ${aiResult.confidence}` };
+      }
 
-      log(`[processEmailBody] Created receipt #${receipt.id}${isPotentialDuplicate ? ' (potential duplicate)' : ''}`, 'inbound-email');
-      log(`[STAGE] RECEIPT_SAVED (body): receipt #${receipt.id}, store="${storeName}", total=R${total}, confidence=${confidence}`, 'inbound-email');
+      const { receiptId } = await this.createReceiptFromExtraction({
+        userId,
+        workspaceId,
+        storeName: aiResult.storeName,
+        total: aiResult.total,
+        date: aiResult.date,
+        items: aiResult.items,
+        confidence: aiResult.confidence,
+        subject,
+        emailReceiptId,
+        extractionMethod: 'ai',
+      });
 
-      return { success: true, receiptId: receipt.id };
+      await this.updateDocumentStatus(documentId, {
+        status: 'extracted',
+        extractionMethod: 'ai',
+        receiptId,
+        vendor: vendorResult.vendor || undefined,
+      });
+
+      return { success: true, receiptId };
 
     } catch (error: any) {
-      log(`[processEmailBody] AI extraction failed: ${error.message}`, 'inbound-email');
-      log(`[STAGE] BODY_PARSING_FAILED: exception: ${error.message}`, 'inbound-email');
+      await this.updateDocumentStatus(documentId, { status: 'failed', extractionMethod: 'ai', errorMessage: error.message });
+      log(`[PIPELINE_FAILED] doc=${documentId} error="${error.message}"`, 'inbound-email');
       return { success: false, error: `AI extraction failed: ${error.message}` };
     }
   }
@@ -804,7 +940,8 @@ Only return valid JSON, no markdown or explanation.`
       emailData.subject,
       emailData.html,
       emailData.text,
-      emailReceiptId
+      emailReceiptId,
+      emailData.from
     );
 
     if (bodyResult.success && bodyResult.receiptId) {
@@ -920,7 +1057,8 @@ Only return valid JSON, no markdown or explanation.`
             emailData.subject,
             emailData.html,
             emailData.text,
-            emailReceiptRecord.id
+            emailReceiptRecord.id,
+            emailData.from
           );
 
           if (bodyResult.success && bodyResult.receiptId) {

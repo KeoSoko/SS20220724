@@ -477,8 +477,10 @@ Only return valid JSON, no markdown or explanation.`
       let skippedSignatures = 0;
       
       attachments.forEach((attachment, key) => {
+        console.log(`[inbound-email] Checking attachment: ${attachment.filename} (${attachment.contentType}, ${Math.round((attachment.size || attachment.content.length) / 1024)}KB, contentId: ${attachment.contentId || 'none'})`);
         if (!this.isValidImageType(attachment.contentType)) {
           log(`Skipping non-image attachment: ${attachment.filename} (${attachment.contentType})`, 'inbound-email');
+          console.log(`[inbound-email] SKIPPED - not valid image type: ${attachment.contentType}`);
           return;
         }
 
@@ -486,11 +488,13 @@ Only return valid JSON, no markdown or explanation.`
         if (signatureCheck.isSignature) {
           skippedSignatures++;
           log(`Skipping signature/decorative image: ${attachment.filename} - ${signatureCheck.reason}`, 'inbound-email');
+          console.log(`[inbound-email] SKIPPED - signature: ${signatureCheck.reason}`);
           return;
         }
 
         validAttachments.push(attachment);
         log(`Found valid receipt attachment: ${attachment.filename} (${attachment.contentType}, ${Math.round((attachment.size || attachment.content.length) / 1024)}KB)`, 'inbound-email');
+        console.log(`[inbound-email] ACCEPTED - valid receipt attachment: ${attachment.filename}`);
       });
       
       if (skippedSignatures > 0) {
@@ -598,6 +602,7 @@ Only return valid JSON, no markdown or explanation.`
           }
         } catch (attachmentError: any) {
           log(`Error processing attachment ${attachment.filename}: ${attachmentError.message}`, 'inbound-email');
+          console.error(`[inbound-email] Error processing attachment ${attachment.filename}:`, attachmentError);
         }
       }
 
@@ -688,17 +693,21 @@ Only return valid JSON, no markdown or explanation.`
     emailReceiptId: number
   ): Promise<{ success: boolean; receiptId?: number }> {
     try {
-      log(`Processing attachment: ${attachment.filename}`, 'inbound-email');
+      log(`Processing attachment: ${attachment.filename} (${attachment.contentType}, ${attachment.content.length} bytes)`, 'inbound-email');
+      console.log(`[inbound-email] Processing attachment: ${attachment.filename} (${attachment.contentType}, ${attachment.content.length} bytes)`);
 
       let imageBase64: string;
 
       if (attachment.contentType === 'application/pdf' || isPdfBuffer(attachment.content)) {
         log('PDF attachment detected - converting to image...', 'inbound-email');
+        console.log('[inbound-email] PDF attachment detected - converting to image...');
         try {
           imageBase64 = await convertPdfToImage(attachment.content);
           log('PDF successfully converted to image', 'inbound-email');
+          console.log('[inbound-email] PDF successfully converted to image');
         } catch (pdfError: any) {
           log(`PDF conversion failed: ${pdfError.message}`, 'inbound-email');
+          console.error(`[inbound-email] PDF conversion failed:`, pdfError);
           throw new Error(`Failed to process PDF: ${pdfError.message}`);
         }
       } else {

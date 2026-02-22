@@ -1096,4 +1096,71 @@ Respond ONLY with valid JSON.`;
       res.status(500).json({ error: "Failed to fetch inbound email logs" });
     }
   });
+
+  app.post("/api/admin/inbound-email-logs/:id/reprocess", requireAdmin, async (req, res) => {
+    try {
+      const logId = parseInt(req.params.id);
+      const { inboundEmailService } = await import('./inbound-email-service');
+
+      const [logEntry] = await db
+        .select()
+        .from(inboundEmailLogs)
+        .where(eq(inboundEmailLogs.id, logId))
+        .limit(1);
+
+      if (!logEntry) {
+        return res.status(404).json({ error: "Log entry not found" });
+      }
+
+      if (!logEntry.htmlBody && !logEntry.textBody) {
+        return res.status(400).json({ error: "No email body stored for this log entry. Only emails received after the body storage update can be reprocessed." });
+      }
+
+      if (!logEntry.userId) {
+        return res.status(400).json({ error: "No user associated with this email log." });
+      }
+
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, logEntry.userId),
+      });
+
+      if (!user) {
+        return res.status(400).json({ error: "User not found." });
+      }
+
+      if (!user.workspaceId) {
+        return res.status(400).json({ error: "User has no workspace." });
+      }
+
+      log(`Admin reprocessing inbound email log #${logId} for user ${user.id} (${user.username})`, 'admin');
+
+      const result = await inboundEmailService.extractReceiptFromEmailBody(
+        user.id,
+        user.workspaceId,
+        logEntry.subject || '(No subject)',
+        logEntry.htmlBody || undefined,
+        logEntry.textBody || undefined,
+      );
+
+      if (result.success && result.receiptId) {
+        await db
+          .update(inboundEmailLogs)
+          .set({
+            status: 'success_email_body',
+            receiptsCreated: (logEntry.receiptsCreated || 0) + 1,
+            errorMessage: null,
+          })
+          .where(eq(inboundEmailLogs.id, logId));
+
+        log(`Successfully reprocessed log #${logId} -> receipt #${result.receiptId}`, 'admin');
+        res.json({ success: true, receiptId: result.receiptId });
+      } else {
+        log(`Failed to reprocess log #${logId}: ${result.error}`, 'admin');
+        res.status(400).json({ error: result.error || 'Failed to extract receipt data from email body' });
+      }
+    } catch (error: any) {
+      log(`Error reprocessing inbound email: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to reprocess email" });
+    }
+  });
 }

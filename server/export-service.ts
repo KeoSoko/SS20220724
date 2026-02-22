@@ -479,7 +479,7 @@ export class ExportService {
               
               // Add notes if available
               if (receipt.notes) {
-                let yPos = 250;
+                let yPos = imageData ? 250 : (isThisEmailHtml ? contentStartY : contentStartY + 15);
                 
                 if (yPos > 280) {
                   doc.addPage();
@@ -487,7 +487,7 @@ export class ExportService {
                 }
                 
                 doc.setFontSize(10);
-                doc.text(`Notes: ${receipt.notes}`, 20, yPos);
+                doc.text(`Notes: ${sanitizeTextForPDF(receipt.notes)}`, 20, yPos);
               }
               
             } catch (imageError) {

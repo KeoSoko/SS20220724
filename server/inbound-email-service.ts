@@ -75,6 +75,7 @@ export class InboundEmailService {
   }
 
   private static MIN_RECEIPT_SIZE_BYTES = 15000; // 15KB - real receipt photos are much larger
+  private static MIN_INLINE_RECEIPT_SIZE_BYTES = 45000; // Inline receipts are often compressed screenshots/PDF previews
 
   private static SIGNATURE_FILENAME_PATTERNS = [
     /^image\d{3}\.\w+$/i,          // image001.png, image002.jpg
@@ -100,6 +101,51 @@ export class InboundEmailService {
     'account statement', 'charge', 'refund', 'credit note',
     'quotation', 'quote', 'pro forma', 'proforma',
   ];
+
+  private static RECEIPT_FILENAME_HINTS = [
+    /receipt/i,
+    /invoice/i,
+    /order/i,
+    /statement/i,
+    /transaction/i,
+    /payment/i,
+    /proof/i,
+    /bill/i,
+    /tax/i,
+    /slip/i,
+    /pdf/i,
+    /scan/i,
+  ];
+
+  private hasReceiptFilenameHint(filename: string): boolean {
+    return InboundEmailService.RECEIPT_FILENAME_HINTS.some((pattern) => pattern.test(filename || ''));
+  }
+
+  private stripEmailSignature(text: string): string {
+    if (!text) return text;
+
+    const signatureMarkers = [
+      /^\s*(thanks|thank you|kind regards|regards|best regards|warm regards|cheers|sincerely|sent from my)/i,
+      /^\s*--\s*$/,
+      /^\s*__+\s*$/,
+      /^\s*this email and any attachments are confidential/i,
+      /^\s*please consider the environment before printing/i,
+      /^\s*powered by/i,
+    ];
+
+    const lines = text.split(/\r?\n/);
+    let cutIndex = lines.length;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (signatureMarkers.some((marker) => marker.test(line))) {
+        cutIndex = i;
+        break;
+      }
+    }
+
+    return lines.slice(0, cutIndex).join('\n').trim();
+  }
 
   private stripHtml(html: string): string {
     let text = html
@@ -135,7 +181,8 @@ export class InboundEmailService {
 
   isEmailBodyReceiptLike(subject: string, htmlBody?: string, textBody?: string): boolean {
     const subjectLower = (subject || '').toLowerCase();
-    const bodyText = (textBody || (htmlBody ? this.stripHtml(htmlBody) : '')).toLowerCase();
+    const normalizedBody = this.stripEmailSignature(textBody || (htmlBody ? this.stripHtml(htmlBody) : ''));
+    const bodyText = normalizedBody.toLowerCase();
     const combined = subjectLower + ' ' + bodyText;
 
     let matchCount = 0;
@@ -155,7 +202,7 @@ export class InboundEmailService {
     textBody?: string,
     emailReceiptId?: number
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
-    const bodyText = textBody || (htmlBody ? this.stripHtml(htmlBody) : '');
+    const bodyText = this.stripEmailSignature(textBody || (htmlBody ? this.stripHtml(htmlBody) : ''));
 
     if (!bodyText || bodyText.length < 50) {
       return { success: false, error: 'Email body too short to extract receipt data' };
@@ -291,9 +338,28 @@ Only return valid JSON, no markdown or explanation.`
   isLikelySignatureImage(attachment: { content: Buffer; contentType: string; filename: string; size?: number; contentId?: string }): { isSignature: boolean; reason: string } {
     const size = attachment.size || attachment.content.length;
     const filename = attachment.filename || '';
+    const contentType = attachment.contentType.toLowerCase();
+
+    if (contentType.includes('application/pdf')) {
+      return { isSignature: false, reason: '' };
+    }
+
+    const hasReceiptFilenameHint = this.hasReceiptFilenameHint(filename);
 
     if (attachment.contentId) {
-      return { isSignature: true, reason: `Inline/embedded image with content-id (${Math.round(size / 1024)}KB) - receipts should be attached, not embedded` };
+      if (size < InboundEmailService.MIN_INLINE_RECEIPT_SIZE_BYTES) {
+        return {
+          isSignature: true,
+          reason: `Inline image too small to be a receipt (${Math.round(size / 1024)}KB < ${Math.round(InboundEmailService.MIN_INLINE_RECEIPT_SIZE_BYTES / 1024)}KB minimum)`
+        };
+      }
+
+      if (!hasReceiptFilenameHint && size < InboundEmailService.MIN_INLINE_RECEIPT_SIZE_BYTES * 2) {
+        return {
+          isSignature: true,
+          reason: `Inline image missing receipt filename hint and likely decorative (${Math.round(size / 1024)}KB)`
+        };
+      }
     }
 
     if (size < InboundEmailService.MIN_RECEIPT_SIZE_BYTES) {
@@ -301,7 +367,7 @@ Only return valid JSON, no markdown or explanation.`
     }
 
     for (const pattern of InboundEmailService.SIGNATURE_FILENAME_PATTERNS) {
-      if (pattern.test(filename)) {
+      if (pattern.test(filename) && !hasReceiptFilenameHint) {
         return { isSignature: true, reason: `Filename matches signature pattern: "${filename}"` };
       }
     }

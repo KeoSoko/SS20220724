@@ -1,8 +1,7 @@
 import { fromBuffer } from 'pdf2pic';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const pdfParseModule = require('pdf-parse');
-const pdfParse = typeof pdfParseModule === 'function' ? pdfParseModule : (pdfParseModule.default || pdfParseModule);
+const { PDFParse } = require('pdf-parse');
 import { log } from './vite';
 import path from 'path';
 import fs from 'fs';
@@ -104,10 +103,13 @@ export async function extractTextFromPdf(pdfData: Buffer | string): Promise<stri
       pdfBuffer = pdfData;
     }
     
-    const data = await pdfParse(pdfBuffer);
-    const text = data.text?.trim() || '';
+    const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
+    await parser.load();
+    const result = await parser.getText();
+    const text = (typeof result === 'string' ? result : result?.text || '').trim();
+    const numPages = typeof result === 'object' ? (result?.total || 0) : 0;
     
-    log(`PDF text extracted: ${text.length} characters, ${data.numpages} page(s)`, 'pdf-converter');
+    log(`PDF text extracted: ${text.length} characters, ${numPages} page(s)`, 'pdf-converter');
     
     return text;
   } catch (error: any) {

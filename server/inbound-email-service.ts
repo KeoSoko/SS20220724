@@ -347,12 +347,19 @@ export class InboundEmailService {
     emailReceiptId?: number
   ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
     log(`[STAGE] BODY_PARSING_TRIGGERED`, 'inbound-email');
+    const bodySource = textBody ? 'textBody' : 'htmlBody stripped';
     const rawBody = textBody || (htmlBody ? this.stripHtml(htmlBody) : '');
-    log(`[processEmailBody] Raw body length: ${rawBody.length}, source: ${textBody ? 'textBody' : 'htmlBody stripped'}`, 'inbound-email');
+
+    try {
+      log(`[BODY_BEFORE_STRIP] ${JSON.stringify({ stage: "BODY_BEFORE_STRIP", source: bodySource, length: rawBody.length, preview: rawBody.substring(0, 1000) })}`, 'inbound-email');
+    } catch (e) { /* logging must not break processing */ }
+
     const signatureStripped = this.stripEmailSignature(rawBody);
-    log(`[processEmailBody] After signature strip: ${signatureStripped.length} chars (removed ${rawBody.length - signatureStripped.length})`, 'inbound-email');
     const bodyText = this.stripForwardedContent(signatureStripped);
-    log(`[processEmailBody] After forwarded strip: ${bodyText.length} chars (removed ${signatureStripped.length - bodyText.length})`, 'inbound-email');
+
+    try {
+      log(`[BODY_AFTER_STRIP] ${JSON.stringify({ stage: "BODY_AFTER_STRIP", originalLength: rawBody.length, afterSignatureStrip: signatureStripped.length, afterForwardedStrip: bodyText.length, signatureRemoved: rawBody.length - signatureStripped.length, forwardedRemoved: signatureStripped.length - bodyText.length, preview: bodyText.substring(0, 1000) })}`, 'inbound-email');
+    } catch (e) { /* logging must not break processing */ }
 
     if (!bodyText || bodyText.length < 50) {
       log(`[processEmailBody] Body too short after stripping (${bodyText?.length || 0} chars), skipping`, 'inbound-email');
@@ -362,8 +369,9 @@ export class InboundEmailService {
 
     const truncatedBody = bodyText.substring(0, 8000);
 
-    log(`[processEmailBody] Attempting AI extraction from email body (${bodyText.length} chars, truncated to ${truncatedBody.length})`, 'inbound-email');
-    log(`[processEmailBody] AI input preview (first 300 chars): ${truncatedBody.substring(0, 300)}`, 'inbound-email');
+    try {
+      log(`[BODY_AI_INPUT] ${JSON.stringify({ stage: "BODY_AI_INPUT", timestamp: new Date().toISOString(), subject: subject, textLength: truncatedBody.length, fullBodyLength: bodyText.length, preview: truncatedBody.substring(0, 1000) })}`, 'inbound-email');
+    } catch (e) { /* logging must not break processing */ }
 
     try {
       const response = await openai.chat.completions.create({

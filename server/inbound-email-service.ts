@@ -10,6 +10,9 @@ import { log } from "./vite";
 import crypto from "crypto";
 import { convertPdfToImage, isPdfBuffer } from "./pdf-converter";
 import { storage } from "./storage";
+import OpenAI from "openai";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 interface InboundEmailData {
   to: string;
@@ -87,6 +90,203 @@ export class InboundEmailService {
     /divider/i,                     // divider.png
     /^unnamed/i,                    // unnamed inline images
   ];
+
+  private static RECEIPT_KEYWORDS = [
+    'invoice', 'receipt', 'order', 'payment', 'purchase', 'transaction',
+    'total', 'amount', 'paid', 'billing', 'statement', 'confirmation',
+    'tax invoice', 'vat', 'subtotal', 'delivery', 'shipping',
+    'your order', 'order confirmation', 'payment confirmation',
+    'thank you for your', 'thanks for your order', 'proof of payment',
+    'account statement', 'charge', 'refund', 'credit note',
+    'quotation', 'quote', 'pro forma', 'proforma',
+  ];
+
+  private stripHtml(html: string): string {
+    let text = html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<\/tr>/gi, '\n')
+      .replace(/<\/td>/gi, ' | ')
+      .replace(/<\/th>/gi, ' | ')
+      .replace(/<\/li>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&rsquo;/gi, "'")
+      .replace(/&lsquo;/gi, "'")
+      .replace(/&rdquo;/gi, '"')
+      .replace(/&ldquo;/gi, '"')
+      .replace(/&mdash;/gi, '—')
+      .replace(/&ndash;/gi, '–')
+      .replace(/&#\d+;/gi, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/[ \t]+/g, ' ')
+      .trim();
+    return text;
+  }
+
+  isEmailBodyReceiptLike(subject: string, htmlBody?: string, textBody?: string): boolean {
+    const subjectLower = (subject || '').toLowerCase();
+    const bodyText = (textBody || (htmlBody ? this.stripHtml(htmlBody) : '')).toLowerCase();
+    const combined = subjectLower + ' ' + bodyText;
+
+    let matchCount = 0;
+    for (const keyword of InboundEmailService.RECEIPT_KEYWORDS) {
+      if (combined.includes(keyword.toLowerCase())) {
+        matchCount++;
+      }
+    }
+    return matchCount >= 2;
+  }
+
+  async extractReceiptFromEmailBody(
+    userId: number,
+    workspaceId: number,
+    subject: string,
+    htmlBody?: string,
+    textBody?: string,
+    emailReceiptId?: number
+  ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
+    const bodyText = textBody || (htmlBody ? this.stripHtml(htmlBody) : '');
+
+    if (!bodyText || bodyText.length < 50) {
+      return { success: false, error: 'Email body too short to extract receipt data' };
+    }
+
+    const truncatedBody = bodyText.substring(0, 8000);
+
+    log(`Attempting to extract receipt data from email body (${bodyText.length} chars)`, 'inbound-email');
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4.1",
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert at extracting receipt and invoice data from email text content. 
+Extract the following fields from the email body text. This is typically a forwarded email receipt, invoice, order confirmation, or payment notification from a South African or international retailer/service.
+
+Return a JSON object with these fields:
+- storeName: The merchant/store/company name (string)
+- total: The total amount paid as a string (just the number, no currency symbol, e.g. "299.99")
+- date: The transaction date in ISO format (YYYY-MM-DD). If no date found, use today's date.
+- items: An array of item descriptions (strings). Extract individual line items if visible. If none found, use an empty array.
+- currency: The currency code (e.g. "ZAR", "USD"). Default to "ZAR" if South African.
+- confidence: A number from 0 to 1 indicating how confident you are in the extraction.
+
+If you cannot find a valid receipt/invoice/order in the text, return {"error": "No receipt data found"}.
+Only return valid JSON, no markdown or explanation.`
+          },
+          {
+            role: "user",
+            content: `Subject: ${subject}\n\nEmail body:\n${truncatedBody}`
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 1000,
+      });
+
+      const content = response.choices[0]?.message?.content?.trim();
+      if (!content) {
+        return { success: false, error: 'AI returned empty response' };
+      }
+
+      let parsed: any;
+      try {
+        const jsonStr = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        parsed = JSON.parse(jsonStr);
+      } catch (parseError) {
+        log(`Failed to parse AI response: ${content}`, 'inbound-email');
+        return { success: false, error: 'Failed to parse AI extraction result' };
+      }
+
+      if (parsed.error) {
+        log(`AI could not extract receipt: ${parsed.error}`, 'inbound-email');
+        return { success: false, error: parsed.error };
+      }
+
+      const storeName = parsed.storeName || 'Unknown Store';
+      const total = parsed.total || '0.00';
+      const dateStr = parsed.date;
+      const items = Array.isArray(parsed.items) ? parsed.items : [];
+      const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;
+
+      let receiptDate: Date;
+      try {
+        receiptDate = dateStr ? new Date(dateStr) : new Date();
+        if (isNaN(receiptDate.getTime())) receiptDate = new Date();
+      } catch {
+        receiptDate = new Date();
+      }
+
+      log(`AI extracted from email body: ${storeName}, R${total}, ${items.length} items, confidence: ${confidence}`, 'inbound-email');
+
+      let category = 'other';
+      try {
+        const categorization = await aiCategorizationService.categorizeReceipt(
+          storeName,
+          items,
+          total
+        );
+        category = categorization.category;
+        log(`AI categorized as: ${category}`, 'inbound-email');
+      } catch (catError: any) {
+        log(`AI categorization failed, using default: ${catError.message}`, 'inbound-email');
+      }
+
+      let isPotentialDuplicate = false;
+      try {
+        if (storage.findDuplicateReceipts) {
+          const duplicates = await storage.findDuplicateReceipts(userId, storeName, receiptDate, total);
+          if (duplicates.length > 0) {
+            isPotentialDuplicate = true;
+            log(`Found ${duplicates.length} potential duplicate(s) for email body receipt: ${storeName}, ${total}`, 'inbound-email');
+          }
+        }
+      } catch (dupError: any) {
+        log(`Duplicate check failed: ${dupError.message}`, 'inbound-email');
+      }
+
+      const [receipt] = await db
+        .insert(receipts)
+        .values({
+          userId,
+          workspaceId,
+          createdByUserId: userId,
+          storeName,
+          date: receiptDate,
+          total,
+          items,
+          category: category as any,
+          confidenceScore: Math.round(confidence * 100).toString(),
+          blobUrl: null,
+          blobName: null,
+          imageData: null,
+          source: 'email',
+          sourceEmailId: emailReceiptId || null,
+          processedAt: new Date(),
+          isPotentialDuplicate,
+          notes: `Extracted from email body (no image attachment). Subject: ${subject}`,
+        })
+        .returning();
+
+      log(`Created receipt ${receipt.id} from email body extraction${isPotentialDuplicate ? ' (flagged as potential duplicate)' : ''}`, 'inbound-email');
+
+      return { success: true, receiptId: receipt.id };
+
+    } catch (error: any) {
+      log(`AI email body extraction failed: ${error.message}`, 'inbound-email');
+      return { success: false, error: `AI extraction failed: ${error.message}` };
+    }
+  }
 
   isLikelySignatureImage(attachment: { content: Buffer; contentType: string; filename: string; size?: number; contentId?: string }): { isSignature: boolean; reason: string } {
     const size = attachment.size || attachment.content.length;

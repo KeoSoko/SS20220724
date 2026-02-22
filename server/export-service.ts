@@ -54,17 +54,6 @@ function sanitizeTextForPDF(text: string | null | undefined): string {
     });
 }
 
-function formatItemForPDF(item: any): [string, string] {
-  if (typeof item === 'string') {
-    return [sanitizeTextForPDF(item), ''];
-  }
-  const name = sanitizeTextForPDF(item?.name ?? '');
-  const price = item?.price != null && !isNaN(Number(item.price))
-    ? `R ${Number(item.price).toFixed(2)}`
-    : '';
-  return [name, price];
-}
-
 export class ExportService {
   private getReceiptCategoryLabel(receipt: Receipt): string {
     const rawCategory = getReportingCategory(receipt.category, receipt.notes);
@@ -388,7 +377,6 @@ export class ExportService {
 
         for (const receipt of filteredReceipts) {
           const isEmailHtml = receipt.source === 'email' && emailHtmlReceiptIds.has(receipt.id);
-          const hasItems = receipt.items && receipt.items.length > 0;
           const hasRenderable = receipt.imageData || receipt.blobUrl || receipt.blobName || isEmailHtml;
 
           if (!hasRenderable) continue;
@@ -429,34 +417,6 @@ export class ExportService {
               doc.text('Original email receipt available in the app.', 20, metaY + 10);
               doc.setTextColor(0, 0, 0);
               metaY += 25;
-
-              if (hasItems) {
-                const validItems = receipt.items!
-                  .map(formatItemForPDF)
-                  .filter(([name, _price]) => name.length > 0);
-                if (validItems.length > 0) {
-                  autoTable(doc, {
-                    head: [['Item', 'Price']],
-                    body: validItems,
-                    startY: metaY,
-                    margin: { bottom: 35 },
-                    styles: { fontSize: 9, cellPadding: 3 },
-                    headStyles: {
-                      fillColor: [primaryBlue[0], primaryBlue[1], primaryBlue[2]] as [number, number, number],
-                      textColor: [255, 255, 255] as [number, number, number],
-                      fontStyle: 'bold'
-                    }
-                  });
-                  const lastTable = (doc as any).lastAutoTable;
-                  metaY = lastTable ? lastTable.finalY + 10 : metaY + 10;
-                }
-              } else {
-                console.log(JSON.stringify({
-                  stage: "EXPORT_HTML_RECEIPT_SUPPRESS_EMPTY_ITEMS",
-                  receiptId: receipt.id,
-                  timestamp: new Date().toISOString()
-                }));
-              }
 
               if (receipt.notes) {
                 doc.setFontSize(10);
@@ -519,32 +479,6 @@ export class ExportService {
                 doc.setFontSize(10);
                 doc.text('Receipt image not available', 20, yPos);
                 yPos += 15;
-              }
-
-              if (hasItems) {
-                if (yPos > 240) {
-                  doc.addPage();
-                  yPos = 20;
-                }
-                const validItems = receipt.items!
-                  .map(formatItemForPDF)
-                  .filter(([name, _price]) => name.length > 0);
-                if (validItems.length > 0) {
-                  autoTable(doc, {
-                    head: [['Item', 'Price']],
-                    body: validItems,
-                    startY: yPos,
-                    margin: { bottom: 35 },
-                    styles: { fontSize: 9, cellPadding: 3 },
-                    headStyles: {
-                      fillColor: [primaryBlue[0], primaryBlue[1], primaryBlue[2]] as [number, number, number],
-                      textColor: [255, 255, 255] as [number, number, number],
-                      fontStyle: 'bold'
-                    }
-                  });
-                  const lastTable = (doc as any).lastAutoTable;
-                  yPos = lastTable ? lastTable.finalY + 10 : yPos + 10;
-                }
               }
 
               if (receipt.notes) {

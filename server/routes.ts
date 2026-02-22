@@ -2344,6 +2344,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       html = html.replace(/<object[\s\S]*?<\/object>/gi, "");
       html = html.replace(/<embed[^>]*>/gi, "");
 
+      html = html.replace(/<img\b[^>]*\bsrc\s*=\s*["']?(https?:\/\/[^"'\s>]+)["']?[^>]*\/?>/gi,
+        (_match, url) => {
+          const alt = _match.match(/alt\s*=\s*["']([^"']*)["']/i)?.[1] || "Image";
+          return `<div style="display:inline-block;padding:8px 12px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;color:#666;font-size:12px;font-family:sans-serif;">&#128247; ${alt}</div>`;
+        }
+      );
+      html = html.replace(/<img\b[^>]*\bsrc\s*=\s*["']?cid:[^"'\s>]*["']?[^>]*\/?>/gi, "");
+      html = html.replace(/url\s*\(\s*["']?https?:\/\/[^"')]+["']?\s*\)/gi, "url(about:blank)");
+
       const styleOverride = `<style>
         body { max-width: 100% !important; overflow-x: hidden !important; margin: 0 !important; padding: 8px !important; }
         img { max-width: 100% !important; height: auto !important; }
@@ -2361,7 +2370,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.setHeader("Content-Security-Policy",
-        "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; font-src https: data:;"
+        "default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none';"
       );
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("X-Frame-Options", "SAMEORIGIN");

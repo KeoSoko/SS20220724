@@ -973,27 +973,66 @@ export default function ReceiptDetail() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle>Receipt Image</CardTitle>
-            {receipt.blobName && !receipt.imageData && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => refreshImageMutation.mutate()}
-                disabled={refreshImageMutation.isPending || isRefreshingImage}
-              >
-                {refreshImageMutation.isPending || isRefreshingImage ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <RefreshCcw className="h-4 w-4 mr-2" />
-                )}
-                Refresh URL
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {imageUrl && (imageUrl.includes('.pdf') || imageUrl.includes('application/pdf')) && (
+                <a
+                  href={imageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button variant="outline" size="sm">
+                    <Download className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </Button>
+                </a>
+              )}
+              {receipt.blobName && !receipt.imageData && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refreshImageMutation.mutate()}
+                  disabled={refreshImageMutation.isPending || isRefreshingImage}
+                >
+                  {refreshImageMutation.isPending || isRefreshingImage ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <RefreshCcw className="h-4 w-4 mr-2" />
+                  )}
+                  Refresh URL
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="flex justify-center">
             {isRefreshingImage ? (
               <div className="flex items-center justify-center h-[400px] w-full">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 <span className="ml-2 text-muted-foreground">Loading image...</span>
+              </div>
+            ) : imageUrl && (imageUrl.includes('.pdf') || imageUrl.includes('application/pdf')) ? (
+              <div className="w-full flex flex-col items-center">
+                <object
+                  data={imageUrl}
+                  type="application/pdf"
+                  className="w-full h-[600px] border border-gray-200 rounded-none"
+                >
+                  <div className="flex flex-col items-center justify-center h-[400px] w-full bg-gray-50 border-2 border-dashed border-gray-300 rounded-none">
+                    <FileText className="h-12 w-12 text-blue-500 mb-4" />
+                    <p className="text-gray-600 text-center max-w-md mb-3">
+                      This receipt is stored as a PDF document.
+                    </p>
+                    <a
+                      href={imageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Button variant="default" size="sm">
+                        <Download className="h-4 w-4 mr-2" />
+                        Open PDF
+                      </Button>
+                    </a>
+                  </div>
+                </object>
               </div>
             ) : imageErrorCount >= 3 && receipt?.blobName && !receipt?.imageData ? (
               <div className="flex flex-col items-center justify-center h-[400px] w-full bg-gray-50 border-2 border-dashed border-gray-300 rounded-none">
@@ -1011,16 +1050,13 @@ export default function ReceiptDetail() {
                 alt="Receipt"
                 className="max-w-full max-h-[600px] object-contain rounded-none"
                 onLoad={() => {
-                  // Reset error count when image loads successfully
                   setImageErrorCount(0);
                 }}
                 onError={async (e) => {
                   const now = Date.now();
                   
-                  // Always increment error count for tracking
                   setImageErrorCount(prev => prev + 1);
                   
-                  // Rate limiting: only refresh once every 10 seconds and max 3 attempts
                   if (now - lastRefreshTime > 10000 && imageErrorCount < 3 && receipt?.blobName && !isRefreshingImage) {
                     console.log(`Image failed to load, attempting refresh... (attempt ${imageErrorCount + 1}/3)`);
                     try {
@@ -1031,7 +1067,6 @@ export default function ReceiptDetail() {
                       const { imageUrl } = await res.json();
                       if (imageUrl && imageUrl !== (e.target as HTMLImageElement).src) {
                         console.log("Got new image URL, updating...");
-                        // Add cache-busting parameter to force browser refresh
                         const cacheBustedUrl = `${imageUrl}&cache=${Date.now()}`;
                         setImageUrl(cacheBustedUrl);
                       } else {
@@ -1039,7 +1074,6 @@ export default function ReceiptDetail() {
                       }
                     } catch (error) {
                       console.error("Failed to refresh image URL:", error);
-                      // Don't show 404 errors to user - Azure storage may not be configured
                     } finally {
                       setIsRefreshingImage(false);
                     }

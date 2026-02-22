@@ -421,6 +421,20 @@ export default function CommandCenter() {
     }
   });
 
+  const reprocessEmailMutation = useMutation({
+    mutationFn: async (logId: number) => {
+      const response = await apiRequest("POST", `/api/admin/inbound-email-logs/${logId}/reprocess`, {});
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Receipt created", description: `Receipt #${data.receiptId} created from email body` });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/inbound-email-logs'] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Reprocess failed", description: error.message, variant: "destructive" });
+    }
+  });
+
   const emailPreviewMutation = useMutation({
     mutationFn: async ({ userId, template }: { userId: number; template: EmailTemplateType }) => {
       const response = await apiRequest("POST", "/api/admin/email/preview", { userId, template });
@@ -808,6 +822,22 @@ export default function CommandCenter() {
                               </div>
                             )}
                           </div>
+                          {(log.status === 'no_attachments' || log.status === 'failed') && log.userId && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0 text-xs"
+                              disabled={reprocessEmailMutation.isPending}
+                              onClick={() => reprocessEmailMutation.mutate(log.id)}
+                            >
+                              {reprocessEmailMutation.isPending ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3 w-3 mr-1" />
+                              )}
+                              Reprocess
+                            </Button>
+                          )}
                         </div>
                       </div>
                     );

@@ -14,6 +14,7 @@ import OpenAI from "openai";
 import sharp from "sharp";
 import { detectVendor } from "./vendor-detection";
 import { deterministicExtract, type DeterministicExtractionResult } from "./deterministic-extraction";
+import { extractDeterministicFromHtml, isVendorSupported } from "./vendor-extraction-engine";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -603,6 +604,43 @@ Only return valid JSON, no markdown or explanation.`
     if (vendorResult.vendor && vendorResult.confidence >= 0.5) {
       await this.updateDocumentStatus(documentId, { vendor: vendorResult.vendor });
 
+      if (htmlBody && isVendorSupported(vendorResult.vendor)) {
+        const htmlResult = extractDeterministicFromHtml(vendorResult.vendor, htmlBody, subject);
+
+        if (htmlResult && htmlResult.confidence >= 0.7) {
+          const validation = this.validateExtractedReceipt({
+            storeName: htmlResult.storeName,
+            total: htmlResult.total,
+            confidence: htmlResult.confidence,
+            items: htmlResult.items,
+          });
+
+          if (validation.valid) {
+            const { receiptId } = await this.createReceiptFromExtraction({
+              userId,
+              workspaceId,
+              storeName: htmlResult.storeName,
+              total: htmlResult.total,
+              date: htmlResult.date,
+              items: htmlResult.items,
+              confidence: htmlResult.confidence,
+              subject,
+              emailReceiptId,
+              extractionMethod: `deterministic_html:${vendorResult.vendor}`,
+            });
+
+            await this.updateDocumentStatus(documentId, {
+              status: 'extracted',
+              extractionMethod: 'deterministic_html',
+              receiptId,
+            });
+
+            return { success: true, receiptId };
+          }
+        }
+        log(`[VENDOR_HTML_PARSE_FAILED] vendor="${vendorResult.vendor}" HTML extraction insufficient — trying text-regex fallback`, 'inbound-email');
+      }
+
       const deterministicResult = deterministicExtract(vendorResult.vendor, bodyText, subject);
 
       if (deterministicResult && deterministicResult.confidence >= 0.8) {
@@ -624,12 +662,12 @@ Only return valid JSON, no markdown or explanation.`
             confidence: deterministicResult.confidence,
             subject,
             emailReceiptId,
-            extractionMethod: `deterministic:${vendorResult.vendor}`,
+            extractionMethod: `deterministic_text:${vendorResult.vendor}`,
           });
 
           await this.updateDocumentStatus(documentId, {
             status: 'extracted',
-            extractionMethod: 'deterministic',
+            extractionMethod: 'deterministic_text',
             receiptId,
           });
 
@@ -637,8 +675,10 @@ Only return valid JSON, no markdown or explanation.`
         }
       }
 
-      log(`[DETERMINISTIC_EXTRACTION_FAILED] vendor="${vendorResult.vendor}" — falling back to AI`, 'inbound-email');
+      log(`[AI_FALLBACK_TRIGGERED] vendor="${vendorResult.vendor}" — both HTML and text-regex extraction failed, falling back to AI`, 'inbound-email');
     }
+
+    log(`[AI_FALLBACK_TRIGGERED] vendor=${vendorResult.vendor || "unknown"} — no deterministic match, using AI extraction`, 'inbound-email');
 
     try {
       const aiResult = await this.aiExtractFromBody(bodyText, subject);

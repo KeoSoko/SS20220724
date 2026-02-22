@@ -321,6 +321,8 @@ Only return valid JSON, no markdown or explanation.`
     status: string;
     errorMessage?: string | null;
     processingTimeMs?: number | null;
+    htmlBody?: string | null;
+    textBody?: string | null;
   }) {
     try {
       await db.insert(inboundEmailLogs).values({
@@ -335,6 +337,8 @@ Only return valid JSON, no markdown or explanation.`
         status: data.status,
         errorMessage: data.errorMessage || null,
         processingTimeMs: data.processingTimeMs || null,
+        htmlBody: data.htmlBody || null,
+        textBody: data.textBody || null,
       });
     } catch (logError: any) {
       log(`Failed to write inbound email log: ${logError.message}`, 'inbound-email');
@@ -351,6 +355,9 @@ Only return valid JSON, no markdown or explanation.`
     try {
       log(`Processing inbound email from: ${emailData.from} to: ${emailData.to}`, 'inbound-email');
 
+      const emailBodyHtml = emailData.html || null;
+      const emailBodyText = emailData.text || null;
+
       const receiptEmailId = this.extractReceiptEmailId(emailData.to);
       if (!receiptEmailId) {
         log(`Could not extract receipt email ID from: ${emailData.to}`, 'inbound-email');
@@ -361,6 +368,8 @@ Only return valid JSON, no markdown or explanation.`
           status: 'invalid_address',
           errorMessage: 'Could not extract receipt email ID from address',
           processingTimeMs: Date.now() - startTime,
+          htmlBody: emailBodyHtml,
+          textBody: emailBodyText,
         });
         return { success: false, error: 'Invalid recipient address format' };
       }
@@ -377,6 +386,8 @@ Only return valid JSON, no markdown or explanation.`
           status: 'user_not_found',
           errorMessage: `No user found for receipt email ID: ${receiptEmailId}`,
           processingTimeMs: Date.now() - startTime,
+          htmlBody: emailBodyHtml,
+          textBody: emailBodyText,
         });
         return { success: false, error: 'Unknown recipient' };
       }
@@ -458,6 +469,8 @@ Only return valid JSON, no markdown or explanation.`
               status: 'success_email_body',
               errorMessage: null,
               processingTimeMs: Date.now() - startTime,
+              htmlBody: emailBodyHtml,
+              textBody: emailBodyText,
             });
 
             if (user.email) {
@@ -493,6 +506,8 @@ Only return valid JSON, no markdown or explanation.`
             ? 'Email body looked like a receipt but AI extraction failed' 
             : 'No valid receipt images found and email body does not contain receipt content',
           processingTimeMs: Date.now() - startTime,
+          htmlBody: emailBodyHtml,
+          textBody: emailBodyText,
         });
 
         if (user.email) {
@@ -542,6 +557,8 @@ Only return valid JSON, no markdown or explanation.`
           status,
           errorMessage: status === 'partial' ? `${validAttachments.length - processedReceipts.length} attachment(s) failed to process` : null,
           processingTimeMs: Date.now() - startTime,
+          htmlBody: emailBodyHtml,
+          textBody: emailBodyText,
         });
 
         if (user.email) {
@@ -574,6 +591,8 @@ Only return valid JSON, no markdown or explanation.`
           status: 'failed',
           errorMessage: 'All attachments failed to process (OCR/upload errors)',
           processingTimeMs: Date.now() - startTime,
+          htmlBody: emailBodyHtml,
+          textBody: emailBodyText,
         });
 
         return { success: false, error: 'Failed to process receipt images' };
@@ -589,6 +608,8 @@ Only return valid JSON, no markdown or explanation.`
         status: 'failed',
         errorMessage: `Unhandled error: ${error.message}`,
         processingTimeMs: Date.now() - startTime,
+        htmlBody: emailData.html || null,
+        textBody: emailData.text || null,
       });
       return { success: false, error: error.message };
     }

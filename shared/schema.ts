@@ -281,9 +281,11 @@ export const inboundEmailLogs = pgTable("inbound_email_logs", {
   attachmentCount: integer("attachment_count").default(0).notNull(),
   validAttachmentCount: integer("valid_attachment_count").default(0).notNull(),
   receiptsCreated: integer("receipts_created").default(0).notNull(),
-  status: text("status").notNull(), // received, user_not_found, no_attachments, processing, success, partial, failed
+  status: text("status").notNull(), // received, user_not_found, no_attachments, processing, success, success_email_body, partial, failed
   errorMessage: text("error_message"),
   processingTimeMs: integer("processing_time_ms"),
+  htmlBody: text("html_body"),
+  textBody: text("text_body"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

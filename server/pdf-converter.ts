@@ -1,7 +1,8 @@
 import { fromBuffer } from 'pdf2pic';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+const pdfParseModule = require('pdf-parse');
+const pdfParse = typeof pdfParseModule === 'function' ? pdfParseModule : (pdfParseModule.default || pdfParseModule);
 import { log } from './vite';
 import path from 'path';
 import fs from 'fs';

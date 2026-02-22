@@ -476,9 +476,26 @@ export class ExportService {
                   yPos += 15;
                 }
               } else {
-                doc.setFontSize(10);
-                doc.text('Receipt image not available', 20, yPos);
-                yPos += 15;
+                const blobNameStr = (receipt.blobName as string) || '';
+                const isPdfSource = blobNameStr.toLowerCase().endsWith('.pdf');
+                if (isPdfSource) {
+                  doc.setFillColor(240, 248, 255);
+                  doc.rect(15, yPos - 5, 180, 20, 'F');
+                  doc.setDrawColor(0, 115, 170);
+                  doc.rect(15, yPos - 5, 180, 20, 'S');
+                  doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+                  doc.setFontSize(9);
+                  doc.text('Document Source: PDF Attachment', 20, yPos + 2);
+                  doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+                  doc.setFontSize(8);
+                  doc.text('Original PDF receipt available in the app.', 20, yPos + 10);
+                  doc.setTextColor(0, 0, 0);
+                  yPos += 25;
+                } else {
+                  doc.setFontSize(10);
+                  doc.text('Receipt image not available', 20, yPos);
+                  yPos += 15;
+                }
               }
 
               if (receipt.notes) {

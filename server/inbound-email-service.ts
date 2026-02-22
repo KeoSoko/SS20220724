@@ -136,8 +136,9 @@ export class InboundEmailService {
 
     const lines = text.split(/\r?\n/);
     let cutIndex = lines.length;
+    const minCutLine = Math.floor(lines.length * 0.7);
 
-    for (let i = 0; i < lines.length; i++) {
+    for (let i = minCutLine; i < lines.length; i++) {
       const line = lines[i].trim();
       if (signatureMarkers.some((marker) => marker.test(line))) {
         cutIndex = i;

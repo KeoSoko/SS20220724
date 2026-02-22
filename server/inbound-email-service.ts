@@ -351,20 +351,14 @@ export class InboundEmailService {
     const rawBody = textBody || (htmlBody ? this.stripHtml(htmlBody) : '');
 
     try {
-      log(`===BODY_BEFORE_STRIP=== source=${bodySource} length=${rawBody.length}`, 'inbound-email');
-      log(`===BEFORE_STRIP_P1=== ${rawBody.substring(0, 200)}`, 'inbound-email');
-      log(`===BEFORE_STRIP_P2=== ${rawBody.substring(200, 400)}`, 'inbound-email');
-      log(`===BEFORE_STRIP_P3=== ${rawBody.substring(400, 600)}`, 'inbound-email');
+      log(`===BODY_BEFORE_STRIP=== source=${bodySource} length=${rawBody.length} preview="${rawBody.substring(0, 200)}"`, 'inbound-email');
     } catch (e) { /* logging must not break processing */ }
 
     const signatureStripped = this.stripEmailSignature(rawBody);
     const bodyText = this.stripForwardedContent(signatureStripped);
 
     try {
-      log(`===BODY_AFTER_STRIP=== original=${rawBody.length} afterSig=${signatureStripped.length} afterFwd=${bodyText.length} sigRemoved=${rawBody.length - signatureStripped.length} fwdRemoved=${signatureStripped.length - bodyText.length}`, 'inbound-email');
-      log(`===AFTER_STRIP_P1=== ${bodyText.substring(0, 200)}`, 'inbound-email');
-      log(`===AFTER_STRIP_P2=== ${bodyText.substring(200, 400)}`, 'inbound-email');
-      log(`===AFTER_STRIP_P3=== ${bodyText.substring(400, 600)}`, 'inbound-email');
+      log(`===BODY_AFTER_STRIP=== original=${rawBody.length} afterSig=${signatureStripped.length} afterFwd=${bodyText.length} sigRemoved=${rawBody.length - signatureStripped.length} fwdRemoved=${signatureStripped.length - bodyText.length} preview="${bodyText.substring(0, 200)}"`, 'inbound-email');
     } catch (e) { /* logging must not break processing */ }
 
     if (!bodyText || bodyText.length < 50) {
@@ -376,10 +370,7 @@ export class InboundEmailService {
     const truncatedBody = bodyText.substring(0, 8000);
 
     try {
-      log(`===BODY_AI_INPUT=== subject="${subject}" textLength=${truncatedBody.length} fullLength=${bodyText.length}`, 'inbound-email');
-      log(`===AI_INPUT_P1=== ${truncatedBody.substring(0, 200)}`, 'inbound-email');
-      log(`===AI_INPUT_P2=== ${truncatedBody.substring(200, 400)}`, 'inbound-email');
-      log(`===AI_INPUT_P3=== ${truncatedBody.substring(400, 600)}`, 'inbound-email');
+      log(`===BODY_AI_INPUT=== subject="${subject}" textLength=${truncatedBody.length} fullLength=${bodyText.length} preview="${truncatedBody.substring(0, 200)}"`, 'inbound-email');
     } catch (e) { /* logging must not break processing */ }
 
     try {

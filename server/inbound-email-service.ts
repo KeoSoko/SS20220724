@@ -11,6 +11,7 @@ import crypto from "crypto";
 import { convertPdfToImage, extractTextFromPdf, isPdfBuffer } from "./pdf-converter";
 import { storage } from "./storage";
 import OpenAI from "openai";
+import { createCanvas } from "canvas";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -194,6 +195,78 @@ export class InboundEmailService {
     return matchCount >= 2;
   }
 
+
+  private createEmailBodyReceiptPreviewImage(data: {
+    storeName: string;
+    total: string;
+    receiptDate: Date;
+    items: string[];
+    subject: string;
+  }): string {
+    const width = 1200;
+    const height = 1600;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 44px Arial';
+    ctx.fillText('Email Receipt Summary', 60, 90);
+
+    ctx.strokeStyle = '#d1d5db';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(60, 120);
+    ctx.lineTo(width - 60, 120);
+    ctx.stroke();
+
+    let y = 190;
+    const rowSpacing = 64;
+
+    const drawField = (label: string, value: string) => {
+      ctx.fillStyle = '#4b5563';
+      ctx.font = 'bold 30px Arial';
+      ctx.fillText(label, 60, y);
+
+      ctx.fillStyle = '#111827';
+      ctx.font = '30px Arial';
+      ctx.fillText(value || '-', 300, y);
+      y += rowSpacing;
+    };
+
+    drawField('Merchant', data.storeName || 'Unknown Store');
+    drawField('Total', data.total || '0.00');
+    drawField('Date', data.receiptDate.toISOString().slice(0, 10));
+
+    const subjectText = (data.subject || '(No subject)').slice(0, 90);
+    drawField('Subject', subjectText);
+
+    y += 30;
+    ctx.fillStyle = '#4b5563';
+    ctx.font = 'bold 30px Arial';
+    ctx.fillText('Items', 60, y);
+    y += 44;
+
+    ctx.fillStyle = '#111827';
+    ctx.font = '28px Arial';
+
+    const itemList = data.items.length > 0 ? data.items.slice(0, 18) : ['(No line items extracted)'];
+    for (const item of itemList) {
+      const itemText = `• ${item}`.slice(0, 96);
+      ctx.fillText(itemText, 80, y);
+      y += 38;
+      if (y > height - 120) break;
+    }
+
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '24px Arial';
+    ctx.fillText('Source: Email body extraction', 60, height - 70);
+
+    return `data:image/jpeg;base64,${canvas.toBuffer('image/jpeg', { quality: 0.9 }).toString('base64')}`;
+  }
+
   async extractReceiptFromEmailBody(
     userId: number,
     workspaceId: number,
@@ -276,6 +349,30 @@ Only return valid JSON, no markdown or explanation.`
 
       log(`AI extracted from email body: ${storeName}, R${total}, ${items.length} items, confidence: ${confidence}`, 'inbound-email');
 
+      let previewImageBase64: string | null = null;
+      let blobUrl: string | null = null;
+      let blobName: string | null = null;
+
+      try {
+        previewImageBase64 = this.createEmailBodyReceiptPreviewImage({
+          storeName,
+          total,
+          receiptDate,
+          items,
+          subject,
+        });
+
+        const uploadResult = await azureStorage.uploadFile(previewImageBase64, `email_receipt_${userId}_${Date.now()}.jpg`);
+        if (uploadResult) {
+          blobUrl = uploadResult.blobUrl;
+          blobName = uploadResult.blobName;
+          previewImageBase64 = null;
+          log(`Uploaded email body preview image to Azure: ${blobName}`, 'inbound-email');
+        }
+      } catch (previewError: any) {
+        log(`Failed to generate/upload email body preview image: ${previewError.message}`, 'inbound-email');
+      }
+
       let category = 'other';
       try {
         const categorization = await aiCategorizationService.categorizeReceipt(
@@ -314,9 +411,9 @@ Only return valid JSON, no markdown or explanation.`
           items,
           category: category as any,
           confidenceScore: Math.round(confidence * 100).toString(),
-          blobUrl: null,
-          blobName: null,
-          imageData: null,
+          blobUrl,
+          blobName,
+          imageData: blobUrl ? null : previewImageBase64,
           source: 'email',
           sourceEmailId: emailReceiptId || null,
           processedAt: new Date(),

@@ -1,0 +1,87 @@
+🔍 REPLIT DEBUG PROMPT — SENDGRID WEBHOOK FAILURE
+
+I am debugging my SendGrid Inbound Parse webhook.
+
+Right now:
+
+PDFs are failing
+
+Body extraction is wrong
+
+Attachments may not be detected
+
+Before changing ANY logic, I need full visibility into what the webhook is actually receiving.
+
+DO NOT refactor.
+DO NOT rewrite business logic.
+ONLY add structured logging.
+
+1️⃣ Add Deep Logging At Top of Webhook Route
+
+Inside /api/webhooks/inbound-email, at the VERY TOP of the handler (before any processing), add:
+
+console.log("==== INBOUND EMAIL DEBUG START ====");
+console.log("Content-Type:", req.headers['content-type']);
+console.log("Is multipart:", req.is('multipart/form-data'));
+console.log("Body keys:", Object.keys(req.body || {}));
+console.log("Files:", req.files);
+console.log("Raw attachment count (body.attachments):", req.body?.attachments);
+console.log("Attachment-info field:", req.body?.['attachment-info']);
+console.log("Text length:", req.body?.text?.length);
+console.log("HTML length:", req.body?.html?.length);
+console.log("==== INBOUND EMAIL DEBUG END ====");
+
+2️⃣ Log Multer Configuration
+
+Log how multer is configured:
+
+memoryStorage or diskStorage?
+
+fileSize limits?
+
+Is it route-specific or global?
+
+Print this clearly in logs.
+
+3️⃣ Log Middleware Order
+
+Log the order of middleware affecting this route.
+
+Specifically confirm:
+
+Is express.json() being applied before multer?
+
+Is express.urlencoded() being applied before multer?
+
+If yes, log that clearly.
+
+4️⃣ Do NOT Change Any Processing Logic
+
+No refactors.
+No validation changes.
+No PDF changes.
+No AI changes.
+
+This step is ONLY to expose the raw incoming payload structure.
+
+5️⃣ After Adding Logging
+
+Explain:
+
+What SendGrid is actually sending
+
+Whether multer is parsing files correctly
+
+Whether attachments are in req.files or req.body
+
+Whether content-type is correct
+
+Whether middleware order is breaking multipart parsing
+
+Be precise.
+Do not guess.
+Base conclusions only on logged output.
+
+Stop after adding logging and analysis.
+
+Do NOT attempt fixes yet.

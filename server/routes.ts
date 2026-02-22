@@ -4345,45 +4345,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       log('Received inbound email webhook', 'inbound-email');
 
-      // ==== DEEP DEBUG LOGGING START ====
-      log(`[DEBUG] Content-Type: ${req.headers['content-type']}`, 'inbound-email');
-      log(`[DEBUG] Is multipart: ${req.is('multipart/form-data')}`, 'inbound-email');
-      log(`[DEBUG] Body keys: ${JSON.stringify(Object.keys(req.body || {}))}`, 'inbound-email');
-      log(`[DEBUG] req.files present: ${!!req.files}, type: ${typeof req.files}, isArray: ${Array.isArray(req.files)}`, 'inbound-email');
-      if (req.files && Array.isArray(req.files)) {
-        log(`[DEBUG] req.files count: ${req.files.length}`, 'inbound-email');
-        req.files.forEach((f: any, i: number) => {
-          log(`[DEBUG] File[${i}]: fieldname=${f.fieldname}, originalname=${f.originalname}, mimetype=${f.mimetype}, size=${f.size}, encoding=${f.encoding}`, 'inbound-email');
-        });
-      } else if (req.files && typeof req.files === 'object') {
-        log(`[DEBUG] req.files (object keys): ${JSON.stringify(Object.keys(req.files))}`, 'inbound-email');
-      }
-      log(`[DEBUG] Raw attachment count (body.attachments): ${req.body?.attachments}`, 'inbound-email');
-      log(`[DEBUG] Attachment-info field: ${req.body?.['attachment-info']}`, 'inbound-email');
-      log(`[DEBUG] Text length: ${req.body?.text?.length ?? 'undefined'}`, 'inbound-email');
-      log(`[DEBUG] HTML length: ${req.body?.html?.length ?? 'undefined'}`, 'inbound-email');
-      log(`[DEBUG] Subject: ${req.body?.subject}`, 'inbound-email');
-      log(`[DEBUG] From: ${req.body?.from}`, 'inbound-email');
-      log(`[DEBUG] To: ${req.body?.to}`, 'inbound-email');
-      log(`[DEBUG] SPF: ${req.body?.SPF}`, 'inbound-email');
-      log(`[DEBUG] DKIM: ${req.body?.dkim}`, 'inbound-email');
-      log(`[DEBUG] Envelope: ${req.body?.envelope}`, 'inbound-email');
-      log(`[DEBUG] Charsets: ${req.body?.charsets}`, 'inbound-email');
-      // ==== DEEP DEBUG LOGGING END ====
-
-      // ==== MULTER CONFIG DEBUG ====
-      log(`[DEBUG][MULTER] Storage type: memoryStorage (default - no storage option specified)`, 'inbound-email');
-      log(`[DEBUG][MULTER] fieldSize limit: 50MB, fileSize limit: 25MB, max files: 10`, 'inbound-email');
-      log(`[DEBUG][MULTER] Method: .any() (accepts all fields)`, 'inbound-email');
-      // ==== MULTER CONFIG DEBUG END ====
-
-      // ==== MIDDLEWARE ORDER DEBUG ====
-      log(`[DEBUG][MIDDLEWARE] express.json({ limit: '50mb' }) applied GLOBALLY in index.ts (line 49) - only parses application/json content-type`, 'inbound-email');
-      log(`[DEBUG][MIDDLEWARE] express.urlencoded({ extended: false, limit: '50mb' }) applied GLOBALLY in index.ts (line 51) - only parses application/x-www-form-urlencoded content-type`, 'inbound-email');
-      log(`[DEBUG][MIDDLEWARE] multer .any() applied as ROUTE-SPECIFIC middleware on this endpoint - parses multipart/form-data`, 'inbound-email');
-      log(`[DEBUG][MIDDLEWARE] Order: generalLimiter -> CORS -> express.json -> express.urlencoded -> MIME types -> static files -> routes (multer on this route)`, 'inbound-email');
-      log(`[DEBUG][MIDDLEWARE] express.json and express.urlencoded should NOT interfere with multipart/form-data (different content-types)`, 'inbound-email');
-      // ==== MIDDLEWARE ORDER DEBUG END ====
+      const filesCount = req.files ? (Array.isArray(req.files) ? req.files.length : Object.keys(req.files).length) : 0;
+      log(`[webhook] subject="${req.body?.subject}" attachments=${filesCount} textLen=${req.body?.text?.length || 0} htmlLen=${req.body?.html?.length || 0}`, 'inbound-email');
       
       const { inboundEmailService } = await import('./inbound-email-service');
 
@@ -4391,12 +4354,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         log('[webhook] No request body received', 'inbound-email');
         return res.status(200).send('OK');
       }
-      
-      const bodyFields = Object.keys(req.body);
-      const filesCount = req.files ? (Array.isArray(req.files) ? req.files.length : Object.keys(req.files).length) : 0;
-      log(`[webhook] Body fields: ${bodyFields.join(', ')}`, 'inbound-email');
-      log(`[webhook] Attachments (body): ${req.body.attachments || '0'}, Files (multer): ${filesCount}`, 'inbound-email');
-      log(`[webhook] Attachment-info: ${req.body['attachment-info'] || 'none'}`, 'inbound-email');
       
       const emailData = {
         to: req.body.to || '',

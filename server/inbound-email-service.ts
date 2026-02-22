@@ -11,7 +11,7 @@ import crypto from "crypto";
 import { convertPdfToImage, extractTextFromPdf, isPdfBuffer } from "./pdf-converter";
 import { storage } from "./storage";
 import OpenAI from "openai";
-import { createCanvas } from "canvas";
+import sharp from "sharp";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -196,75 +196,52 @@ export class InboundEmailService {
   }
 
 
-  private createEmailBodyReceiptPreviewImage(data: {
+  private async createEmailBodyReceiptPreviewImage(data: {
     storeName: string;
     total: string;
     receiptDate: Date;
     items: string[];
     subject: string;
-  }): string {
-    const width = 1200;
-    const height = 1600;
-    const canvas = createCanvas(width, height);
-    const ctx = canvas.getContext('2d');
+  }): Promise<string> {
+    const escXml = (str: string) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
+    const storeName = escXml((data.storeName || 'Unknown Store').slice(0, 60));
+    const total = escXml(data.total || '0.00');
+    const dateStr = escXml(data.receiptDate.toISOString().slice(0, 10));
+    const subject = escXml((data.subject || '(No subject)').slice(0, 80));
 
-    ctx.fillStyle = '#111827';
-    ctx.font = 'bold 44px Arial';
-    ctx.fillText('Email Receipt Summary', 60, 90);
+    const itemList = data.items.length > 0 ? data.items.slice(0, 15) : ['(No line items extracted)'];
+    const itemsSvg = itemList.map((item, i) => {
+      const itemText = escXml(item.slice(0, 80));
+      return `<text x="80" y="${520 + i * 38}" font-size="26" fill="#111827" font-family="sans-serif">${itemText}</text>`;
+    }).join('\n');
 
-    ctx.strokeStyle = '#d1d5db';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(60, 120);
-    ctx.lineTo(width - 60, 120);
-    ctx.stroke();
+    const svgHeight = Math.max(800, 560 + itemList.length * 38 + 100);
 
-    let y = 190;
-    const rowSpacing = 64;
+    const svg = `<svg width="800" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="${svgHeight}" fill="#ffffff"/>
+  <rect x="0" y="0" width="800" height="80" fill="#0073AA"/>
+  <text x="40" y="52" font-size="32" font-weight="bold" fill="#ffffff" font-family="sans-serif">Email Receipt Summary</text>
+  <line x1="40" y1="110" x2="760" y2="110" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="40" y="140" font-size="22" font-weight="bold" fill="#6b7280" font-family="sans-serif">Merchant</text>
+  <text x="40" y="175" font-size="30" font-weight="bold" fill="#111827" font-family="sans-serif">${storeName}</text>
+  <text x="40" y="230" font-size="22" font-weight="bold" fill="#6b7280" font-family="sans-serif">Total</text>
+  <text x="40" y="270" font-size="36" font-weight="bold" fill="#0073AA" font-family="sans-serif">R ${total}</text>
+  <text x="40" y="330" font-size="22" font-weight="bold" fill="#6b7280" font-family="sans-serif">Date</text>
+  <text x="40" y="365" font-size="28" fill="#111827" font-family="sans-serif">${dateStr}</text>
+  <text x="40" y="420" font-size="22" font-weight="bold" fill="#6b7280" font-family="sans-serif">Subject</text>
+  <text x="40" y="455" font-size="24" fill="#374151" font-family="sans-serif">${subject}</text>
+  <line x1="40" y1="480" x2="760" y2="480" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="40" y="510" font-size="22" font-weight="bold" fill="#6b7280" font-family="sans-serif">Items</text>
+  ${itemsSvg}
+  <text x="40" y="${svgHeight - 30}" font-size="18" fill="#9ca3af" font-family="sans-serif">Source: Email body extraction - Simple Slips</text>
+</svg>`;
 
-    const drawField = (label: string, value: string) => {
-      ctx.fillStyle = '#4b5563';
-      ctx.font = 'bold 30px Arial';
-      ctx.fillText(label, 60, y);
+    const buffer = await sharp(Buffer.from(svg))
+      .jpeg({ quality: 90 })
+      .toBuffer();
 
-      ctx.fillStyle = '#111827';
-      ctx.font = '30px Arial';
-      ctx.fillText(value || '-', 300, y);
-      y += rowSpacing;
-    };
-
-    drawField('Merchant', data.storeName || 'Unknown Store');
-    drawField('Total', data.total || '0.00');
-    drawField('Date', data.receiptDate.toISOString().slice(0, 10));
-
-    const subjectText = (data.subject || '(No subject)').slice(0, 90);
-    drawField('Subject', subjectText);
-
-    y += 30;
-    ctx.fillStyle = '#4b5563';
-    ctx.font = 'bold 30px Arial';
-    ctx.fillText('Items', 60, y);
-    y += 44;
-
-    ctx.fillStyle = '#111827';
-    ctx.font = '28px Arial';
-
-    const itemList = data.items.length > 0 ? data.items.slice(0, 18) : ['(No line items extracted)'];
-    for (const item of itemList) {
-      const itemText = `• ${item}`.slice(0, 96);
-      ctx.fillText(itemText, 80, y);
-      y += 38;
-      if (y > height - 120) break;
-    }
-
-    ctx.fillStyle = '#6b7280';
-    ctx.font = '24px Arial';
-    ctx.fillText('Source: Email body extraction', 60, height - 70);
-
-    return `data:image/jpeg;base64,${canvas.toBuffer('image/jpeg', { quality: 0.9 }).toString('base64')}`;
+    return `data:image/jpeg;base64,${buffer.toString('base64')}`;
   }
 
   async extractReceiptFromEmailBody(
@@ -354,7 +331,7 @@ Only return valid JSON, no markdown or explanation.`
       let blobName: string | null = null;
 
       try {
-        previewImageBase64 = this.createEmailBodyReceiptPreviewImage({
+        previewImageBase64 = await this.createEmailBodyReceiptPreviewImage({
           storeName,
           total,
           receiptDate,

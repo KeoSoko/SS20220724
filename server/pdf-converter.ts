@@ -1,4 +1,7 @@
 import { fromBuffer } from 'pdf2pic';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 import { log } from './vite';
 import path from 'path';
 import fs from 'fs';
@@ -80,6 +83,35 @@ export async function convertPdfToImage(pdfData: Buffer | string): Promise<strin
       } catch (e) {
       }
     }
+  }
+}
+
+export async function extractTextFromPdf(pdfData: Buffer | string): Promise<string> {
+  try {
+    log('Extracting text from PDF...', 'pdf-converter');
+    
+    let pdfBuffer: Buffer;
+    
+    if (typeof pdfData === 'string') {
+      const base64Match = pdfData.match(/^data:application\/pdf;base64,(.+)$/);
+      if (base64Match) {
+        pdfBuffer = Buffer.from(base64Match[1], 'base64');
+      } else {
+        pdfBuffer = Buffer.from(pdfData, 'base64');
+      }
+    } else {
+      pdfBuffer = pdfData;
+    }
+    
+    const data = await pdfParse(pdfBuffer);
+    const text = data.text?.trim() || '';
+    
+    log(`PDF text extracted: ${text.length} characters, ${data.numpages} page(s)`, 'pdf-converter');
+    
+    return text;
+  } catch (error: any) {
+    log(`PDF text extraction error: ${error.message}`, 'pdf-converter');
+    throw new Error(`Failed to extract text from PDF: ${error.message}`);
   }
 }
 

@@ -1039,28 +1039,33 @@ export default function ReceiptDetail() {
               </div>
             ) : imageUrl && (imageUrl.includes('.pdf') || imageUrl.includes('application/pdf')) ? (
               <div className="w-full flex flex-col items-center">
-                <object
-                  data={imageUrl}
-                  type="application/pdf"
-                  className="w-full h-[600px] border border-gray-200 rounded-none"
+                <a
+                  href={imageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full mb-3"
                 >
-                  <div className="flex flex-col items-center justify-center h-[400px] w-full bg-gray-50 border-2 border-dashed border-gray-300 rounded-none">
-                    <FileText className="h-12 w-12 text-blue-500 mb-4" />
-                    <p className="text-gray-600 text-center max-w-md mb-3">
-                      This receipt is stored as a PDF document.
+                  <Button variant="default" size="default" className="w-full">
+                    <FileText className="h-5 w-5 mr-2" />
+                    View PDF Receipt
+                    <Download className="h-4 w-4 ml-2" />
+                  </Button>
+                </a>
+                <div className="hidden md:block w-full">
+                  <iframe
+                    src={imageUrl}
+                    className="w-full h-[600px] border border-gray-200 rounded-none"
+                    title="PDF receipt preview"
+                  />
+                </div>
+                <div className="block md:hidden w-full">
+                  <div className="flex flex-col items-center justify-center h-[200px] w-full bg-gray-50 border border-gray-200 rounded-none">
+                    <FileText className="h-10 w-10 text-blue-500 mb-3" />
+                    <p className="text-sm text-gray-500 text-center px-4">
+                      Tap the button above to view the full PDF receipt
                     </p>
-                    <a
-                      href={imageUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button variant="default" size="sm">
-                        <Download className="h-4 w-4 mr-2" />
-                        Open PDF
-                      </Button>
-                    </a>
                   </div>
-                </object>
+                </div>
               </div>
             ) : imageErrorCount >= 3 && receipt?.blobName && !receipt?.imageData ? (
               <div className="flex flex-col items-center justify-center h-[400px] w-full bg-gray-50 border-2 border-dashed border-gray-300 rounded-none">

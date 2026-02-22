@@ -371,7 +371,8 @@ export class ExportService {
         }
 
         for (const receipt of filteredReceipts) {
-          if (receipt.imageData || receipt.blobUrl || receipt.blobName) {
+          const isThisEmailHtmlEntry = emailHtmlReceiptIds.has(receipt.id);
+          if (receipt.imageData || receipt.blobUrl || receipt.blobName || isThisEmailHtmlEntry) {
             try {
               doc.addPage();
               
@@ -409,10 +410,9 @@ export class ExportService {
                 metaY += 20;
               }
 
-              const isThisEmailHtml = emailHtmlReceiptIds.has(receipt.id);
               const hasItems = receipt.items && receipt.items.length > 0;
 
-              if (isThisEmailHtml && !hasItems) {
+              if (isThisEmailHtmlEntry && !hasItems) {
                 console.log(JSON.stringify({
                   stage: "EXPORT_HTML_RECEIPT_SUPPRESS_EMPTY_ITEMS",
                   receiptId: receipt.id,
@@ -472,14 +472,14 @@ export class ExportService {
                   doc.setFontSize(10);
                   doc.text('Receipt image could not be loaded', 20, contentStartY);
                 }
-              } else if (!isThisEmailHtml) {
+              } else if (!isThisEmailHtmlEntry) {
                 doc.setFontSize(10);
                 doc.text('Receipt image not available', 20, contentStartY);
               }
               
               // Add notes if available
               if (receipt.notes) {
-                let yPos = imageData ? 250 : (isThisEmailHtml ? contentStartY : contentStartY + 15);
+                let yPos = imageData ? 250 : (isThisEmailHtmlEntry ? contentStartY : contentStartY + 15);
                 
                 if (yPos > 280) {
                   doc.addPage();

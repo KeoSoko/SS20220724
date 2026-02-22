@@ -437,7 +437,9 @@ Only return valid JSON, no markdown or explanation.`
     workspaceId: number,
     pdfText: string,
     filename: string,
-    emailReceiptId: number
+    emailReceiptId: number,
+    pdfBlobUrl: string | null = null,
+    pdfBlobName: string | null = null
   ): Promise<{ success: boolean; receiptId?: number }> {
     const truncatedText = pdfText.substring(0, 8000);
 
@@ -544,18 +546,18 @@ Only return valid JSON, no markdown or explanation.`
         items,
         category: category as any,
         confidenceScore: Math.round(confidence * 100).toString(),
-        blobUrl: null,
-        blobName: null,
+        blobUrl: pdfBlobUrl,
+        blobName: pdfBlobName,
         imageData: null,
         source: 'email',
         sourceEmailId: emailReceiptId || null,
         processedAt: new Date(),
         isPotentialDuplicate,
-        notes: `Extracted from PDF attachment via text extraction (image conversion unavailable). File: ${filename}`,
+        notes: `Extracted from PDF attachment via text extraction. File: ${filename}`,
       })
       .returning();
 
-    log(`Created receipt ${receipt.id} from PDF text extraction${isPotentialDuplicate ? ' (flagged as potential duplicate)' : ''}`, 'inbound-email');
+    log(`Created receipt ${receipt.id} from PDF text extraction (PDF stored: ${!!pdfBlobUrl})${isPotentialDuplicate ? ' (flagged as potential duplicate)' : ''}`, 'inbound-email');
 
     return { success: true, receiptId: receipt.id };
   }
@@ -1002,6 +1004,20 @@ Only return valid JSON, no markdown or explanation.`
           log(`PDF image conversion failed: ${pdfError.message}. Trying text extraction fallback...`, 'inbound-email');
           console.log(`[inbound-email] PDF image conversion failed, trying text extraction fallback...`);
           
+          let pdfBlobUrl: string | null = null;
+          let pdfBlobName: string | null = null;
+          try {
+            const pdfBase64 = `data:application/pdf;base64,${attachment.content.toString('base64')}`;
+            const uploadResult = await azureStorage.uploadFile(pdfBase64, attachment.filename || `receipt_${userId}_${Date.now()}.pdf`);
+            if (uploadResult) {
+              pdfBlobUrl = uploadResult.blobUrl;
+              pdfBlobName = uploadResult.blobName;
+              log(`Uploaded original PDF to Azure: ${pdfBlobName}`, 'inbound-email');
+            }
+          } catch (pdfUploadError: any) {
+            log(`Failed to upload original PDF: ${pdfUploadError.message}`, 'inbound-email');
+          }
+
           try {
             const pdfText = await extractTextFromPdf(attachment.content);
             if (pdfText && pdfText.length >= 50) {
@@ -1013,7 +1029,9 @@ Only return valid JSON, no markdown or explanation.`
                 workspaceId,
                 pdfText,
                 attachment.filename,
-                emailReceiptId
+                emailReceiptId,
+                pdfBlobUrl,
+                pdfBlobName
               );
               return result;
             } else {
@@ -1022,6 +1040,9 @@ Only return valid JSON, no markdown or explanation.`
           } catch (textError: any) {
             log(`PDF text extraction also failed: ${textError.message}`, 'inbound-email');
             console.error(`[inbound-email] PDF text extraction failed:`, textError);
+            if (pdfBlobUrl) {
+              return { success: false, error: `PDF processing failed but original PDF stored at ${pdfBlobUrl}` };
+            }
             throw new Error(`Failed to process PDF: image conversion and text extraction both failed`);
           }
         }

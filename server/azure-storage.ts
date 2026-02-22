@@ -93,18 +93,15 @@ export class AzureBlobStorage {
       }
       
       const mimeType = mimeTypeMatch[1];
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
       
       if (!allowedTypes.includes(mimeType)) {
         throw new Error(`File type ${mimeType} not allowed. Must be one of: ${allowedTypes.join(', ')}`);
       }
       
-      // Generate consistent filename format matching local storage
-      // Use timestamp + random string format like local storage for consistency
       const timestamp = Date.now();
       const randomString = Math.random().toString(36).substring(2, 15);
       
-      // Get proper file extension based on MIME type  
       let fileExtension = fileName.split('.').pop() || 'jpg';
       if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
         fileExtension = 'jpg';
@@ -112,6 +109,8 @@ export class AzureBlobStorage {
         fileExtension = 'png';
       } else if (mimeType === 'image/webp') {
         fileExtension = 'webp';
+      } else if (mimeType === 'application/pdf') {
+        fileExtension = 'pdf';
       }
       
       const blobName = `receipt_${timestamp}_${randomString}.${fileExtension}`;

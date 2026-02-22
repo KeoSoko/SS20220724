@@ -539,6 +539,41 @@ Only return valid JSON, no markdown or explanation.`
     }
   }
 
+
+  private async tryEmailBodyFallbackForFailedPdf(
+    user: { id: number; workspaceId: number | null },
+    emailData: InboundEmailData,
+    emailReceiptId: number,
+    attachmentFilename: string,
+    failureReason: string
+  ): Promise<{ success: boolean; receiptId?: number }> {
+    log(`PDF attachment processing failed (${attachmentFilename}): ${failureReason || 'unknown error'}`, 'inbound-email');
+    log('PDF processing failed - attempting fallback to email body extraction...', 'inbound-email');
+
+    const hasReceiptContent = this.isEmailBodyReceiptLike(emailData.subject, emailData.html, emailData.text);
+    if (!hasReceiptContent) {
+      log('Email body fallback skipped because body does not look receipt-like', 'inbound-email');
+      return { success: false };
+    }
+
+    const bodyResult = await this.extractReceiptFromEmailBody(
+      user.id,
+      user.workspaceId!,
+      emailData.subject,
+      emailData.html,
+      emailData.text,
+      emailReceiptId
+    );
+
+    if (bodyResult.success && bodyResult.receiptId) {
+      log(`Email body fallback succeeded for failed PDF attachment ${attachmentFilename}`, 'inbound-email');
+      return { success: true, receiptId: bodyResult.receiptId };
+    }
+
+    log(`Email body fallback failed after PDF failure: ${bodyResult.error || 'unknown error'}`, 'inbound-email');
+    return { success: false };
+  }
+
   async processInboundEmail(
     emailData: InboundEmailData,
     attachments: Map<string, { content: Buffer; contentType: string; filename: string; size?: number; contentId?: string }>
@@ -724,6 +759,8 @@ Only return valid JSON, no markdown or explanation.`
       let emailBodyFallbackUsed = false;
 
       for (const attachment of validAttachments) {
+        const isPdfAttachment = attachment.contentType === 'application/pdf' || isPdfBuffer(attachment.content);
+
         try {
           const result = await this.processAttachment(user.id, user.workspaceId!, attachment, emailReceiptRecord.id);
           if (result.receiptId) {
@@ -731,36 +768,37 @@ Only return valid JSON, no markdown or explanation.`
             continue;
           }
 
-          const isPdfAttachment = attachment.contentType === 'application/pdf' || isPdfBuffer(attachment.content);
           if (!result.success && isPdfAttachment && !emailBodyFallbackUsed) {
-            log(`PDF attachment processing failed (${attachment.filename}): ${result.error || 'unknown error'}`, 'inbound-email');
-            log('PDF processing failed - attempting fallback to email body extraction...', 'inbound-email');
+            const fallbackResult = await this.tryEmailBodyFallbackForFailedPdf(
+              user,
+              emailData,
+              emailReceiptRecord.id,
+              attachment.filename,
+              result.error || 'unknown error'
+            );
 
-            const hasReceiptContent = this.isEmailBodyReceiptLike(emailData.subject, emailData.html, emailData.text);
-            if (hasReceiptContent) {
-              const bodyResult = await this.extractReceiptFromEmailBody(
-                user.id,
-                user.workspaceId!,
-                emailData.subject,
-                emailData.html,
-                emailData.text,
-                emailReceiptRecord.id
-              );
-
-              if (bodyResult.success && bodyResult.receiptId) {
-                processedReceipts.push(bodyResult.receiptId);
-                emailBodyFallbackUsed = true;
-                log(`Email body fallback succeeded for failed PDF attachment ${attachment.filename}`, 'inbound-email');
-              } else {
-                log(`Email body fallback failed after PDF failure: ${bodyResult.error || 'unknown error'}`, 'inbound-email');
-              }
-            } else {
-              log('Email body fallback skipped because body does not look receipt-like', 'inbound-email');
+            if (fallbackResult.receiptId) {
+              processedReceipts.push(fallbackResult.receiptId);
+              emailBodyFallbackUsed = true;
             }
           }
         } catch (attachmentError: any) {
           log(`Error processing attachment ${attachment.filename}: ${attachmentError.message}`, 'inbound-email');
-          console.error(`[inbound-email] Error processing attachment ${attachment.filename}:`, attachmentError);
+
+          if (isPdfAttachment && !emailBodyFallbackUsed) {
+            const fallbackResult = await this.tryEmailBodyFallbackForFailedPdf(
+              user,
+              emailData,
+              emailReceiptRecord.id,
+              attachment.filename,
+              attachmentError.message || 'unknown error'
+            );
+
+            if (fallbackResult.receiptId) {
+              processedReceipts.push(fallbackResult.receiptId);
+              emailBodyFallbackUsed = true;
+            }
+          }
         }
       }
 

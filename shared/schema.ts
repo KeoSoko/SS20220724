@@ -289,6 +289,28 @@ export const inboundEmailLogs = pgTable("inbound_email_logs", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const emailDocuments = pgTable("email_documents", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workspaceId: integer("workspace_id").notNull().references(() => workspaces.id),
+  sourceType: text("source_type").notNull(), // 'email_body' | 'attachment'
+  subject: text("subject"),
+  fromEmail: text("from_email"),
+  rawHtml: text("raw_html"),
+  rawText: text("raw_text"),
+  attachmentUrl: text("attachment_url"),
+  attachmentFilename: text("attachment_filename"),
+  vendor: text("vendor"),
+  extractionMethod: text("extraction_method"), // 'deterministic' | 'ai' | null
+  status: text("status").notNull().default("processing"), // 'processing' | 'extracted' | 'needs_review' | 'failed'
+  receiptId: integer("receipt_id").references(() => receipts.id),
+  errorMessage: text("error_message"),
+  receivedAt: timestamp("received_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type EmailDocument = typeof emailDocuments.$inferSelect;
+
 // User preferences and settings
 export const userPreferences = pgTable("user_preferences", {
   id: serial("id").primaryKey(),

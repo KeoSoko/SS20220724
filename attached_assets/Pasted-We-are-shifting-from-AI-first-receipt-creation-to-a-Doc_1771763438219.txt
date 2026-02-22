@@ -1,0 +1,238 @@
+We are shifting from AI-first receipt creation to a Document-First architecture.
+
+Goal:
+The original email (HTML/text/attachment) must always be the document of record.
+Structured receipt data becomes metadata layered on top.
+
+This is a controlled architectural change.
+Do NOT refactor unrelated systems.
+
+🎯 OBJECTIVE
+
+Refactor the inbound email processing pipeline to:
+
+Always store the original document first.
+
+Run deterministic vendor detection.
+
+Attempt vendor-specific deterministic extraction.
+
+Use AI only as fallback.
+
+If extraction confidence is low → mark as "Needs Review" instead of fabricating data.
+
+🏗 REQUIRED PIPELINE ORDER
+
+Replace current flow with:
+
+1️⃣ StoreDocument()
+2️⃣ DetectVendor()
+3️⃣ If vendor recognized:
+       Try DeterministicExtraction()
+       If success → Save structured receipt metadata
+       Else → Fallback to AI
+4️⃣ If vendor not recognized:
+       Run AI extraction
+5️⃣ If confidence low:
+       Mark document as NeedsReview
+6️⃣ Never delete or modify original document
+
+🗂 STEP 1 — Store Document First
+
+Before ANY extraction:
+
+Create a Document record with:
+
+sourceType: 'email_body' or 'attachment'
+
+subject
+
+from
+
+rawHtml
+
+rawText
+
+attachmentUrl (if exists)
+
+receivedAt
+
+status: 'processing'
+
+This must happen BEFORE extraction logic.
+
+If extraction fails, the document still exists.
+
+🔎 STEP 2 — Vendor Detection (Deterministic)
+
+Create a function:
+
+detectVendor({ subject, from, rawHtml, rawText })
+
+
+Start with support for:
+
+Uber Eats
+
+Amazon
+
+Pick n Pay
+
+Takealot
+
+Checkers
+
+Use:
+
+Sender domain
+
+Subject patterns
+
+Known brand phrases
+
+Return:
+
+{
+  vendor: "Uber Eats",
+  confidence: 0.95
+}
+
+
+If not recognized:
+
+{ vendor: null }
+
+🧾 STEP 3 — Deterministic Extraction Layer
+
+Create vendor-specific extractors:
+
+Example:
+
+extractUberEatsReceipt(document)
+
+
+Rules:
+
+Find "Total" near currency pattern
+
+Extract first valid currency after "Total"
+
+Extract order date
+
+Extract order ID
+
+Do NOT use AI in these functions.
+
+Return structured object:
+
+{
+  storeName,
+  total,
+  date,
+  currency,
+  confidence: 0.9
+}
+
+
+If extraction unreliable → return null.
+
+🤖 STEP 4 — AI Fallback
+
+Only run AI if:
+
+Vendor not recognized
+OR
+
+Deterministic extraction failed
+
+AI must:
+
+Receive cleaned but not destructively stripped text
+
+Return structured data with confidence score
+
+If AI confidence < threshold:
+→ Do NOT auto-create receipt
+→ Mark document as NeedsReview
+
+🛑 STEP 5 — Receipt Creation Rules
+
+Only create structured receipt record if:
+
+Deterministic extraction confidence ≥ 0.8
+OR
+
+AI confidence ≥ threshold
+
+Else:
+
+Document remains stored
+
+status = 'needs_review'
+
+Never fabricate partial receipt.
+
+🔐 DO NOT CHANGE
+
+PDF processing
+
+OCR logic
+
+Existing validation rules (reuse them)
+
+Database schema unrelated to documents
+
+Azure storage logic
+
+📊 Add Logging
+
+Add compact structured logs:
+
+DOCUMENT_STORED
+
+VENDOR_DETECTED
+
+DETERMINISTIC_EXTRACTION_SUCCESS
+
+DETERMINISTIC_EXTRACTION_FAILED
+
+AI_FALLBACK_TRIGGERED
+
+RECEIPT_METADATA_SAVED
+
+MARKED_NEEDS_REVIEW
+
+Keep logs concise.
+
+📦 IMPORTANT DESIGN PRINCIPLES
+
+Original email is immutable.
+
+Extraction does not overwrite document.
+
+AI is fallback, not primary.
+
+Low confidence = human review, not guesswork.
+
+System must be auditable.
+
+🧠 After Implementation
+
+Explain:
+
+How document-first differs from previous pipeline
+
+How vendor detection works
+
+How deterministic extraction prevents hallucination
+
+How review flow protects data integrity
+
+What future vendors can be added easily
+
+This is a strategic architectural evolution, not a patch.
+
+Do not over-engineer.
+Implement incrementally and cleanly.
+
+You are now building something accountants can trust.

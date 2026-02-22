@@ -371,49 +371,68 @@ export class ExportService {
         }
 
         for (const receipt of filteredReceipts) {
-          const isThisEmailHtmlEntry = emailHtmlReceiptIds.has(receipt.id);
-          if (receipt.imageData || receipt.blobUrl || receipt.blobName || isThisEmailHtmlEntry) {
-            try {
-              doc.addPage();
-              
-              doc.setFontSize(16);
-              doc.text(`Receipt: ${receipt.storeName}`, 20, 20);
-              
-              doc.setFontSize(12);
-              doc.text(`Date: ${receipt.date.toLocaleDateString()}`, 20, 35);
-              doc.text(`Total: R ${receipt.total}`, 20, 45);
-              doc.text(`Category: ${this.getReceiptCategoryLabel(receipt)}`, 20, 55);
-              let metaY = 65;
-              if (receipt.paymentMethod) {
-                doc.text(`Payment: ${receipt.paymentMethod}`, 20, metaY);
-                metaY += 10;
-              }
+          const isEmailHtml = receipt.source === 'email' && emailHtmlReceiptIds.has(receipt.id);
+          const hasItems = receipt.items && receipt.items.length > 0;
+          const hasRenderable = receipt.imageData || receipt.blobUrl || receipt.blobName || isEmailHtml;
 
-              if (emailHtmlReceiptIds.has(receipt.id)) {
-                console.log(JSON.stringify({
-                  stage: "EXPORT_HTML_RECEIPT_IN_BULK",
-                  receiptId: receipt.id,
-                  timestamp: new Date().toISOString()
-                }));
-                metaY += 2;
-                doc.setFillColor(240, 248, 255);
-                doc.rect(15, metaY - 5, 180, 20, 'F');
-                doc.setDrawColor(0, 115, 170);
-                doc.rect(15, metaY - 5, 180, 20, 'S');
-                doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
-                doc.setFontSize(9);
-                doc.text('Document Source: Email (HTML)', 20, metaY + 2);
-                doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
-                doc.setFontSize(8);
-                doc.text('Original email receipt available in the app.', 20, metaY + 10);
-                doc.setTextColor(0, 0, 0);
-                metaY += 20;
-              }
+          if (!hasRenderable) continue;
 
-              const hasItems = receipt.items && receipt.items.length > 0;
-              const suppressContent = isThisEmailHtmlEntry && !hasItems;
+          try {
+            doc.addPage();
 
-              if (suppressContent) {
+            doc.setFontSize(16);
+            doc.text(`Receipt: ${sanitizeTextForPDF(receipt.storeName)}`, 20, 20);
+
+            doc.setFontSize(12);
+            doc.text(`Date: ${receipt.date.toLocaleDateString()}`, 20, 35);
+            doc.text(`Total: R ${receipt.total}`, 20, 45);
+            doc.text(`Category: ${this.getReceiptCategoryLabel(receipt)}`, 20, 55);
+            let metaY = 65;
+            if (receipt.paymentMethod) {
+              doc.text(`Payment: ${sanitizeTextForPDF(receipt.paymentMethod)}`, 20, metaY);
+              metaY += 10;
+            }
+
+            if (isEmailHtml) {
+              console.log(JSON.stringify({
+                stage: "EXPORT_HTML_RECEIPT_IN_BULK",
+                receiptId: receipt.id,
+                timestamp: new Date().toISOString()
+              }));
+
+              metaY += 2;
+              doc.setFillColor(240, 248, 255);
+              doc.rect(15, metaY - 5, 180, 20, 'F');
+              doc.setDrawColor(0, 115, 170);
+              doc.rect(15, metaY - 5, 180, 20, 'S');
+              doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+              doc.setFontSize(9);
+              doc.text('Document Source: Email (HTML)', 20, metaY + 2);
+              doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+              doc.setFontSize(8);
+              doc.text('Original email receipt available in the app.', 20, metaY + 10);
+              doc.setTextColor(0, 0, 0);
+              metaY += 25;
+
+              if (hasItems) {
+                autoTable(doc, {
+                  head: [['Item', 'Price']],
+                  body: receipt.items!.map(item => [
+                    sanitizeTextForPDF(item.name),
+                    `R ${item.price}`
+                  ]),
+                  startY: metaY,
+                  margin: { bottom: 35 },
+                  styles: { fontSize: 9, cellPadding: 3 },
+                  headStyles: {
+                    fillColor: [primaryBlue[0], primaryBlue[1], primaryBlue[2]] as [number, number, number],
+                    textColor: [255, 255, 255] as [number, number, number],
+                    fontStyle: 'bold'
+                  }
+                });
+                const lastTable = (doc as any).lastAutoTable;
+                metaY = lastTable ? lastTable.finalY + 10 : metaY + 10;
+              } else {
                 console.log(JSON.stringify({
                   stage: "EXPORT_HTML_RECEIPT_SUPPRESS_EMPTY_ITEMS",
                   receiptId: receipt.id,
@@ -421,32 +440,36 @@ export class ExportService {
                 }));
               }
 
-              if (!suppressContent) {
-                const contentStartY = metaY + 5;
-                
-                let imageData = null;
-                
-                if (receipt.imageData) {
-                  imageData = receipt.imageData;
-                } else if (receipt.blobUrl && receipt.blobUrl.startsWith('/uploads/')) {
-                  const fs = require('fs');
-                  const path = require('path');
-                  const filePath = path.join(process.cwd(), receipt.blobUrl);
-                  
-                  try {
-                    if (fs.existsSync(filePath)) {
-                      const fileBuffer = fs.readFileSync(filePath);
-                      const base64 = fileBuffer.toString('base64');
-                      const ext = path.extname(filePath).toLowerCase();
-                      const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
-                      imageData = `data:${mimeType};base64,${base64}`;
-                    }
-                  } catch (fileError) {
-                    console.error(`Failed to read local file: ${filePath}`, fileError);
+              if (receipt.notes) {
+                doc.setFontSize(10);
+                doc.text(`Notes: ${sanitizeTextForPDF(receipt.notes)}`, 20, metaY + 5);
+              }
+            } else {
+              const contentStartY = metaY + 5;
+              let imageData = null;
+
+              if (receipt.imageData) {
+                imageData = receipt.imageData;
+              } else if (receipt.blobUrl && receipt.blobUrl.startsWith('/uploads/')) {
+                const fs = require('fs');
+                const path = require('path');
+                const filePath = path.join(process.cwd(), receipt.blobUrl);
+                try {
+                  if (fs.existsSync(filePath)) {
+                    const fileBuffer = fs.readFileSync(filePath);
+                    const base64 = fileBuffer.toString('base64');
+                    const ext = path.extname(filePath).toLowerCase();
+                    const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+                    imageData = `data:${mimeType};base64,${base64}`;
                   }
-                } else if (receipt.blobName) {
-                  const imageUrl = await azureStorage.generateSasUrl(receipt.blobName, 1);
-                  
+                } catch (fileError) {
+                  console.error(`Failed to read local file: ${filePath}`, fileError);
+                }
+              } else if (receipt.blobName) {
+                const blobNameStr = receipt.blobName as string;
+                const isPdfBlob = blobNameStr.toLowerCase().endsWith('.pdf');
+                if (!isPdfBlob) {
+                  const imageUrl = await azureStorage.generateSasUrl(blobNameStr, 1);
                   if (imageUrl) {
                     try {
                       const response = await fetch(imageUrl);
@@ -456,44 +479,66 @@ export class ExportService {
                         imageData = `data:image/jpeg;base64,${base64}`;
                       }
                     } catch (fetchError) {
-                      console.error(`Failed to fetch Azure image: ${imageUrl}`, fetchError);
+                      console.error(`Failed to fetch Azure image: ${blobNameStr}`, fetchError);
                     }
                   }
                 }
-                
-                if (imageData) {
-                  try {
-                    doc.addImage(imageData, 'JPEG', 20, contentStartY, 120, 160);
-                  } catch (imgError) {
-                    console.error('Failed to add image to PDF:', imgError);
-                    doc.setFontSize(10);
-                    doc.text('Receipt image could not be loaded', 20, contentStartY);
-                  }
-                } else {
-                  doc.setFontSize(10);
-                  doc.text('Receipt image not available', 20, contentStartY);
-                }
-                
-                if (receipt.notes) {
-                  let yPos = imageData ? 250 : contentStartY + 15;
-                  
-                  if (yPos > 280) {
-                    doc.addPage();
-                    yPos = 20;
-                  }
-                  
-                  doc.setFontSize(10);
-                  doc.text(`Notes: ${sanitizeTextForPDF(receipt.notes)}`, 20, yPos);
-                }
-              } else if (receipt.notes) {
-                doc.setFontSize(10);
-                doc.text(`Notes: ${sanitizeTextForPDF(receipt.notes)}`, 20, metaY + 5);
               }
-              
-            } catch (imageError) {
-              console.error(`Failed to add image for receipt ${receipt.id}:`, imageError);
-              // Continue without the image
+
+              let yPos = contentStartY;
+
+              if (imageData) {
+                try {
+                  doc.addImage(imageData, 'JPEG', 20, yPos, 120, 160);
+                  yPos += 165;
+                } catch (imgError) {
+                  console.error('Failed to add image to PDF:', imgError);
+                  doc.setFontSize(10);
+                  doc.text('Receipt image could not be loaded', 20, yPos);
+                  yPos += 15;
+                }
+              } else {
+                doc.setFontSize(10);
+                doc.text('Receipt image not available', 20, yPos);
+                yPos += 15;
+              }
+
+              if (hasItems) {
+                if (yPos > 240) {
+                  doc.addPage();
+                  yPos = 20;
+                }
+                autoTable(doc, {
+                  head: [['Item', 'Price']],
+                  body: receipt.items!.map(item => [
+                    sanitizeTextForPDF(item.name),
+                    `R ${item.price}`
+                  ]),
+                  startY: yPos,
+                  margin: { bottom: 35 },
+                  styles: { fontSize: 9, cellPadding: 3 },
+                  headStyles: {
+                    fillColor: [primaryBlue[0], primaryBlue[1], primaryBlue[2]] as [number, number, number],
+                    textColor: [255, 255, 255] as [number, number, number],
+                    fontStyle: 'bold'
+                  }
+                });
+                const lastTable = (doc as any).lastAutoTable;
+                yPos = lastTable ? lastTable.finalY + 10 : yPos + 10;
+              }
+
+              if (receipt.notes) {
+                if (yPos > 280) {
+                  doc.addPage();
+                  yPos = 20;
+                }
+                doc.setFontSize(10);
+                doc.text(`Notes: ${sanitizeTextForPDF(receipt.notes)}`, 20, yPos);
+              }
             }
+
+          } catch (imageError) {
+            console.error(`Failed to render receipt ${receipt.id}:`, imageError);
           }
         }
       }

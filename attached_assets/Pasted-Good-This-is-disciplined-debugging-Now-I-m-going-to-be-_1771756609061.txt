@@ -1,0 +1,141 @@
+Good. This is disciplined debugging.
+
+Now I’m going to be very direct:
+
+Until we see a real webhook hit, everything else is theory.
+
+Right now your setup looks correct on paper.
+
+But one of these is still true:
+
+SendGrid is not sending what you think it is.
+
+Multer is not binding to the route you think it is.
+
+The request is being consumed before multer runs.
+
+The attachment field name differs from what you expect.
+
+The webhook is being retried and you’re looking at the wrong log instance.
+
+What You Do Next (No Guessing)
+
+Send ONE controlled test email right now:
+
+Subject: DEBUG TEST
+
+Body: This is a test body
+
+Attach a small PDF (under 1MB)
+
+Then immediately check production logs and copy ONLY this section:
+
+==== INBOUND EMAIL DEBUG START ====
+...
+==== INBOUND EMAIL DEBUG END ====
+
+
+Paste it here raw.
+
+Do not summarize.
+Do not interpret.
+Do not filter.
+
+What I Will Be Looking For
+1️⃣ Content-Type
+
+Must be:
+
+multipart/form-data; boundary=...
+
+
+If not → SendGrid not configured correctly.
+
+2️⃣ Body Keys
+
+Expected fields from SendGrid:
+
+to
+
+from
+
+subject
+
+text
+
+html
+
+attachments
+
+attachment-info
+
+If attachments exists but req.files is empty → multer issue.
+
+3️⃣ req.files
+
+Each file should look like:
+
+[
+  {
+    fieldname: 'attachment1',
+    originalname: 'receipt.pdf',
+    mimetype: 'application/pdf',
+    size: 123456,
+    buffer: <Buffer ...>
+  }
+]
+
+
+If:
+
+buffer missing → multer misconfigured
+
+empty array → field mismatch
+
+undefined → middleware order problem
+
+One More Important Question
+
+Is your webhook route declared EXACTLY like this?
+
+app.post(
+  '/api/webhooks/inbound-email',
+  upload.any(),
+  inboundHandler
+);
+
+
+Or are you doing:
+
+app.use(upload.any());
+
+
+If it’s global, that’s dangerous.
+
+Why All 3 Failing Is a Clue
+
+You said:
+
+PDF failing
+
+Body extraction wrong
+
+Attachments not detected
+
+That pattern usually means:
+
+👉 The webhook payload isn’t structured how your processing expects.
+
+Not a parsing bug.
+Not AI.
+Not pdf-parse.
+
+Transport layer mismatch.
+
+Send the debug block.
+
+We’ll isolate this in one move.
+
+No emotion.
+No guessing.
+Just payload truth.

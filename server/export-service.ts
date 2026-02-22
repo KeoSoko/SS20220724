@@ -409,6 +409,17 @@ export class ExportService {
                 metaY += 20;
               }
 
+              const isThisEmailHtml = emailHtmlReceiptIds.has(receipt.id);
+              const hasItems = receipt.items && receipt.items.length > 0;
+
+              if (isThisEmailHtml && !hasItems) {
+                console.log(JSON.stringify({
+                  stage: "EXPORT_HTML_RECEIPT_SUPPRESS_EMPTY_ITEMS",
+                  receiptId: receipt.id,
+                  timestamp: new Date().toISOString()
+                }));
+              }
+
               const contentStartY = metaY + 5;
               
               let imageData = null;
@@ -461,7 +472,7 @@ export class ExportService {
                   doc.setFontSize(10);
                   doc.text('Receipt image could not be loaded', 20, contentStartY);
                 }
-              } else {
+              } else if (!isThisEmailHtml) {
                 doc.setFontSize(10);
                 doc.text('Receipt image not available', 20, contentStartY);
               }
@@ -599,7 +610,13 @@ export class ExportService {
         yPos += 30;
       }
 
-      if (receipt.items && receipt.items.length > 0) {
+      if (isEmailHtmlReceipt && (!receipt.items || receipt.items.length === 0)) {
+        console.log(JSON.stringify({
+          stage: "EXPORT_HTML_RECEIPT_SUPPRESS_EMPTY_ITEMS",
+          receiptId: receipt.id,
+          timestamp: new Date().toISOString()
+        }));
+      } else if (receipt.items && receipt.items.length > 0) {
         yPos += 5;
         autoTable(doc, {
           head: [['Item', 'Price']],

@@ -334,8 +334,9 @@ function HomePage() {
       // Filter by confidence score if "Needs Review" is enabled
       let matchesConfidence = true;
       if (showNeedsReview) {
-        const confidenceScore = receipt.confidenceScore ? parseFloat(receipt.confidenceScore) : 1;
-        matchesConfidence = confidenceScore < 0.8;
+        const raw = receipt.confidenceScore ? parseFloat(receipt.confidenceScore) : 100;
+        const pct = raw > 1 ? raw : raw * 100;
+        matchesConfidence = pct < 80;
       }
       
       // Smart Filters: Date range

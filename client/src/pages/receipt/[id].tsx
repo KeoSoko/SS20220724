@@ -955,14 +955,21 @@ export default function ReceiptDetail() {
                     <div>
                       <p className="text-sm text-muted-foreground">OCR Confidence</p>
                       <div className="flex items-center">
-                        {parseFloat(receipt.confidenceScore) > 0.7 ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-500 mr-1" />
-                        ) : (
-                          <Tag className="h-4 w-4 text-yellow-500 mr-1" />
-                        )}
-                        <span>
-                          {Math.round(parseFloat(receipt.confidenceScore) * 100)}% 
-                        </span>
+                        {(() => {
+                          const raw = parseFloat(receipt.confidenceScore);
+                          const pct = raw > 1 ? raw : raw * 100;
+                          const isHigh = pct >= 70;
+                          return (
+                            <>
+                              {isHigh ? (
+                                <CheckCircle2 className="h-4 w-4 text-green-500 mr-1" />
+                              ) : (
+                                <Tag className="h-4 w-4 text-yellow-500 mr-1" />
+                              )}
+                              <span>{Math.round(pct)}%</span>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}

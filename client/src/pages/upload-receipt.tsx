@@ -1744,14 +1744,21 @@ export default function UploadReceipt() {
                     />
                     {confidenceScore && (
                       <div className="absolute bottom-2 right-2">
-                        <Badge variant={parseFloat(confidenceScore) > 0.7 ? "outline" : "destructive"}>
-                          {parseFloat(confidenceScore) > 0.7 ? (
-                            <CheckCircle2 className="h-3 w-3 mr-1" />
-                          ) : (
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                          )}
-                          Confidence: {Math.round(parseFloat(confidenceScore) * 100)}%
-                        </Badge>
+                        {(() => {
+                          const raw = parseFloat(confidenceScore);
+                          const pct = raw > 1 ? raw : raw * 100;
+                          const isHigh = pct >= 70;
+                          return (
+                            <Badge variant={isHigh ? "outline" : "destructive"}>
+                              {isHigh ? (
+                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                              ) : (
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                              )}
+                              Confidence: {Math.round(pct)}%
+                            </Badge>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

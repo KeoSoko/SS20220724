@@ -721,12 +721,42 @@ Only return valid JSON, no markdown or explanation.`
       }
 
       const processedReceipts: number[] = [];
+      let emailBodyFallbackUsed = false;
 
       for (const attachment of validAttachments) {
         try {
           const result = await this.processAttachment(user.id, user.workspaceId!, attachment, emailReceiptRecord.id);
           if (result.receiptId) {
             processedReceipts.push(result.receiptId);
+            continue;
+          }
+
+          const isPdfAttachment = attachment.contentType === 'application/pdf' || isPdfBuffer(attachment.content);
+          if (!result.success && isPdfAttachment && !emailBodyFallbackUsed) {
+            log(`PDF attachment processing failed (${attachment.filename}): ${result.error || 'unknown error'}`, 'inbound-email');
+            log('PDF processing failed - attempting fallback to email body extraction...', 'inbound-email');
+
+            const hasReceiptContent = this.isEmailBodyReceiptLike(emailData.subject, emailData.html, emailData.text);
+            if (hasReceiptContent) {
+              const bodyResult = await this.extractReceiptFromEmailBody(
+                user.id,
+                user.workspaceId!,
+                emailData.subject,
+                emailData.html,
+                emailData.text,
+                emailReceiptRecord.id
+              );
+
+              if (bodyResult.success && bodyResult.receiptId) {
+                processedReceipts.push(bodyResult.receiptId);
+                emailBodyFallbackUsed = true;
+                log(`Email body fallback succeeded for failed PDF attachment ${attachment.filename}`, 'inbound-email');
+              } else {
+                log(`Email body fallback failed after PDF failure: ${bodyResult.error || 'unknown error'}`, 'inbound-email');
+              }
+            } else {
+              log('Email body fallback skipped because body does not look receipt-like', 'inbound-email');
+            }
           }
         } catch (attachmentError: any) {
           log(`Error processing attachment ${attachment.filename}: ${attachmentError.message}`, 'inbound-email');
@@ -819,7 +849,7 @@ Only return valid JSON, no markdown or explanation.`
     workspaceId: number,
     attachment: { content: Buffer; contentType: string; filename: string },
     emailReceiptId: number
-  ): Promise<{ success: boolean; receiptId?: number }> {
+  ): Promise<{ success: boolean; receiptId?: number; error?: string }> {
     try {
       log(`Processing attachment: ${attachment.filename} (${attachment.contentType}, ${attachment.content.length} bytes)`, 'inbound-email');
       console.log(`[inbound-email] Processing attachment: ${attachment.filename} (${attachment.contentType}, ${attachment.content.length} bytes)`);
@@ -948,7 +978,7 @@ Only return valid JSON, no markdown or explanation.`
 
     } catch (error: any) {
       log(`Error processing attachment: ${error.message}`, 'inbound-email');
-      return { success: false };
+      return { success: false, error: error.message };
     }
   }
 

@@ -99,52 +99,10 @@ async function handlePaystackChargeSuccess(data: any) {
   try {
     log(`Processing Paystack charge success: ${data.reference}`, 'billing');
     
-    let user: any = null;
-    let usedLegacyFallback = false;
-    
-    // PRIMARY: User lookup by metadata.user_id (canonical path)
-    const metadataUserId = data.metadata?.user_id;
-    if (metadataUserId) {
-      user = await storage.getUser(metadataUserId);
-      if (!user) {
-        log(`CRITICAL: User ID ${metadataUserId} from metadata not found in database for charge: ${data.reference}`, 'billing');
-        await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
-          reference: data.reference,
-          reason: 'metadata_user_id_not_found',
-          metadata_user_id: metadataUserId
-        });
-        return;
-      }
-    } else {
-      // TEMPORARY LEGACY FALLBACK:
-      // Remove once all pre-2026-01-22 subscriptions have renewed
-      const customerEmail = data.customer?.email;
-      if (customerEmail) {
-        user = await storage.getUserByEmail(customerEmail);
-        if (user) {
-          usedLegacyFallback = true;
-          log(`WARNING: Legacy webhook processed for charge ${data.reference}. User ${user.id} resolved via email: ${customerEmail}`, 'billing');
-          await billingService.recordBillingEvent(user.id, 'legacy_paystack_webhook_processed', {
-            reference: data.reference,
-            email: customerEmail,
-            reason: 'missing_metadata_user_id'
-          });
-        }
-      }
-    }
-    
-    // FAILURE MODE: No user resolved by either method
-    if (!user) {
-      log(`CRITICAL: Cannot resolve user for charge ${data.reference}. No metadata.user_id and no matching email.`, 'billing');
-      await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
-        reference: data.reference,
-        email: data.customer?.email || 'none',
-        reason: 'no_user_id_and_no_matching_email'
-      });
-      return;
-    }
+    const resolved = await resolvePaystackUser(data, 'charge.success');
+    if (!resolved) return;
+    const { user, usedLegacyFallback } = resolved;
 
-    // Process the subscription using the billing service
     await billingService.processPaystackSubscription(user.id, data.reference);
     log(`Successfully activated subscription for user ${user.id} via webhook${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
   } catch (error) {

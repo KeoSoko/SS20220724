@@ -1635,10 +1635,9 @@ Action Required:
       log(`[PAYMENT_WARNINGS] Running payment warning check...`, 'billing');
 
       const now = new Date();
-      const oneDayFromNow = new Date(now.getTime() + 1 * 24 * 60 * 60 * 1000);
-      const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+      const warnings: Array<{ userId: number; username: string; email: string; daysLeft: number; type: 'trial' | 'renewal'; dueDate: Date }> = [];
 
-      // --- Trial Expiry Warnings ---
+      // --- Trial Expiry Warnings (3 days and 1 day) ---
       const trialUsers = await db.select({
         userId: userSubscriptions.userId,
         trialEndDate: userSubscriptions.trialEndDate,
@@ -1655,14 +1654,19 @@ Action Required:
         if (!user.trialEndDate || !user.email) continue;
         const daysLeft = Math.ceil((user.trialEndDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
 
-        if (daysLeft === 3 || (daysLeft > 2 && daysLeft <= 3)) {
-          await this.sendWarningIfNotSent(user.userId, user.email, user.username || 'User', 'trial_expiry_warning_3d', 3, 'trial');
-        } else if (daysLeft === 1 || (daysLeft > 0 && daysLeft <= 1)) {
-          await this.sendWarningIfNotSent(user.userId, user.email, user.username || 'User', 'trial_expiry_warning_1d', 1, 'trial');
+        if (daysLeft > 0 && daysLeft <= 3) {
+          warnings.push({
+            userId: user.userId,
+            username: user.username || 'Unknown',
+            email: user.email,
+            daysLeft,
+            type: 'trial',
+            dueDate: user.trialEndDate,
+          });
         }
       }
 
-      // --- Renewal Due Warnings ---
+      // --- Renewal Due Warnings (3 days and 1 day) ---
       const activeUsers = await db.select({
         userId: userSubscriptions.userId,
         nextBillingDate: userSubscriptions.nextBillingDate,
@@ -1679,99 +1683,104 @@ Action Required:
         if (!user.nextBillingDate || !user.email) continue;
         const daysLeft = Math.ceil((user.nextBillingDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
 
-        if (daysLeft === 3 || (daysLeft > 2 && daysLeft <= 3)) {
-          await this.sendWarningIfNotSent(user.userId, user.email, user.username || 'User', 'renewal_warning_3d', 3, 'renewal');
-        } else if (daysLeft === 1 || (daysLeft > 0 && daysLeft <= 1)) {
-          await this.sendWarningIfNotSent(user.userId, user.email, user.username || 'User', 'renewal_warning_1d', 1, 'renewal');
+        if (daysLeft > 0 && daysLeft <= 3) {
+          warnings.push({
+            userId: user.userId,
+            username: user.username || 'Unknown',
+            email: user.email,
+            daysLeft,
+            type: 'renewal',
+            dueDate: user.nextBillingDate,
+          });
         }
       }
 
-      log(`[PAYMENT_WARNINGS] Warning check complete`, 'billing');
+      // Record each warning in billing_events for Command Center visibility
+      for (const w of warnings) {
+        const eventType = w.type === 'trial'
+          ? (w.daysLeft <= 1 ? 'trial_expiry_warning_1d' : 'trial_expiry_warning_3d')
+          : (w.daysLeft <= 1 ? 'renewal_warning_1d' : 'renewal_warning_3d');
+
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const existing = await db.select()
+          .from(billingEvents)
+          .where(
+            sql`${billingEvents.userId} = ${w.userId} AND ${billingEvents.eventType} = ${eventType} AND ${billingEvents.createdAt} > ${sevenDaysAgo}`
+          )
+          .limit(1);
+
+        if (existing.length === 0) {
+          await this.recordBillingEvent(w.userId, eventType, {
+            email: w.email,
+            username: w.username,
+            daysLeft: w.daysLeft,
+            warningType: w.type,
+            dueDate: w.dueDate.toISOString(),
+          });
+        }
+      }
+
+      // Send a single admin summary email if there are any upcoming events
+      if (warnings.length > 0) {
+        const alreadySentToday = await db.select()
+          .from(billingEvents)
+          .where(
+            sql`${billingEvents.eventType} = 'payment_warnings_admin_digest' AND ${billingEvents.createdAt} > ${new Date(now.getTime() - 12 * 60 * 60 * 1000)}`
+          )
+          .limit(1);
+
+        if (alreadySentToday.length === 0) {
+          const trialWarnings = warnings.filter(w => w.type === 'trial');
+          const renewalWarnings = warnings.filter(w => w.type === 'renewal');
+
+          let body = `PAYMENT WARNINGS DIGEST\n`;
+          body += `Generated: ${now.toISOString()}\n`;
+          body += `Total upcoming: ${warnings.length}\n\n`;
+
+          if (trialWarnings.length > 0) {
+            body += `=== TRIALS EXPIRING SOON (${trialWarnings.length}) ===\n`;
+            for (const w of trialWarnings) {
+              body += `  ${w.daysLeft <= 1 ? '🔴' : '🟡'} ${w.username} (${w.email}) - ${w.daysLeft} day${w.daysLeft > 1 ? 's' : ''} left - expires ${w.dueDate.toLocaleDateString()}\n`;
+            }
+            body += `\n`;
+          }
+
+          if (renewalWarnings.length > 0) {
+            body += `=== RENEWALS DUE SOON (${renewalWarnings.length}) ===\n`;
+            for (const w of renewalWarnings) {
+              body += `  ${w.daysLeft <= 1 ? '🔴' : '🟡'} ${w.username} (${w.email}) - ${w.daysLeft} day${w.daysLeft > 1 ? 's' : ''} left - due ${w.dueDate.toLocaleDateString()}\n`;
+            }
+            body += `\n`;
+          }
+
+          body += `\nView details in Command Center: ${process.env.APP_URL || 'https://simpleslips.app'}/command-center`;
+
+          const adminEmail = process.env.ADMIN_EMAIL || 'support@simpleslips.co.za';
+          if (emailService) {
+            const sent = await emailService.sendEmail(
+              adminEmail,
+              `📊 Payment Warnings: ${trialWarnings.length} trial${trialWarnings.length !== 1 ? 's' : ''}, ${renewalWarnings.length} renewal${renewalWarnings.length !== 1 ? 's' : ''} due soon`,
+              body
+            );
+            if (sent) {
+              log(`[PAYMENT_WARNINGS] Admin digest sent to ${adminEmail} (${warnings.length} warnings)`, 'billing');
+            }
+          }
+
+          await this.recordBillingEvent(null, 'payment_warnings_admin_digest', {
+            totalWarnings: warnings.length,
+            trialCount: trialWarnings.length,
+            renewalCount: renewalWarnings.length,
+            users: warnings.map(w => ({ userId: w.userId, username: w.username, type: w.type, daysLeft: w.daysLeft })),
+          });
+        } else {
+          log(`[PAYMENT_WARNINGS] Admin digest already sent in last 12h - skipping email`, 'billing');
+        }
+      }
+
+      log(`[PAYMENT_WARNINGS] Warning check complete - ${warnings.length} upcoming events found`, 'billing');
     } catch (error) {
       log(`[PAYMENT_WARNINGS] Error running payment warnings: ${error}`, 'billing');
-    }
-  }
-
-  private async sendWarningIfNotSent(
-    userId: number,
-    email: string,
-    username: string,
-    eventType: string,
-    daysLeft: number,
-    warningType: 'trial' | 'renewal'
-  ): Promise<void> {
-    try {
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const existing = await db.select()
-        .from(billingEvents)
-        .where(
-          sql`${billingEvents.userId} = ${userId} AND ${billingEvents.eventType} = ${eventType} AND ${billingEvents.createdAt} > ${sevenDaysAgo}`
-        )
-        .limit(1);
-
-      if (existing.length > 0) {
-        return;
-      }
-
-      const appUrl = process.env.APP_URL || 'https://simpleslips.app';
-
-      let subject: string;
-      let body: string;
-
-      if (warningType === 'trial') {
-        subject = daysLeft === 1
-          ? '⏰ Your Simple Slips free trial ends tomorrow!'
-          : `📋 Your Simple Slips free trial ends in ${daysLeft} days`;
-
-        body = `Hi ${username},\n\n` +
-          (daysLeft === 1
-            ? `Your free trial ends tomorrow. After that, you won't be able to scan new receipts or access premium features.\n\n`
-            : `Your free trial ends in ${daysLeft} days. We wanted to give you a heads-up so you don't lose access.\n\n`) +
-          `What you'll lose without a subscription:\n` +
-          `• AI-powered receipt scanning\n` +
-          `• Smart expense categorization\n` +
-          `• Tax reports and exports\n` +
-          `• Business Hub (quotes & invoices)\n\n` +
-          `Subscribe now to keep your data and features:\n` +
-          `• Monthly: R49/month\n` +
-          `• Yearly: R530/year (save 10%)\n\n` +
-          `${appUrl}/billing\n\n` +
-          `Thanks for trying Simple Slips!\n` +
-          `The Simple Slips Team`;
-      } else {
-        subject = daysLeft === 1
-          ? '💳 Your Simple Slips subscription renews tomorrow'
-          : `💳 Your Simple Slips subscription renews in ${daysLeft} days`;
-
-        body = `Hi ${username},\n\n` +
-          (daysLeft === 1
-            ? `Just a heads-up — your Simple Slips subscription renews tomorrow.\n\n`
-            : `Just a heads-up — your Simple Slips subscription renews in ${daysLeft} days.\n\n`) +
-          `Make sure your payment method is up to date to avoid any interruption.\n\n` +
-          `Manage your subscription: ${appUrl}/billing\n\n` +
-          `If you have any questions, reply to this email.\n\n` +
-          `The Simple Slips Team`;
-      }
-
-      if (emailService) {
-        const sent = await emailService.sendEmail(email, subject, body);
-        if (sent) {
-          log(`[PAYMENT_WARNINGS] Sent ${eventType} warning to ${username} (${email})`, 'billing');
-        } else {
-          log(`[PAYMENT_WARNINGS] Failed to send ${eventType} warning to ${username} (${email})`, 'billing');
-        }
-      }
-
-      await this.recordBillingEvent(userId, eventType, {
-        email,
-        username,
-        daysLeft,
-        warningType,
-        sentAt: new Date().toISOString(),
-      });
-
-    } catch (error) {
-      log(`[PAYMENT_WARNINGS] Error sending ${eventType} for user ${userId}: ${error}`, 'billing');
     }
   }
 

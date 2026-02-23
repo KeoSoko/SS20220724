@@ -225,6 +225,26 @@ interface PaymentHealthData {
   }>;
 }
 
+interface PaymentWarningsData {
+  summary: {
+    trialWarnings3d: number;
+    trialWarnings1d: number;
+    renewalWarnings3d: number;
+    renewalWarnings1d: number;
+    total: number;
+  };
+  recentWarnings: Array<{
+    id: number;
+    userId: number;
+    eventType: string;
+    username: string;
+    email: string;
+    daysLeft: number;
+    warningType: 'trial' | 'renewal';
+    sentAt: string;
+  }>;
+}
+
 type FilterType = 'all' | 'unverified' | 'stuck_trials' | 'failed_24h' | 'failed_7d' | 'webhooks_24h' | 'azure_failures' | 'email_failures' | 'overdue_renewals' | 'webhook_stale' | null;
 
 const FILTER_LABELS: Record<Exclude<FilterType, null>, string> = {
@@ -353,6 +373,11 @@ export default function CommandCenter() {
 
   const { data: paymentHealth, isLoading: paymentHealthLoading, refetch: refetchPaymentHealth } = useQuery<PaymentHealthData>({
     queryKey: ['/api/admin/command-center/payment-health'],
+    enabled: showPaymentHealth,
+  });
+
+  const { data: paymentWarnings, isLoading: warningsLoading } = useQuery<PaymentWarningsData>({
+    queryKey: ['/api/admin/command-center/payment-warnings'],
     enabled: showPaymentHealth,
   });
 
@@ -968,6 +993,86 @@ export default function CommandCenter() {
                     All subscriptions are up to date
                   </div>
                 )}
+
+                {/* Payment Warnings Summary */}
+                <div>
+                  <h4 className="font-medium mb-3 flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-yellow-500" />
+                    Payment Warnings (last 7 days)
+                  </h4>
+                  {warningsLoading ? (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm text-muted-foreground">Loading warnings...</span>
+                    </div>
+                  ) : paymentWarnings ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="p-3 border rounded-lg text-center">
+                          <div className="text-lg font-bold text-orange-500">{paymentWarnings.summary.trialWarnings3d}</div>
+                          <div className="text-xs text-muted-foreground">Trial 3-day</div>
+                        </div>
+                        <div className="p-3 border rounded-lg text-center">
+                          <div className="text-lg font-bold text-red-500">{paymentWarnings.summary.trialWarnings1d}</div>
+                          <div className="text-xs text-muted-foreground">Trial 1-day</div>
+                        </div>
+                        <div className="p-3 border rounded-lg text-center">
+                          <div className="text-lg font-bold text-orange-500">{paymentWarnings.summary.renewalWarnings3d}</div>
+                          <div className="text-xs text-muted-foreground">Renewal 3-day</div>
+                        </div>
+                        <div className="p-3 border rounded-lg text-center">
+                          <div className="text-lg font-bold text-red-500">{paymentWarnings.summary.renewalWarnings1d}</div>
+                          <div className="text-xs text-muted-foreground">Renewal 1-day</div>
+                        </div>
+                      </div>
+                      {paymentWarnings.recentWarnings.length > 0 && (
+                        <div className="border rounded-lg overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted">
+                              <tr>
+                                <th className="text-left p-2 font-medium">User</th>
+                                <th className="text-left p-2 font-medium">Type</th>
+                                <th className="text-left p-2 font-medium">Days Left</th>
+                                <th className="text-left p-2 font-medium">Sent</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {paymentWarnings.recentWarnings.slice(0, 10).map((w) => (
+                                <tr key={w.id} className="border-t hover:bg-muted/50">
+                                  <td className="p-2">
+                                    <button className="text-primary hover:underline" onClick={() => handleSelectUser(w.userId)}>
+                                      {w.username}
+                                    </button>
+                                  </td>
+                                  <td className="p-2">
+                                    <Badge variant={w.warningType === 'trial' ? 'secondary' : 'outline'}>
+                                      {w.warningType === 'trial' ? 'Trial Expiry' : 'Renewal Due'}
+                                    </Badge>
+                                  </td>
+                                  <td className="p-2">
+                                    <Badge variant={w.daysLeft <= 1 ? 'destructive' : 'secondary'}>
+                                      {w.daysLeft}d
+                                    </Badge>
+                                  </td>
+                                  <td className="p-2 text-muted-foreground">
+                                    {formatDistanceToNow(new Date(w.sentAt), { addSuffix: true })}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {paymentWarnings.recentWarnings.length === 0 && (
+                        <div className="text-center py-3 text-sm text-muted-foreground">
+                          No warnings sent in the last 7 days
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">Failed to load warnings data</div>
+                  )}
+                </div>
 
                 {/* Failed Webhook Resolutions */}
                 {paymentHealth.failedResolutions.length > 0 && (

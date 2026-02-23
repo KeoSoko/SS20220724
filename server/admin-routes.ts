@@ -1406,4 +1406,52 @@ Respond ONLY with valid JSON.`;
       res.status(500).json({ error: "Failed to manually sync subscription" });
     }
   });
+
+  app.get("/api/admin/command-center/payment-warnings", requireAdmin, async (req, res) => {
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      const recentWarnings = await db.select({
+        id: billingEvents.id,
+        userId: billingEvents.userId,
+        eventType: billingEvents.eventType,
+        eventData: billingEvents.eventData,
+        createdAt: billingEvents.createdAt,
+      })
+        .from(billingEvents)
+        .where(
+          sql`${billingEvents.eventType} IN ('trial_expiry_warning_3d', 'trial_expiry_warning_1d', 'renewal_warning_3d', 'renewal_warning_1d') AND ${billingEvents.createdAt} > ${sevenDaysAgo}`
+        )
+        .orderBy(desc(billingEvents.createdAt))
+        .limit(50);
+
+      const trialWarnings3d = recentWarnings.filter(w => w.eventType === 'trial_expiry_warning_3d').length;
+      const trialWarnings1d = recentWarnings.filter(w => w.eventType === 'trial_expiry_warning_1d').length;
+      const renewalWarnings3d = recentWarnings.filter(w => w.eventType === 'renewal_warning_3d').length;
+      const renewalWarnings1d = recentWarnings.filter(w => w.eventType === 'renewal_warning_1d').length;
+
+      res.json({
+        summary: {
+          trialWarnings3d,
+          trialWarnings1d,
+          renewalWarnings3d,
+          renewalWarnings1d,
+          total: recentWarnings.length,
+        },
+        recentWarnings: recentWarnings.map(w => ({
+          id: w.id,
+          userId: w.userId,
+          eventType: w.eventType,
+          username: (w.eventData as any)?.username || 'Unknown',
+          email: (w.eventData as any)?.email || 'Unknown',
+          daysLeft: (w.eventData as any)?.daysLeft,
+          warningType: (w.eventData as any)?.warningType,
+          sentAt: w.createdAt,
+        })),
+      });
+    } catch (error: any) {
+      log(`Error in /api/admin/command-center/payment-warnings: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to fetch payment warnings" });
+    }
+  });
 }

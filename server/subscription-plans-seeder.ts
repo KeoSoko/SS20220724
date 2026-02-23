@@ -174,6 +174,9 @@ export async function initializeSubscriptionPlans() {
     // WEBHOOK HEALTH: Monitor Paystack webhook connectivity every 12 hours
     billingService.startWebhookHealthMonitoring(12);
     
+    // PAYMENT WARNINGS: Send trial expiry and renewal due warnings (3 days + 1 day before)
+    billingService.startPaymentWarningMonitoring(12);
+    
     log('Subscription plans initialization complete', 'billing');
   } catch (error) {
     log(`Failed to initialize subscription plans: ${error}`, 'billing');

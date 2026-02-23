@@ -1629,6 +1629,165 @@ Action Required:
       }
     }, intervalHours * 60 * 60 * 1000);
   }
+
+  async runPaymentWarnings(): Promise<void> {
+    try {
+      log(`[PAYMENT_WARNINGS] Running payment warning check...`, 'billing');
+
+      const now = new Date();
+      const oneDayFromNow = new Date(now.getTime() + 1 * 24 * 60 * 60 * 1000);
+      const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+      // --- Trial Expiry Warnings ---
+      const trialUsers = await db.select({
+        userId: userSubscriptions.userId,
+        trialEndDate: userSubscriptions.trialEndDate,
+        email: users.email,
+        username: users.username,
+      })
+        .from(userSubscriptions)
+        .innerJoin(users, eq(users.id, userSubscriptions.userId))
+        .where(
+          sql`${userSubscriptions.status} = 'trial' AND ${userSubscriptions.trialEndDate} IS NOT NULL`
+        );
+
+      for (const user of trialUsers) {
+        if (!user.trialEndDate || !user.email) continue;
+        const daysLeft = Math.ceil((user.trialEndDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+
+        if (daysLeft === 3 || (daysLeft > 2 && daysLeft <= 3)) {
+          await this.sendWarningIfNotSent(user.userId, user.email, user.username || 'User', 'trial_expiry_warning_3d', 3, 'trial');
+        } else if (daysLeft === 1 || (daysLeft > 0 && daysLeft <= 1)) {
+          await this.sendWarningIfNotSent(user.userId, user.email, user.username || 'User', 'trial_expiry_warning_1d', 1, 'trial');
+        }
+      }
+
+      // --- Renewal Due Warnings ---
+      const activeUsers = await db.select({
+        userId: userSubscriptions.userId,
+        nextBillingDate: userSubscriptions.nextBillingDate,
+        email: users.email,
+        username: users.username,
+      })
+        .from(userSubscriptions)
+        .innerJoin(users, eq(users.id, userSubscriptions.userId))
+        .where(
+          sql`${userSubscriptions.status} = 'active' AND ${userSubscriptions.nextBillingDate} IS NOT NULL AND ${userSubscriptions.nextBillingDate} > ${now}`
+        );
+
+      for (const user of activeUsers) {
+        if (!user.nextBillingDate || !user.email) continue;
+        const daysLeft = Math.ceil((user.nextBillingDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+
+        if (daysLeft === 3 || (daysLeft > 2 && daysLeft <= 3)) {
+          await this.sendWarningIfNotSent(user.userId, user.email, user.username || 'User', 'renewal_warning_3d', 3, 'renewal');
+        } else if (daysLeft === 1 || (daysLeft > 0 && daysLeft <= 1)) {
+          await this.sendWarningIfNotSent(user.userId, user.email, user.username || 'User', 'renewal_warning_1d', 1, 'renewal');
+        }
+      }
+
+      log(`[PAYMENT_WARNINGS] Warning check complete`, 'billing');
+    } catch (error) {
+      log(`[PAYMENT_WARNINGS] Error running payment warnings: ${error}`, 'billing');
+    }
+  }
+
+  private async sendWarningIfNotSent(
+    userId: number,
+    email: string,
+    username: string,
+    eventType: string,
+    daysLeft: number,
+    warningType: 'trial' | 'renewal'
+  ): Promise<void> {
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const existing = await db.select()
+        .from(billingEvents)
+        .where(
+          sql`${billingEvents.userId} = ${userId} AND ${billingEvents.eventType} = ${eventType} AND ${billingEvents.createdAt} > ${sevenDaysAgo}`
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        return;
+      }
+
+      const appUrl = process.env.APP_URL || 'https://simpleslips.app';
+
+      let subject: string;
+      let body: string;
+
+      if (warningType === 'trial') {
+        subject = daysLeft === 1
+          ? '⏰ Your Simple Slips free trial ends tomorrow!'
+          : `📋 Your Simple Slips free trial ends in ${daysLeft} days`;
+
+        body = `Hi ${username},\n\n` +
+          (daysLeft === 1
+            ? `Your free trial ends tomorrow. After that, you won't be able to scan new receipts or access premium features.\n\n`
+            : `Your free trial ends in ${daysLeft} days. We wanted to give you a heads-up so you don't lose access.\n\n`) +
+          `What you'll lose without a subscription:\n` +
+          `• AI-powered receipt scanning\n` +
+          `• Smart expense categorization\n` +
+          `• Tax reports and exports\n` +
+          `• Business Hub (quotes & invoices)\n\n` +
+          `Subscribe now to keep your data and features:\n` +
+          `• Monthly: R49/month\n` +
+          `• Yearly: R530/year (save 10%)\n\n` +
+          `${appUrl}/billing\n\n` +
+          `Thanks for trying Simple Slips!\n` +
+          `The Simple Slips Team`;
+      } else {
+        subject = daysLeft === 1
+          ? '💳 Your Simple Slips subscription renews tomorrow'
+          : `💳 Your Simple Slips subscription renews in ${daysLeft} days`;
+
+        body = `Hi ${username},\n\n` +
+          (daysLeft === 1
+            ? `Just a heads-up — your Simple Slips subscription renews tomorrow.\n\n`
+            : `Just a heads-up — your Simple Slips subscription renews in ${daysLeft} days.\n\n`) +
+          `Make sure your payment method is up to date to avoid any interruption.\n\n` +
+          `Manage your subscription: ${appUrl}/billing\n\n` +
+          `If you have any questions, reply to this email.\n\n` +
+          `The Simple Slips Team`;
+      }
+
+      if (emailService) {
+        const sent = await emailService.sendEmail(email, subject, body);
+        if (sent) {
+          log(`[PAYMENT_WARNINGS] Sent ${eventType} warning to ${username} (${email})`, 'billing');
+        } else {
+          log(`[PAYMENT_WARNINGS] Failed to send ${eventType} warning to ${username} (${email})`, 'billing');
+        }
+      }
+
+      await this.recordBillingEvent(userId, eventType, {
+        email,
+        username,
+        daysLeft,
+        warningType,
+        sentAt: new Date().toISOString(),
+      });
+
+    } catch (error) {
+      log(`[PAYMENT_WARNINGS] Error sending ${eventType} for user ${userId}: ${error}`, 'billing');
+    }
+  }
+
+  startPaymentWarningMonitoring(intervalHours: number = 12): void {
+    log(`[PAYMENT_WARNINGS] Starting payment warning monitoring (every ${intervalHours} hours)`, 'billing');
+
+    this.runPaymentWarnings();
+
+    setInterval(async () => {
+      try {
+        await this.runPaymentWarnings();
+      } catch (error) {
+        log(`[PAYMENT_WARNINGS] Error in monitoring cycle: ${error}`, 'billing');
+      }
+    }, intervalHours * 60 * 60 * 1000);
+  }
 }
 
 // Export singleton instance

@@ -168,6 +168,12 @@ export async function initializeSubscriptionPlans() {
     // Checks every 5 minutes for payments that didn't create subscriptions
     billingService.startOrphanedPaymentMonitoring(5);
     
+    // RECONCILIATION: Check for overdue subscription renewals every 24 hours
+    billingService.startReconciliationMonitoring(24);
+    
+    // WEBHOOK HEALTH: Monitor Paystack webhook connectivity every 12 hours
+    billingService.startWebhookHealthMonitoring(12);
+    
     log('Subscription plans initialization complete', 'billing');
   } catch (error) {
     log(`Failed to initialize subscription plans: ${error}`, 'billing');

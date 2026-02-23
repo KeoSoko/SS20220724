@@ -52,6 +52,8 @@ interface SystemHealth {
   failedWebhooks24h: number;
   azureFailures7d: number;
   emailFailures7d: number;
+  overdueRenewals: number;
+  webhookStale: boolean;
 }
 
 interface UserSearchResult {
@@ -200,7 +202,30 @@ interface InboundEmailLog {
   createdAt: string;
 }
 
-type FilterType = 'all' | 'unverified' | 'stuck_trials' | 'failed_24h' | 'failed_7d' | 'webhooks_24h' | 'azure_failures' | 'email_failures' | null;
+interface PaymentHealthData {
+  overdueRenewals: Array<{
+    userId: number;
+    username: string;
+    email: string;
+    nextBillingDate: string;
+    daysSinceExpiry: number;
+    lastPaymentDate: string | null;
+    paystackCustomerCode: string | null;
+  }>;
+  webhookHealth: {
+    last48hCount: number;
+    lastWebhookAt: string | null;
+    isHealthy: boolean;
+  };
+  failedResolutions: Array<{
+    reference: string;
+    email: string;
+    reason: string;
+    createdAt: string;
+  }>;
+}
+
+type FilterType = 'all' | 'unverified' | 'stuck_trials' | 'failed_24h' | 'failed_7d' | 'webhooks_24h' | 'azure_failures' | 'email_failures' | 'overdue_renewals' | 'webhook_stale' | null;
 
 const FILTER_LABELS: Record<Exclude<FilterType, null>, string> = {
   'all': 'All Users',
@@ -210,7 +235,9 @@ const FILTER_LABELS: Record<Exclude<FilterType, null>, string> = {
   'failed_7d': 'Failed 7d',
   'webhooks_24h': 'Webhook Failures 24h',
   'azure_failures': 'Azure Upload Failures',
-  'email_failures': 'Email Delivery Failures'
+  'email_failures': 'Email Delivery Failures',
+  'overdue_renewals': 'Overdue Renewals',
+  'webhook_stale': 'Webhook Issues'
 };
 
 const CARD_SUBTITLES: Record<Exclude<FilterType, null>, string> = {
@@ -221,7 +248,9 @@ const CARD_SUBTITLES: Record<Exclude<FilterType, null>, string> = {
   'failed_7d': 'At risk of churning',
   'webhooks_24h': 'Payment data may be stale',
   'azure_failures': 'Upload experience broken',
-  'email_failures': 'Not receiving notifications'
+  'email_failures': 'Not receiving notifications',
+  'overdue_renewals': 'Paid but not updated',
+  'webhook_stale': 'Webhooks not arriving'
 };
 
 const RECOVERY_PLAYBOOKS: Record<Exclude<FilterType, null>, { what: string; actions: string[] }> = {
@@ -253,6 +282,14 @@ const RECOVERY_PLAYBOOKS: Record<Exclude<FilterType, null>, { what: string; acti
   'email_failures': { 
     what: 'Emails (invoices, reminders, etc.) are bouncing or failing to deliver.', 
     actions: ['Verify email address is correct', 'Check SendGrid for bounce reasons'] 
+  },
+  'overdue_renewals': {
+    what: 'These users have active subscriptions but their billing date has passed without a renewal recorded. They likely paid on Paystack but our system missed the webhook.',
+    actions: ['Check Paystack dashboard to confirm payment', 'Use Manual Sync to extend subscription', 'Verify webhook URL in Paystack settings']
+  },
+  'webhook_stale': {
+    what: 'No Paystack webhooks received recently. Renewal payments may not be processing at all.',
+    actions: ['Check Paystack webhook URL configuration', 'Verify server is reachable at the webhook endpoint', 'Check for any firewall or SSL issues']
   }
 };
 
@@ -308,9 +345,15 @@ export default function CommandCenter() {
   const pageLimit = 50;
   const [showInboundLogs, setShowInboundLogs] = useState(false);
   const [inboundStatusFilter, setInboundStatusFilter] = useState<string>("all");
+  const [showPaymentHealth, setShowPaymentHealth] = useState(false);
 
   const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery<SystemHealth>({
     queryKey: ['/api/admin/command-center/health'],
+  });
+
+  const { data: paymentHealth, isLoading: paymentHealthLoading, refetch: refetchPaymentHealth } = useQuery<PaymentHealthData>({
+    queryKey: ['/api/admin/command-center/payment-health'],
+    enabled: showPaymentHealth,
   });
 
   const { data: searchResponse, isLoading: searchLoading, refetch: refetchSearch } = useQuery<PaginatedSearchResponse>({
@@ -432,6 +475,24 @@ export default function CommandCenter() {
     },
     onError: (error: any) => {
       toast({ title: "Reprocess failed", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const manualSyncMutation = useMutation({
+    mutationFn: async ({ userId, reason }: { userId: number; reason?: string }) => {
+      const response = await apiRequest("POST", `/api/admin/command-center/manual-sync/${userId}`, { reason });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Subscription synced", description: `Extended ${data.username}'s subscription to ${new Date(data.newExpiryDate).toLocaleDateString()}` });
+      refetchPaymentHealth();
+      refetchHealth();
+      if (selectedUserId) {
+        refetchUserDetail();
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: "Sync failed", description: error.message, variant: "destructive" });
     }
   });
 
@@ -601,7 +662,23 @@ export default function CommandCenter() {
             </Alert>
           )}
           
-          {health.failedSubscriptions24h === 0 && (
+          {health.overdueRenewals > 0 && (
+            <Alert 
+              variant="destructive"
+              className="flex-1 min-w-[200px] cursor-pointer hover:bg-destructive/90 transition-colors"
+              onClick={() => { setShowPaymentHealth(true); handleFilterClick('overdue_renewals'); }}
+            >
+              <CreditCard className="h-4 w-4" />
+              <AlertTitle className="text-sm font-medium">
+                {health.overdueRenewals} overdue renewal{health.overdueRenewals > 1 ? 's' : ''} need sync
+              </AlertTitle>
+              <AlertDescription className="text-xs">
+                Subscriptions past due date - check Paystack and sync
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {health.failedSubscriptions24h === 0 && health.overdueRenewals === 0 && (
             <Alert className="flex-1 min-w-[200px] border-green-300 bg-green-50 dark:bg-green-950/20">
               <CheckCircle className="h-4 w-4 text-green-500" />
               <AlertTitle className="text-sm font-medium text-green-700 dark:text-green-400">
@@ -616,7 +693,7 @@ export default function CommandCenter() {
       )}
 
       {/* System Health Panel - Clickable Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-4">
         <Card 
           className={`cursor-pointer hover:bg-muted/50 transition-colors ${activeFilter === 'all' ? 'ring-2 ring-primary' : ''}`}
           onClick={() => handleFilterClick('all')}
@@ -705,9 +782,224 @@ export default function CommandCenter() {
             <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['email_failures']}</div>
           </CardContent>
         </Card>
+        <Card 
+          className={`cursor-pointer hover:bg-muted/50 transition-colors ${health?.overdueRenewals && health.overdueRenewals > 0 ? "border-red-500 bg-red-50 dark:bg-red-950/20" : ""} ${activeFilter === 'overdue_renewals' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => handleFilterClick('overdue_renewals')}
+        >
+          <CardContent className="p-4 text-center">
+            <CreditCard className="h-6 w-6 mx-auto mb-2 text-red-600" />
+            <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.overdueRenewals || 0}</div>
+            <div className="text-xs font-medium">Overdue</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['overdue_renewals']}</div>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer hover:bg-muted/50 transition-colors ${health?.webhookStale ? "border-red-500 bg-red-50 dark:bg-red-950/20" : ""} ${activeFilter === 'webhook_stale' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => { handleFilterClick('webhook_stale'); setShowPaymentHealth(true); }}
+        >
+          <CardContent className="p-4 text-center">
+            <AlertTriangle className="h-6 w-6 mx-auto mb-2 text-red-600" />
+            <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : (health?.webhookStale ? "!" : "OK")}</div>
+            <div className="text-xs font-medium">Webhooks</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['webhook_stale']}</div>
+          </CardContent>
+        </Card>
       </div>
 
+      {/* Overdue Renewals Attention Strip */}
+      {!healthLoading && health && health.overdueRenewals > 0 && (
+        <Alert 
+          variant="destructive" 
+          className="cursor-pointer hover:bg-destructive/90 transition-colors"
+          onClick={() => { setShowPaymentHealth(true); handleFilterClick('overdue_renewals'); }}
+        >
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle className="text-sm font-medium">
+            {health.overdueRenewals} subscription{health.overdueRenewals > 1 ? 's' : ''} overdue - likely paid on Paystack but not synced
+          </AlertTitle>
+          <AlertDescription className="text-xs">
+            Click to view details and manually sync subscriptions
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Webhook Health Warning */}
+      {!healthLoading && health && health.webhookStale && (
+        <Alert className="border-orange-500 bg-orange-50 dark:bg-orange-950/20">
+          <AlertTriangle className="h-4 w-4 text-orange-600" />
+          <AlertTitle className="text-sm font-medium text-orange-700 dark:text-orange-400">
+            No Paystack webhooks received in 48 hours
+          </AlertTitle>
+          <AlertDescription className="text-xs text-orange-600 dark:text-orange-500">
+            Renewal payments may not be processing. Check webhook URL in Paystack dashboard.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Separator />
+
+      {/* Payment Health Panel */}
+      <Card>
+        <CardHeader 
+          className="cursor-pointer hover:bg-muted/50 transition-colors py-4"
+          onClick={() => setShowPaymentHealth(!showPaymentHealth)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">Payment Health</CardTitle>
+              {health && (health.overdueRenewals > 0 || health.webhookStale) && (
+                <Badge variant="destructive" className="ml-2">
+                  {health.overdueRenewals > 0 ? `${health.overdueRenewals} overdue` : 'Webhook issues'}
+                </Badge>
+              )}
+            </div>
+            {showPaymentHealth ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </div>
+          <CardDescription>Monitor subscription renewals, webhook health, and manually sync payments</CardDescription>
+        </CardHeader>
+        {showPaymentHealth && (
+          <CardContent className="pt-0 space-y-6">
+            {paymentHealthLoading ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm text-muted-foreground">Loading payment health data...</span>
+              </div>
+            ) : paymentHealth ? (
+              <>
+                {/* Webhook Health Summary */}
+                <div className="p-4 rounded-lg border">
+                  <h4 className="font-medium mb-2 flex items-center gap-2">
+                    {paymentHealth.webhookHealth.isHealthy ? (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-red-500" />
+                    )}
+                    Webhook Status
+                  </h4>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Last 48h:</span>{' '}
+                      <span className="font-medium">{paymentHealth.webhookHealth.last48hCount} webhooks</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Last received:</span>{' '}
+                      <span className="font-medium">
+                        {paymentHealth.webhookHealth.lastWebhookAt 
+                          ? formatDistanceToNow(new Date(paymentHealth.webhookHealth.lastWebhookAt), { addSuffix: true })
+                          : 'Never'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Status:</span>{' '}
+                      <Badge variant={paymentHealth.webhookHealth.isHealthy ? "default" : "destructive"}>
+                        {paymentHealth.webhookHealth.isHealthy ? 'Healthy' : 'Stale'}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Overdue Renewals Table */}
+                {paymentHealth.overdueRenewals.length > 0 && (
+                  <div>
+                    <h4 className="font-medium mb-3 flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-red-500" />
+                      Overdue Renewals ({paymentHealth.overdueRenewals.length})
+                    </h4>
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted">
+                          <tr>
+                            <th className="text-left p-3 font-medium">User</th>
+                            <th className="text-left p-3 font-medium">Email</th>
+                            <th className="text-left p-3 font-medium">Due Date</th>
+                            <th className="text-left p-3 font-medium">Days Overdue</th>
+                            <th className="text-left p-3 font-medium">Last Payment</th>
+                            <th className="text-right p-3 font-medium">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paymentHealth.overdueRenewals.map((user) => (
+                            <tr key={user.userId} className="border-t hover:bg-muted/50">
+                              <td className="p-3">
+                                <button 
+                                  className="text-primary hover:underline font-medium"
+                                  onClick={() => handleSelectUser(user.userId)}
+                                >
+                                  {user.username}
+                                </button>
+                              </td>
+                              <td className="p-3 text-muted-foreground">{user.email}</td>
+                              <td className="p-3">{format(new Date(user.nextBillingDate), 'MMM d, yyyy')}</td>
+                              <td className="p-3">
+                                <Badge variant={user.daysSinceExpiry > 7 ? "destructive" : "secondary"}>
+                                  {user.daysSinceExpiry}d
+                                </Badge>
+                              </td>
+                              <td className="p-3 text-muted-foreground">
+                                {user.lastPaymentDate ? format(new Date(user.lastPaymentDate), 'MMM d, yyyy') : 'N/A'}
+                              </td>
+                              <td className="p-3 text-right">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={manualSyncMutation.isPending}
+                                  onClick={() => {
+                                    if (confirm(`Extend ${user.username}'s subscription by 1 month? This should only be done after confirming payment on Paystack.`)) {
+                                      manualSyncMutation.mutate({ userId: user.userId, reason: 'Manual sync - Paystack payment confirmed' });
+                                    }
+                                  }}
+                                >
+                                  {manualSyncMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                                  Sync
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {paymentHealth.overdueRenewals.length === 0 && (
+                  <div className="text-center py-4 text-sm text-muted-foreground">
+                    <CheckCircle className="h-5 w-5 mx-auto mb-2 text-green-500" />
+                    All subscriptions are up to date
+                  </div>
+                )}
+
+                {/* Failed Webhook Resolutions */}
+                {paymentHealth.failedResolutions.length > 0 && (
+                  <div>
+                    <h4 className="font-medium mb-3 flex items-center gap-2">
+                      <XCircle className="h-4 w-4 text-orange-500" />
+                      Failed Webhook Resolutions (last 7 days)
+                    </h4>
+                    <div className="space-y-2">
+                      {paymentHealth.failedResolutions.map((resolution, idx) => (
+                        <div key={idx} className="p-3 border rounded-lg text-sm">
+                          <div className="flex justify-between">
+                            <span className="font-medium">Ref: {resolution.reference}</span>
+                            <span className="text-muted-foreground">{formatDistanceToNow(new Date(resolution.createdAt), { addSuffix: true })}</span>
+                          </div>
+                          <div className="text-muted-foreground mt-1">
+                            Email: {resolution.email} | Reason: {resolution.reason}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-4 text-sm text-muted-foreground">
+                Failed to load payment health data
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
 
       {/* Inbound Email Logs */}
       <Card>

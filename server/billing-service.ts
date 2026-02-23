@@ -1428,6 +1428,207 @@ This will safely verify the payment with Paystack and create the subscription if
       }
     }, intervalMinutes * 60 * 1000);
   }
+
+  async runSubscriptionReconciliation(): Promise<Array<{
+    userId: number;
+    username: string;
+    email: string | null;
+    nextBillingDate: Date | null;
+    daysSinceExpiry: number;
+    lastPaymentDate: Date | null;
+    paystackCustomerCode: string | null;
+  }>> {
+    try {
+      log(`[RECONCILIATION] Running subscription reconciliation check...`, 'billing');
+
+      const now = new Date();
+      const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+
+      const overdueSubscriptions = await db.select({
+        userId: userSubscriptions.userId,
+        username: users.username,
+        email: users.email,
+        nextBillingDate: userSubscriptions.nextBillingDate,
+        lastPaymentDate: userSubscriptions.lastPaymentDate,
+        paystackCustomerCode: userSubscriptions.paystackCustomerCode,
+      })
+      .from(userSubscriptions)
+      .innerJoin(users, eq(userSubscriptions.userId, users.id))
+      .where(
+        sql`${userSubscriptions.status} = 'active' AND ${userSubscriptions.nextBillingDate} < NOW()`
+      );
+
+      const overdueUsers: Array<{
+        userId: number;
+        username: string;
+        email: string | null;
+        nextBillingDate: Date | null;
+        daysSinceExpiry: number;
+        lastPaymentDate: Date | null;
+        paystackCustomerCode: string | null;
+      }> = [];
+
+      for (const sub of overdueSubscriptions) {
+        const recentActivation = await db.select()
+          .from(billingEvents)
+          .where(
+            sql`${billingEvents.userId} = ${sub.userId} AND ${billingEvents.eventType} = 'subscription_activated' AND ${billingEvents.createdAt} > ${fortyEightHoursAgo}`
+          )
+          .limit(1);
+
+        if (recentActivation.length === 0) {
+          const daysSinceExpiry = sub.nextBillingDate
+            ? Math.floor((now.getTime() - new Date(sub.nextBillingDate).getTime()) / (24 * 60 * 60 * 1000))
+            : 0;
+
+          overdueUsers.push({
+            userId: sub.userId,
+            username: sub.username,
+            email: sub.email,
+            nextBillingDate: sub.nextBillingDate,
+            daysSinceExpiry,
+            lastPaymentDate: sub.lastPaymentDate,
+            paystackCustomerCode: sub.paystackCustomerCode,
+          });
+        }
+      }
+
+      if (overdueUsers.length > 0) {
+        log(`[RECONCILIATION] Found ${overdueUsers.length} overdue subscription(s)`, 'billing');
+
+        const userList = overdueUsers.map(u =>
+          `• ${u.username} (${u.email || 'no email'}) - ${u.daysSinceExpiry} days overdue, Last paid: ${u.lastPaymentDate ? new Date(u.lastPaymentDate).toISOString() : 'never'}, Paystack: ${u.paystackCustomerCode || 'N/A'}`
+        ).join('\n');
+
+        const alertMessage = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUBSCRIPTION RECONCILIATION ALERT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${overdueUsers.length} active subscription(s) have overdue renewal dates:
+
+${userList}
+
+These users have active subscriptions but their next billing date has passed without a recorded renewal payment in the last 48 hours.
+
+Action Required:
+1. Check Paystack dashboard for these customers' payment status
+2. Use POST /api/admin/command-center/manual-sync/:userId to manually sync if Paystack shows paid
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+
+        if (emailService) {
+          await emailService.sendEmail(
+            process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
+            `Simple Slips: ${overdueUsers.length} Overdue Subscription Renewal(s)`,
+            alertMessage
+          );
+        }
+
+        await this.recordBillingEvent(null, 'reconciliation_alert_sent', {
+          overdueCount: overdueUsers.length,
+          affectedUserIds: overdueUsers.map(u => u.userId),
+          alertedAt: now.toISOString(),
+        });
+      } else {
+        log(`[RECONCILIATION] No overdue subscriptions found`, 'billing');
+      }
+
+      return overdueUsers;
+    } catch (error) {
+      log(`[RECONCILIATION] Error running reconciliation: ${error}`, 'billing');
+      return [];
+    }
+  }
+
+  startReconciliationMonitoring(intervalHours: number = 24): void {
+    log(`[RECONCILIATION] Starting subscription reconciliation monitoring (every ${intervalHours} hours)`, 'billing');
+
+    setInterval(async () => {
+      try {
+        await this.runSubscriptionReconciliation();
+      } catch (error) {
+        log(`[RECONCILIATION] Error in monitoring cycle: ${error}`, 'billing');
+      }
+    }, intervalHours * 60 * 60 * 1000);
+  }
+
+  async checkWebhookHealth(): Promise<void> {
+    try {
+      log(`[WEBHOOK_HEALTH] Running webhook health check...`, 'billing');
+
+      const now = new Date();
+      const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+
+      const [webhookCountResult] = await db.select({ count: sql<number>`count(*)` })
+        .from(billingEvents)
+        .where(
+          sql`${billingEvents.eventType} = 'paystack_webhook_received' AND ${billingEvents.createdAt} > ${fortyEightHoursAgo}`
+        );
+
+      const webhookCount = Number(webhookCountResult?.count || 0);
+
+      if (webhookCount > 0) {
+        log(`[WEBHOOK_HEALTH] ${webhookCount} webhooks received in last 48h - healthy`, 'billing');
+        return;
+      }
+
+      const [activeSubsResult] = await db.select({ count: sql<number>`count(*)` })
+        .from(userSubscriptions)
+        .where(eq(userSubscriptions.status, 'active'));
+
+      const activeSubscribers = Number(activeSubsResult?.count || 0);
+
+      if (activeSubscribers === 0) {
+        log(`[WEBHOOK_HEALTH] No active subscribers - skipping alert`, 'billing');
+        return;
+      }
+
+      const existingAlert = await db.select()
+        .from(billingEvents)
+        .where(
+          sql`${billingEvents.eventType} = 'webhook_health_alert' AND ${billingEvents.createdAt} > ${fortyEightHoursAgo}`
+        )
+        .limit(1);
+
+      if (existingAlert.length > 0) {
+        log(`[WEBHOOK_HEALTH] Alert already sent in last 48h - skipping`, 'billing');
+        return;
+      }
+
+      const alertMessage = `URGENT: No Paystack webhooks received in 48 hours. Renewal payments may not be processing. Check webhook URL configuration in Paystack dashboard.\n\nActive subscribers: ${activeSubscribers}\nLast check: ${now.toISOString()}`;
+
+      if (emailService) {
+        await emailService.sendEmail(
+          process.env.ADMIN_EMAIL || 'support@simpleslips.co.za',
+          '🚨 URGENT: No Paystack Webhooks in 48 Hours',
+          alertMessage
+        );
+      }
+
+      await this.recordBillingEvent(null, 'webhook_health_alert', {
+        webhookCount: 0,
+        activeSubscribers,
+        alertedAt: now.toISOString(),
+      });
+
+      log(`[WEBHOOK_HEALTH] ALERT: No webhooks in 48h with ${activeSubscribers} active subscribers`, 'billing');
+    } catch (error) {
+      log(`[WEBHOOK_HEALTH] Error checking webhook health: ${error}`, 'billing');
+    }
+  }
+
+  startWebhookHealthMonitoring(intervalHours: number = 12): void {
+    log(`[WEBHOOK_HEALTH] Starting webhook health monitoring (every ${intervalHours} hours)`, 'billing');
+
+    setInterval(async () => {
+      try {
+        await this.checkWebhookHealth();
+      } catch (error) {
+        log(`[WEBHOOK_HEALTH] Error in monitoring cycle: ${error}`, 'billing');
+      }
+    }, intervalHours * 60 * 60 * 1000);
+  }
 }
 
 // Export singleton instance

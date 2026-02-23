@@ -40,6 +40,8 @@ export function registerAdminRoutes(app: Express) {
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+      const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+
       const [
         totalUsersResult,
         unverifiedUsersResult,
@@ -48,7 +50,9 @@ export function registerAdminRoutes(app: Express) {
         failedSubscriptions7dResult,
         failedWebhooks24hResult,
         azureFailuresResult,
-        emailFailuresResult
+        emailFailuresResult,
+        overdueRenewalsResult,
+        webhookCountResult
       ] = await Promise.all([
         db.select({ count: count() }).from(users),
         db.select({ count: count() }).from(users).where(eq(users.isEmailVerified, false)),
@@ -106,8 +110,27 @@ export function registerAdminRoutes(app: Express) {
               ),
               gte(emailEvents.createdAt, sevenDaysAgo)
             )
+          ),
+        db.select({ count: count() })
+          .from(userSubscriptions)
+          .where(
+            and(
+              eq(userSubscriptions.status, 'active'),
+              lt(userSubscriptions.nextBillingDate, now)
+            )
+          ),
+        db.select({ count: count() })
+          .from(billingEvents)
+          .where(
+            and(
+              eq(billingEvents.eventType, 'paystack_webhook_received'),
+              gte(billingEvents.createdAt, fortyEightHoursAgo)
+            )
           )
       ]);
+
+      const overdueCount = overdueRenewalsResult[0]?.count || 0;
+      const webhookCount = webhookCountResult[0]?.count || 0;
 
       res.json({
         totalUsers: totalUsersResult[0]?.count || 0,
@@ -117,7 +140,9 @@ export function registerAdminRoutes(app: Express) {
         failedSubscriptions7d: failedSubscriptions7dResult[0]?.count || 0,
         failedWebhooks24h: failedWebhooks24hResult[0]?.count || 0,
         azureFailures7d: azureFailuresResult[0]?.count || 0,
-        emailFailures7d: emailFailuresResult[0]?.count || 0
+        emailFailures7d: emailFailuresResult[0]?.count || 0,
+        overdueRenewals: overdueCount,
+        webhookStale: webhookCount === 0
       });
     } catch (error: any) {
       log(`Error in /api/admin/command-center/health: ${error.message}`, 'admin');
@@ -159,7 +184,7 @@ export function registerAdminRoutes(app: Express) {
 
       // Filter mode - predefined filters by health card type
       if (filter) {
-        const validFilters = ['all', 'unverified', 'stuck_trials', 'failed_24h', 'failed_7d', 'webhooks_24h', 'azure_failures', 'email_failures'];
+        const validFilters = ['all', 'unverified', 'stuck_trials', 'failed_24h', 'failed_7d', 'webhooks_24h', 'azure_failures', 'email_failures', 'overdue_renewals', 'webhook_stale'];
         if (!validFilters.includes(filter)) {
           return res.status(400).json({ error: `Invalid filter. Must be one of: ${validFilters.join(', ')}` });
         }
@@ -403,6 +428,45 @@ export function registerAdminRoutes(app: Express) {
               .offset(offset);
             }
             break;
+
+          case 'overdue_renewals': {
+            const overdueUserIds = await db.select({ userId: userSubscriptions.userId })
+              .from(userSubscriptions)
+              .where(
+                and(
+                  eq(userSubscriptions.status, 'active'),
+                  lt(userSubscriptions.nextBillingDate, now)
+                )
+              );
+            
+            totalCount = overdueUserIds.length;
+            
+            if (overdueUserIds.length === 0) {
+              searchResults = [];
+            } else {
+              searchResults = await db.select({
+                id: users.id,
+                email: users.email,
+                username: users.username,
+                createdAt: users.createdAt,
+                lastLogin: users.lastLogin,
+                isEmailVerified: users.isEmailVerified,
+                trialEndDate: users.trialEndDate
+              })
+              .from(users)
+              .where(sql`${users.id} IN (${sql.join(overdueUserIds.map(u => sql`${u.userId}`), sql`, `)})`)
+              .orderBy(desc(users.createdAt))
+              .limit(limit)
+              .offset(offset);
+            }
+            break;
+          }
+
+          case 'webhook_stale': {
+            searchResults = [];
+            totalCount = 0;
+            break;
+          }
 
           default:
             searchResults = [];
@@ -1175,6 +1239,171 @@ Respond ONLY with valid JSON.`;
     } catch (error: any) {
       log(`Error reprocessing inbound email: ${error.message}`, 'admin');
       res.status(500).json({ error: "Failed to reprocess email" });
+    }
+  });
+
+  // ========================================
+  // PAYMENT HEALTH (Command Center)
+  // ========================================
+  app.get("/api/admin/command-center/payment-health", requireAdmin, async (req, res) => {
+    try {
+      const now = new Date();
+      const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      const overdueSubscriptions = await db.select({
+        userId: userSubscriptions.userId,
+        username: users.username,
+        email: users.email,
+        nextBillingDate: userSubscriptions.nextBillingDate,
+        lastPaymentDate: userSubscriptions.lastPaymentDate,
+        paystackCustomerCode: userSubscriptions.paystackCustomerCode,
+      })
+      .from(userSubscriptions)
+      .innerJoin(users, eq(userSubscriptions.userId, users.id))
+      .where(
+        sql`${userSubscriptions.status} = 'active' AND ${userSubscriptions.nextBillingDate} < NOW()`
+      );
+
+      const overdueRenewals = overdueSubscriptions.map(sub => {
+        const daysSinceExpiry = sub.nextBillingDate
+          ? Math.floor((now.getTime() - new Date(sub.nextBillingDate).getTime()) / (24 * 60 * 60 * 1000))
+          : 0;
+        return {
+          userId: sub.userId,
+          username: sub.username,
+          email: sub.email,
+          nextBillingDate: sub.nextBillingDate,
+          daysSinceExpiry,
+          lastPaymentDate: sub.lastPaymentDate,
+          paystackCustomerCode: sub.paystackCustomerCode,
+        };
+      });
+
+      const [webhookCountResult] = await db.select({ count: sql<number>`count(*)` })
+        .from(billingEvents)
+        .where(
+          and(
+            eq(billingEvents.eventType, 'paystack_webhook_received'),
+            gte(billingEvents.createdAt, fortyEightHoursAgo)
+          )
+        );
+
+      const [lastWebhookResult] = await db.select({ lastAt: sql<Date | null>`MAX(${billingEvents.createdAt})` })
+        .from(billingEvents)
+        .where(eq(billingEvents.eventType, 'paystack_webhook_received'));
+
+      const [activeSubsResult] = await db.select({ count: sql<number>`count(*)` })
+        .from(userSubscriptions)
+        .where(eq(userSubscriptions.status, 'active'));
+
+      const last48hCount = Number(webhookCountResult?.count || 0);
+      const activeSubscribers = Number(activeSubsResult?.count || 0);
+
+      const webhookHealth = {
+        last48hCount,
+        lastWebhookAt: lastWebhookResult?.lastAt || null,
+        isHealthy: last48hCount > 0 || activeSubscribers === 0,
+      };
+
+      const failedResolutionEvents = await db.select()
+        .from(billingEvents)
+        .where(
+          and(
+            eq(billingEvents.eventType, 'paystack_webhook_failed_user_resolution'),
+            gte(billingEvents.createdAt, sevenDaysAgo)
+          )
+        )
+        .orderBy(desc(billingEvents.createdAt));
+
+      const failedResolutions = failedResolutionEvents.map(event => {
+        const data = event.eventData as any;
+        return {
+          reference: data?.reference || 'unknown',
+          email: data?.email || data?.customer_email || 'unknown',
+          reason: data?.reason || data?.error || 'unknown',
+          createdAt: event.createdAt,
+        };
+      });
+
+      res.json({ overdueRenewals, webhookHealth, failedResolutions });
+    } catch (error: any) {
+      log(`Error in /api/admin/command-center/payment-health: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to get payment health data" });
+    }
+  });
+
+  // ========================================
+  // MANUAL SUBSCRIPTION SYNC (Command Center)
+  // ========================================
+  app.post("/api/admin/command-center/manual-sync/:userId", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: "Invalid user ID" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const now = new Date();
+      const nextBillingDate = new Date(now);
+      nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
+
+      const reason = req.body?.reason || 'Manual sync from admin command center';
+      const adminUserId = req.user?.id;
+
+      const existingSub = await db.select()
+        .from(userSubscriptions)
+        .where(eq(userSubscriptions.userId, userId))
+        .limit(1);
+
+      let updatedSubscription;
+
+      if (existingSub.length > 0) {
+        const [updated] = await db.update(userSubscriptions)
+          .set({
+            nextBillingDate,
+            lastPaymentDate: now,
+            totalPaid: sql`${userSubscriptions.totalPaid} + 4900`,
+            status: 'active',
+            updatedAt: now,
+          })
+          .where(eq(userSubscriptions.userId, userId))
+          .returning();
+        updatedSubscription = updated;
+      } else {
+        return res.status(404).json({ error: "No subscription found for this user" });
+      }
+
+      await db.update(users)
+        .set({
+          subscriptionExpiresAt: nextBillingDate,
+          subscriptionTier: 'monthly',
+          updatedAt: now,
+        })
+        .where(eq(users.id, userId));
+
+      await billingService.recordBillingEvent(userId, 'admin_manual_sync', {
+        adminUserId,
+        reason,
+        nextBillingDate: nextBillingDate.toISOString(),
+        amountAdded: 4900,
+        syncedAt: now.toISOString(),
+      });
+
+      log(`Admin manual sync: user ${userId} subscription extended by 1 month (by admin ${adminUserId})`, 'admin');
+
+      res.json({
+        success: true,
+        subscription: updatedSubscription,
+        message: `Subscription for ${user.username} extended by 1 month`,
+      });
+    } catch (error: any) {
+      log(`Error in /api/admin/command-center/manual-sync: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to manually sync subscription" });
     }
   });
 }

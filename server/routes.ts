@@ -161,68 +161,90 @@ async function handlePaystackSubscriptionCreate(data: any) {
   }
 }
 
+async function resolvePaystackUser(data: any, eventDescription: string): Promise<{ user: any; usedLegacyFallback: boolean } | null> {
+  let user: any = null;
+  let usedLegacyFallback = false;
+  
+  const metadataUserId = data.metadata?.user_id;
+  if (metadataUserId) {
+    user = await storage.getUser(metadataUserId);
+    if (!user) {
+      log(`User ID ${metadataUserId} not found for ${eventDescription}`, 'billing');
+      await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
+        subscription_code: data.subscription_code,
+        reference: data.reference,
+        reason: 'metadata_user_id_not_found',
+        metadata_user_id: metadataUserId,
+        event_type: eventDescription
+      });
+      return null;
+    }
+  } else {
+    const customerEmail = data.customer?.email;
+    if (customerEmail) {
+      user = await storage.getUserByEmail(customerEmail);
+      if (user) {
+        usedLegacyFallback = true;
+        log(`WARNING: Legacy webhook for ${eventDescription}. User ${user.id} resolved via email: ${customerEmail}`, 'billing');
+        await billingService.recordBillingEvent(user.id, 'legacy_paystack_webhook_processed', {
+          subscription_code: data.subscription_code,
+          reference: data.reference,
+          email: customerEmail,
+          reason: 'missing_metadata_user_id',
+          event_type: eventDescription
+        });
+      }
+    }
+  }
+  
+  if (!user) {
+    log(`Cannot resolve user for ${eventDescription}. Logging only.`, 'billing');
+    await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
+      subscription_code: data.subscription_code,
+      reference: data.reference,
+      email: data.customer?.email || 'none',
+      reason: 'no_user_id_and_no_matching_email',
+      event_type: eventDescription
+    });
+    return null;
+  }
+  
+  return { user, usedLegacyFallback };
+}
+
 async function handlePaystackSubscriptionDisable(data: any) {
   try {
     log(`Paystack subscription disabled: ${data.subscription_code}`, 'billing');
     
-    let user: any = null;
-    let usedLegacyFallback = false;
-    
-    // PRIMARY: User lookup by metadata.user_id (canonical path)
-    const metadataUserId = data.metadata?.user_id;
-    if (metadataUserId) {
-      user = await storage.getUser(metadataUserId);
-      if (!user) {
-        log(`User ID ${metadataUserId} not found for disabled subscription: ${data.subscription_code}`, 'billing');
-        await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
-          subscription_code: data.subscription_code,
-          reason: 'metadata_user_id_not_found',
-          metadata_user_id: metadataUserId
-        });
-        return;
-      }
-    } else {
-      // TEMPORARY LEGACY FALLBACK:
-      // Remove once all pre-2026-01-22 subscriptions have renewed
-      const customerEmail = data.customer?.email;
-      if (customerEmail) {
-        user = await storage.getUserByEmail(customerEmail);
-        if (user) {
-          usedLegacyFallback = true;
-          log(`WARNING: Legacy webhook processed for subscription disable ${data.subscription_code}. User ${user.id} resolved via email: ${customerEmail}`, 'billing');
-          await billingService.recordBillingEvent(user.id, 'legacy_paystack_webhook_processed', {
-            subscription_code: data.subscription_code,
-            email: customerEmail,
-            reason: 'missing_metadata_user_id',
-            event_type: 'subscription.disable'
-          });
-        }
-      }
-    }
-    
-    // FAILURE MODE: No user resolved - log but don't fail silently
-    if (!user) {
-      log(`Cannot resolve user for subscription disable ${data.subscription_code}. Logging only.`, 'billing');
-      await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
-        subscription_code: data.subscription_code,
-        email: data.customer?.email || 'none',
-        reason: 'no_user_id_and_no_matching_email',
-        event_type: 'subscription.disable'
+    const resolved = await resolvePaystackUser(data, 'subscription.disable');
+    if (!resolved) return;
+    const { user, usedLegacyFallback } = resolved;
+
+    // Mark as cancelled but keep access until next_billing_date (user already paid for this period)
+    const subscription = await billingService.getUserSubscription(user.id);
+    if (subscription && subscription.nextBillingDate && new Date(subscription.nextBillingDate) > new Date()) {
+      await storage.updateUserSubscription(subscription.id, {
+        cancelledAt: new Date(),
+        updatedAt: new Date(),
       });
-      return;
+      log(`Subscription marked as cancelled for user ${user.id} - access continues until ${subscription.nextBillingDate}${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
+      
+      await billingService.recordBillingEvent(user.id, 'subscription_disable_graceful', {
+        subscription_code: data.subscription_code,
+        accessUntil: subscription.nextBillingDate,
+      });
+    } else {
+      await billingService.cancelSubscription(user.id);
+      log(`Subscription cancelled immediately for user ${user.id} (no remaining paid period)${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
     }
 
-    // Cancel the user's subscription
-    await billingService.cancelSubscription(user.id);
-    log(`Successfully cancelled subscription for user ${user.id} via Paystack webhook${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
-
-    // Send notification email about cancelled subscription
-    if (user.email) {
-      await emailService.sendPaymentFailureNotification(
-        user.email,
-        user.username,
-        'subscription_cancelled',
-        'Your subscription has been cancelled due to payment issues. Please update your payment method to continue using premium features.'
+    // Notify admin
+    const adminEmail = process.env.ADMIN_EMAIL || 'support@simpleslips.co.za';
+    if (emailService) {
+      await emailService.sendEmail(
+        adminEmail,
+        `⚠️ Subscription Disabled: ${user.username}`,
+        `User ${user.username} (${user.email}) subscription was disabled on Paystack.\nSubscription code: ${data.subscription_code}\nAccess continues until: ${subscription?.nextBillingDate || 'immediately cancelled'}`
       );
     }
   } catch (error) {
@@ -230,69 +252,62 @@ async function handlePaystackSubscriptionDisable(data: any) {
   }
 }
 
+async function handlePaystackSubscriptionNotRenew(data: any) {
+  try {
+    log(`Paystack subscription not renewing: ${data.subscription_code}`, 'billing');
+    
+    const resolved = await resolvePaystackUser(data, 'subscription.not_renew');
+    if (!resolved) return;
+    const { user, usedLegacyFallback } = resolved;
+
+    // User cancelled - mark cancelledAt but keep status active until billing period ends
+    const subscription = await billingService.getUserSubscription(user.id);
+    if (subscription) {
+      await storage.updateUserSubscription(subscription.id, {
+        cancelledAt: new Date(),
+        updatedAt: new Date(),
+      });
+      log(`Subscription set to not renew for user ${user.id} (${user.username}) - access until ${subscription.nextBillingDate}${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
+      
+      await billingService.recordBillingEvent(user.id, 'subscription_not_renewing', {
+        subscription_code: data.subscription_code,
+        accessUntil: subscription.nextBillingDate,
+        username: user.username,
+        email: user.email,
+      });
+    }
+
+    // Notify admin about cancellation
+    const adminEmail = process.env.ADMIN_EMAIL || 'support@simpleslips.co.za';
+    if (emailService) {
+      await emailService.sendEmail(
+        adminEmail,
+        `⚠️ User Cancelled: ${user.username} won't renew`,
+        `User ${user.username} (${user.email}) has cancelled their subscription.\nThey will keep access until: ${subscription?.nextBillingDate || 'unknown'}\nSubscription code: ${data.subscription_code}\n\nView in Command Center to follow up.`
+      );
+    }
+  } catch (error) {
+    log(`Error handling Paystack subscription not_renew: ${error}`, 'billing');
+  }
+}
+
 async function handlePaystackPaymentFailed(data: any) {
   try {
     log(`Paystack payment failed: ${data.reference}`, 'billing');
     
-    let user: any = null;
-    let usedLegacyFallback = false;
-    
-    // PRIMARY: User lookup by metadata.user_id (canonical path)
-    const metadataUserId = data.metadata?.user_id;
-    if (metadataUserId) {
-      user = await storage.getUser(metadataUserId);
-      if (!user) {
-        log(`User ID ${metadataUserId} not found for failed payment: ${data.reference}`, 'billing');
-        await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
-          reference: data.reference,
-          reason: 'metadata_user_id_not_found',
-          metadata_user_id: metadataUserId,
-          event_type: 'charge.failed'
-        });
-        return;
-      }
-    } else {
-      // TEMPORARY LEGACY FALLBACK:
-      // Remove once all pre-2026-01-22 subscriptions have renewed
-      const customerEmail = data.customer?.email;
-      if (customerEmail) {
-        user = await storage.getUserByEmail(customerEmail);
-        if (user) {
-          usedLegacyFallback = true;
-          log(`WARNING: Legacy webhook processed for failed payment ${data.reference}. User ${user.id} resolved via email: ${customerEmail}`, 'billing');
-          await billingService.recordBillingEvent(user.id, 'legacy_paystack_webhook_processed', {
-            reference: data.reference,
-            email: customerEmail,
-            reason: 'missing_metadata_user_id',
-            event_type: 'charge.failed'
-          });
-        }
-      }
-    }
-    
-    // FAILURE MODE: No user resolved - log but don't fail silently
-    if (!user) {
-      log(`Cannot resolve user for failed payment ${data.reference}. Logging only.`, 'billing');
-      await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
-        reference: data.reference,
-        email: data.customer?.email || 'none',
-        reason: 'no_user_id_and_no_matching_email',
-        event_type: 'charge.failed'
-      });
-      return;
-    }
+    const resolved = await resolvePaystackUser(data, 'invoice.payment_failed');
+    if (!resolved) return;
+    const { user, usedLegacyFallback } = resolved;
 
-    // Log billing event for failed payment
     await billingService.recordPaymentFailure(
       user.id,
-      data.reference,
-      data.gateway_response || 'Payment failed',
+      data.reference || data.invoice_code || 'unknown',
+      data.gateway_response || data.description || 'Payment failed',
       data.amount,
       data.currency
     );
 
-    // Send notification email about payment failure
-    const failureReason = data.gateway_response || 'Your payment could not be processed';
+    const failureReason = data.gateway_response || data.description || 'Your payment could not be processed';
     if (user.email) {
       await emailService.sendPaymentFailureNotification(
         user.email,
@@ -302,18 +317,58 @@ async function handlePaystackPaymentFailed(data: any) {
       );
       log(`Payment failure notification sent to user ${user.id}${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
     }
+
+    // Also notify admin
+    const adminEmail = process.env.ADMIN_EMAIL || 'support@simpleslips.co.za';
+    if (emailService) {
+      await emailService.sendEmail(
+        adminEmail,
+        `🔴 Payment Failed: ${user.username}`,
+        `Payment failed for ${user.username} (${user.email}).\nReason: ${failureReason}\nReference: ${data.reference || data.invoice_code || 'unknown'}\nAmount: ${data.amount ? `R${(data.amount / 100).toFixed(2)}` : 'unknown'}`
+      );
+    }
   } catch (error) {
     log(`Error handling Paystack payment failed: ${error}`, 'billing');
   }
 }
 
-async function handlePaystackInvoicePaid(data: any) {
+async function handlePaystackInvoiceCreate(data: any) {
   try {
-    log(`Paystack invoice event received (logging only - no subscription mutation): ${JSON.stringify(data)}`, 'billing');
-    // NOTE: Invoice events do NOT activate/renew subscriptions. Only charge.success does.
-    // This handler is for logging/monitoring purposes only.
+    // Paystack sends this 3 days before subscription is due
+    log(`Paystack invoice created: ${data.invoice_code || 'unknown'} for subscription ${data.subscription?.subscription_code || 'unknown'}`, 'billing');
+    
+    await billingService.recordBillingEvent(null, 'paystack_invoice_created', {
+      invoice_code: data.invoice_code,
+      subscription_code: data.subscription?.subscription_code,
+      amount: data.amount,
+      customer_email: data.customer?.email,
+      description: data.description,
+      due_date: data.due_date || data.period_end,
+    });
   } catch (error) {
-    log(`Error handling Paystack invoice event: ${error}`, 'billing');
+    log(`Error handling Paystack invoice create: ${error}`, 'billing');
+  }
+}
+
+async function handlePaystackInvoiceUpdate(data: any) {
+  try {
+    log(`Paystack invoice updated: ${data.invoice_code || 'unknown'} - paid=${data.paid}`, 'billing');
+    
+    await billingService.recordBillingEvent(null, 'paystack_invoice_updated', {
+      invoice_code: data.invoice_code,
+      subscription_code: data.subscription?.subscription_code,
+      amount: data.amount,
+      paid: data.paid,
+      customer_email: data.customer?.email,
+    });
+
+    // If invoice was paid, this is a renewal confirmation
+    // charge.success is the primary handler, but this serves as backup logging
+    if (data.paid === true) {
+      log(`Invoice ${data.invoice_code} marked as paid - renewal confirmed (charge.success is primary handler)`, 'billing');
+    }
+  } catch (error) {
+    log(`Error handling Paystack invoice update: ${error}`, 'billing');
   }
 }
 
@@ -3568,70 +3623,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Paystack webhook endpoint - NO AUTHENTICATION REQUIRED (called by Paystack servers)
   app.post("/api/billing/paystack/webhook", async (req, res) => {
-    // OPERATIONAL HARDENING: Log webhook arrival BEFORE any verification
-    // This distinguishes "webhook never arrived" from "webhook rejected"
+    // CRITICAL: Return 200 OK immediately to prevent Paystack retries/timeouts
+    // Per Paystack docs: acknowledge first, then process asynchronously
     const webhookReceivedAt = new Date().toISOString();
     const { event, data } = req.body || {};
     const reference = data?.reference || 'unknown';
     const hasMetadataUserId = !!data?.metadata?.user_id;
     
     log(`[WEBHOOK_ARRIVAL] timestamp=${webhookReceivedAt} event=${event || 'missing'} reference=${reference} has_metadata_user_id=${hasMetadataUserId}`, 'billing');
-    
-    // OPERATIONAL HARDENING: Record billing event for every webhook attempt (even invalid ones)
-    try {
-      await billingService.recordBillingEvent(null, 'paystack_webhook_received', {
-        event: event || 'missing',
-        reference,
-        has_metadata_user_id: hasMetadataUserId,
-        received_at: webhookReceivedAt,
-        signature_present: !!req.headers['x-paystack-signature']
-      });
-    } catch (eventError: any) {
-      log(`Failed to record webhook arrival event: ${eventError.message}`, 'billing');
+
+    // Verify signature BEFORE acknowledging - reject bad actors immediately
+    const hash = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY || '').update(JSON.stringify(req.body)).digest('hex');
+    if (hash !== req.headers['x-paystack-signature']) {
+      log(`[WEBHOOK_REJECTED] Invalid signature for reference=${reference} event=${event}`, 'billing');
+      return res.status(400).json({ error: 'Invalid signature' });
     }
 
-    try {
-      const hash = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY || '').update(JSON.stringify(req.body)).digest('hex');
-      
-      // Verify webhook signature for security
-      if (hash !== req.headers['x-paystack-signature']) {
-        log(`[WEBHOOK_REJECTED] Invalid signature for reference=${reference} event=${event}`, 'billing');
-        return res.status(400).json({ error: 'Invalid signature' });
+    // Return 200 OK immediately - Paystack requires this within 30 seconds
+    res.status(200).json({ status: 'success' });
+
+    // Process webhook asynchronously after response is sent
+    setImmediate(async () => {
+      try {
+        // Record webhook arrival for monitoring
+        await billingService.recordBillingEvent(null, 'paystack_webhook_received', {
+          event: event || 'missing',
+          reference,
+          has_metadata_user_id: hasMetadataUserId,
+          received_at: webhookReceivedAt,
+          signature_present: true
+        });
+
+        log(`Paystack webhook processing: ${event}`, 'billing');
+
+        switch (event) {
+          case 'charge.success':
+            await handlePaystackChargeSuccess(data);
+            break;
+          case 'subscription.create':
+            await handlePaystackSubscriptionCreate(data);
+            break;
+          case 'subscription.disable':
+            await handlePaystackSubscriptionDisable(data);
+            break;
+          case 'subscription.not_renew':
+            await handlePaystackSubscriptionNotRenew(data);
+            break;
+          case 'invoice.payment_failed':
+            await handlePaystackPaymentFailed(data);
+            break;
+          case 'invoice.update':
+            await handlePaystackInvoiceUpdate(data);
+            break;
+          case 'invoice.create':
+            await handlePaystackInvoiceCreate(data);
+            break;
+          default:
+            log(`Unhandled Paystack webhook event: ${event}`, 'billing');
+        }
+      } catch (error: any) {
+        log(`Error processing Paystack webhook (${event}): ${error.message}`, 'billing');
       }
-
-      log(`Paystack webhook received: ${event}`, 'billing');
-
-      // Handle different webhook events
-      switch (event) {
-        case 'charge.success':
-          await handlePaystackChargeSuccess(data);
-          break;
-        case 'subscription.create':
-          await handlePaystackSubscriptionCreate(data);
-          break;
-        case 'subscription.disable':
-          await handlePaystackSubscriptionDisable(data);
-          break;
-        case 'invoice.payment_failed':
-          await handlePaystackPaymentFailed(data);
-          break;
-        case 'invoice.update':
-        case 'invoice.create':
-          // Handle subscription renewal payments
-          await handlePaystackInvoicePaid(data);
-          break;
-        case 'subscription.not_renew':
-          log(`Subscription will not renew: ${data.subscription_code}`, 'billing');
-          break;
-        default:
-          log(`Unhandled Paystack webhook event: ${event}`, 'billing');
-      }
-
-      res.status(200).json({ status: 'success' });
-    } catch (error: any) {
-      log(`Error in Paystack webhook: ${error.message}`, 'billing');
-      res.status(500).json({ error: 'Webhook processing failed' });
-    }
+    });
   });
 
   // Verify subscription status

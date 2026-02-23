@@ -1008,19 +1008,19 @@ export default function CommandCenter() {
                   ) : paymentWarnings ? (
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div className="p-3 border rounded-lg text-center">
+                        <div className="p-3 border rounded-none text-center">
                           <div className="text-lg font-bold text-orange-500">{paymentWarnings.summary.trialWarnings3d}</div>
                           <div className="text-xs text-muted-foreground">Trial 3-day</div>
                         </div>
-                        <div className="p-3 border rounded-lg text-center">
+                        <div className="p-3 border rounded-none text-center">
                           <div className="text-lg font-bold text-red-500">{paymentWarnings.summary.trialWarnings1d}</div>
                           <div className="text-xs text-muted-foreground">Trial 1-day</div>
                         </div>
-                        <div className="p-3 border rounded-lg text-center">
+                        <div className="p-3 border rounded-none text-center">
                           <div className="text-lg font-bold text-orange-500">{paymentWarnings.summary.renewalWarnings3d}</div>
                           <div className="text-xs text-muted-foreground">Renewal 3-day</div>
                         </div>
-                        <div className="p-3 border rounded-lg text-center">
+                        <div className="p-3 border rounded-none text-center">
                           <div className="text-lg font-bold text-red-500">{paymentWarnings.summary.renewalWarnings1d}</div>
                           <div className="text-xs text-muted-foreground">Renewal 1-day</div>
                         </div>

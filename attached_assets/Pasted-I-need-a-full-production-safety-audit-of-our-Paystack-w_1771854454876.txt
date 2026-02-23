@@ -1,0 +1,115 @@
+I need a full production-safety audit of our Paystack webhook system.
+
+DO NOT summarize.
+DO NOT explain.
+DO NOT interpret.
+ONLY return the exact raw code blocks and direct answers requested.
+
+--------------------------------------------
+1️⃣ WEBHOOK ROUTE
+--------------------------------------------
+
+Return the FULL webhook route definition for:
+
+/api/billing/paystack/webhook
+
+Include:
+- All middleware used (express.json, express.raw, etc.)
+- Full handler body
+- Signature validation logic
+- Where res.sendStatus(200) is called
+- Whether 200 is returned before or after processing
+- Whether async processing is wrapped in .catch()
+
+--------------------------------------------
+2️⃣ SIGNATURE VALIDATION
+--------------------------------------------
+
+Show:
+- The exact signature validation code
+- Which header is used (x-paystack-signature?)
+- Whether req.body is raw buffer or parsed JSON
+- Whether express.raw() is used
+- Whether body-parser is applied before the route
+
+--------------------------------------------
+3️⃣ ACCESS ENFORCEMENT LOGIC
+--------------------------------------------
+
+Show the FULL code for:
+
+- getSubscriptionStatus()
+- Any middleware that determines access rights
+- Any check involving:
+    subscription.status
+    subscription.nextBillingDate
+    subscription.cancelledAt
+    subscriptionExpiresAt
+
+Answer explicitly:
+- Is access based only on status?
+- Is access based on nextBillingDate comparison?
+- Is both required?
+
+--------------------------------------------
+4️⃣ WEBHOOK EVENT HANDLERS
+--------------------------------------------
+
+Return full implementations for:
+
+- handlePaystackChargeSuccess
+- handlePaystackPaymentFailed
+- handlePaystackSubscriptionDisable
+- handlePaystackSubscriptionNotRenew
+- handlePaystackInvoiceUpdate
+- handlePaystackInvoiceCreate
+
+Show:
+- Whether they use DB transactions
+- Whether duplicate references are guarded against
+- Whether idempotency is enforced
+- Whether any webhook_event table exists
+
+--------------------------------------------
+5️⃣ IDENTITY RESOLUTION
+--------------------------------------------
+
+Show the full resolvePaystackUser() function.
+
+--------------------------------------------
+6️⃣ EXPIRY ENFORCEMENT
+--------------------------------------------
+
+Answer clearly:
+
+Is there:
+- A cron job enforcing expiry?
+- A background job checking nextBillingDate?
+- Or is expiry only checked at request-time?
+
+Return any interval jobs using setInterval or cron.
+
+--------------------------------------------
+7️⃣ PAYSTACK DASHBOARD URL
+--------------------------------------------
+
+Return:
+- The exact webhook URL configured in code (if any hardcoded)
+- The expected production URL
+- Whether environment variable differs between test and live
+
+--------------------------------------------
+8️⃣ WEBHOOK RETRY SAFETY
+--------------------------------------------
+
+Answer:
+
+If webhook processing throws an error AFTER 200 is returned:
+- Is it logged?
+- Can it crash the server?
+- Is there retry logic internally?
+
+--------------------------------------------
+
+This audit is for production billing safety.
+Return raw code and explicit yes/no answers only.

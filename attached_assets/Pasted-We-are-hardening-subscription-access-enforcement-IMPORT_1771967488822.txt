@@ -1,0 +1,92 @@
+We are hardening subscription access enforcement.
+
+IMPORTANT:
+- Do NOT modify billing-service
+- Do NOT modify webhook handlers
+- Do NOT modify database schema
+- Only modify getSubscriptionStatus() logic
+- Keep all existing return shape intact
+- Do not change trial logic
+- Do not change cancelled logic
+- Do not change middleware signatures
+
+---------------------------------------
+TARGET FILE:
+server/subscription-middleware.ts
+
+---------------------------------------
+CURRENT ISSUE:
+
+Right now:
+
+if (subscription.status === 'active') {
+    return { hasActiveSubscription: true, ... }
+}
+
+This grants access with NO nextBillingDate check.
+
+This allows overdue subscriptions to keep access indefinitely.
+
+---------------------------------------
+REQUIRED FIX:
+
+Replace the active branch with:
+
+if (subscription.status === 'active' && subscription.nextBillingDate) {
+    const nextBilling = new Date(subscription.nextBillingDate);
+    if (now < nextBilling) {
+        return {
+            hasActiveSubscription: true,
+            isInTrial: false,
+            subscriptionType: 'premium',
+            ...
+        };
+    } else {
+        return {
+            hasActiveSubscription: false,
+            isInTrial: false,
+            subscriptionType: 'none'
+        };
+    }
+}
+
+---------------------------------------
+CONSTRAINTS:
+
+- If nextBillingDate is null → deny access
+- Do NOT auto-mutate DB status
+- Do NOT flip status to cancelled
+- Access enforcement only
+- Keep cancelled logic intact
+- Keep trial logic intact
+
+---------------------------------------
+AFTER IMPLEMENTATION:
+
+Return:
+
+1. Full updated getSubscriptionStatus() function
+2. Confirm TypeScript compiles
+3. Confirm no other files modified
+4. Confirm requireSubscription middleware unchanged
+🧠 What This Achieves
+
+Now even if:
+
+charge.success fails
+
+webhook never arrives
+
+reconciliation only emails you
+
+User loses access automatically when:
+
+nextBillingDate < now
+
+That closes the revenue leak.
+
+After this is applied, send me:
+
+The updated getSubscriptionStatus() function
+
+Confirmation it compiles clean

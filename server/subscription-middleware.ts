@@ -26,16 +26,28 @@ export async function getSubscriptionStatus(userId: number): Promise<Subscriptio
     const now = new Date();
     console.log(`[getSubscriptionStatus] User ${userId} subscription status: ${subscription.status}, trialEnd: ${subscription.trialEndDate}`);
 
-    // Check if subscription is active
-    if (subscription.status === 'active') {
-      return {
-        hasActiveSubscription: true,
-        isInTrial: false,
-        subscriptionType: 'premium',
-        subscriptionPlatform: subscription.googlePlayPurchaseToken ? 'google_play' : 
-                           subscription.paystackReference ? 'paystack' : 
-                           subscription.appleReceiptData ? 'apple' : 'paystack'
-      };
+    // Check if subscription is active and billing date has not passed
+    if (subscription.status === 'active' && subscription.nextBillingDate) {
+      const nextBilling = new Date(subscription.nextBillingDate);
+      if (now < nextBilling) {
+        return {
+          hasActiveSubscription: true,
+          isInTrial: false,
+          subscriptionType: 'premium',
+          subscriptionPlatform: subscription.googlePlayPurchaseToken ? 'google_play' :
+                             subscription.paystackReference ? 'paystack' :
+                             subscription.appleReceiptData ? 'apple' : 'paystack'
+        };
+      } else {
+        console.log(`[getSubscriptionStatus] User ${userId} active subscription is overdue (nextBillingDate: ${nextBilling.toISOString()})`);
+        return { hasActiveSubscription: false, isInTrial: false, subscriptionType: 'none' };
+      }
+    }
+
+    // active status with no nextBillingDate — deny access
+    if (subscription.status === 'active' && !subscription.nextBillingDate) {
+      console.log(`[getSubscriptionStatus] User ${userId} active subscription has no nextBillingDate — denying access`);
+      return { hasActiveSubscription: false, isInTrial: false, subscriptionType: 'none' };
     }
 
     // Check if subscription was cancelled but user still has paid time remaining

@@ -403,6 +403,20 @@ export default function UploadReceipt() {
   });
   const reportLabels = reportLabelsData?.reportLabels ?? [];
 
+  // Query for pre-defined custom categories from the Categories page
+  const { data: customCategories = [] } = useQuery<any[]>({
+    queryKey: ["/api/custom-categories"],
+    enabled: !!user,
+  });
+
+  // Merge custom category display names + existing receipt labels, deduped and sorted
+  const allCustomLabels = Array.from(
+    new Set([
+      ...customCategories.map((c: any) => c.displayName as string),
+      ...reportLabels,
+    ])
+  ).sort();
+
   // OCR scanning mutation
   const scanMutation = useMutation({
     mutationFn: async (imageData: string) => {
@@ -1849,11 +1863,11 @@ export default function UploadReceipt() {
                               {cat.charAt(0).toUpperCase() + cat.slice(1).replace('_', ' ')}
                             </SelectItem>
                           ))}
-                          {reportLabels.length > 0 && (
+                          {allCustomLabels.length > 0 && (
                             <>
                               <div className="border-t border-gray-200 mt-1 mb-1" />
                               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Custom Labels</div>
-                              {reportLabels.map((label) => (
+                              {allCustomLabels.map((label) => (
                                 <SelectItem key={`__label__${label}`} value={`__label__${label}`}>
                                   {label}
                                 </SelectItem>

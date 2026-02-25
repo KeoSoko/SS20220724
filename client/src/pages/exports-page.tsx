@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
 import { Download, FileText, Receipt, Calendar, CalendarRange, Archive } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-
-const EXPENSE_CATEGORIES = [
-  'food', 'groceries', 'dining', 'transportation', 'entertainment', 
-  'utilities', 'rent', 'travel', 'healthcare', 'education', 'shopping', 
-  'office_supplies', 'personal_care', 'gifts', 'other'
-];
+import { EXPENSE_CATEGORIES } from '@shared/schema';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,6 +13,9 @@ import { Section } from '@/components/design-system';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { dispatchVerificationRequiredEvent } from '@/lib/queryClient';
+
+const formatCategoryLabel = (slug: string) =>
+  slug.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 
 export default function ExportsPage() {
   const [isExporting, setIsExporting] = useState(false);
@@ -260,14 +258,14 @@ export default function ExportsPage() {
                     <SelectItem value="all">All categories</SelectItem>
                     {EXPENSE_CATEGORIES.map((cat) => (
                       <SelectItem key={cat} value={cat}>
-                        {cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ')}
+                        {formatCategoryLabel(cat)}
                       </SelectItem>
                     ))}
                     {Array.isArray(customCategories) && customCategories.length > 0 && (
                       <>
                         {customCategories.map((customCat: any) => (
-                          <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
-                            {customCat.displayName || customCat.name}
+                          <SelectItem key={`custom-${customCat.id}`} value={customCat.displayName}>
+                            {customCat.displayName}
                           </SelectItem>
                         ))}
                       </>

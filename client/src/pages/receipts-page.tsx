@@ -295,8 +295,8 @@ export default function ReceiptsPage() {
   const categorizeMutation = useMutation({
     mutationFn: async ({ receiptIds, category }: { receiptIds: number[], category: string }) => {
       await Promise.all(
-        receiptIds.map(id => 
-          apiRequest('PATCH', `/api/receipts/${id}`, { category })
+        receiptIds.map(id =>
+          apiRequest('PATCH', `/api/receipts/${id}`, { category, reportLabel: null })
         )
       );
     },

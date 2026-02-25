@@ -256,10 +256,10 @@ function HomePage() {
 
   // Bulk categorize mutation
   const bulkCategorizeMutation = useMutation({
-    mutationFn: async ({ receiptIds, category }: { receiptIds: number[], category: string }) => {
+    mutationFn: async ({ receiptIds, category, reportLabel }: { receiptIds: number[], category: string, reportLabel?: string | null }) => {
       await Promise.all(
-        receiptIds.map(id => 
-          apiRequest('PATCH', `/api/receipts/${id}`, { category })
+        receiptIds.map(id =>
+          apiRequest('PATCH', `/api/receipts/${id}`, { category, reportLabel: reportLabel ?? null })
         )
       );
     },
@@ -286,10 +286,23 @@ function HomePage() {
 
   const handleBulkCategorize = () => {
     if (!bulkCategory) return;
-    bulkCategorizeMutation.mutate({ 
-      receiptIds: Array.from(selectedReceipts), 
-      category: bulkCategory 
-    });
+    const isSystemCategory = (EXPENSE_CATEGORIES as readonly string[]).includes(bulkCategory);
+    if (isSystemCategory) {
+      bulkCategorizeMutation.mutate({
+        receiptIds: Array.from(selectedReceipts),
+        category: bulkCategory,
+        reportLabel: null,
+      });
+    } else {
+      const customCat = Array.isArray(customCategories)
+        ? customCategories.find((c: any) => c.name === bulkCategory)
+        : null;
+      bulkCategorizeMutation.mutate({
+        receiptIds: Array.from(selectedReceipts),
+        category: "other",
+        reportLabel: customCat?.displayName || bulkCategory,
+      });
+    }
   };
 
   // Helper to strip split suffix from vendor names (e.g., "Store Name (split 1/2)" -> "Store Name")

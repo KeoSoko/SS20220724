@@ -422,7 +422,7 @@ export default function ReceiptDetail() {
 
   // Add split functionality
   const addSplit = () => {
-    if (splits.length < 5) {
+    if (splits.length < 10) {
       setSplits([...splits, { category: "other", amount: 0, notes: "" }]);
     }
   };
@@ -1318,7 +1318,7 @@ export default function ReceiptDetail() {
                 variant="outline"
                 size="sm"
                 onClick={addSplit}
-                disabled={splits.length >= 5}
+                disabled={splits.length >= 10}
               >
                 <Plus className="h-3 w-3 mr-1" />
                 Add Split

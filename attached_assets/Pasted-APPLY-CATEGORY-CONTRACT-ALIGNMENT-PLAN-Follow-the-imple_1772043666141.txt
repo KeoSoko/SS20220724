@@ -1,0 +1,146 @@
+APPLY CATEGORY CONTRACT ALIGNMENT PLAN
+
+Follow the implementation plan exactly as written below.
+
+Do NOT refactor beyond what is specified.
+Do NOT modify any server files.
+Do NOT touch export logic.
+Do NOT change database schema.
+Only apply the frontend changes listed.
+
+If any import already exists, update it — do not duplicate it.
+
+After completing all tasks, return the modified files only.
+
+SYSTEM RULE
+
+Resolved Category = reportLabel?.trim() || category || "other"
+
+This must be the single source of truth in the frontend.
+
+T001 — Create Shared Helper
+
+Create new file:
+
+client/src/utils/category-resolution.ts
+
+With EXACT contents:
+
+export function resolveCategory(
+  category?: string | null,
+  reportLabel?: string | null
+): string {
+  if (reportLabel?.trim()) return reportLabel.trim();
+  return category || "other";
+}
+
+Do not add anything else to this file.
+
+T002 — Update receipts-page.tsx
+
+File:
+client/src/pages/receipts-page.tsx
+
+Step 1 — Replace import
+
+Replace:
+
+import { getReceiptCategoryLabel } from '@/utils/receipt-category';
+
+With:
+
+import { resolveCategory } from '@/utils/category-resolution';
+Step 2 — Replace filteredReceipts block
+
+Replace the entire existing filteredReceipts implementation with the useMemo version from the plan.
+
+Ensure:
+
+resolveCategory is used.
+
+Uncategorized requires:
+
+no reportLabel
+
+AND category === 'other' or empty
+
+Dependency array includes:
+receipts, searchQuery, categoryFilter, showNeedsReview, dateFrom, dateTo, amountMin, amountMax, vendorFilter
+
+Step 3 — Replace sortedReceipts block
+
+Wrap sorting logic in useMemo exactly as specified.
+
+Dependency array must include:
+filteredReceipts, sortBy, sortOrder
+
+Do not change sort logic.
+
+T003 — Update EnhancedReceiptCard
+
+File:
+client/src/components/ui/enhanced-components.tsx
+
+Step 1 — Replace import
+
+Replace:
+
+import { getReceiptCategoryLabel } from "@/utils/receipt-category";
+
+With:
+
+import { resolveCategory } from "@/utils/category-resolution";
+Step 2 — Replace badge rendering
+
+Replace:
+
+{getReceiptCategoryLabel(receipt.category, receipt.reportLabel)}
+
+With:
+
+{resolveCategory(receipt.category, receipt.reportLabel).replace(/_/g, " ")}
+Step 3 — Stop motion re-entry flash
+
+Find the motion.div wrapping the card and replace:
+
+initial={{ opacity: 0, y: 10 }}
+
+With:
+
+initial={false}
+
+Do not remove animation. Only disable initial re-trigger.
+
+DO NOT TOUCH
+
+Do not modify:
+
+server/export-service.ts
+
+server/reporting-utils.ts
+
+server/routes.ts
+
+shared/schema.ts
+
+client/src/utils/receipt-category.ts
+
+Exports are already correct.
+
+ACCEPTANCE CRITERIA
+
+Editing only reportLabel updates list correctly.
+
+Category filter matches resolvedCategory only.
+
+Uncategorized only shows receipts with:
+
+no reportLabel
+
+AND category === "other"
+
+No flash animation when filtering or editing.
+
+Exports remain unchanged.
+
+Return modified files only.

@@ -1,0 +1,54 @@
+We are debugging two UI issues related to custom categories and receipt card display.
+
+=====================================================
+ISSUE 1 — Custom Categories Creation UX
+=====================================================
+
+1. Locate the Categories page component (likely client/src/pages/categories.tsx or similar).
+2. Find the form that creates a new custom category.
+3. Provide:
+   - The full form JSX
+   - The mutation body sent to POST /api/custom-categories
+   - The backend route handling that POST
+   - The schema definition for custom_categories table
+4. Confirm:
+   - Which fields are required in DB
+   - Whether internal_name is required
+   - Whether displayName is stored separately
+   - Whether any slug/normalization exists
+
+We want to change behavior to:
+- User enters ONLY display name
+- internal_name is auto-generated (slugify + lowercase + replace spaces with underscores)
+- uniqueness enforced at DB level
+- no breaking changes to existing categories
+
+Return findings.
+
+=====================================================
+ISSUE 2 — Receipt Cards Reverting Category On Scroll
+=====================================================
+
+1. Locate receipt card component (likely:
+   - client/src/components/bulk-receipt-card.tsx
+   - or client/src/pages/receipts-page.tsx
+)
+
+2. Provide:
+   - The code that renders the category label on the card
+   - The getReceiptCategoryLabel utility
+   - The props type for receipt object
+   - Any memoization (React.memo, useMemo)
+   - Whether virtualization (react-window, react-virtualized) is used
+   - The useQuery fetching receipts
+   - Whether reportLabel is included in the query result
+
+3. Confirm:
+   - Does the card render receipt.reportLabel || receipt.category ?
+   - Or does it compute from receipt.category only?
+   - Does it reference notes?
+   - Is there any fallback to OCR category stored elsewhere?
+
+4. Check if reportLabel exists in ReceiptListItem type and if it is actually returned from GET /api/receipts.
+
+Return full analysis of why category appears correct initially but reverts when scrolling.

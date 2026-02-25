@@ -1,0 +1,162 @@
+CATEGORY CONTRACT ALIGNMENT FIX
+
+Do NOT summarize.
+Do NOT explain.
+Do NOT refactor unrelated code.
+
+Apply the following structural fixes exactly.
+
+🎯 OBJECTIVE
+
+Unify category logic across:
+
+Receipt list UI
+
+Filtering logic
+
+“Uncategorized” detection
+
+Exports (already correct – do not change export logic)
+
+The system rule must be:
+
+Resolved Category = reportLabel?.trim() || category || "other"
+
+This rule must be used consistently everywhere in the frontend.
+
+1️⃣ Create a Shared Frontend Helper
+
+Create a new utility in:
+
+client/src/utils/category-resolution.ts
+
+With:
+
+export function resolveCategory(
+  category?: string | null,
+  reportLabel?: string | null
+): string {
+  if (reportLabel?.trim()) return reportLabel.trim();
+  return category || "other";
+}
+2️⃣ Update receipts-page.tsx Filtering Logic
+
+Import:
+
+import { resolveCategory } from "@/utils/category-resolution";
+
+Replace ALL category comparisons inside filteredReceipts with:
+
+const resolvedCategory = resolveCategory(receipt.category, receipt.reportLabel);
+
+Then:
+
+Replace this block:
+if (categoryFilter === 'uncategorized') {
+  matchesCategory =
+    !receipt.category ||
+    receipt.category === 'other' ||
+    receipt.category === '';
+}
+
+With:
+
+if (categoryFilter === 'uncategorized') {
+  matchesCategory =
+    !receipt.reportLabel &&
+    (!receipt.category || receipt.category === 'other');
+}
+Replace this:
+matchesCategory =
+  receipt.category === categoryFilter ||
+  normalizedLabel === normalizedFilter;
+
+With:
+
+matchesCategory =
+  resolvedCategory.toLowerCase().replace(/_/g, ' ') === normalizedFilter;
+
+Do NOT compare raw enum category anymore.
+
+Only compare resolvedCategory.
+
+3️⃣ Ensure Badge Rendering Uses Same Logic
+
+In EnhancedReceiptCard, replace:
+
+getReceiptCategoryLabel(receipt.category, receipt.reportLabel)
+
+With:
+
+resolveCategory(receipt.category, receipt.reportLabel)
+
+Then apply formatting only for display:
+
+resolvedCategory.replace(/_/g, " ")
+
+Remove duplicate logic.
+
+4️⃣ Remove motion.div Initial Animation on Re-renders
+
+In:
+
+client/src/components/ui/enhanced-components.tsx
+
+Replace:
+
+initial={{ opacity: 0, y: 10 }}
+
+With:
+
+initial={false}
+
+This prevents visual flash on every state change.
+
+Do NOT remove animation entirely.
+
+5️⃣ Memoize Filtering + Sorting
+
+Wrap filteredReceipts in:
+
+const filteredReceipts = useMemo(() => {
+  return receipts.filter(...)
+}, [receipts, searchQuery, categoryFilter, ...]);
+
+Wrap sortedReceipts in:
+
+const sortedReceipts = useMemo(() => {
+  return [...filteredReceipts].sort(...)
+}, [filteredReceipts, sortBy, sortOrder]);
+
+This prevents full recalculation on unrelated renders.
+
+6️⃣ DO NOT TOUCH
+
+ExportService
+
+getReportingCategory
+
+Server routes
+
+Database schema
+
+Exports are already aligned.
+
+🧪 After Changes
+
+Verify:
+
+Edit only reportLabel → list updates correctly.
+
+Filter by category → matches resolved value.
+
+“Uncategorized” only shows receipts with:
+
+no reportLabel
+
+and category === "other"
+
+CSV + PDF export category matches UI.
+
+Return modified files only.
+No explanations.

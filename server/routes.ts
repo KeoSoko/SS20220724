@@ -2113,7 +2113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       receiptsList.forEach(receipt => {
         if (!receipt.isRecurring) return;
         const storeName = receipt.storeName || "Unknown Store";
-        const category = getReportingCategory(receipt.category, receipt.notes);
+        const category = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
         const subcategory = receipt.subcategory || "Uncategorized";
         const frequency = receipt.frequency || "Monthly";
         const total = parseFloat(receipt.total) || 0;
@@ -2164,7 +2164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       receiptsList.forEach(receipt => {
         if (!receipt.isTaxDeductible) return;
         const taxCategory = receipt.taxCategory || "Uncategorized";
-        const category = getReportingCategory(receipt.category, receipt.notes);
+        const category = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
         const total = parseFloat(receipt.total) || 0;
 
         if (!breakdown.has(taxCategory)) {
@@ -2208,7 +2208,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       receipts.forEach(receipt => {
         const date = new Date(receipt.date);
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        const category = getReportingCategory(receipt.category, receipt.notes);
+        const category = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
         const total = parseFloat(receipt.total) || 0;
 
         if (!totalsByMonth.has(month)) {
@@ -2250,7 +2250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const categoryMap = new Map<string, { category: string; count: number; total: number }>();
 
       receiptsList.forEach(receipt => {
-        const category = getReportingCategory(receipt.category, receipt.notes);
+        const category = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
         const total = parseFloat(receipt.total) || 0;
         const existing = categoryMap.get(category) || { category, count: 0, total: 0 };
         existing.count += 1;

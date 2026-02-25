@@ -276,7 +276,7 @@ export class ProfitLossService {
     // Group by category
     const categoryMap = new Map<string, { amount: number; count: number }>();
     receipts.forEach(rec => {
-      const category = getReportingCategory(rec.category, rec.notes) || 'uncategorized';
+      const category = getReportingCategory(rec.category, rec.notes, rec.reportLabel) || 'uncategorized';
       const existing = categoryMap.get(category) || { amount: 0, count: 0 };
       categoryMap.set(category, {
         amount: existing.amount + parseFloat(rec.total),

@@ -272,7 +272,7 @@ export class TaxService {
     const breakdown = new Map<string, { amount: number; count: number }>();
     
     deductibleReceipts.forEach(receipt => {
-      const category = getReportingCategory(receipt.category, receipt.notes);
+      const category = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
       const amount = parseFloat(receipt.total);
       
       if (breakdown.has(category)) {

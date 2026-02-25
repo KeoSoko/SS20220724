@@ -185,6 +185,9 @@ export const receipts = pgTable("receipts", {
   // Tax and financial management
   isTaxDeductible: boolean("is_tax_deductible").default(false),
   taxCategory: text("tax_category"), // For tax reporting purposes
+
+  // Reporting override — if set, reports group by this label instead of category
+  reportLabel: text("report_label"),
   
   // Duplicate detection
   isPotentialDuplicate: boolean("is_potential_duplicate").default(false), // Flag for potential duplicate receipts
@@ -837,6 +840,9 @@ export const insertReceiptSchema = z.object({
   // Tax and financial management
   isTaxDeductible: z.boolean().optional().default(false),
   taxCategory: z.string().optional(),
+
+  // Reporting override
+  reportLabel: z.string().nullable().optional(),
 });
 
 // Schema for creating and updating tags

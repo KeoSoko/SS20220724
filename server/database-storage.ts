@@ -531,6 +531,7 @@ export class DatabaseStorage implements IStorage {
         imageData: insertReceipt.imageData || null,
         
         category: insertReceipt.category || 'other',
+        reportLabel: insertReceipt.reportLabel || null,
         tags: tagsArray, // Explicitly use the array variable
         notes: insertReceipt.notes || null,
         
@@ -672,6 +673,7 @@ export class DatabaseStorage implements IStorage {
     if ('blobName' in updates) updateValues.blobName = updates.blobName || null;
     if ('imageData' in updates) updateValues.imageData = updates.imageData || null;
     if ('category' in updates) updateValues.category = updates.category || "other";
+    if ('reportLabel' in updates) updateValues.reportLabel = updates.reportLabel || null;
     
     // Process tags using the helper method
     if ('tags' in updates) {
@@ -1110,6 +1112,7 @@ export class DatabaseStorage implements IStorage {
       .select({
         category: receipts.category,
         notes: receipts.notes,
+        reportLabel: receipts.reportLabel,
         total: receipts.total,
       })
       .from(receipts)
@@ -1122,7 +1125,7 @@ export class DatabaseStorage implements IStorage {
     });
     
     receiptsSummary.forEach(receipt => {
-      const categoryLabel = getReportingCategory(receipt.category, receipt.notes);
+      const categoryLabel = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
       const total = parseFloat(receipt.total) || 0;
       const existing = categoryMap.get(categoryLabel) || { category: categoryLabel, count: 0, total: 0 };
       existing.count += 1;

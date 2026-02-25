@@ -1,0 +1,96 @@
+We are adding a lightweight reporting override feature.
+
+Goal:
+Allow receipts to have an optional "reportLabel" text field.
+If present, reports group by reportLabel instead of category.
+If null, reports continue grouping by category.
+
+DO NOT modify existing category logic.
+DO NOT remove normalizeReceiptCategory.
+DO NOT change AI categorization.
+DO NOT affect tax logic or billing logic.
+
+-----------------------------------------
+STEP 1 — DATABASE
+-----------------------------------------
+
+1. Add new nullable text column to receipts table:
+
+reportLabel: text("report_label")
+
+2. Add to shared/schema.ts:
+   - Column definition
+   - Update insertReceiptSchema
+   - Update updateReceiptSchema
+
+3. Create migration to add column (nullable, no default)
+
+-----------------------------------------
+STEP 2 — RECEIPT CREATE & UPDATE
+-----------------------------------------
+
+1. Modify POST /api/receipts route:
+   - Accept optional reportLabel from req.body
+   - Store it directly (no normalization)
+
+2. Modify PATCH /api/receipts/:id:
+   - Allow updating reportLabel
+   - Do NOT modify category behavior
+
+-----------------------------------------
+STEP 3 — REPORTING LOGIC
+-----------------------------------------
+
+Search entire codebase for:
+
+- GROUP BY category
+- receipt.category usage in:
+    - profit-loss-service.ts
+    - tax-service.ts
+    - any reporting routes
+    - dashboard summaries
+    - analytics endpoints
+
+Replace grouping logic with:
+
+COALESCE(receipts.reportLabel, receipts.category)
+
+If raw SQL:
+  GROUP BY COALESCE(report_label, category)
+
+If JS aggregation:
+  const groupKey = receipt.reportLabel || receipt.category
+
+-----------------------------------------
+STEP 4 — FRONTEND (MINIMAL UI)
+-----------------------------------------
+
+In receipt detail page:
+
+1. Add optional input field labeled:
+   "Report Group (Optional)"
+
+2. Bind to reportLabel state
+
+3. Include reportLabel in:
+   - POST /api/receipts
+   - PATCH /api/receipts/:id
+
+No other UI changes required.
+
+-----------------------------------------
+STEP 5 — CONFIRMATION
+-----------------------------------------
+
+Return:
+- Updated schema snippet
+- Updated POST route
+- Updated PATCH route
+- Updated reporting queries
+- Migration file
+- List of all modified files
+
+Ensure:
+- TypeScript compiles
+- No existing tests break
+- No change to category normalization logic

@@ -711,7 +711,7 @@ export class MemStorage implements IStorage {
     });
     
     receipts.forEach(receipt => {
-      const categoryLabel = getReportingCategory(receipt.category, receipt.notes);
+      const categoryLabel = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
       const total = parseFloat(receipt.total) || 0;
       const existing = categoryMap.get(categoryLabel) || { category: categoryLabel, count: 0, total: 0 };
       existing.count += 1;

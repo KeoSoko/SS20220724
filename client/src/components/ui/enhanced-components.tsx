@@ -238,6 +238,7 @@ interface EnhancedReceiptCardProps {
     date: string;
     category: string;
     notes?: string | null;
+    reportLabel?: string | null;
     confidenceScore?: string | null;
     source?: string | null;
     isPotentialDuplicate?: boolean | null;
@@ -356,7 +357,7 @@ export function EnhancedReceiptCard({ receipt, onClick, onLongPress, className, 
                 </div>
                 {showCategory && (
                   <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-600 border-gray-200 mt-1 font-normal" data-testid={`receipt-category-${receipt.id}`}>
-                    {getReceiptCategoryLabel(receipt.category, receipt.notes)}
+                    {getReceiptCategoryLabel(receipt.category, receipt.reportLabel)}
                   </Badge>
                 )}
               </div>

@@ -12,7 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { EnhancedReceiptCard, SpacingContainer, EnhancedEmptyState } from '@/components/ui/enhanced-components';
-import { getReceiptCategoryLabel } from '@/utils/receipt-category';
+import { resolveCategory } from '@/utils/category-resolution';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -131,7 +131,7 @@ export default function ReceiptsPage() {
   };
 
   // Filter receipts based on URL parameters and filters
-  const filteredReceipts = receipts.filter((receipt) => {
+  const filteredReceipts = useMemo(() => receipts.filter((receipt) => {
     // Search filter
     const matchesSearch = !searchQuery || 
       receipt.storeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -139,13 +139,12 @@ export default function ReceiptsPage() {
     
     // Category filter
     let matchesCategory = true;
-    const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category || '', receipt.reportLabel);
+    const resolvedCategory = resolveCategory(receipt.category, receipt.reportLabel);
     const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
-    const normalizedLabel = receiptCategoryLabel.toLowerCase().replace(/_/g, ' ');
     if (categoryFilter === 'uncategorized') {
-      matchesCategory = !receipt.category || receipt.category === 'other' || receipt.category === '';
+      matchesCategory = !receipt.reportLabel && (!receipt.category || receipt.category === 'other');
     } else if (categoryFilter !== 'all') {
-      matchesCategory = receipt.category === categoryFilter || normalizedLabel === normalizedFilter;
+      matchesCategory = resolvedCategory.toLowerCase().replace(/_/g, ' ') === normalizedFilter;
     }
     
     // Needs Review filter (confidence < 80%)
@@ -162,7 +161,7 @@ export default function ReceiptsPage() {
     if (dateTo && matchesDateRange) {
       const receiptDate = new Date(receipt.date);
       const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999); // Include the entire day
+      toDate.setHours(23, 59, 59, 999);
       matchesDateRange = receiptDate <= toDate;
     }
     
@@ -181,10 +180,10 @@ export default function ReceiptsPage() {
       receipt.storeName?.toLowerCase() === vendorFilter.toLowerCase();
     
     return matchesSearch && matchesCategory && matchesNeedsReview && matchesDateRange && matchesAmountRange && matchesVendor;
-  });
+  }), [receipts, searchQuery, categoryFilter, showNeedsReview, dateFrom, dateTo, amountMin, amountMax, vendorFilter]);
 
   // Sort receipts
-  const sortedReceipts = [...filteredReceipts].sort((a, b) => {
+  const sortedReceipts = useMemo(() => [...filteredReceipts].sort((a, b) => {
     let aValue, bValue;
     
     switch (sortBy) {
@@ -207,7 +206,7 @@ export default function ReceiptsPage() {
     }
     
     return sortOrder === 'desc' ? bValue - aValue : aValue - bValue;
-  });
+  }), [filteredReceipts, sortBy, sortOrder]);
 
   // Update page title based on filter
   const getPageTitle = () => {

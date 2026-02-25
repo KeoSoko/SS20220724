@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
-import { getReceiptCategoryLabel } from "@/utils/receipt-category";
+import { resolveCategory } from "@/utils/category-resolution";
 import { 
   Plus, 
   FileSearch, 
@@ -284,7 +284,7 @@ export function EnhancedReceiptCard({ receipt, onClick, onLongPress, className, 
   
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
       exit={{ opacity: 0, scale: 0.95 }}
@@ -357,7 +357,7 @@ export function EnhancedReceiptCard({ receipt, onClick, onLongPress, className, 
                 </div>
                 {showCategory && (
                   <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-600 border-gray-200 mt-1 font-normal" data-testid={`receipt-category-${receipt.id}`}>
-                    {getReceiptCategoryLabel(receipt.category, receipt.reportLabel)}
+                    {resolveCategory(receipt.category, receipt.reportLabel).replace(/_/g, " ")}
                   </Badge>
                 )}
               </div>

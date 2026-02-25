@@ -1836,8 +1836,7 @@ export default function UploadReceipt() {
                         value={reportLabel.trim() ? `__label__${reportLabel}` : category}
                         onValueChange={(value) => {
                           if (value === "__add_new__") {
-                            setIsAddingNewLabel(true);
-                            setNewLabelInput("");
+                            setLocation("/categories");
                             return;
                           }
                           if (value.startsWith("__label__")) {
@@ -1878,7 +1877,7 @@ export default function UploadReceipt() {
                             <SelectItem value="__add_new__">
                               <span className="flex items-center gap-1 text-blue-600">
                                 <Plus className="w-3 h-3" />
-                                Add new custom label…
+                                Add New Category
                               </span>
                             </SelectItem>
                           </div>

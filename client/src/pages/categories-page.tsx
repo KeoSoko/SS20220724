@@ -84,7 +84,7 @@ export default function CategoriesPage() {
     mutationFn: async (data: CustomCategoryForm) => {
       return await apiRequest("POST", "/api/custom-categories", data);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/custom-categories"] });
       setIsDialogOpen(false);
       form.reset();
@@ -93,6 +93,7 @@ export default function CategoriesPage() {
         description: "Your new category is ready to use.",
       });
       if (returnTo) {
+        sessionStorage.setItem("newly_created_category", variables.displayName);
         setTimeout(() => setLocation(returnTo), 800);
       }
     },

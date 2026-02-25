@@ -175,6 +175,11 @@ export default function UploadReceipt() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       restoreFormState();
+      const newCategory = sessionStorage.getItem("newly_created_category");
+      if (newCategory) {
+        setReportLabel(newCategory);
+        sessionStorage.removeItem("newly_created_category");
+      }
     }
   }, []);
 

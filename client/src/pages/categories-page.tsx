@@ -6,9 +6,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { PageLayout } from "@/components/page-layout";
@@ -19,15 +17,20 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { EXPENSE_CATEGORIES, EXPENSE_SUBCATEGORIES } from "@shared/schema";
+
+function generateSlug(label: string): string {
+  return label
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_");
+}
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/hooks/use-media-query";
 
 // Form schema for creating/editing custom categories
 const customCategorySchema = z.object({
-  name: z.string()
-    .min(1, "Category name is required")
-    .max(50, "Category name must be less than 50 characters")
-    .regex(/^[a-zA-Z0-9_\s]+$/, "Category name can only contain letters, numbers, underscores, and spaces"),
   displayName: z.string()
     .min(1, "Display name is required")
     .max(50, "Display name must be less than 50 characters"),
@@ -66,7 +69,6 @@ export default function CategoriesPage() {
   const form = useForm<CustomCategoryForm>({
     resolver: zodResolver(customCategorySchema),
     defaultValues: {
-      name: "",
       displayName: "",
       description: "",
       color: "#6B7280",
@@ -152,17 +154,17 @@ export default function CategoriesPage() {
   });
 
   const handleSubmit = (data: CustomCategoryForm) => {
+    const slug = generateSlug(data.displayName);
     if (editingCategory) {
-      updateCategoryMutation.mutate({ id: editingCategory.id, data });
+      updateCategoryMutation.mutate({ id: editingCategory.id, data: { ...data, name: slug } });
     } else {
-      createCategoryMutation.mutate(data);
+      createCategoryMutation.mutate({ ...data, name: slug } as any);
     }
   };
 
   const handleEdit = (category: any) => {
     setEditingCategory(category);
     form.reset({
-      name: category.name,
       displayName: category.displayName,
       description: category.description || "",
       color: category.color || "#6B7280",
@@ -258,20 +260,6 @@ export default function CategoriesPage() {
                           <FormLabel>Display Name</FormLabel>
                           <FormControl>
                             <Input placeholder="e.g., Pet Expenses" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Internal Name</FormLabel>
-                          <FormControl>
-                            <Input placeholder="e.g., pet_expenses" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -433,9 +421,6 @@ export default function CategoriesPage() {
                           </div>
                         </CardHeader>
                         <CardContent>
-                          <Badge variant="secondary" className="mb-2">
-                            {category.name}
-                          </Badge>
                           {category.description && (
                             <CardDescription className="text-sm">
                               {category.description}

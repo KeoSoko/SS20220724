@@ -1,0 +1,153 @@
+UX FIX: AUTO-GENERATE INTERNAL NAME (SLUG)
+
+Do NOT modify server routes.
+Do NOT change database schema.
+Do NOT remove the name column.
+Only remove it from user input and auto-generate it.
+
+🎯 Objective
+
+Users should only enter:
+
+Display Name
+
+The name (slug) must be generated automatically from displayName.
+
+Slug rules:
+
+lowercase
+
+trim
+
+spaces → underscore
+
+remove non-alphanumeric except underscore
+
+collapse multiple underscores
+
+Example:
+
+"Pet Expenses" → "pet_expenses"
+"Car   Repairs!" → "car_repairs"
+1️⃣ Update categories-page.tsx Form Schema
+
+Open:
+
+client/src/pages/categories-page.tsx
+
+Step 1 — Remove name from schema
+
+Replace:
+
+name: z.string()
+  .min(1, "Category name is required")
+  .max(50, "Category name must be less than 50 characters")
+  .regex(/^[a-zA-Z0-9_\s]+$/, "Category name can only contain letters, numbers, underscores, and spaces"),
+
+With nothing.
+
+The schema should only validate:
+
+displayName
+
+description
+
+color
+
+icon
+
+Step 2 — Remove name from defaultValues
+
+Remove:
+
+name: "",
+Step 3 — Remove the entire Internal Name FormField JSX block
+
+Delete the entire <FormField name="name" ... /> section.
+
+Users must not see it.
+
+2️⃣ Auto-Generate Slug in handleSubmit
+
+Inside handleSubmit, before calling mutation, generate slug.
+
+Add this helper at top of file:
+
+function generateSlug(label: string): string {
+  return label
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_");
+}
+Modify handleSubmit
+
+Replace:
+
+createCategoryMutation.mutate(data);
+
+With:
+
+const slug = generateSlug(data.displayName);
+
+createCategoryMutation.mutate({
+  ...data,
+  name: slug,
+});
+Modify edit logic as well
+
+When editing:
+
+Replace:
+
+updateCategoryMutation.mutate({ id: editingCategory.id, data });
+
+With:
+
+const slug = generateSlug(data.displayName);
+
+updateCategoryMutation.mutate({
+  id: editingCategory.id,
+  data: {
+    ...data,
+    name: slug,
+  },
+});
+3️⃣ Remove Slug Badge From Category Cards
+
+Still in categories-page.tsx.
+
+Find where each category card displays:
+
+{category.name}
+
+Remove that badge entirely.
+
+Users should only see:
+
+displayName
+
+description
+
+color
+
+icon
+
+Do NOT show name anywhere.
+
+✅ Acceptance Criteria
+
+After changes:
+
+Creating category only requires Display Name.
+
+Slug is auto-generated.
+
+Slug is not visible anywhere in UI.
+
+Editing a category updates slug automatically.
+
+Existing categories continue working.
+
+No server changes required.

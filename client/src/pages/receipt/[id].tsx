@@ -122,6 +122,7 @@ export default function ReceiptDetail() {
   const [editedDate, setEditedDate] = useState("");
   const [editedTotal, setEditedTotal] = useState("");
   const [editedCategory, setEditedCategory] = useState<ExpenseCategory>("other");
+  const [hasUserModifiedCategory, setHasUserModifiedCategory] = useState(false);
   const [customCategory, setCustomCategory] = useState("");
   const [showCustomCategory, setShowCustomCategory] = useState(false);
   const [editedNotes, setEditedNotes] = useState("");
@@ -227,7 +228,23 @@ export default function ReceiptDetail() {
       setEditedStoreName(receipt.storeName);
       setEditedDate(format(new Date(receipt.date), "yyyy-MM-dd"));
       setEditedTotal(receipt.total);
-      setEditedCategory(receipt.category as ExpenseCategory);
+
+      // Only hydrate category from DB if the user hasn't manually changed it
+      if (!hasUserModifiedCategory) {
+        setEditedCategory(receipt.category as ExpenseCategory);
+
+        // Check if there's a custom category in the notes
+        const customCategoryMatch = receipt.notes?.match(/\[Custom Category: (.*?)\]/);
+        if (customCategoryMatch && receipt.category === "other") {
+          setCustomCategory(customCategoryMatch[1]);
+          setShowCustomCategory(true);
+          // Remove the custom category prefix from notes
+          const cleanedNotes = (receipt.notes ?? "").replace(/\[Custom Category: .*?\]\s*/, "").trim();
+          setEditedNotes(cleanedNotes);
+        } else {
+          setEditedNotes(receipt.notes || "");
+        }
+      }
 
       // Set advanced categorization fields
       setEditedSubcategory(receipt.subcategory || "");
@@ -237,18 +254,6 @@ export default function ReceiptDetail() {
       setIsTaxDeductible(receipt.isTaxDeductible || false);
       setTaxCategory(receipt.taxCategory || "");
 
-      // Check if there's a custom category in the notes
-      const customCategoryMatch = receipt.notes?.match(/\[Custom Category: (.*?)\]/);
-      if (customCategoryMatch && receipt.category === "other") {
-        setCustomCategory(customCategoryMatch[1]);
-        setShowCustomCategory(true);
-        // Remove the custom category prefix from notes
-        const cleanedNotes = (receipt.notes ?? "").replace(/\[Custom Category: .*?\]\s*/, "").trim();
-        setEditedNotes(cleanedNotes);
-      } else {
-        setEditedNotes(receipt.notes || "");
-      }
-
       // Handle image URL - prioritize local imageData over Azure blobUrl
       // Since Azure storage isn't set up, imageData (base64) should be used if available
       const storedImageUrl = receipt.imageData || receipt.blobUrl || null;
@@ -256,7 +261,7 @@ export default function ReceiptDetail() {
       console.log(`Image source: ${receipt.imageData ? 'Local storage (base64)' : receipt.blobUrl ? 'Azure blob' : 'None'}`);
       setImageUrl(storedImageUrl);
     }
-  }, [receipt]);
+  }, [receipt, hasUserModifiedCategory]);
 
   // Refresh image URL mutation
   const refreshImageMutation = useMutation({
@@ -382,6 +387,7 @@ export default function ReceiptDetail() {
       });
 
       setIsEditing(false);
+      setHasUserModifiedCategory(false);
     },
     onError: (error: Error) => {
       toast({
@@ -780,10 +786,12 @@ export default function ReceiptDetail() {
                           setEditedCategory("other");
                           setCustomCategory(matchedCustomCategory.name);
                           setShowCustomCategory(true);
+                          setHasUserModifiedCategory(true);
                           return;
                         }
 
                         setEditedCategory(value as ExpenseCategory);
+                        setHasUserModifiedCategory(true);
                         setShowCustomCategory(value === "other");
                         if (value !== "other") {
                           setCustomCategory("");

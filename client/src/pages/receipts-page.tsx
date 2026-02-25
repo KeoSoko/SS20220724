@@ -824,20 +824,10 @@ export default function ReceiptsPage() {
                       data-testid={`checkbox-receipt-${receipt.id}`}
                     />
                   )}
+                  {console.log("MAP RECEIPT:", receipt.id, receipt.reportLabel)}
                   <div className="flex-1">
                     <EnhancedReceiptCard
-                      receipt={{
-                        id: receipt.id,
-                        storeName: receipt.storeName || 'Unknown Store',
-                        total: Number(receipt.total),
-                        date: typeof receipt.date === 'string' ? receipt.date : receipt.date.toISOString(),
-                        category: receipt.category || 'other',
-                        notes: receipt.notes,
-                        reportLabel: receipt.reportLabel,
-                        confidenceScore: receipt.confidenceScore,
-                        source: receipt.source,
-                        isPotentialDuplicate: receipt.isPotentialDuplicate
-                      }}
+                      receipt={receipt as any}
                       onClick={() => handleReceiptClick(receipt.id)}
                     />
                   </div>

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { ExpenseCategory, Receipt, EXPENSE_CATEGORIES } from "@shared/schema";
 import { getReceiptCategoryLabel } from "@/utils/receipt-category";
+import { resolveCategory } from "@/utils/category-resolution";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { 
@@ -322,64 +323,74 @@ function HomePage() {
   };
 
   // Filter and sort receipts
-  const filteredReceipts = receipts
-    .filter((receipt) => {
-      const matchesSearch = receipt.storeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          receipt.notes?.toLowerCase().includes(searchQuery.toLowerCase());
-      const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category, receipt.notes);
-      const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
-      const normalizedLabel = receiptCategoryLabel.toLowerCase().replace(/_/g, ' ');
-      const matchesCategory = categoryFilter === "all" || receipt.category === categoryFilter || normalizedLabel === normalizedFilter;
-      
-      // Filter by confidence score if "Needs Review" is enabled
-      let matchesConfidence = true;
-      if (showNeedsReview) {
-        const raw = receipt.confidenceScore ? parseFloat(receipt.confidenceScore) : 100;
-        const pct = raw > 1 ? raw : raw * 100;
-        matchesConfidence = pct < 80;
-      }
-      
-      // Smart Filters: Date range
-      let matchesDateRange = true;
-      if (dateFrom || dateTo) {
-        const receiptDate = new Date(receipt.date);
-        if (dateFrom) {
-          matchesDateRange = matchesDateRange && receiptDate >= dateFrom;
-        }
-        if (dateTo) {
-          const endOfDay = new Date(dateTo);
-          endOfDay.setHours(23, 59, 59, 999);
-          matchesDateRange = matchesDateRange && receiptDate <= endOfDay;
-        }
-      }
+  const filteredReceipts = useMemo(() =>
+    receipts
+      .filter((receipt) => {
+        const matchesSearch = receipt.storeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            receipt.notes?.toLowerCase().includes(searchQuery.toLowerCase());
 
-      // Smart Filters: Amount range
-      let matchesAmountRange = true;
-      const amount = parseFloat(receipt.total);
-      if (amountMin && !isNaN(parseFloat(amountMin))) {
-        matchesAmountRange = matchesAmountRange && amount >= parseFloat(amountMin);
-      }
-      if (amountMax && !isNaN(parseFloat(amountMax))) {
-        matchesAmountRange = matchesAmountRange && amount <= parseFloat(amountMax);
-      }
+        const resolvedCategory = resolveCategory(receipt.category, receipt.reportLabel);
+        let matchesCategory = true;
+        if (categoryFilter !== "all") {
+          if (categoryFilter === "uncategorized") {
+            matchesCategory = !receipt.reportLabel && receipt.category === "other";
+          } else {
+            const normalizedResolved = resolvedCategory.toLowerCase().replace(/[_-]/g, " ");
+            const normalizedFilter = categoryFilter.toLowerCase().replace(/[_-]/g, " ");
+            matchesCategory = normalizedResolved === normalizedFilter;
+          }
+        }
 
-      // Smart Filters: Vendor - compare base vendor names (ignore split suffixes)
-      const matchesVendor = vendorFilter === "all" || stripSplitSuffix(receipt.storeName) === vendorFilter;
-      
-      return matchesSearch && matchesCategory && matchesConfidence && matchesDateRange && matchesAmountRange && matchesVendor;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case "date":
-          return new Date(b.date).getTime() - new Date(a.date).getTime();
-        case "amount":
-          return parseFloat(b.total) - parseFloat(a.total);
-        case "category":
-          return (a.category || "").localeCompare(b.category || "");
-        default:
-          return 0;
-      }
-    });
+        // Filter by confidence score if "Needs Review" is enabled
+        let matchesConfidence = true;
+        if (showNeedsReview) {
+          const raw = receipt.confidenceScore ? parseFloat(receipt.confidenceScore) : 100;
+          const pct = raw > 1 ? raw : raw * 100;
+          matchesConfidence = pct < 80;
+        }
+
+        // Smart Filters: Date range
+        let matchesDateRange = true;
+        if (dateFrom || dateTo) {
+          const receiptDate = new Date(receipt.date);
+          if (dateFrom) {
+            matchesDateRange = matchesDateRange && receiptDate >= dateFrom;
+          }
+          if (dateTo) {
+            const endOfDay = new Date(dateTo);
+            endOfDay.setHours(23, 59, 59, 999);
+            matchesDateRange = matchesDateRange && receiptDate <= endOfDay;
+          }
+        }
+
+        // Smart Filters: Amount range
+        let matchesAmountRange = true;
+        const amount = parseFloat(receipt.total);
+        if (amountMin && !isNaN(parseFloat(amountMin))) {
+          matchesAmountRange = matchesAmountRange && amount >= parseFloat(amountMin);
+        }
+        if (amountMax && !isNaN(parseFloat(amountMax))) {
+          matchesAmountRange = matchesAmountRange && amount <= parseFloat(amountMax);
+        }
+
+        // Smart Filters: Vendor - compare base vendor names (ignore split suffixes)
+        const matchesVendor = vendorFilter === "all" || stripSplitSuffix(receipt.storeName) === vendorFilter;
+
+        return matchesSearch && matchesCategory && matchesConfidence && matchesDateRange && matchesAmountRange && matchesVendor;
+      })
+      .sort((a, b) => {
+        switch (sortBy) {
+          case "date":
+            return new Date(b.date).getTime() - new Date(a.date).getTime();
+          case "amount":
+            return parseFloat(b.total) - parseFloat(a.total);
+          case "category":
+            return (a.category || "").localeCompare(b.category || "");
+          default:
+            return 0;
+        }
+      }),
+    [receipts, categoryFilter, searchQuery, showNeedsReview, dateFrom, dateTo, amountMin, amountMax, vendorFilter, sortBy]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();

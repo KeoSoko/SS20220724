@@ -356,9 +356,12 @@ export function EnhancedReceiptCard({ receipt, onClick, onLongPress, className, 
                   R{parseFloat(receipt.total.toString()).toFixed(2)}
                 </div>
                 {showCategory && (
-                  <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-600 border-gray-200 mt-1 font-normal" data-testid={`receipt-category-${receipt.id}`}>
-                    {resolveCategory(receipt.category, receipt.reportLabel).replace(/_/g, " ")}
-                  </Badge>
+                  <>
+                    {console.log("CARD DEBUG:", receipt.id, receipt.category, receipt.reportLabel)}
+                    <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-600 border-gray-200 mt-1 font-normal" data-testid={`receipt-category-${receipt.id}`}>
+                      {resolveCategory(receipt.category, receipt.reportLabel).replace(/_/g, " ")}
+                    </Badge>
+                  </>
                 )}
               </div>
             </div>

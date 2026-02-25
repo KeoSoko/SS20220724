@@ -190,7 +190,7 @@ export const getQueryFn: <T>(options: {
     const res = await fetch(url, {
       headers,
       credentials: "include", // Include credentials for session-based auth fallback
-      cache: "no-cache", // Always bypass browser cache for fresh data
+      cache: "no-store", // Bypass HTTP cache entirely — prevents 304 from serving stale bodies
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

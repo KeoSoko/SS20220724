@@ -920,6 +920,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get distinct report_label values for the current workspace — MUST be before /:id to avoid route conflict
+  app.get("/api/receipts/report-labels", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    try {
+      const userId = getUserId(req);
+      const result = await pool.query<{ report_label: string }>(`
+        SELECT DISTINCT r.report_label
+        FROM receipts r
+        JOIN users u ON u.workspace_id = r.workspace_id
+        WHERE u.id = $1
+          AND r.report_label IS NOT NULL
+          AND r.report_label != ''
+        ORDER BY r.report_label
+      `, [userId]);
+      const labels = result.rows.map(r => r.report_label);
+      res.json({ reportLabels: labels });
+    } catch (error: any) {
+      log(`Error fetching report labels: ${error.message}`, "api");
+      res.status(500).json({ error: "Failed to fetch report labels" });
+    }
+  });
+
   // Get a specific receipt
   app.get("/api/receipts/:id", requireWorkspaceRole("owner", "editor", "viewer"), (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
@@ -976,28 +998,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       log(`Error checking for duplicate receipts: ${error}`, "api");
       res.status(500).json({ error: "Failed to check for duplicates" });
-    }
-  });
-
-  // Get distinct report_label values for the current workspace (used to populate custom label dropdown)
-  app.get("/api/receipts/report-labels", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
-    if (!isAuthenticated(req)) return res.sendStatus(401);
-    try {
-      const userId = getUserId(req);
-      const result = await pool.query<{ report_label: string }>(`
-        SELECT DISTINCT r.report_label
-        FROM receipts r
-        JOIN users u ON u.workspace_id = r.workspace_id
-        WHERE u.id = $1
-          AND r.report_label IS NOT NULL
-          AND r.report_label != ''
-        ORDER BY r.report_label
-      `, [userId]);
-      const labels = result.rows.map(r => r.report_label);
-      res.json({ reportLabels: labels });
-    } catch (error: any) {
-      log(`Error fetching report labels: ${error.message}`, "api");
-      res.status(500).json({ error: "Failed to fetch report labels" });
     }
   });
 

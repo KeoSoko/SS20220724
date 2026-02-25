@@ -757,6 +757,11 @@ export class DatabaseStorage implements IStorage {
         queryParams.push(updateValues.notes);
       }
       
+      if ('reportLabel' in updateValues) {
+        updateQuery += `, "report_label" = $${paramIndex++}`;
+        queryParams.push(updateValues.reportLabel);
+      }
+      
       if ('confidenceScore' in updateValues) {
         updateQuery += `, "confidence_score" = $${paramIndex++}`;
         queryParams.push(updateValues.confidenceScore);

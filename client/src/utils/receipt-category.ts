@@ -1,11 +1,6 @@
-export function getReceiptCategoryLabel(category: string, notes?: string | null): string {
-  const customMatch = notes?.match(/\[Custom Category: (.*?)\]/i);
-  const customLabel = customMatch?.[1]?.trim();
-
-  if (customLabel) {
-    return customLabel;
+export function getReceiptCategoryLabel(category: string, reportLabel?: string | null): string {
+  if (reportLabel?.trim()) {
+    return reportLabel.trim();
   }
-
   return category ? category.replace(/_/g, " ") : "other";
 }
-

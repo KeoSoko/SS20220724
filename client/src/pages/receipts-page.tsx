@@ -46,6 +46,7 @@ type ReceiptListItem = {
   source?: string | null;
   isPotentialDuplicate?: boolean | null;
   notes?: string | null;
+  reportLabel?: string | null;
 };
 
 export default function ReceiptsPage() {
@@ -138,11 +139,11 @@ export default function ReceiptsPage() {
     
     // Category filter
     let matchesCategory = true;
-    const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category || '', receipt.notes);
+    const receiptCategoryLabel = getReceiptCategoryLabel(receipt.category || '', receipt.reportLabel);
     const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
     const normalizedLabel = receiptCategoryLabel.toLowerCase().replace(/_/g, ' ');
     if (categoryFilter === 'uncategorized') {
-      matchesCategory = !receipt.category || (receipt.category === 'other' && !receipt.notes?.match(/\[Custom Category:/i)) || receipt.category === '';
+      matchesCategory = !receipt.category || receipt.category === 'other' || receipt.category === '';
     } else if (categoryFilter !== 'all') {
       matchesCategory = receipt.category === categoryFilter || normalizedLabel === normalizedFilter;
     }

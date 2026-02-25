@@ -123,8 +123,9 @@ export default function ReceiptDetail() {
   const [editedTotal, setEditedTotal] = useState("");
   const [editedCategory, setEditedCategory] = useState<ExpenseCategory>("other");
   const [hasUserModifiedCategory, setHasUserModifiedCategory] = useState(false);
-  const [customCategory, setCustomCategory] = useState("");
-  const [showCustomCategory, setShowCustomCategory] = useState(false);
+  const [reportLabel, setReportLabel] = useState<string>("");
+  const [isAddingNewLabel, setIsAddingNewLabel] = useState(false);
+  const [newLabelInput, setNewLabelInput] = useState("");
   const [editedNotes, setEditedNotes] = useState("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isRefreshingImage, setIsRefreshingImage] = useState(false);
@@ -170,40 +171,12 @@ export default function ReceiptDetail() {
     enabled: !!emailDocumentId,
   });
 
-  // Query for custom categories
-  const { data: customCategories = [], isLoading: customCategoriesLoading, error: customCategoriesError } = useQuery<Array<{ id: number; name: string; isActive: boolean }>>({
-    queryKey: ["/api/custom-categories"],
-    enabled: !!user, // Only fetch when user is authenticated
+  // Query for distinct report labels used across the workspace
+  const { data: reportLabelsData } = useQuery<{ reportLabels: string[] }>({
+    queryKey: ["/api/receipts/report-labels"],
+    enabled: !!user,
   });
-
-  // Debug custom categories data structure
-  useEffect(() => {
-    console.log("Custom categories query state:", { 
-      isLoading: customCategoriesLoading,
-      error: customCategoriesError,
-      data: customCategories,
-      length: customCategories?.length || 0,
-      isValidId,
-      id
-    });
-  }, [customCategories, customCategoriesLoading, customCategoriesError, isValidId, id]);
-
-  const buildNotesWithCustomCategory = (
-    notesValue: string,
-    categoryValue: ExpenseCategory,
-    customCategoryValue: string
-  ) => {
-    const cleanedNotes = notesValue
-      ? notesValue.replace(/\[Custom Category: .*?\]\s*/i, "").trim()
-      : "";
-
-    if (categoryValue !== "other" || !customCategoryValue.trim()) {
-      return cleanedNotes || null;
-    }
-
-    const prefix = `[Custom Category: ${customCategoryValue.trim()}]`;
-    return cleanedNotes ? `${prefix} ${cleanedNotes}` : prefix;
-  };
+  const reportLabels = reportLabelsData?.reportLabels ?? [];
 
 
 
@@ -232,18 +205,8 @@ export default function ReceiptDetail() {
       // Only hydrate category from DB if the user hasn't manually changed it
       if (!hasUserModifiedCategory) {
         setEditedCategory(receipt.category as ExpenseCategory);
-
-        // Check if there's a custom category in the notes
-        const customCategoryMatch = receipt.notes?.match(/\[Custom Category: (.*?)\]/);
-        if (customCategoryMatch && receipt.category === "other") {
-          setCustomCategory(customCategoryMatch[1]);
-          setShowCustomCategory(true);
-          // Remove the custom category prefix from notes
-          const cleanedNotes = (receipt.notes ?? "").replace(/\[Custom Category: .*?\]\s*/, "").trim();
-          setEditedNotes(cleanedNotes);
-        } else {
-          setEditedNotes(receipt.notes || "");
-        }
+        setReportLabel(receipt.reportLabel || "");
+        setEditedNotes(receipt.notes || "");
       }
 
       // Set advanced categorization fields
@@ -346,8 +309,9 @@ export default function ReceiptDetail() {
         date: editedDate,
         total: editedTotal,
         category: editedCategory,
-        notes: buildNotesWithCustomCategory(editedNotes, editedCategory, customCategory),
-        
+        notes: editedNotes || null,
+        reportLabel: reportLabel.trim() || null,
+
         // Advanced categorization fields
         subcategory: editedSubcategory || null,
         isRecurring: isRecurring,
@@ -356,16 +320,12 @@ export default function ReceiptDetail() {
         taxCategory: isTaxDeductible ? taxCategory : null,
       };
 
-      // Add custom category to notes if provided
-      if (editedCategory === "other" && customCategory.trim()) {
-        updateData.notes = `[Custom Category: ${customCategory}] ${editedNotes || ""}`.trim();
-      }
-
       await apiRequest("PATCH", `/api/receipts/${id}`, updateData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/receipts/${id}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/receipts/report-labels"] });
       
       // Invalidate all analytics queries to refresh data
       queryClient.invalidateQueries({ queryKey: ["/api/analytics/categories"] });
@@ -388,6 +348,8 @@ export default function ReceiptDetail() {
 
       setIsEditing(false);
       setHasUserModifiedCategory(false);
+      setIsAddingNewLabel(false);
+      setNewLabelInput("");
     },
     onError: (error: Error) => {
       toast({
@@ -588,18 +550,8 @@ export default function ReceiptDetail() {
                     setEditedDate(format(new Date(receipt.date), "yyyy-MM-dd"));
                     setEditedTotal(receipt.total);
                     setEditedCategory(receipt.category as ExpenseCategory);
-                    
-                    // Handle custom category if present
-                    const customCategoryMatch = receipt.notes?.match(/\[Custom Category: (.*?)\]/);
-                    if (customCategoryMatch && receipt.category === "other") {
-                      setCustomCategory(customCategoryMatch[1]);
-                      setShowCustomCategory(true);
-                      // Remove the custom category prefix from notes
-                      const cleanedNotes = (receipt.notes ?? "").replace(/\[Custom Category: .*?\]\s*/, "").trim();
-                      setEditedNotes(cleanedNotes);
-                    } else {
-                      setEditedNotes(receipt.notes || "");
-                    }
+                    setReportLabel(receipt.reportLabel || "");
+                    setEditedNotes(receipt.notes || "");
                     
                     // Auto-refresh image URL when entering edit mode
                     if (receipt.blobName) {
@@ -727,12 +679,10 @@ export default function ReceiptDetail() {
                   >
                     {getCategoryIcon(receipt.category)}
                     <span className="ml-1">
-                      {receipt.category === "other" && receipt.notes?.includes("[Custom Category:") ? (
-                        receipt.notes.match(/\[Custom Category: (.*?)\]/)?.[1] || "Other"
-                      ) : (
-                        receipt.category.charAt(0).toUpperCase() + 
-                        receipt.category.slice(1).replace('_', ' ')
-                      )}
+                      {receipt.reportLabel?.trim()
+                        ? receipt.reportLabel.trim()
+                        : receipt.category.charAt(0).toUpperCase() + receipt.category.slice(1).replace('_', ' ')
+                      }
                     </span>
                   </Badge>
                 </div>
@@ -776,76 +726,107 @@ export default function ReceiptDetail() {
                   <div className="space-y-2">
                     <Label htmlFor="category">Category</Label>
                     <Select
-                      value={editedCategory}
+                      value={reportLabel.trim() ? `__label__${reportLabel}` : editedCategory}
                       onValueChange={(value) => {
-                        const matchedCustomCategory = Array.isArray(customCategories)
-                          ? customCategories.find((customCat: any) => customCat.name === value)
-                          : null;
-
-                        if (matchedCustomCategory) {
-                          setEditedCategory("other");
-                          setCustomCategory(matchedCustomCategory.name);
-                          setShowCustomCategory(true);
-                          setHasUserModifiedCategory(true);
+                        setHasUserModifiedCategory(true);
+                        if (value === "__add_new__") {
+                          setIsAddingNewLabel(true);
+                          setNewLabelInput("");
                           return;
                         }
-
-                        setEditedCategory(value as ExpenseCategory);
-                        setHasUserModifiedCategory(true);
-                        setShowCustomCategory(value === "other");
-                        if (value !== "other") {
-                          setCustomCategory("");
+                        if (value.startsWith("__label__")) {
+                          setReportLabel(value.slice(9));
+                          return;
                         }
+                        setEditedCategory(value as ExpenseCategory);
+                        setReportLabel("");
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a category" />
+                        <SelectValue placeholder="Select a category">
+                          {reportLabel.trim()
+                            ? reportLabel.trim()
+                            : editedCategory.charAt(0).toUpperCase() + editedCategory.slice(1).replace('_', ' ')}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">System Categories</div>
                         {EXPENSE_CATEGORIES.map((cat) => (
                           <SelectItem key={cat} value={cat}>
                             {cat.charAt(0).toUpperCase() + cat.slice(1).replace('_', ' ')}
                           </SelectItem>
                         ))}
-                        
-                        {Array.isArray(customCategories) && customCategories.length > 0 && (
+                        {reportLabels.length > 0 && (
                           <>
-                            {customCategories.map((customCat: any) => (
-                              <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
-                                {customCat.displayName}
+                            <div className="border-t border-gray-200 mt-1 mb-1" />
+                            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Custom Labels</div>
+                            {reportLabels.map((label) => (
+                              <SelectItem key={`__label__${label}`} value={`__label__${label}`}>
+                                {label}
                               </SelectItem>
                             ))}
                           </>
                         )}
-                        
-                        <div className="border-t border-gray-200 mt-2 pt-2">
-                          <Link href="/categories">
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="w-full justify-start text-sm text-gray-600 hover:text-gray-900"
-                              type="button"
-                            >
-                              <Plus className="w-4 h-4 mr-2" />
-                              Manage Custom Categories
-                            </Button>
-                          </Link>
+                        <div className="border-t border-gray-200 mt-1 pt-1">
+                          <SelectItem value="__add_new__">
+                            <span className="flex items-center gap-1 text-blue-600">
+                              <Plus className="w-3 h-3" />
+                              Add new custom label…
+                            </span>
+                          </SelectItem>
                         </div>
                       </SelectContent>
                     </Select>
-                  </div>
 
-                  {showCustomCategory && (
-                    <div className="space-y-2">
-                      <Label htmlFor="customCategory">Custom Category Name</Label>
-                      <Input
-                        id="customCategory"
-                        value={customCategory}
-                        onChange={(e) => setCustomCategory(e.target.value)}
-                        placeholder="Enter a custom category name"
-                      />
-                    </div>
-                  )}
+                    {isAddingNewLabel && (
+                      <div className="flex gap-2 mt-2">
+                        <Input
+                          autoFocus
+                          value={newLabelInput}
+                          onChange={(e) => setNewLabelInput(e.target.value)}
+                          placeholder="Enter custom label"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && newLabelInput.trim()) {
+                              setReportLabel(newLabelInput.trim());
+                              setHasUserModifiedCategory(true);
+                              setIsAddingNewLabel(false);
+                            }
+                            if (e.key === "Escape") setIsAddingNewLabel(false);
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => {
+                            if (newLabelInput.trim()) {
+                              setReportLabel(newLabelInput.trim());
+                              setHasUserModifiedCategory(true);
+                            }
+                            setIsAddingNewLabel(false);
+                          }}
+                        >
+                          Set
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => setIsAddingNewLabel(false)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
+
+                    {reportLabel.trim() && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Custom label: <span className="font-medium text-foreground">{reportLabel.trim()}</span>
+                        {" — "}
+                        <button
+                          type="button"
+                          className="text-blue-600 underline hover:no-underline"
+                          onClick={() => { setReportLabel(""); setHasUserModifiedCategory(true); }}
+                        >
+                          clear
+                        </button>
+                      </p>
+                    )}
+                  </div>
                   
                   {/* Subcategory selector - only shown if a valid category is selected */}
                   {editedCategory !== "other" && (
@@ -986,9 +967,7 @@ export default function ReceiptDetail() {
                 {receipt.notes && (
                   <div>
                     <p className="text-sm text-muted-foreground">Notes</p>
-                    <p className="mt-1 italic text-sm">
-                      {receipt.notes.replace(/\[Custom Category: .*?\]\s*/, "")}
-                    </p>
+                    <p className="mt-1 italic text-sm">{receipt.notes}</p>
                   </div>
                 )}
                 

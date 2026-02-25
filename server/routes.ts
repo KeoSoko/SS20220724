@@ -414,71 +414,14 @@ function validateNumericAmount(amount: any): { isValid: boolean; value?: number;
   return { isValid: true, value: numValue };
 }
 
-async function validateCategory(category: any, userId?: number): Promise<{ isValid: boolean; value?: string; error?: string }> {
+function validateCategory(category: any): { isValid: boolean; value?: ExpenseCategory; error?: string } {
   if (!category || typeof category !== 'string') {
     return { isValid: false, error: 'Category is required' };
   }
-  
-  // Check if it's a predefined category
   if (EXPENSE_CATEGORIES.includes(category as ExpenseCategory)) {
-    return { isValid: true, value: category };
+    return { isValid: true, value: category as ExpenseCategory };
   }
-  
-  // Check if it's a custom category for this user
-  if (userId && storage.getCustomCategories) {
-    try {
-      const customCategories = await storage.getCustomCategories(userId);
-      const customCategory = customCategories.find(cat => cat.name === category);
-      if (customCategory && customCategory.isActive) {
-        return { isValid: true, value: category };
-      }
-    } catch (error) {
-      log(`Error checking custom categories: ${error}`, 'validation');
-      // If custom category lookup fails, still allow the category through
-      // This prevents blocking uploads when custom category system has issues
-      log(`Allowing category "${category}" to proceed despite custom category lookup failure`, 'validation');
-      return { isValid: true, value: category };
-    }
-  }
-  
-  // For any non-predefined category, allow it through (could be custom)
-  // This ensures backwards compatibility and doesn't block uploads
-  log(`Category "${category}" not found in predefined list, allowing as custom category`, 'validation');
-  return { isValid: true, value: category };
-}
-
-function normalizeReceiptCategory(
-  category: string,
-  notes?: string | null
-): { category: ExpenseCategory; notes: string | null } {
-  const hasCustomCategoryPrefix = notes?.match(/\[Custom Category: .*?\]/i);
-  const cleanedNotes = notes
-    ? notes.replace(/\[Custom Category: .*?\]\s*/i, "").trim()
-    : null;
-
-  if (EXPENSE_CATEGORIES.includes(category as ExpenseCategory)) {
-    if (category === "other" && hasCustomCategoryPrefix) {
-      return {
-        category: "other",
-        notes: notes || null
-      };
-    }
-    return {
-      category: category as ExpenseCategory,
-      notes: cleanedNotes && cleanedNotes.length > 0 ? cleanedNotes : null
-    };
-  }
-
-  const customLabel = category.trim();
-  const prefix = `[Custom Category: ${customLabel || "Other"}]`;
-  const combinedNotes = cleanedNotes && cleanedNotes.length > 0
-    ? `${prefix} ${cleanedNotes}`
-    : prefix;
-
-  return {
-    category: "other",
-    notes: combinedNotes
-  };
+  return { isValid: false, error: `Invalid category "${category}". Must be one of: ${EXPENSE_CATEGORIES.join(', ')}` };
 }
 
 function validateItems(items: any): { isValid: boolean; value?: Array<{name: string, price: string}>; error?: string } {
@@ -1036,6 +979,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get distinct report_label values for the current workspace (used to populate custom label dropdown)
+  app.get("/api/receipts/report-labels", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    try {
+      const userId = getUserId(req);
+      const result = await pool.query<{ report_label: string }>(`
+        SELECT DISTINCT r.report_label
+        FROM receipts r
+        JOIN users u ON u.workspace_id = r.workspace_id
+        WHERE u.id = $1
+          AND r.report_label IS NOT NULL
+          AND r.report_label != ''
+        ORDER BY r.report_label
+      `, [userId]);
+      const labels = result.rows.map(r => r.report_label);
+      res.json({ reportLabels: labels });
+    } catch (error: any) {
+      log(`Error fetching report labels: ${error.message}`, "api");
+      res.status(500).json({ error: "Failed to fetch report labels" });
+    }
+  });
+
   // Create a new receipt
   app.post("/api/receipts", checkFeatureAccess('receipt_upload'), requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
@@ -1044,7 +1009,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       
       // Security: Validate and sanitize all inputs
-      const { storeName, total, category, notes, items, imageData, isRecurring, isTaxDeductible, confidenceScore, clientUploadId, allowDuplicate } = req.body;
+      const { storeName, total, category, notes, reportLabel, items, imageData, isRecurring, isTaxDeductible, confidenceScore, clientUploadId, allowDuplicate } = req.body;
 
       if (clientUploadId && typeof clientUploadId === 'string' && storage.getReceiptByClientUploadId) {
         const existingReceipt = await storage.getReceiptByClientUploadId(userId, clientUploadId);
@@ -1073,8 +1038,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: amountValidation.error });
       }
       
-      // Validate category (allow both predefined and custom categories)
-      const categoryValidation = await validateCategory(category, getUserId(req));
+      // Validate category — must be a strict enum value
+      const categoryValidation = validateCategory(category);
       if (!categoryValidation.isValid) {
         return res.status(400).json({ error: categoryValidation.error });
       }
@@ -1112,9 +1077,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Sanitize notes
+      // Sanitize notes and reportLabel
       const sanitizedNotes = notes ? sanitizeString(notes, MAX_NOTES_LENGTH) : null;
-      const normalizedCategory = normalizeReceiptCategory(categoryValidation.value!, sanitizedNotes);
+      const sanitizedReportLabel = reportLabel ? sanitizeString(String(reportLabel), 100).trim() || null : null;
       
       // Handle date conversion explicitly to prevent "Invalid time value" errors
       let receiptData;
@@ -1124,8 +1089,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const validationResult = insertReceiptSchema.omit({ date: true }).safeParse({
           storeName: sanitizedStoreName,
           total: amountValidation.value!,
-          category: normalizedCategory.category,
-          notes: normalizedCategory.notes,
+          category: categoryValidation.value!,
+          notes: sanitizedNotes,
+          reportLabel: sanitizedReportLabel,
           items: itemsValidation.value!,
           imageData,
           userId,
@@ -1744,15 +1710,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if ('category' in updateData) {
-        const categoryValidation = await validateCategory(updateData.category, userId);
+        const categoryValidation = validateCategory(updateData.category);
         if (!categoryValidation.isValid) {
           return res.status(400).json({ error: categoryValidation.error });
         }
+        updateData.category = categoryValidation.value!;
+      }
 
-        const rawNotes = 'notes' in updateData ? updateData.notes : existingReceipt.notes;
-        const normalizedCategory = normalizeReceiptCategory(categoryValidation.value!, rawNotes);
-        updateData.category = normalizedCategory.category;
-        updateData.notes = normalizedCategory.notes;
+      if ('reportLabel' in updateData) {
+        updateData.reportLabel = updateData.reportLabel
+          ? sanitizeString(String(updateData.reportLabel), 100).trim() || null
+          : null;
       }
 
       // Update the receipt
@@ -2113,7 +2081,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       receiptsList.forEach(receipt => {
         if (!receipt.isRecurring) return;
         const storeName = receipt.storeName || "Unknown Store";
-        const category = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
+        const category = getReportingCategory(receipt.category, receipt.reportLabel);
         const subcategory = receipt.subcategory || "Uncategorized";
         const frequency = receipt.frequency || "Monthly";
         const total = parseFloat(receipt.total) || 0;
@@ -2164,7 +2132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       receiptsList.forEach(receipt => {
         if (!receipt.isTaxDeductible) return;
         const taxCategory = receipt.taxCategory || "Uncategorized";
-        const category = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
+        const category = getReportingCategory(receipt.category, receipt.reportLabel);
         const total = parseFloat(receipt.total) || 0;
 
         if (!breakdown.has(taxCategory)) {
@@ -2208,7 +2176,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       receipts.forEach(receipt => {
         const date = new Date(receipt.date);
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        const category = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
+        const category = getReportingCategory(receipt.category, receipt.reportLabel);
         const total = parseFloat(receipt.total) || 0;
 
         if (!totalsByMonth.has(month)) {
@@ -2250,7 +2218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const categoryMap = new Map<string, { category: string; count: number; total: number }>();
 
       receiptsList.forEach(receipt => {
-        const category = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
+        const category = getReportingCategory(receipt.category, receipt.reportLabel);
         const total = parseFloat(receipt.total) || 0;
         const existing = categoryMap.get(category) || { category, count: 0, total: 0 };
         existing.count += 1;
@@ -2260,24 +2228,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const result = Array.from(categoryMap.values()).sort((a, b) => b.total - a.total);
       
-      // Then extract any custom categories from notes field (tagged with [Custom Category: X])
-      const customResult = await pool.query(`
-        SELECT 
-          substring(notes from '\\[Custom Category: (.*?)\\]') AS subcategory,
+      // Extract report_label breakdown (replaces legacy [Custom Category:] notes parsing)
+      const reportLabelResult = await pool.query(`
+        SELECT
+          report_label AS subcategory,
           COUNT(*) AS count,
           SUM(CAST(total AS DECIMAL)) AS total
         FROM receipts
-        WHERE 
-          user_id = $1 AND
-          notes LIKE '%[Custom Category:%]%'
-        GROUP BY subcategory
+        WHERE workspace_id = (SELECT workspace_id FROM users WHERE id = $1)
+          AND report_label IS NOT NULL
+          AND report_label != ''
+        GROUP BY report_label
         ORDER BY total DESC
       `, [userId]);
-      
-      // Combine the results
+
       res.json({
         categories: result,
-        subcategories: customResult.rows
+        subcategories: reportLabelResult.rows
       });
     } catch (error: any) {
       log(`Error in /api/analytics/category-breakdown: ${error.message}`, 'express');

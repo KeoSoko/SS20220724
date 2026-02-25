@@ -86,7 +86,9 @@ export default function UploadReceipt() {
   const [date, setDate] = useState("");
   const [total, setTotal] = useState("");
   const [category, setCategory] = useState<string>("other");
-  const [customCategoryName, setCustomCategoryName] = useState<string | null>(null);
+  const [reportLabel, setReportLabel] = useState<string>("");
+  const [isAddingNewLabel, setIsAddingNewLabel] = useState(false);
+  const [newLabelInput, setNewLabelInput] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<Array<{name: string, price: string}>>([]);
   const [confidenceScore, setConfidenceScore] = useState<string | null>(null);
@@ -127,7 +129,7 @@ export default function UploadReceipt() {
       date,
       total,
       category,
-      customCategoryName,
+      reportLabel,
       notes,
       items,
       confidenceScore,
@@ -149,10 +151,7 @@ export default function UploadReceipt() {
         setDate(formState.date || "");
         setTotal(formState.total || "");
         setCategory(formState.category || "other");
-        const restoredCategory = formState.category || "other";
-        const restoredCustomCategory = formState.customCategoryName ||
-          (!EXPENSE_CATEGORIES.includes(restoredCategory as ExpenseCategory) ? restoredCategory : null);
-        setCustomCategoryName(restoredCustomCategory || null);
+        setReportLabel(formState.reportLabel || "");
         setNotes(formState.notes || "");
         setItems(formState.items || []);
         setConfidenceScore(formState.confidenceScore || null);
@@ -188,7 +187,7 @@ export default function UploadReceipt() {
     setDate("");
     setTotal("");
     setCategory("other");
-    setCustomCategoryName(null);
+    setReportLabel("");
     setNotes("");
     setItems([]);
     setConfidenceScore(null);
@@ -396,11 +395,12 @@ export default function UploadReceipt() {
     setBatchProcessingIndex(-1);
   };
 
-  // Query for custom categories
-  const { data: customCategories = [] } = useQuery({
-    queryKey: ["/api/custom-categories"],
-    enabled: !!user, // Only fetch when user is authenticated
+  // Query for distinct report labels used across the workspace
+  const { data: reportLabelsData } = useQuery<{ reportLabels: string[] }>({
+    queryKey: ["/api/receipts/report-labels"],
+    enabled: !!user,
   });
+  const reportLabels = reportLabelsData?.reportLabels ?? [];
 
   // OCR scanning mutation
   const scanMutation = useMutation({
@@ -565,7 +565,7 @@ export default function UploadReceipt() {
       // Use AI-suggested category from the scan response
       if (data.category && data.category !== 'other') {
         setCategory(data.category as ExpenseCategory);
-        setCustomCategoryName(null);
+        setReportLabel("");
       } else {
         // Only use fallback categorization if AI didn't provide a category
         const lowerStoreName = data.storeName.toLowerCase();
@@ -597,7 +597,7 @@ export default function UploadReceipt() {
         }
         
         setCategory(matchedCategory as ExpenseCategory);
-        setCustomCategoryName(null);
+        setReportLabel("");
       }
       
       // Complete the process
@@ -715,28 +715,12 @@ export default function UploadReceipt() {
   });
 
   // Upload receipt mutation
-  const getNormalizedReceiptValues = () => {
-    const isPredefinedCategory = EXPENSE_CATEGORIES.includes(category as ExpenseCategory);
-    const customCategoryLabel = customCategoryName?.trim()
-      || (!isPredefinedCategory && category.trim() ? category.trim() : null);
-    const cleanedNotes = notes ? notes.replace(/\[Custom Category: .*?\]\s*/i, "").trim() : "";
-    const normalizedNotes = customCategoryLabel
-      ? (() => {
-          const prefix = `[Custom Category: ${customCategoryLabel}]`;
-          return cleanedNotes ? `${prefix} ${cleanedNotes}` : prefix;
-        })()
-      : (cleanedNotes || null);
-    const normalizedCategory = isPredefinedCategory ? category : "other";
-
-    return { normalizedCategory, normalizedNotes };
-  };
 
   const uploadMutation = useMutation({
     mutationFn: async () => {
       if (!imageData) {
         throw new Error("No image data available");
       }
-      const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
       const clientUploadId = clientUploadIdRef.current;
       
       // Always save offline first to prevent hanging
@@ -749,8 +733,9 @@ export default function UploadReceipt() {
         date,
         total,
         items: Array.isArray(items) ? items : [],
-        category: normalizedCategory,
-        notes: normalizedNotes,
+        category: EXPENSE_CATEGORIES.includes(category as ExpenseCategory) ? category : "other",
+        reportLabel: reportLabel.trim() || null,
+        notes: notes || null,
         confidenceScore: confidenceScore || null,
         imageData,
         isRecurring,
@@ -793,8 +778,9 @@ export default function UploadReceipt() {
           date,
           total,
           items: Array.isArray(items) ? items : [],
-          category: normalizedCategory,
-          notes: normalizedNotes,
+          category: EXPENSE_CATEGORIES.includes(category as ExpenseCategory) ? category : "other",
+          reportLabel: reportLabel.trim() || null,
+          notes: notes || null,
           confidenceScore: confidenceScore || null,
           imageData,
           isRecurring,
@@ -863,8 +849,9 @@ export default function UploadReceipt() {
           date,
           total,
           items: itemsArray,
-          category: normalizedCategory,
-          notes: normalizedNotes,
+          category: EXPENSE_CATEGORIES.includes(category as ExpenseCategory) ? category : "other",
+          reportLabel: reportLabel.trim() || null,
+          notes: notes || null,
           confidenceScore: confidenceScore || null,
           imageData,
           isRecurring,
@@ -887,7 +874,6 @@ export default function UploadReceipt() {
       // Check if this is an offline response from service worker
       if (data && data.offline === true) {
         setAllowDuplicateSave(false);
-        const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
 
         // Handle offline response - queue for sync
         addPendingUpload({
@@ -896,8 +882,9 @@ export default function UploadReceipt() {
           date,
           total,
           items: Array.isArray(items) ? items : [],
-          category: normalizedCategory,
-          notes: normalizedNotes,
+          category: EXPENSE_CATEGORIES.includes(category as ExpenseCategory) ? category : "other",
+          reportLabel: reportLabel.trim() || null,
+          notes: notes || null,
           confidenceScore: confidenceScore || null,
           imageData,
           isRecurring,
@@ -1028,7 +1015,6 @@ export default function UploadReceipt() {
 
       if (isOfflineError) {
         setAllowDuplicateSave(false);
-        const { normalizedCategory, normalizedNotes } = getNormalizedReceiptValues();
 
         // Queue for offline sync
         addPendingUpload({
@@ -1037,8 +1023,9 @@ export default function UploadReceipt() {
           date,
           total,
           items: Array.isArray(items) ? items : [],
-          category: normalizedCategory,
-          notes: normalizedNotes,
+          category: EXPENSE_CATEGORIES.includes(category as ExpenseCategory) ? category : "other",
+          reportLabel: reportLabel.trim() || null,
+          notes: notes || null,
           confidenceScore: confidenceScore || null,
           imageData,
           isRecurring,
@@ -1829,57 +1816,103 @@ export default function UploadReceipt() {
                     <Label className="text-base font-semibold">Category</Label>
                     
                     <div className="space-y-3">
-                      <Select 
-                        value={category} 
+                      <Select
+                        value={reportLabel.trim() ? `__label__${reportLabel}` : category}
                         onValueChange={(value) => {
-                          const matchedCustomCategory = Array.isArray(customCategories)
-                            ? customCategories.find((customCat: any) => customCat.name === value)
-                            : null;
-
+                          if (value === "__add_new__") {
+                            setIsAddingNewLabel(true);
+                            setNewLabelInput("");
+                            return;
+                          }
+                          if (value.startsWith("__label__")) {
+                            setReportLabel(value.slice(9));
+                            return;
+                          }
                           setCategory(value);
-                          setCustomCategoryName(
-                            matchedCustomCategory
-                              ? (matchedCustomCategory.displayName || matchedCustomCategory.name)
-                              : null
-                          );
+                          setReportLabel("");
                         }}
                         disabled={isScanning}
                       >
                         <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select a category" />
+                          <SelectValue placeholder="Select a category">
+                            {reportLabel.trim()
+                              ? reportLabel.trim()
+                              : category.charAt(0).toUpperCase() + category.slice(1).replace('_', ' ')}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
+                          <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">System Categories</div>
                           {EXPENSE_CATEGORIES.map((cat) => (
                             <SelectItem key={cat} value={cat}>
                               {cat.charAt(0).toUpperCase() + cat.slice(1).replace('_', ' ')}
                             </SelectItem>
                           ))}
-                          {Array.isArray(customCategories) && customCategories.length > 0 && (
+                          {reportLabels.length > 0 && (
                             <>
-                              {customCategories.map((customCat: any) => (
-                                <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
-                                  {customCat.displayName}
+                              <div className="border-t border-gray-200 mt-1 mb-1" />
+                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Custom Labels</div>
+                              {reportLabels.map((label) => (
+                                <SelectItem key={`__label__${label}`} value={`__label__${label}`}>
+                                  {label}
                                 </SelectItem>
                               ))}
                             </>
                           )}
-                          <div className="border-t border-gray-200 mt-2 pt-2">
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="w-full justify-start text-sm text-gray-600 hover:text-gray-900"
-                              type="button"
-                              onClick={() => {
-                                saveFormState();
-                                setLocation("/categories");
-                              }}
-                            >
-                              <Plus className="w-4 h-4 mr-2" />
-                              Manage Custom Categories
-                            </Button>
+                          <div className="border-t border-gray-200 mt-1 pt-1">
+                            <SelectItem value="__add_new__">
+                              <span className="flex items-center gap-1 text-blue-600">
+                                <Plus className="w-3 h-3" />
+                                Add new custom label…
+                              </span>
+                            </SelectItem>
                           </div>
                         </SelectContent>
                       </Select>
+
+                      {isAddingNewLabel && (
+                        <div className="flex gap-2 mt-2">
+                          <Input
+                            autoFocus
+                            value={newLabelInput}
+                            onChange={(e) => setNewLabelInput(e.target.value)}
+                            placeholder="Enter custom label"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && newLabelInput.trim()) {
+                                setReportLabel(newLabelInput.trim());
+                                setIsAddingNewLabel(false);
+                              }
+                              if (e.key === "Escape") setIsAddingNewLabel(false);
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              if (newLabelInput.trim()) setReportLabel(newLabelInput.trim());
+                              setIsAddingNewLabel(false);
+                            }}
+                          >
+                            Set
+                          </Button>
+                          <Button type="button" size="sm" variant="outline" onClick={() => setIsAddingNewLabel(false)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
+
+                      {reportLabel.trim() && (
+                        <p className="text-xs text-muted-foreground">
+                          Custom label: <span className="font-medium text-foreground">{reportLabel.trim()}</span>
+                          {" — "}
+                          <button
+                            type="button"
+                            className="text-blue-600 underline hover:no-underline"
+                            onClick={() => setReportLabel("")}
+                          >
+                            clear
+                          </button>
+                        </p>
+                      )}
                     </div>
                   </div>
                   
@@ -1947,7 +1980,7 @@ export default function UploadReceipt() {
                     setDate("");
                     setTotal("");
                     setCategory("other");
-                    setCustomCategoryName(null);
+                    setReportLabel("");
                     setNotes("");
                     setItems([]);
                     setConfidenceScore(null);

@@ -56,14 +56,14 @@ function sanitizeTextForPDF(text: string | null | undefined): string {
 
 export class ExportService {
   private getReceiptCategoryLabel(receipt: Receipt): string {
-    const rawCategory = getReportingCategory(receipt.category, receipt.notes);
+    const rawCategory = getReportingCategory(receipt.category, receipt.reportLabel);
     return formatReportingCategory(rawCategory);
   }
 
   private matchesCategoryFilter(receipt: Receipt, filter?: string): boolean {
     if (!filter) return true;
 
-    const rawCategory = getReportingCategory(receipt.category, receipt.notes);
+    const rawCategory = getReportingCategory(receipt.category, receipt.reportLabel);
     return filter === rawCategory || filter === formatReportingCategory(rawCategory);
   }
 

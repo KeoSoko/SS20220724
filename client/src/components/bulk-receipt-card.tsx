@@ -84,12 +84,10 @@ export function BulkReceiptCard({ receipt, bulkMode, isSelected, onToggleSelecti
               >
                 <span className="mr-1">{getCategoryIcon(receipt.category)}</span>
                 <span>
-                  {receipt.category === "other" && receipt.notes?.includes("[Custom Category:") ? (
-                    receipt.notes.match(/\[Custom Category: (.*?)\]/)?.[1] || "Other"
-                  ) : (
-                    receipt.category.charAt(0).toUpperCase() + 
-                    receipt.category.slice(1).replace('_', ' ')
-                  )}
+                  {receipt.reportLabel?.trim()
+                    ? receipt.reportLabel.trim()
+                    : receipt.category.charAt(0).toUpperCase() + receipt.category.slice(1).replace('_', ' ')
+                  }
                 </span>
               </Badge>
             </div>
@@ -106,7 +104,7 @@ export function BulkReceiptCard({ receipt, bulkMode, isSelected, onToggleSelecti
               </div>
               {receipt.notes && (
                 <div className="text-muted-foreground text-xs italic mt-2 line-clamp-1">
-                  {receipt.notes.replace(/\[Custom Category: .*?\]\s*/, "")}
+                  {receipt.notes}
                 </div>
               )}
             </div>

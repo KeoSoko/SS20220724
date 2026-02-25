@@ -1,0 +1,150 @@
+We are permanently replacing the legacy "[Custom Category: ...]" system.
+
+GOAL:
+- category (enum) = internal AI/system classification ONLY.
+- report_label (text) = user-defined custom category.
+- If report_label exists → it overrides category in all reports and UI.
+- category must now be STRICT enum only.
+- No data loss allowed.
+
+==================================================
+PHASE 1 — SAFETY BACKUP (MANDATORY)
+==================================================
+
+Before modifying anything:
+
+1. Export all receipts with:
+   id, category, report_label, notes
+2. Save to backup_receipts_pre_migration.json
+3. Confirm total row count matches receipts table count.
+
+Return confirmation before continuing.
+
+==================================================
+PHASE 2 — MIGRATE LEGACY CUSTOM CATEGORIES
+==================================================
+
+Step 1: Extract custom label from notes into report_label:
+
+UPDATE receipts
+SET report_label = REGEXP_REPLACE(
+  notes,
+  '^\[Custom Category: (.*?)\].*$',
+  '\1'
+)
+WHERE notes ~ '^\[Custom Category: .*?\]'
+  AND report_label IS NULL;
+
+Return number of rows updated.
+
+Step 2: Clean notes by removing prefix:
+
+UPDATE receipts
+SET notes = REGEXP_REPLACE(
+  notes,
+  '^\[Custom Category: .*?\]\s*',
+  ''
+)
+WHERE notes ~ '^\[Custom Category: .*?\]';
+
+Return number of rows updated.
+
+Step 3: Verify:
+
+SELECT COUNT(*) FROM receipts
+WHERE notes ~ '^\[Custom Category:';
+
+Must return 0.
+
+==================================================
+PHASE 3 — LOCK CATEGORY TO STRICT ENUM
+==================================================
+
+1. In normalizeReceiptCategory():
+   - REMOVE custom category branch entirely.
+   - If category NOT in EXPENSE_CATEGORIES → return 400 error.
+   - Do NOT silently convert to "other".
+
+2. In POST /api/receipts and PATCH /api/receipts/:id:
+   - Validate category strictly.
+   - Remove all logic embedding category into notes.
+
+3. Remove ALL regex parsing of "[Custom Category: ...]" in:
+   - receipt/[id].tsx
+   - upload-receipt.tsx
+   - any other frontend file.
+
+==================================================
+PHASE 4 — UNIFIED CATEGORY DROPDOWN
+==================================================
+
+On receipt edit page:
+
+1. Fetch distinct report_label values:
+
+SELECT DISTINCT report_label
+FROM receipts
+WHERE report_label IS NOT NULL
+ORDER BY report_label;
+
+2. Dropdown must show:
+
+Section 1: System Categories (EXPENSE_CATEGORIES enum)
+Section 2: Custom Categories (report_label values)
+Option: "+ Add New Custom Category"
+
+3. Save logic:
+
+If enum selected:
+    category = selected enum
+    report_label = null
+
+If existing custom selected:
+    report_label = selected value
+    category remains unchanged
+
+If new custom typed:
+    report_label = new label
+    category remains unchanged
+
+==================================================
+PHASE 5 — DISPLAY RULES
+==================================================
+
+Receipt page must display:
+
+If report_label exists:
+    show report_label
+Else:
+    show category
+
+Do NOT show AI category separately.
+
+==================================================
+PHASE 6 — REPORTING CONFIRMATION
+==================================================
+
+Confirm all reporting services use:
+
+COALESCE(report_label, category)
+
+Do not modify tax grouping logic.
+
+==================================================
+PHASE 7 — VALIDATION CHECKLIST
+==================================================
+
+Return:
+
+- Backup confirmation
+- Rows migrated count
+- Rows cleaned count
+- Files modified
+- Confirmation that TypeScript compiles
+- Example receipt before/after migration
+- Example API response after update
+
+Ensure:
+- No existing receipt lost its custom category
+- No category field contains non-enum values
+- App runs cleanly

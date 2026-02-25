@@ -1,0 +1,112 @@
+Objective
+Permanently replace the legacy [Custom Category: ...] notes-embedding system with the proper report_label column. Category becomes a strict internal AI enum only. report_label is the user-visible custom label that overrides category in all display and reporting. No data loss — migrate all existing custom labels into report_label first.
+
+Tasks
+T001: Phase 1 — Safety backup
+Blocked By: []
+Details:
+Run SELECT id, category, report_label, notes FROM receipts ORDER BY id and write the full result to scripts/backup_receipts_pre_migration.json
+Confirm total row count matches SELECT COUNT(*) FROM receipts
+Acceptance: File exists and row count matches
+T002: Phase 2 — Data migration
+Blocked By: [T001]
+Details:
+Step 1: Extract custom label from notes → report_label for all rows where notes starts with [Custom Category: ...] and report_label IS NULL
+UPDATE receipts
+SET report_label = REGEXP_REPLACE(notes, '^\[Custom Category: (.*?)\].*$', '\1')
+WHERE notes ~ '^\[Custom Category: .*?\]' AND report_label IS NULL;
+Return row count.
+Step 2: Clean the prefix out of notes for all rows still matching
+UPDATE receipts
+SET notes = NULLIF(TRIM(REGEXP_REPLACE(notes, '^\[Custom Category: .*?\]\s*', '')), '')
+WHERE notes ~ '^\[Custom Category: .*?\]';
+Return row count.
+Step 3: Verify zero remaining — SELECT COUNT(*) FROM receipts WHERE notes ~ '^\[Custom Category:' must return 0.
+Also handle mid-string occurrences (non-prefix) — check notes LIKE '%[Custom Category:%' and handle those rows too if any exist.
+Acceptance: Zero rows contain [Custom Category: in notes after migration
+T003: Phase 3 — Backend: Enforce strict enum, remove normalizeReceiptCategory
+Blocked By: [T002]
+Details:
+File: server/routes.ts
+Remove normalizeReceiptCategory() function entirely
+Update validateCategory(): Remove the "allow as custom category" fallback. If category is not in EXPENSE_CATEGORIES, return { isValid: false, error: "Invalid category" } — caller returns 400
+POST /api/receipts:
+Destructure reportLabel from req.body alongside existing fields
+Replace normalizeReceiptCategory() call with direct strict validation (400 if invalid enum)
+Pass reportLabel to the receipt insert (sanitize it: reportLabel ? sanitizeString(reportLabel, 100) : null)
+Remove all notes-embedding logic for custom categories
+PATCH /api/receipts/:id:
+Accept reportLabel in updateData
+Replace normalizeReceiptCategory() call with strict enum check
+Remove notes-mutation logic from the category update block
+/api/analytics/category-breakdown (line ~2264):
+Replace the raw SQL custom category query (notes regex) with a report_label based query:
+SELECT report_label AS subcategory, COUNT(*) AS count, SUM(CAST(total AS DECIMAL)) AS total
+FROM receipts
+WHERE workspace_id = $1 AND report_label IS NOT NULL
+GROUP BY report_label ORDER BY total DESC
+Acceptance: TypeScript compiles; uploading with non-enum category returns 400
+T004: Phase 3 — Clean reporting-utils.ts
+Blocked By: [T002]
+Details:
+File: server/reporting-utils.ts
+Remove the CUSTOM_CATEGORY_REGEX notes-parsing fallback — notes will no longer contain that prefix post-migration
+Simplified function: getReportingCategory(category, reportLabel?) → reportLabel?.trim() || category || 'other'
+Remove the notes parameter entirely since it's no longer needed
+Update all callers (routes.ts, profit-loss-service.ts, tax-service.ts, database-storage.ts, storage.ts) to drop the notes argument
+Acceptance: No references to [Custom Category: remain in server code
+T005: Phase 4 — New API endpoint for distinct report labels
+Blocked By: [T002]
+Details:
+File: server/routes.ts
+Add GET /api/receipts/report-labels (authenticated, workspace-scoped):
+SELECT DISTINCT report_label FROM receipts
+WHERE workspace_id = $workspaceId AND report_label IS NOT NULL AND report_label != ''
+ORDER BY report_label
+Returns { reportLabels: string[] }
+Place it ABOVE the /api/receipts/:id route to avoid route conflict
+Acceptance: Endpoint returns list of distinct report_label values for the current user's workspace
+T006: Phase 4 + 5 — Update receipt/[id].tsx (edit page)
+Blocked By: [T003, T005]
+Details:
+File: client/src/pages/receipt/[id].tsx
+Remove: customCategory state, showCustomCategory state, buildNotesWithCustomCategory function, the custom category text input field, all [Custom Category: ...] regex throughout the file
+Add: reportLabel state (useState<string>("")), fetch /api/receipts/report-labels via useQuery
+Hydration useEffect: Replace custom category extraction with setReportLabel(receipt.reportLabel || ""); remove hasUserModifiedCategory notes-extraction block (keep the guard but simplify it to just category + reportLabel)
+Dropdown structure (two-section Select):
+Section 1 header "System Categories" → all EXPENSE_CATEGORIES items
+Section 2 header "Custom Labels" → one item per report_label from the API
+Final item: "+ Add new label..." → shows an inline text input
+onValueChange save logic:
+If value is an EXPENSE_CATEGORY enum → setEditedCategory(value), setReportLabel("")
+If value is an existing report_label → setReportLabel(value) (category stays unchanged)
+If "+ Add new..." → show inline text input, on confirm set setReportLabel(typedValue)
+PATCH body: include reportLabel: reportLabel || null (drop buildNotesWithCustomCategory call entirely)
+Display (view mode, line ~730): receipt.reportLabel || receipt.category — no notes regex
+Notes display (line ~990): show receipt.notes directly with no regex cleaning
+Acceptance: User can select system category (clears reportLabel) or custom label; no notes prefix written; save works cleanly
+T007: Phase 4 — Update upload-receipt.tsx
+Blocked By: [T003, T005]
+Details:
+File: client/src/pages/upload-receipt.tsx
+Remove: customCategoryName state, getNormalizedReceiptValues() function and all its notes-embedding logic, all [Custom Category: ...] regex
+Add: reportLabel state (useState<string | null>(null)), fetch /api/receipts/report-labels for dropdown
+Dropdown: Same two-section structure as T006 (system categories + existing report labels + new entry)
+Upload body: Send category (always a valid enum or "other"), reportLabel: reportLabel || null — no custom embedding in notes
+Session storage: Replace customCategoryName with reportLabel in saveFormState/restoreFormState
+Acceptance: Upload flow sends reportLabel directly; no notes mutation
+T008: Phase 5 — Update display utilities and list views
+Blocked By: [T002]
+Details:
+client/src/utils/receipt-category.ts: Rewrite getReceiptCategoryLabel to accept (category: string, reportLabel?: string | null) and return reportLabel?.trim() || category.replace(/_/g, ' ')
+client/src/pages/receipts-page.tsx: Update calls to getReceiptCategoryLabel to pass receipt.reportLabel instead of receipt.notes; update the category filter logic (line ~145) to compare against reportLabel || category
+client/src/components/bulk-receipt-card.tsx: Same — pass receipt.reportLabel to getReceiptCategoryLabel instead of receipt.notes; remove notes-regex display at line ~109
+Acceptance: Receipt list and cards show report_label when set, category otherwise; no notes parsing anywhere in frontend
+T009: Phase 7 — TypeScript compile check and smoke test
+Blocked By: [T003, T004, T006, T007, T008]
+Details:
+Run npm run check — must pass with zero errors
+Restart the dev server and confirm it starts cleanly
+Hit GET /api/receipts/report-labels and confirm it returns data
+Fetch receipt ID 4307 via API and confirm category is a valid enum and report_label is null (as confirmed earlier)
+Acceptance: Zero TS errors, server starts, key endpoints respond correctly

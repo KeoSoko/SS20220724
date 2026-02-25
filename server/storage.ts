@@ -510,6 +510,11 @@ export class MemStorage implements IStorage {
       source: (insertReceipt as { source?: string }).source || "scan",
       sourceEmailId: (insertReceipt as { sourceEmailId?: number | null }).sourceEmailId || null,
       
+      // Workspace and report label
+      workspaceId: (insertReceipt as { workspaceId?: number }).workspaceId || 0,
+      createdByUserId: (insertReceipt as { createdByUserId?: number }).createdByUserId || insertReceipt.userId,
+      reportLabel: (insertReceipt as { reportLabel?: string | null }).reportLabel || null,
+      
       // Timestamps
       createdAt: now,
       updatedAt: null,
@@ -711,7 +716,7 @@ export class MemStorage implements IStorage {
     });
     
     receipts.forEach(receipt => {
-      const categoryLabel = getReportingCategory(receipt.category, receipt.notes, receipt.reportLabel);
+      const categoryLabel = getReportingCategory(receipt.category, receipt.reportLabel);
       const total = parseFloat(receipt.total) || 0;
       const existing = categoryMap.get(categoryLabel) || { category: categoryLabel, count: 0, total: 0 };
       existing.count += 1;

@@ -358,6 +358,7 @@ export default function UploadReceipt() {
     
     // Invalidate queries
     queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/receipts/report-labels"] });
     
     const completedCount = batchQueue.filter(f => f.status === 'completed').length;
     
@@ -912,6 +913,7 @@ export default function UploadReceipt() {
       setAllowDuplicateSave(false);
       // Invalidate receipts query to refresh the list
       queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/receipts/report-labels"] });
       
       // If this receipt was marked as tax deductible, invalidate tax dashboard
       if (isTaxDeductible) {

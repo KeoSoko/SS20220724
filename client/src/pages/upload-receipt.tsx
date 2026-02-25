@@ -1836,6 +1836,7 @@ export default function UploadReceipt() {
                         value={reportLabel.trim() ? `__label__${reportLabel}` : category}
                         onValueChange={(value) => {
                           if (value === "__add_new__") {
+                            saveFormState();
                             setLocation("/categories?return=/upload");
                             return;
                           }

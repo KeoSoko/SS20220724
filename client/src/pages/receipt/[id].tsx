@@ -744,7 +744,7 @@ export default function ReceiptDetail() {
                       onValueChange={(value) => {
                         setHasUserModifiedCategory(true);
                         if (value === "__add_new__") {
-                          setLocation(`/categories?return=/receipts/${id}`);
+                          setLocation(`/categories?return=/receipt/${id}`);
                           return;
                         }
                         if (value.startsWith("__label__")) {

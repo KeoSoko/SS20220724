@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -54,6 +55,9 @@ const ContentCard = ({ className, children }: { className?: string, children: Re
 
 export default function CategoriesPage() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const search = useSearch();
+  const returnTo = new URLSearchParams(search).get("return");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<any>(null);
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -85,20 +89,11 @@ export default function CategoriesPage() {
       setIsDialogOpen(false);
       form.reset();
       toast({
-        title: "Category created successfully",
-        description: "Your custom category has been added to your account",
+        title: "Category created",
+        description: "Your new category is ready to use.",
       });
-      
-      // Check if user came from upload page with saved state
-      const hasSavedUploadState = sessionStorage.getItem('upload_receipt_form_state');
-      if (hasSavedUploadState) {
-        // Show success and suggest returning to upload
-        setTimeout(() => {
-          toast({
-            title: "Return to upload?",
-            description: "Your receipt is still waiting. Navigate back to continue uploading.",
-          });
-        }, 1500);
+      if (returnTo) {
+        setTimeout(() => setLocation(returnTo), 800);
       }
     },
     onError: (error: Error) => {

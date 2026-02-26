@@ -1,6 +1,8 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import sharp from 'sharp';
+import fs from 'fs';
+import path from 'path';
 import type { Receipt, Budget } from '../shared/schema.js';
 import { storage } from './storage.js';
 import { azureStorage } from './azure-storage.js';
@@ -74,10 +76,6 @@ export class ExportService {
    */
   private async getSimpleSlipsLogoBase64(): Promise<string | null> {
     try {
-      // Use require.resolve for better compatibility instead of dynamic imports
-      const fs = require('fs');
-      const path = require('path');
-      
       // Try PNG first, fallback to SVG
       const logoPath = path.join(process.cwd(), 'public', 'simple-slips-logo.png');
       if (fs.existsSync(logoPath)) {
@@ -431,8 +429,6 @@ export class ExportService {
               if (receipt.imageData) {
                 imageData = receipt.imageData;
               } else if (receipt.blobUrl && receipt.blobUrl.startsWith('/uploads/')) {
-                const fs = require('fs');
-                const path = require('path');
                 const filePath = path.join(process.cwd(), receipt.blobUrl);
                 try {
                   if (fs.existsSync(filePath)) {
@@ -665,8 +661,6 @@ export class ExportService {
         if (receipt.imageData) {
           imageData = receipt.imageData;
         } else if (receipt.blobUrl && receipt.blobUrl.startsWith('/uploads/')) {
-          const fs = require('fs');
-          const path = require('path');
           const filePath = path.join(process.cwd(), receipt.blobUrl);
           try {
             if (fs.existsSync(filePath)) {

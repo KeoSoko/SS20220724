@@ -1,12 +1,12 @@
-const CACHE_NAME = 'simple-slips-v9';
-const STATIC_CACHE = 'simple-slips-static-v9';
-const DYNAMIC_CACHE = 'simple-slips-dynamic-v9';
+const CACHE_NAME = 'simple-slips-v10';
+const STATIC_CACHE = 'simple-slips-static-v10';
+const DYNAMIC_CACHE = 'simple-slips-dynamic-v10';
 
 const STATIC_FILES = [
   '/manifest.json?v=1.5'
 ];
 
-const SW_VERSION = '9.0.0';
+const SW_VERSION = '10.0.0';
 
 const CRITICAL_API_PATHS = [
   '/api/login',
@@ -20,11 +20,14 @@ const CRITICAL_API_PATHS = [
   '/api/user',
   '/api/emergency-login',
   '/api/log-error',
-  '/api/resend-verification'
+  '/api/resend-verification',
+  '/api/export',
+  '/api/backup',
+  '/api/admin'
 ];
 
 self.addEventListener('install', (event) => {
-  console.log('[SW v9] Installing - nuclear cache cleanup');
+  console.log('[SW v10] Installing - nuclear cache cleanup');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -46,7 +49,7 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('[SW v9] Activating - deleting ALL old caches');
+  console.log('[SW v10] Activating - deleting ALL old caches');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(

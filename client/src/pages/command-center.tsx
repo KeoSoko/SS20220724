@@ -37,7 +37,10 @@ import {
   X,
   Info,
   Inbox,
-  Paperclip
+  Paperclip,
+  Download,
+  FileText,
+  FileSpreadsheet
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -616,6 +619,36 @@ export default function CommandCenter() {
   };
 
   const recoveryEmailStatus = getRecoveryEmailStatus();
+
+  const [exportingType, setExportingType] = useState<string | null>(null);
+
+  const handleAdminDownload = async (type: 'receipts-csv' | 'receipts-pdf' | 'tax-report', year?: number) => {
+    if (!selectedUserId) return;
+    const key = year ? `${type}-${year}` : type;
+    setExportingType(key);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const url = year
+        ? `/api/admin/users/${selectedUserId}/export/${type}/${year}`
+        : `/api/admin/users/${selectedUserId}/export/${type}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || `export-${type}.${type.endsWith('csv') ? 'csv' : 'pdf'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+      toast({ title: "Download started", description: "File downloaded successfully." });
+    } catch (err: any) {
+      toast({ title: "Export failed", description: err.message, variant: "destructive" });
+    } finally {
+      setExportingType(null);
+    }
+  };
 
   const handleSendRecoveryEmail = () => {
     if (!selectedUserId || !recoveryEmailStatus.canSend) return;
@@ -1684,6 +1717,52 @@ export default function CommandCenter() {
                           {recoveryEmailStatus.reason}
                         </span>
                       )}
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div>
+                    <h4 className="font-medium mb-2 flex items-center gap-1">
+                      <Download className="h-3 w-3" /> Export User Data
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleAdminDownload('receipts-csv')}
+                        disabled={exportingType === 'receipts-csv'}
+                      >
+                        {exportingType === 'receipts-csv' ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <FileSpreadsheet className="h-3 w-3 mr-1" />}
+                        All Receipts (CSV)
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleAdminDownload('receipts-pdf')}
+                        disabled={exportingType === 'receipts-pdf'}
+                      >
+                        {exportingType === 'receipts-pdf' ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <FileText className="h-3 w-3 mr-1" />}
+                        All Receipts (PDF)
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleAdminDownload('tax-report', new Date().getFullYear())}
+                        disabled={exportingType === `tax-report-${new Date().getFullYear()}`}
+                      >
+                        {exportingType === `tax-report-${new Date().getFullYear()}` ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <FileText className="h-3 w-3 mr-1" />}
+                        Tax Report {new Date().getFullYear()}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleAdminDownload('tax-report', new Date().getFullYear() - 1)}
+                        disabled={exportingType === `tax-report-${new Date().getFullYear() - 1}`}
+                      >
+                        {exportingType === `tax-report-${new Date().getFullYear() - 1}` ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <FileText className="h-3 w-3 mr-1" />}
+                        Tax Report {new Date().getFullYear() - 1}
+                      </Button>
                     </div>
                   </div>
                 </div>

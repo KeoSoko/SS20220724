@@ -14,6 +14,7 @@ import { and, eq, gte, lt, lte, sql, isNull, isNotNull, desc, or, ilike, count }
 import { log } from "./vite";
 import { billingService } from "./billing-service";
 import { emailService } from "./email-service";
+import { exportService } from "./export-service";
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -1452,6 +1453,59 @@ Respond ONLY with valid JSON.`;
     } catch (error: any) {
       log(`Error in /api/admin/command-center/payment-warnings: ${error.message}`, 'admin');
       res.status(500).json({ error: "Failed to fetch payment warnings" });
+    }
+  });
+
+  // ========================================
+  // ADMIN EXPORT ROUTES
+  // ========================================
+
+  app.get("/api/admin/users/:userId/export/receipts-csv", requireAdmin, async (req, res) => {
+    try {
+      const targetUserId = parseInt(req.params.userId);
+      if (isNaN(targetUserId)) return res.status(400).json({ error: "Invalid user ID" });
+      const user = await storage.getUser(targetUserId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      const csv = await exportService.exportReceiptsToCSV(targetUserId, { includeTaxInfo: true });
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="receipts-${user.username}-${Date.now()}.csv"`);
+      res.send(csv);
+    } catch (error: any) {
+      log(`Error in admin export receipts CSV: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to export receipts" });
+    }
+  });
+
+  app.get("/api/admin/users/:userId/export/receipts-pdf", requireAdmin, async (req, res) => {
+    try {
+      const targetUserId = parseInt(req.params.userId);
+      if (isNaN(targetUserId)) return res.status(400).json({ error: "Invalid user ID" });
+      const user = await storage.getUser(targetUserId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      const pdf = await exportService.exportReceiptsToPDF(targetUserId, { includeSummary: true, groupBy: 'category' });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="receipts-${user.username}-${Date.now()}.pdf"`);
+      res.send(pdf);
+    } catch (error: any) {
+      log(`Error in admin export receipts PDF: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to export receipts PDF" });
+    }
+  });
+
+  app.get("/api/admin/users/:userId/export/tax-report/:year", requireAdmin, async (req, res) => {
+    try {
+      const targetUserId = parseInt(req.params.userId);
+      const year = parseInt(req.params.year);
+      if (isNaN(targetUserId) || isNaN(year)) return res.status(400).json({ error: "Invalid parameters" });
+      const user = await storage.getUser(targetUserId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      const report = await exportService.generateTaxReport(targetUserId, year);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="tax-report-${user.username}-${year}.pdf"`);
+      res.send(report.pdf);
+    } catch (error: any) {
+      log(`Error in admin export tax report: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to generate tax report" });
     }
   });
 }

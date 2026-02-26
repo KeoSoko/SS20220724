@@ -156,7 +156,7 @@ export default function CategoriesPage() {
   const handleSubmit = (data: CustomCategoryForm) => {
     const slug = generateSlug(data.displayName);
     if (editingCategory) {
-      updateCategoryMutation.mutate({ id: editingCategory.id, data: { ...data, name: slug } });
+      updateCategoryMutation.mutate({ id: editingCategory.id, data: { ...data, name: slug } as any });
     } else {
       createCategoryMutation.mutate({ ...data, name: slug } as any);
     }

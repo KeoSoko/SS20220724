@@ -348,8 +348,8 @@ function HomePage() {
           if (categoryFilter === "uncategorized") {
             matchesCategory = !receipt.reportLabel && receipt.category === "other";
           } else {
-            const normalizedResolved = resolvedCategory.toLowerCase().replace(/[_-]/g, " ");
-            const normalizedFilter = categoryFilter.toLowerCase().replace(/[_-]/g, " ");
+            const normalizedResolved = resolvedCategory.toLowerCase().replace(/[_-]/g, " ").trim();
+            const normalizedFilter = categoryFilter.toLowerCase().replace(/[_-]/g, " ").trim();
             matchesCategory = normalizedResolved === normalizedFilter;
           }
         }

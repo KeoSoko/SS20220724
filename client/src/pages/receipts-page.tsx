@@ -140,11 +140,11 @@ export default function ReceiptsPage() {
     // Category filter
     let matchesCategory = true;
     const resolvedCategory = resolveCategory(receipt.category, receipt.reportLabel);
-    const normalizedFilter = categoryFilter.toLowerCase().replace(/_/g, ' ');
+    const normalizedFilter = categoryFilter.toLowerCase().replace(/[_-]/g, ' ').trim();
     if (categoryFilter === 'uncategorized') {
       matchesCategory = !receipt.reportLabel && (!receipt.category || receipt.category === 'other');
     } else if (categoryFilter !== 'all') {
-      matchesCategory = resolvedCategory.toLowerCase().replace(/_/g, ' ') === normalizedFilter;
+      matchesCategory = resolvedCategory.toLowerCase().replace(/[_-]/g, ' ').trim() === normalizedFilter;
     }
     
     // Needs Review filter (confidence < 80%)

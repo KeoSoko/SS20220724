@@ -224,31 +224,23 @@ export class ExportService {
       const lightGray = [240, 240, 240];
       const darkGray = [60, 60, 60];
       
-      // Add Simple Slips logo (convert SVG to base64 PNG for PDF compatibility)
-      const logoBase64 = await this.getSimpleSlipsLogoBase64();
-      if (logoBase64) {
-        // Simple Slips logo proper aspect ratio: 329:79 = 4.16:1
-        // Using width=50, height=12 maintains proper proportions
-        doc.addImage(logoBase64, 'PNG', 15, 8, 50, 12); // Logo top-left with correct aspect ratio
-      }
-      
       // Add branded title
       doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
       doc.setFontSize(20);
-      doc.text('Receipt Export Report', logoBase64 ? 75 : 20, 20);
+      doc.text('Receipt Export Report', 20, 20);
       
       // Add user info and date range with brand styling
       doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
       doc.setFontSize(12);
-      doc.text(`User: ${user?.username || 'Unknown'}`, logoBase64 ? 75 : 20, 35);
+      doc.text(`User: ${user?.username || 'Unknown'}`, 20, 35);
       doc.text(`Generated: ${new Date().toLocaleDateString('en-ZA', { 
         year: 'numeric', month: 'long', day: 'numeric',
         hour: '2-digit', minute: '2-digit'
-      })}`, logoBase64 ? 75 : 20, 45);
+      })}`, 20, 45);
       
       if (options.startDate || options.endDate) {
         const dateRange = `Date Range: ${options.startDate?.toLocaleDateString() || 'All'} - ${options.endDate?.toLocaleDateString() || 'All'}`;
-        doc.text(dateRange, logoBase64 ? 75 : 20, 55);
+        doc.text(dateRange, 20, 55);
       }
 
       // Add summary if requested
@@ -579,14 +571,9 @@ export class ExportService {
       const primaryBlue = [0, 115, 170];
       const darkGray = [60, 60, 60];
 
-      const logoBase64 = await this.getSimpleSlipsLogoBase64();
-      if (logoBase64) {
-        doc.addImage(logoBase64, 'PNG', 15, 8, 50, 12);
-      }
-
       doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
       doc.setFontSize(20);
-      doc.text('Receipt Export', logoBase64 ? 75 : 20, 20);
+      doc.text('Receipt Export', 20, 20);
 
       doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
       doc.setFontSize(14);

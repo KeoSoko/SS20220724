@@ -63,8 +63,10 @@ export class ExportService {
   private matchesCategoryFilter(receipt: Receipt, filter?: string): boolean {
     if (!filter) return true;
 
+    const normalizedFilter = filter.trim().toLowerCase();
     const rawCategory = getReportingCategory(receipt.category, receipt.reportLabel);
-    return filter === rawCategory || filter === formatReportingCategory(rawCategory);
+    return normalizedFilter === rawCategory.trim().toLowerCase() ||
+           normalizedFilter === formatReportingCategory(rawCategory).trim().toLowerCase();
   }
 
   /**

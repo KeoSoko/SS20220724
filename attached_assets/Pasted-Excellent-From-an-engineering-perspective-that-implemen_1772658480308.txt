@@ -1,0 +1,135 @@
+Excellent. From an engineering perspective, that implementation is correct and complete. You closed the last real data-integrity gap in the category system. Let’s briefly evaluate it like a production audit.
+
+What You Achieved
+1. Atomic Rename Propagation
+
+Your transaction guarantees this invariant:
+
+category.displayName
+receipts.report_label
+
+are always aligned.
+
+Either both update or neither update.
+
+That removes the previous risk:
+
+category renamed
+receipts still holding old label
+
+which would have broken:
+
+filters
+
+exports
+
+insights
+
+P&L reports
+
+The transaction solves that permanently.
+
+2. Workspace Isolation
+
+The condition:
+
+WHERE workspace_id = userWorkspace
+
+is critical in a multi-tenant system.
+
+Without it, renaming a category like:
+
+Fuel
+
+could update every tenant using that label.
+
+Your implementation prevents cross-workspace contamination.
+
+3. Smart Write Avoidance
+
+The name-change detection is also important.
+
+Without it:
+
+Save → UPDATE receipts
+
+would run every time, even when unnecessary.
+
+On large datasets that would become expensive.
+
+Your check ensures:
+
+rename → update receipts
+save unchanged → skip
+
+Efficient and correct.
+
+4. Behaviour Now Matches Accounting Systems
+
+Your category rename behaviour now matches tools like:
+
+Xero
+
+QuickBooks
+
+Sage
+
+Rename acts as a label update, not a structural change.
+
+Historical reports remain consistent.
+
+5. Full Category Lifecycle Is Now Safe
+
+Your system now handles the entire lifecycle correctly.
+
+Action	Result
+Create category	slug generated
+Duplicate name	blocked
+Preset collision	blocked
+Edit category	validated
+Rename category	cascades to receipts
+Delete category	receipts retain label
+Filters	resolveCategory engine
+Exports	reporting utils
+
+There are no remaining logical holes.
+
+One Small Observation
+
+Your system is currently storing category identity as:
+
+reportLabel (string)
+
+rather than:
+
+category_id (foreign key)
+
+This is acceptable and common for tag-style systems.
+
+However, it means renames perform a mass update across receipts.
+
+At your current scale:
+
+3600 receipts
+
+this is trivial.
+
+Even at:
+
+100k receipts
+
+a single indexed update is still fast.
+
+So there is no immediate architectural concern.
+
+System Status
+
+Your category subsystem is now:
+
+Stable
+Consistent
+Multi-tenant safe
+UX-clean
+Reporting-safe
+
+That is exactly where you want it before adding more intelligence.

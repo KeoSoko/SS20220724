@@ -1081,7 +1081,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sanitize notes and reportLabel
       const sanitizedNotes = notes ? sanitizeString(notes, MAX_NOTES_LENGTH) : null;
       const sanitizedReportLabel = reportLabel ? sanitizeString(String(reportLabel), 100).trim() || null : null;
-      
+
+      // Apply merchant category rule if no label was manually provided
+      let effectiveReportLabel = sanitizedReportLabel;
+      if (!effectiveReportLabel && sanitizedStoreName.length > 2 && storage.getMerchantCategoryRule) {
+        try {
+          const [userRow] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
+          if (userRow?.workspaceId) {
+            const rule = await storage.getMerchantCategoryRule(userRow.workspaceId, sanitizedStoreName);
+            if (rule) {
+              effectiveReportLabel = rule.categoryLabel;
+              log(`[merchant-learning] Auto-applied rule: "${sanitizedStoreName}" → "${rule.categoryLabel}"`, 'api');
+            }
+          }
+        } catch (ruleErr) {
+          log(`[merchant-learning] Rule lookup failed (non-fatal): ${ruleErr}`, 'api');
+        }
+      }
+
       // Handle date conversion explicitly to prevent "Invalid time value" errors
       let receiptData;
 
@@ -1092,7 +1109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           total: amountValidation.value!,
           category: categoryValidation.value!,
           notes: sanitizedNotes,
-          reportLabel: sanitizedReportLabel,
+          reportLabel: effectiveReportLabel,
           items: itemsValidation.value!,
           imageData,
           userId,
@@ -1811,6 +1828,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update the receipt
       const updatedReceipt = await storage.updateReceipt(receiptId, updateData);
+
+      // Learn from the edit: save a merchant rule when the user assigns a category label
+      if ('reportLabel' in updateData && storage.upsertMerchantCategoryRule) {
+        const newLabel = updateData.reportLabel as string | null;
+        const oldLabel = existingReceipt.reportLabel;
+        const storeName = (updateData.storeName as string | undefined) || existingReceipt.storeName;
+        if (newLabel && newLabel !== oldLabel && storeName && storeName.length > 2) {
+          try {
+            const [userRow] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
+            if (userRow?.workspaceId) {
+              await storage.upsertMerchantCategoryRule(userRow.workspaceId, storeName, newLabel);
+              log(`[merchant-learning] Rule saved: "${storeName}" → "${newLabel}"`, 'api');
+            }
+          } catch (ruleErr) {
+            log(`[merchant-learning] Rule save failed (non-fatal): ${ruleErr}`, 'api');
+          }
+        }
+      }
+
       res.json(updatedReceipt);
     } catch (error: any) {
       log(`Error updating receipt: ${error}`, "api");

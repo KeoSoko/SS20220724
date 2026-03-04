@@ -37,7 +37,8 @@ import {
   promoCodes,
   emailEvents,
   workspaces,
-  workspaceMembers
+  workspaceMembers,
+  merchantCategoryRules
 } from "@shared/schema";
 
 import { db, pool, initializeDatabase } from "./db";
@@ -1109,6 +1110,44 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("Error deleting custom category:", error);
       throw error;
+    }
+  }
+
+  async getMerchantCategoryRule(workspaceId: number, merchantName: string): Promise<{ categoryLabel: string } | null> {
+    const [rule] = await db
+      .select({ categoryLabel: merchantCategoryRules.categoryLabel })
+      .from(merchantCategoryRules)
+      .where(
+        and(
+          eq(merchantCategoryRules.workspaceId, workspaceId),
+          sql`lower(${merchantCategoryRules.merchantPattern}) = lower(${merchantName})`
+        )
+      )
+      .limit(1);
+    return rule ?? null;
+  }
+
+  async upsertMerchantCategoryRule(workspaceId: number, merchantName: string, categoryLabel: string): Promise<void> {
+    const [existing] = await db
+      .select({ id: merchantCategoryRules.id })
+      .from(merchantCategoryRules)
+      .where(
+        and(
+          eq(merchantCategoryRules.workspaceId, workspaceId),
+          sql`lower(${merchantCategoryRules.merchantPattern}) = lower(${merchantName})`
+        )
+      )
+      .limit(1);
+
+    if (existing) {
+      await db
+        .update(merchantCategoryRules)
+        .set({ categoryLabel, updatedAt: new Date() })
+        .where(eq(merchantCategoryRules.id, existing.id));
+    } else {
+      await db
+        .insert(merchantCategoryRules)
+        .values({ workspaceId, merchantPattern: merchantName, categoryLabel });
     }
   }
 

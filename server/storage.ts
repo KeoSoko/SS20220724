@@ -89,6 +89,10 @@ export interface IStorage {
   createCustomCategory?(insertCustomCategory: any): Promise<any>;
   updateCustomCategory?(id: number, updates: any): Promise<any | undefined>;
   deleteCustomCategory?(id: number): Promise<void>;
+
+  // Merchant category learning rules
+  getMerchantCategoryRule?(workspaceId: number, merchantName: string): Promise<{ categoryLabel: string } | null>;
+  upsertMerchantCategoryRule?(workspaceId: number, merchantName: string, categoryLabel: string): Promise<void>;
   
   // Budget methods
   getBudgets?(userId: number): Promise<any[]>;

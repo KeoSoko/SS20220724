@@ -1109,6 +1109,26 @@ export type InsertUserCorrection = z.infer<typeof insertUserCorrectionSchema>;
 export type MerchantPattern = typeof merchantPatterns.$inferSelect;
 export type InsertMerchantPattern = z.infer<typeof insertMerchantPatternSchema>;
 
+// Merchant category rules — workspace-scoped learning table
+// Stores user corrections: "When I see this merchant, always use this label"
+export const merchantCategoryRules = pgTable("merchant_category_rules", {
+  id: serial("id").primaryKey(),
+  workspaceId: integer("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  merchantPattern: text("merchant_pattern").notNull(),
+  categoryLabel: text("category_label").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertMerchantCategoryRuleSchema = createInsertSchema(merchantCategoryRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type MerchantCategoryRule = typeof merchantCategoryRules.$inferSelect;
+export type InsertMerchantCategoryRule = z.infer<typeof insertMerchantCategoryRuleSchema>;
+
 // ===== BUSINESS HUB SCHEMA =====
 
 // Business profile for invoice/quotation branding

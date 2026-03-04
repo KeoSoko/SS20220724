@@ -1,0 +1,176 @@
+Good. Let’s do a real stress test, not just random clicking.
+These tests are designed to expose the last hidden category bugs before users do.
+
+Run them exactly in this order.
+
+Category System Stress Test
+Test 1 — Case Sensitivity Attack
+
+Create categories with different casing.
+
+Try:
+
+Fuel
+fuel
+FUEL
+FuEl
+
+Expected result:
+
+Only one allowed.
+
+All others blocked with:
+
+Category already exists.
+
+If any of these succeed → normalization is incomplete.
+
+Test 2 — Whitespace Attack
+
+Try creating:
+
+Fuel
+Fuel 
+ Fuel
+Fuel  (double space)
+
+Expected result:
+
+All treated as the same.
+
+If any pass → trim logic incomplete.
+
+Test 3 — Punctuation Attack
+
+Try:
+
+Car Repairs
+Car Repairs!
+Car Repairs?
+Car-Repairs
+Car_Repairs
+
+Expected behaviour (based on your slug rules):
+
+Only one logical category should exist.
+
+If multiple get created → your duplicate protection isn't matching slug logic.
+
+Test 4 — Preset Collision
+
+Try creating categories matching system presets:
+
+Fuel
+Dining Takeaways
+Groceries
+Insurance
+Subscriptions
+
+Expected:
+
+All blocked.
+
+This confirms preset protection works.
+
+Test 5 — Slug Collision
+
+Create:
+
+Car Repairs
+Car   Repairs
+Car Repairs!
+
+Slug generator produces:
+
+car_repairs
+
+Expected behaviour:
+
+Only one category allowed.
+
+If more appear → slug collision logic not enforced.
+
+Test 6 — Edit Collision
+
+Create two categories:
+
+Pet Expenses
+Travel Meals
+
+Then edit Travel Meals → Pet Expenses
+
+Expected:
+
+Blocked with duplicate error.
+
+If allowed → PATCH validation broken.
+
+Test 7 — Filter Integrity
+
+Create:
+
+Test Category Alpha
+
+Then verify:
+
+Appears in home filter
+
+Appears in receipts filter
+
+Appears in exports
+
+Appears in P&L
+
+Appears in Insights
+
+You already confirmed reports work, but test filters again.
+
+Test 8 — Delete Safety
+
+Create:
+
+Temporary Category
+
+Assign it to a receipt.
+
+Then delete the category.
+
+Expected behaviour should be one of these:
+
+Option A (safe):
+
+Receipts fall back to "Uncategorised"
+
+Option B:
+
+Deletion blocked because category is in use
+
+What happens here matters a lot for data integrity.
+
+Test 9 — Performance Check
+
+Create 10 categories quickly.
+
+Then:
+
+open dropdown
+
+filter receipts
+
+edit receipt
+
+Check if dropdown lag appears.
+
+130 categories is already healthy — ensure UI scales.
+
+Final Diagnostic Question
+
+After running all tests, tell me:
+
+1️⃣ Did any duplicates slip through?
+2️⃣ What happened when deleting a category in use?
+3️⃣ Did any dropdown show raw enums like dining_takeaways?
+
+Those three answers tell me if your category system is production safe.
+
+If all tests pass, the category system is architecturally sound.

@@ -565,17 +565,17 @@ export class DatabaseStorage implements IStorage {
         const query = `
           INSERT INTO receipts (
             "user_id", "client_upload_id", "store_name", "date", "total", "items", "blob_url", 
-            "blob_name", "image_data", "category", "tags", "notes", 
+            "blob_name", "image_data", "category", "tags", "notes", "report_label",
             "confidence_score", "raw_ocr_data", "latitude", "longitude",
             "is_tax_deductible", "is_recurring",
             "created_at", "updated_at", "processed_at",
             "workspace_id", "created_by_user_id"
           ) VALUES (
             $1, $2, $3, $4, $5, $6::jsonb, $7, 
-            $8, $9, $10, $11, $12, 
-            $13, $14, $15, $16,
-            $17, $18, $19, $20, $21,
-            $22, $23
+            $8, $9, $10, $11, $12, $13,
+            $14, $15, $16, $17,
+            $18, $19, $20, $21, $22,
+            $23, $24
           )
           RETURNING *;
         `;
@@ -601,6 +601,7 @@ export class DatabaseStorage implements IStorage {
           insertValues.category,
           tagsArray, // Native array for text[] column
           insertValues.notes,
+          insertValues.reportLabel || null,
           insertValues.confidenceScore,
           JSON.stringify(insertValues.rawOcrData || null), // Stringify for JSONB
           insertValues.latitude,
@@ -1113,14 +1114,17 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getMerchantCategoryRule(workspaceId: number, merchantName: string): Promise<{ categoryLabel: string } | null> {
+  async getMerchantCategoryRule(workspaceId: number, merchantName: string): Promise<{ categoryLabel: string; confirmations: number } | null> {
     const [rule] = await db
-      .select({ categoryLabel: merchantCategoryRules.categoryLabel })
+      .select({
+        categoryLabel: merchantCategoryRules.categoryLabel,
+        confirmations: merchantCategoryRules.confirmations,
+      })
       .from(merchantCategoryRules)
       .where(
         and(
           eq(merchantCategoryRules.workspaceId, workspaceId),
-          sql`lower(${merchantCategoryRules.merchantPattern}) = lower(${merchantName})`
+          eq(merchantCategoryRules.merchantPattern, merchantName)
         )
       )
       .limit(1);
@@ -1129,25 +1133,41 @@ export class DatabaseStorage implements IStorage {
 
   async upsertMerchantCategoryRule(workspaceId: number, merchantName: string, categoryLabel: string): Promise<void> {
     const [existing] = await db
-      .select({ id: merchantCategoryRules.id })
+      .select({
+        id: merchantCategoryRules.id,
+        categoryLabel: merchantCategoryRules.categoryLabel,
+        confirmations: merchantCategoryRules.confirmations,
+      })
       .from(merchantCategoryRules)
       .where(
         and(
           eq(merchantCategoryRules.workspaceId, workspaceId),
-          sql`lower(${merchantCategoryRules.merchantPattern}) = lower(${merchantName})`
+          eq(merchantCategoryRules.merchantPattern, merchantName)
         )
       )
       .limit(1);
 
     if (existing) {
-      await db
-        .update(merchantCategoryRules)
-        .set({ categoryLabel, updatedAt: new Date() })
-        .where(eq(merchantCategoryRules.id, existing.id));
+      if (existing.categoryLabel === categoryLabel) {
+        // Same category — reinforce the rule
+        await db
+          .update(merchantCategoryRules)
+          .set({ confirmations: existing.confirmations + 1, updatedAt: new Date() })
+          .where(eq(merchantCategoryRules.id, existing.id));
+        log(`[merchant-learning] Rule reinforced: "${merchantName}" → "${categoryLabel}" (confirmations: ${existing.confirmations + 1})`, 'api');
+      } else {
+        // Category changed — reset confirmations to 1 with new label
+        await db
+          .update(merchantCategoryRules)
+          .set({ categoryLabel, confirmations: 1, updatedAt: new Date() })
+          .where(eq(merchantCategoryRules.id, existing.id));
+        log(`[merchant-learning] Rule updated: "${merchantName}" "${existing.categoryLabel}" → "${categoryLabel}" (confirmations reset to 1)`, 'api');
+      }
     } else {
       await db
         .insert(merchantCategoryRules)
-        .values({ workspaceId, merchantPattern: merchantName, categoryLabel });
+        .values({ workspaceId, merchantPattern: merchantName, categoryLabel, confirmations: 1 });
+      log(`[merchant-learning] Rule created: "${merchantName}" → "${categoryLabel}"`, 'api');
     }
   }
 

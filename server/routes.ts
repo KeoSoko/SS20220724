@@ -64,6 +64,7 @@ import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "
 import { log } from "./vite";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
+import { normalizeMerchantName } from "./utils/merchant-normalizer";
 import { and, asc, eq, gte, lt, lte, ne, sql, isNull, isNotNull } from "drizzle-orm";
 import multer from "multer";
 import { scrypt, timingSafeEqual, randomBytes } from 'crypto';
@@ -1088,10 +1089,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const [userRow] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
           if (userRow?.workspaceId) {
-            const rule = await storage.getMerchantCategoryRule(userRow.workspaceId, sanitizedStoreName);
-            if (rule) {
+            const normalizedMerchant = normalizeMerchantName(sanitizedStoreName);
+            const rule = await storage.getMerchantCategoryRule(userRow.workspaceId, normalizedMerchant);
+            if (rule && rule.confirmations >= 2) {
               effectiveReportLabel = rule.categoryLabel;
-              log(`[merchant-learning] Auto-applied rule: "${sanitizedStoreName}" → "${rule.categoryLabel}"`, 'api');
+              log(`[merchant-learning] Auto-applied rule: "${normalizedMerchant}" → "${rule.categoryLabel}" (confirmations: ${rule.confirmations})`, 'api');
             }
           }
         } catch (ruleErr) {
@@ -1838,8 +1840,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           try {
             const [userRow] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
             if (userRow?.workspaceId) {
-              await storage.upsertMerchantCategoryRule(userRow.workspaceId, storeName, newLabel);
-              log(`[merchant-learning] Rule saved: "${storeName}" → "${newLabel}"`, 'api');
+              const normalizedMerchant = normalizeMerchantName(storeName);
+              await storage.upsertMerchantCategoryRule(userRow.workspaceId, normalizedMerchant, newLabel);
             }
           } catch (ruleErr) {
             log(`[merchant-learning] Rule save failed (non-fatal): ${ruleErr}`, 'api');

@@ -91,7 +91,7 @@ export interface IStorage {
   deleteCustomCategory?(id: number): Promise<void>;
 
   // Merchant category learning rules
-  getMerchantCategoryRule?(workspaceId: number, merchantName: string): Promise<{ categoryLabel: string } | null>;
+  getMerchantCategoryRule?(workspaceId: number, merchantName: string): Promise<{ categoryLabel: string; confirmations: number } | null>;
   upsertMerchantCategoryRule?(workspaceId: number, merchantName: string, categoryLabel: string): Promise<void>;
   
   // Budget methods

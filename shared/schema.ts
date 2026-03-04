@@ -1116,6 +1116,7 @@ export const merchantCategoryRules = pgTable("merchant_category_rules", {
   workspaceId: integer("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   merchantPattern: text("merchant_pattern").notNull(),
   categoryLabel: text("category_label").notNull(),
+  confirmations: integer("confirmations").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

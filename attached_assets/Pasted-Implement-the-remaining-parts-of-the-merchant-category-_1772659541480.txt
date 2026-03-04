@@ -1,0 +1,213 @@
+Implement the remaining parts of the merchant category learning system.
+
+The database table merchant_category_rules already exists.
+
+Fields:
+
+id
+workspace_id
+merchant_pattern
+category_label
+confirmations
+created_at
+updated_at
+1. Add Merchant Normalization Utility
+
+Create file:
+
+server/utils/merchant-normalizer.ts
+
+Add:
+
+export function normalizeMerchantName(name: string): string {
+  if (!name) return "";
+
+  return name
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "")       // remove brackets
+    .replace(/via .*$/i, "")       // remove "via Uber Eats"
+    .replace(/,.*$/g, "")          // remove address suffix
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+This ensures merchant rules match variations like:
+
+"Nando's, Malibongwe Drive (via Uber Eats)"
+"Nando's Fourways"
+
+Both normalize to:
+
+nando's
+2. Rule Lookup During Receipt Processing
+
+In the receipt creation pipeline (after OCR extraction and before AI categorization):
+
+Import:
+
+import { normalizeMerchantName } from "../utils/merchant-normalizer";
+
+Add rule lookup logic:
+
+const normalizedMerchant = normalizeMerchantName(storeName);
+
+const rule = await storage.getMerchantCategoryRule(
+  workspaceId,
+  normalizedMerchant
+);
+
+if (rule && rule.confirmations >= 2) {
+  reportLabel = rule.category_label;
+}
+
+If a rule is applied, skip AI classification.
+
+3. Learn From User Category Corrections
+
+In the receipt update route:
+
+PATCH /api/receipts/:id
+
+After detecting that the category was changed:
+
+Import normalization utility.
+
+Add:
+
+const normalizedMerchant = normalizeMerchantName(receipt.storeName);
+
+await storage.upsertMerchantCategoryRule(
+  workspaceId,
+  normalizedMerchant,
+  newReportLabel
+);
+4. Update Storage Logic
+
+In database-storage.ts, implement:
+
+getMerchantCategoryRule
+async getMerchantCategoryRule(workspaceId: number, merchant: string) {
+  const result = await db
+    .select()
+    .from(merchantCategoryRules)
+    .where(
+      and(
+        eq(merchantCategoryRules.workspaceId, workspaceId),
+        eq(merchantCategoryRules.merchantPattern, merchant)
+      )
+    )
+    .limit(1);
+
+  return result[0];
+}
+upsertMerchantCategoryRule
+
+Logic:
+
+if rule exists:
+    if category matches → confirmations++
+    if category changed → reset confirmations to 1
+else:
+    create rule with confirmations = 1
+
+Example implementation:
+
+async upsertMerchantCategoryRule(workspaceId: number, merchant: string, category: string) {
+
+  const existing = await db
+    .select()
+    .from(merchantCategoryRules)
+    .where(
+      and(
+        eq(merchantCategoryRules.workspaceId, workspaceId),
+        eq(merchantCategoryRules.merchantPattern, merchant)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+
+    const rule = existing[0];
+
+    if (rule.categoryLabel === category) {
+      await db
+        .update(merchantCategoryRules)
+        .set({
+          confirmations: rule.confirmations + 1,
+          updatedAt: new Date()
+        })
+        .where(eq(merchantCategoryRules.id, rule.id));
+    } else {
+      await db
+        .update(merchantCategoryRules)
+        .set({
+          categoryLabel: category,
+          confirmations: 1,
+          updatedAt: new Date()
+        })
+        .where(eq(merchantCategoryRules.id, rule.id));
+    }
+
+  } else {
+
+    await db.insert(merchantCategoryRules).values({
+      workspaceId,
+      merchantPattern: merchant,
+      categoryLabel: category,
+      confirmations: 1
+    });
+
+  }
+}
+5. Logging
+
+Add server log when learning occurs:
+
+Learning rule updated: merchant "shell" → "Fuel"
+
+This helps debugging.
+
+Expected Behaviour
+
+Example flow:
+
+First receipt:
+
+Shell Sandton
+AI → Dining
+User → Fuel
+
+Rule created:
+
+merchant = shell
+category = Fuel
+confirmations = 1
+
+Second correction:
+
+confirmations = 2
+
+Third receipt from Shell:
+
+Auto category → Fuel
+Acceptance Tests
+
+Test with a merchant like:
+
+Shell
+
+Steps:
+
+Upload Shell receipt → AI categorizes.
+
+Change category to Fuel twice.
+
+Upload new Shell receipt.
+
+Expected:
+
+Category automatically set to Fuel
+
+No manual correction required.
+
+After this step, your system will start learning user habits automatically without breaking existing categorization logic.

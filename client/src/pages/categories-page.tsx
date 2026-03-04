@@ -100,11 +100,15 @@ export default function CategoriesPage() {
       }
     },
     onError: (error: Error) => {
-      toast({
-        title: "Failed to create category",
-        description: error.message,
-        variant: "destructive",
-      });
+      if (error.message.includes("Category already exists.")) {
+        form.setError("displayName", { message: "Category already exists." });
+      } else {
+        toast({
+          title: "Failed to create category",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     },
   });
 
@@ -124,11 +128,15 @@ export default function CategoriesPage() {
       });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Failed to update category",
-        description: error.message,
-        variant: "destructive",
-      });
+      if (error.message.includes("Category already exists.")) {
+        form.setError("displayName", { message: "Category already exists." });
+      } else {
+        toast({
+          title: "Failed to update category",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     },
   });
 

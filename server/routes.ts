@@ -1573,14 +1573,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(501).json({ error: "Custom categories not supported in current storage" });
       }
 
-      // Check for duplicate name
-      const existingCategories = await storage.getCustomCategories?.(getUserId(req)) || [];
+      // Check for duplicate name against custom categories and system presets
+      const formatEnumLabel = (value: string) =>
+        value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
       const newName = (validation.data.displayName || validation.data.name || '').trim().toLowerCase();
-      const duplicate = existingCategories.find(
+      const existingCategories = await storage.getCustomCategories?.(getUserId(req)) || [];
+      const customDupe = existingCategories.find(
         (c: any) => (c.displayName || c.name || '').trim().toLowerCase() === newName
       );
-      if (duplicate) {
-        return res.status(409).json({ error: "A category with this name already exists" });
+      const systemDupe = EXPENSE_CATEGORIES.some(
+        (c) => formatEnumLabel(c).trim().toLowerCase() === newName
+      );
+      if (customDupe || systemDupe) {
+        return res.status(400).json({ error: "Category already exists." });
       }
 
       const customCategory = await storage.createCustomCategory(validation.data);
@@ -1611,6 +1616,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!storage.updateCustomCategory) {
         return res.status(501).json({ error: "Custom categories not supported in current storage" });
+      }
+
+      // Check for duplicate name on edit — allow same category, block if name taken by another
+      if (validation.data.displayName || validation.data.name) {
+        const formatEnumLabel = (value: string) =>
+          value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        const newName = (validation.data.displayName || validation.data.name || '').trim().toLowerCase();
+        const existingCategories = await storage.getCustomCategories?.(getUserId(req)) || [];
+        const customDupe = existingCategories.find(
+          (c: any) => (c.displayName || c.name || '').trim().toLowerCase() === newName && c.id !== categoryId
+        );
+        const systemDupe = EXPENSE_CATEGORIES.some(
+          (c) => formatEnumLabel(c).trim().toLowerCase() === newName
+        );
+        if (customDupe || systemDupe) {
+          return res.status(400).json({ error: "Category already exists." });
+        }
       }
 
       const updatedCategory = await storage.updateCustomCategory(categoryId, validation.data);

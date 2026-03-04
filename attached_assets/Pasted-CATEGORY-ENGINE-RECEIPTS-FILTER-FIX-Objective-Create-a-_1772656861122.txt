@@ -1,0 +1,196 @@
+CATEGORY ENGINE + RECEIPTS FILTER FIX
+Objective
+
+Create a single category utility layer used across the frontend.
+
+Fix the receipts page filter so it:
+
+shows custom categories
+
+displays human-readable labels
+
+Remove duplicated category logic from UI components.
+
+Do not modify:
+
+server/*
+shared/schema.ts
+database structure
+
+Frontend only.
+
+1️⃣ Create Category Engine
+
+Create a new file:
+
+client/src/utils/category-engine.ts
+
+Add exactly:
+
+export function resolveCategory(
+  category?: string | null,
+  reportLabel?: string | null
+): string {
+  return reportLabel?.trim() || category || "other";
+}
+
+export function formatCategoryLabel(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function normalizeCategory(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+2️⃣ Update EnhancedReceiptCard
+
+Open:
+
+client/src/components/ui/enhanced-components.tsx
+
+Replace any category rendering with:
+
+import { resolveCategory, formatCategoryLabel } from "@/utils/category-engine";
+
+Update the badge:
+
+{formatCategoryLabel(resolveCategory(receipt.category, receipt.reportLabel))}
+
+Remove any old helpers like:
+
+getReceiptCategoryLabel
+replace(/_/g," ")
+manual capitalization
+3️⃣ Fix Receipts Page Filter Logic
+
+Open:
+
+client/src/pages/receipts-page.tsx
+
+Add:
+
+import {
+  resolveCategory,
+  normalizeCategory
+} from "@/utils/category-engine";
+Replace category filtering logic with:
+const resolvedCategory = resolveCategory(receipt.category, receipt.reportLabel);
+
+if (categoryFilter !== "all") {
+  matchesCategory =
+    normalizeCategory(resolvedCategory) === normalizeCategory(categoryFilter);
+}
+4️⃣ Fix Receipts Filter Dropdown (Bug #1)
+
+Still in:
+
+receipts-page.tsx
+
+Add the same merge logic used in the receipt edit screen.
+
+Ensure the dropdown categories are built like this:
+
+const allCustomLabels = Array.from(
+  new Set([
+    ...customCategories.map((c: any) => c.displayName),
+    ...reportLabels
+  ])
+).sort();
+
+Then render the dropdown as:
+
+System categories
++
+Custom categories
+
+Example:
+
+{EXPENSE_CATEGORIES.map((cat) => (
+  <SelectItem key={cat} value={cat}>
+    {formatCategoryLabel(cat)}
+  </SelectItem>
+))}
+
+{allCustomLabels.map((label) => (
+  <SelectItem key={label} value={label}>
+    {label}
+  </SelectItem>
+))}
+5️⃣ Fix Raw Enum Labels (Bug #2)
+
+Anywhere the UI currently renders:
+
+dining_takeaways
+
+Replace with:
+
+formatCategoryLabel(cat)
+
+Never display enum values directly.
+
+6️⃣ Ensure Filters Work With Custom Categories
+
+Filter comparisons must use resolved categories:
+
+resolveCategory(receipt.category, receipt.reportLabel)
+
+Never compare directly with:
+
+receipt.category
+7️⃣ Acceptance Tests
+
+Verify:
+
+Custom category filtering
+Create: "Pet Expenses"
+Assign to receipt
+Filter receipts → Pet Expenses
+Receipt appears
+Enum formatting
+
+Dropdown shows:
+
+Dining Takeaways
+Fuel
+Insurance
+
+NOT:
+
+dining_takeaways
+Mixed filter
+
+Works for both:
+
+Fuel
+Pet Expenses
+Badge display
+
+Cards show:
+
+Car Expenses
+Dining Takeaways
+
+Never slugs.
+
+Expected Result
+Area	Behaviour
+Home page filter	works
+Receipts filter	works
+Custom categories	visible
+Enum labels	formatted
+Badge labels	correct
+Exports	unchanged
+Result
+
+Your category system now has one single logic layer for:
+
+category resolution
+label formatting
+filter normalization
+
+This prevents future UI inconsistencies.

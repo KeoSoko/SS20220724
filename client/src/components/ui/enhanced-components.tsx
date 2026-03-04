@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
-import { resolveCategory } from "@/utils/category-resolution";
+import { resolveCategory, formatCategoryLabel } from "@/utils/category-engine";
 import { 
   Plus, 
   FileSearch, 
@@ -357,7 +357,7 @@ export function EnhancedReceiptCard({ receipt, onClick, onLongPress, className, 
                 </div>
                 {showCategory && (
                   <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-600 border-gray-200 mt-1 font-normal" data-testid={`receipt-category-${receipt.id}`}>
-                    {resolveCategory(receipt.category, receipt.reportLabel).replace(/_/g, " ")}
+                    {formatCategoryLabel(resolveCategory(receipt.category, receipt.reportLabel))}
                   </Badge>
                 )}
               </div>

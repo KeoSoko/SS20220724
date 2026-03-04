@@ -12,7 +12,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { EnhancedReceiptCard, SpacingContainer, EnhancedEmptyState } from '@/components/ui/enhanced-components';
-import { resolveCategory } from '@/utils/category-resolution';
+import { resolveCategory, formatCategoryLabel, normalizeCategory } from '@/utils/category-engine';
+import { EXPENSE_CATEGORIES as SCHEMA_EXPENSE_CATEGORIES } from '@shared/schema';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -28,11 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const EXPENSE_CATEGORIES = [
-  'food', 'groceries', 'dining', 'transportation', 'entertainment', 
-  'utilities', 'rent', 'travel', 'healthcare', 'education', 'shopping', 
-  'office_supplies', 'personal_care', 'gifts', 'other'
-];
+const EXPENSE_CATEGORIES = SCHEMA_EXPENSE_CATEGORIES;
 
 type ReceiptListItem = {
   id: number;
@@ -83,6 +80,25 @@ export default function ReceiptsPage() {
   const { data: receipts = [], isLoading, error } = useQuery<ReceiptListItem[]>({
     queryKey: ['/api/receipts', { limit: 100, offset: 0 }],
   });
+
+  // Fetch custom categories for filter dropdown
+  const { data: customCategories = [] } = useQuery<any[]>({
+    queryKey: ['/api/custom-categories'],
+  });
+
+  // Fetch report labels (custom labels used on receipts) for filter dropdown
+  const { data: reportLabelsData } = useQuery<{ reportLabels: string[] }>({
+    queryKey: ['/api/receipts/report-labels'],
+  });
+
+  // Merged sorted list of all custom/label-based filter options
+  const allCustomLabels = useMemo(() => {
+    const customNames = customCategories.map((c: any) => c.displayName);
+    const labels = reportLabelsData?.reportLabels ?? [];
+    return Array.from(new Set([...customNames, ...labels])).sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [customCategories, reportLabelsData]);
 
   // Get unique vendors from receipts for dropdown
   const uniqueVendors = useMemo(() => {
@@ -140,11 +156,10 @@ export default function ReceiptsPage() {
     // Category filter
     let matchesCategory = true;
     const resolvedCategory = resolveCategory(receipt.category, receipt.reportLabel);
-    const normalizedFilter = categoryFilter.toLowerCase().replace(/[_-]/g, ' ').trim();
     if (categoryFilter === 'uncategorized') {
       matchesCategory = !receipt.reportLabel && (!receipt.category || receipt.category === 'other');
     } else if (categoryFilter !== 'all') {
-      matchesCategory = resolvedCategory.toLowerCase().replace(/[_-]/g, ' ').trim() === normalizedFilter;
+      matchesCategory = normalizeCategory(resolvedCategory) === normalizeCategory(categoryFilter);
     }
     
     // Needs Review filter (confidence < 80%)
@@ -470,7 +485,12 @@ export default function ReceiptsPage() {
                     <SelectItem value="uncategorized">Uncategorized</SelectItem>
                     {EXPENSE_CATEGORIES.map((cat) => (
                       <SelectItem key={cat} value={cat}>
-                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                        {formatCategoryLabel(cat)}
+                      </SelectItem>
+                    ))}
+                    {allCustomLabels.map((label) => (
+                      <SelectItem key={label} value={label}>
+                        {label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -887,7 +907,7 @@ export default function ReceiptsPage() {
                 <SelectContent>
                   {EXPENSE_CATEGORIES.map((cat) => (
                     <SelectItem key={cat} value={cat}>
-                      {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                      {formatCategoryLabel(cat)}
                     </SelectItem>
                   ))}
                 </SelectContent>

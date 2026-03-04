@@ -1573,6 +1573,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(501).json({ error: "Custom categories not supported in current storage" });
       }
 
+      // Check for duplicate name
+      const existingCategories = await storage.getCustomCategories?.(getUserId(req)) || [];
+      const newName = (validation.data.displayName || validation.data.name || '').trim().toLowerCase();
+      const duplicate = existingCategories.find(
+        (c: any) => (c.displayName || c.name || '').trim().toLowerCase() === newName
+      );
+      if (duplicate) {
+        return res.status(409).json({ error: "A category with this name already exists" });
+      }
+
       const customCategory = await storage.createCustomCategory(validation.data);
       log(`Created custom category: ${customCategory.displayName}`, "api");
       res.status(201).json(customCategory);

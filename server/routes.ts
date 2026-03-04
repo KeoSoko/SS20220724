@@ -40,7 +40,8 @@ import {
   workspaceMembers,
   workspaceInvites,
   subscriptionPlans,
-  emailDocuments
+  emailDocuments,
+  customCategories as customCategoriesTable
 } from "@shared/schema";
 import { azureStorage } from "./azure-storage";
 import { azureFormRecognizer } from "./azure-form-recognizer";
@@ -1635,12 +1636,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const updatedCategory = await storage.updateCustomCategory(categoryId, validation.data);
+      // Fetch the existing category to capture the old display name before update
+      const [existingCategory] = await db
+        .select({ displayName: customCategoriesTable.displayName })
+        .from(customCategoriesTable)
+        .where(eq(customCategoriesTable.id, categoryId))
+        .limit(1);
+
+      if (!existingCategory) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+
+      const oldDisplayName = existingCategory.displayName.trim();
+      const newDisplayName = (validation.data.displayName || '').trim();
+      const nameChanged =
+        newDisplayName &&
+        oldDisplayName.toLowerCase() !== newDisplayName.toLowerCase();
+
+      // Get workspace ID for scoped receipt update
+      const userId = getUserId(req);
+      const [userRow] = await db
+        .select({ workspaceId: users.workspaceId })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      const workspaceId = userRow?.workspaceId;
+
+      // Run category update + receipt propagation in a single transaction
+      let updatedCategory: any;
+      await db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(customCategoriesTable)
+          .set({ ...validation.data, updatedAt: new Date() })
+          .where(eq(customCategoriesTable.id, categoryId))
+          .returning();
+        updatedCategory = updated;
+
+        if (nameChanged && workspaceId) {
+          await tx
+            .update(receipts)
+            .set({ reportLabel: newDisplayName })
+            .where(
+              and(
+                eq(receipts.reportLabel, oldDisplayName),
+                eq(receipts.workspaceId, workspaceId)
+              )
+            );
+        }
+      });
+
       if (!updatedCategory) {
         return res.status(404).json({ error: "Category not found" });
       }
 
-      log(`Updated custom category: ${updatedCategory.displayName}`, "api");
+      log(
+        nameChanged
+          ? `Renamed custom category "${oldDisplayName}" → "${newDisplayName}" and propagated to receipts`
+          : `Updated custom category: ${updatedCategory.displayName}`,
+        "api"
+      );
       res.json(updatedCategory);
     } catch (error) {
       log(`Error updating custom category: ${error}`, "api");

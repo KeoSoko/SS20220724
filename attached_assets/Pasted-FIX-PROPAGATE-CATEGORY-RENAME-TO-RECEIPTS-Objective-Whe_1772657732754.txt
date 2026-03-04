@@ -1,0 +1,184 @@
+FIX: PROPAGATE CATEGORY RENAME TO RECEIPTS
+Objective
+
+When a custom category is renamed, update all receipts in the same workspace that currently use the old label so they reflect the new label. This prevents orphaned labels and keeps filters, reports, and exports consistent.
+
+Rules
+
+Only run this logic when the display name actually changes.
+
+Scope updates to the user’s workspace.
+
+Perform both updates inside a single database transaction.
+
+Do not change behaviour for deletes (soft delete remains unchanged).
+
+1️⃣ Update PATCH /api/custom-categories/:id
+
+Open:
+
+server/routes.ts
+
+Locate the route handling PATCH /api/custom-categories/:id.
+
+Modify it so the rename and receipt update happen in a transaction.
+
+Replace the update logic with:
+app.patch("/api/custom-categories/:id", async (req, res) => {
+  if (!isAuthenticated(req)) return res.sendStatus(401);
+
+  try {
+    const categoryId = parseInt(req.params.id);
+    const userId = getUserId(req);
+
+    const existing = await storage.getCustomCategory(categoryId);
+    if (!existing) return res.status(404).json({ error: "Category not found" });
+
+    const oldDisplayName = existing.displayName;
+    const newDisplayName = req.body.displayName?.trim();
+
+    // Skip if no actual rename
+    const nameChanged =
+      newDisplayName &&
+      oldDisplayName.trim().toLowerCase() !== newDisplayName.toLowerCase();
+
+    const workspaceId = await storage.getUserWorkspaceId(userId);
+
+    await db.transaction(async (tx) => {
+
+      // Update category itself
+      const [updatedCategory] = await tx
+        .update(customCategories)
+        .set({
+          ...req.body,
+          updatedAt: new Date()
+        })
+        .where(eq(customCategories.id, categoryId))
+        .returning();
+
+      // If the display name changed, propagate to receipts
+      if (nameChanged) {
+        await tx.execute(sql`
+          UPDATE receipts
+          SET report_label = ${newDisplayName}
+          WHERE report_label = ${oldDisplayName}
+          AND workspace_id = ${workspaceId}
+        `);
+      }
+
+      res.json(updatedCategory);
+    });
+
+  } catch (error) {
+    log(`Error updating custom category: ${error}`, "api");
+    res.status(500).json({ error: "Failed to update category" });
+  }
+});
+2️⃣ Do NOT modify these areas
+
+Leave these unchanged:
+
+server/export-service.ts
+server/reporting-utils.ts
+shared/schema.ts
+
+They already resolve categories correctly.
+
+3️⃣ Expected Behaviour After Fix
+
+Example:
+
+Before rename:
+
+Category: "Fuel"
+Receipts:
+Fuel
+Fuel
+Fuel
+
+Rename:
+
+Fuel → Vehicle Costs
+
+Result:
+
+Receipts:
+Vehicle Costs
+Vehicle Costs
+Vehicle Costs
+
+Everything stays aligned:
+
+filters
+
+exports
+
+P&L
+
+insights
+
+dashboards
+
+4️⃣ Safety Checks
+
+Ensure the update query includes:
+
+workspace_id
+
+This prevents cross-workspace updates.
+
+5️⃣ Acceptance Tests
+
+Run these after implementation:
+
+Test Rename
+
+Create category:
+
+Fuel
+
+Assign it to 3 receipts.
+
+Rename to:
+
+Vehicle Costs
+
+Expected:
+
+All 3 receipts now show Vehicle Costs.
+
+Test No Change
+
+Rename:
+
+Vehicle Costs → Vehicle Costs
+
+Expected:
+
+No receipt update triggered.
+
+Test Workspace Isolation
+
+Two workspaces both using:
+
+Fuel
+
+Rename in workspace A.
+
+Expected:
+
+Workspace B receipts unchanged.
+
+Result
+
+Category rename now behaves like professional accounting systems:
+
+Clean
+
+Predictable
+
+Data-consistent
+
+Report-safe
+
+After this is implemented, your category system will be fully stable.

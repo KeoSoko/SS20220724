@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Download, FileText, Receipt, Calendar, CalendarRange, Archive } from 'lucide-react';
+import React, { useState, useRef, useCallback } from 'react';
+import { Download, FileText, Receipt, Calendar, CalendarRange, Archive, Eye } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { EXPENSE_CATEGORIES } from '@shared/schema';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PageLayout } from '@/components/page-layout';
 import { Section } from '@/components/design-system';
 import { useToast } from '@/hooks/use-toast';
@@ -20,6 +21,14 @@ const formatCategoryLabel = (slug: string) =>
 export default function ExportsPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportType, setExportType] = useState<string>('');
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [previewType, setPreviewType] = useState<string>('');
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState<string>('');
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const prevBlobUrlRef = useRef<string | null>(null);
+
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [category, setCategory] = useState<string>('');
@@ -30,10 +39,121 @@ export default function ExportsPage() {
   const [allowAllTimeExport, setAllowAllTimeExport] = useState(false);
   const { toast } = useToast();
   const isMobile = useIsMobile();
-  
+
   const { data: customCategories = [] } = useQuery<{ id: number; name: string; displayName?: string }[]>({
     queryKey: ['/api/custom-categories'],
   });
+
+  const closePreview = useCallback(() => {
+    setIsPreviewOpen(false);
+    if (prevBlobUrlRef.current) {
+      URL.revokeObjectURL(prevBlobUrlRef.current);
+      prevBlobUrlRef.current = null;
+    }
+    setPreviewUrl(null);
+    setPreviewBlob(null);
+    setPreviewTitle('');
+  }, []);
+
+  const buildPdfParams = (type: 'pdf' | 'tax-report') => {
+    const params = new URLSearchParams({
+      ...(type === 'pdf' && { includeImages: includeImages.toString() }),
+      ...(type === 'pdf' && { includeSummary: includeSummary.toString() }),
+      ...(type === 'pdf' && { groupBy: groupByCategory ? 'category' : 'date' }),
+      ...(startDate && { startDate }),
+      ...(endDate && { endDate }),
+      ...(category && category !== 'all' && { category }),
+    });
+    const url = type === 'tax-report'
+      ? `/api/export/tax-report/${new Date().getFullYear()}?${params.toString()}`
+      : `/api/export/pdf?${params.toString()}`;
+    return url;
+  };
+
+  const validateDateRange = () => {
+    if (!startDate && !endDate && !allowAllTimeExport) {
+      toast({
+        title: "Select a date range",
+        description: "Please choose a start date, end date, or enable all-time export.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    return true;
+  };
+
+  const fetchPdf = async (url: string): Promise<Blob | null> => {
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+      toast({ title: "Authentication required", description: "Please log in again.", variant: "destructive" });
+      return null;
+    }
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        try {
+          const errorData = await response.json();
+          if (errorData.error === 'email_verification_required') {
+            dispatchVerificationRequiredEvent(errorData.userEmail);
+            return null;
+          }
+        } catch {}
+      }
+      const errorText = await response.text();
+      throw new Error(`Request failed: ${response.status} - ${errorText}`);
+    }
+    return response.blob();
+  };
+
+  const handlePreview = async (type: 'pdf' | 'tax-report') => {
+    if (!validateDateRange()) return;
+
+    setIsPreviewing(true);
+    setPreviewType(type);
+
+    try {
+      const url = buildPdfParams(type);
+      const blob = await fetchPdf(url);
+      if (!blob) return;
+
+      if (prevBlobUrlRef.current) {
+        URL.revokeObjectURL(prevBlobUrlRef.current);
+      }
+      const blobUrl = URL.createObjectURL(blob);
+      prevBlobUrlRef.current = blobUrl;
+
+      setPreviewBlob(blob);
+      setPreviewUrl(blobUrl);
+      setPreviewTitle(type === 'tax-report' ? `Tax Report ${new Date().getFullYear()}` : 'Receipts Report');
+      setIsPreviewOpen(true);
+    } catch (error) {
+      toast({
+        title: "Preview failed",
+        description: "There was an error generating the preview. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPreviewing(false);
+      setPreviewType('');
+    }
+  };
+
+  const handleDownloadFromPreview = () => {
+    if (!previewBlob) return;
+    const dateRange = startDate && endDate ? `${startDate}-to-${endDate}` :
+                     startDate ? `from-${startDate}` :
+                     endDate ? `until-${endDate}` : 'all-dates';
+    const filename = previewTitle.toLowerCase().includes('tax')
+      ? `tax-report-${dateRange}.pdf`
+      : `receipts-${dateRange}.pdf`;
+    const link = document.createElement('a');
+    link.href = prevBlobUrlRef.current!;
+    link.download = filename;
+    link.click();
+  };
 
   const handleExport = async (type: 'backup') => {
     setIsExporting(true);
@@ -50,9 +170,7 @@ export default function ExportsPage() {
 
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
 
       if (response.ok) {
@@ -62,24 +180,19 @@ export default function ExportsPage() {
         link.download = filename;
         link.click();
         window.URL.revokeObjectURL(link.href);
-        
         toast({
           title: "Export Successful",
           description: `Your ${type.replace('-', ' ')} has been downloaded.`,
         });
       } else {
-        // Check for email verification required error (403)
         if (response.status === 403) {
           try {
             const errorData = await response.json();
             if (errorData.error === 'email_verification_required') {
-              // Dispatch event to show verification dialog, don't show toast
               dispatchVerificationRequiredEvent(errorData.userEmail);
               return;
             }
-          } catch {
-            // If JSON parsing fails, fall through to generic error
-          }
+          } catch {}
         }
         const errorText = await response.text();
         throw new Error(`Export failed: ${response.status} - ${errorText}`);
@@ -97,83 +210,46 @@ export default function ExportsPage() {
   };
 
   const handleDateRangeExport = async (type: 'csv' | 'pdf' | 'tax-report') => {
-    if (!startDate && !endDate && !allowAllTimeExport) {
-      toast({
-        title: "Select a date range",
-        description: "Please choose a start date, end date, or enable all-time export.",
-        variant: "destructive",
-      });
-      return;
-    }
+    if (!validateDateRange()) return;
 
     setIsExporting(true);
     setExportType(type === 'csv' ? 'date-range-csv' : type === 'tax-report' ? 'date-range-tax' : 'date-range-pdf');
 
     try {
-      const params = new URLSearchParams({
-        ...(type === 'pdf' && { includeImages: includeImages.toString() }),
-        ...(type === 'pdf' && { includeSummary: includeSummary.toString() }),
-        ...(type === 'pdf' && { groupBy: groupByCategory ? 'category' : 'date' }),
-        ...(startDate && { startDate }),
-        ...(endDate && { endDate }),
-        ...(category && category !== 'all' && { category })
-      });
-
-      const dateRange = startDate && endDate ? `${startDate}-to-${endDate}` : 
+      const dateRange = startDate && endDate ? `${startDate}-to-${endDate}` :
                        startDate ? `from-${startDate}` :
                        endDate ? `until-${endDate}` : 'all-dates';
-      const url = type === 'csv'
-        ? `/api/export/csv?${params.toString()}`
-        : type === 'tax-report'
-          ? `/api/export/tax-report/${new Date().getFullYear()}?${params.toString()}`
-          : `/api/export/pdf?${params.toString()}`;
-      const filename = type === 'csv'
-        ? `receipts-${dateRange}.csv`
-        : type === 'tax-report'
-          ? `tax-report-${dateRange}.pdf`
-          : `receipts-${dateRange}.pdf`;
 
-      const token = localStorage.getItem('auth_token');
-      if (!token) {
-        throw new Error('Authentication required. Please log in again.');
-      }
+      let url: string;
+      let filename: string;
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const link = document.createElement('a');
-        link.href = window.URL.createObjectURL(blob);
-        link.download = filename;
-        link.click();
-        window.URL.revokeObjectURL(link.href);
-        
-        toast({
-          title: "Export Successful",
-          description: `Your ${type.replace('-', ' ')} report has been downloaded.`,
+      if (type === 'csv') {
+        const params = new URLSearchParams({
+          ...(startDate && { startDate }),
+          ...(endDate && { endDate }),
+          ...(category && category !== 'all' && { category }),
         });
+        url = `/api/export/csv?${params.toString()}`;
+        filename = `receipts-${dateRange}.csv`;
       } else {
-        // Check for email verification required error (403)
-        if (response.status === 403) {
-          try {
-            const errorData = await response.json();
-            if (errorData.error === 'email_verification_required') {
-              // Dispatch event to show verification dialog, don't show toast
-              dispatchVerificationRequiredEvent(errorData.userEmail);
-              return;
-            }
-          } catch {
-            // If JSON parsing fails, fall through to generic error
-          }
-        }
-        const errorText = await response.text();
-        throw new Error(`Export failed: ${response.status} - ${errorText}`);
+        url = buildPdfParams(type);
+        filename = type === 'tax-report' ? `tax-report-${dateRange}.pdf` : `receipts-${dateRange}.pdf`;
       }
+
+      const blob = await fetchPdf(url);
+      if (!blob) return;
+
+      const link = document.createElement('a');
+      const objUrl = window.URL.createObjectURL(blob);
+      link.href = objUrl;
+      link.download = filename;
+      link.click();
+      window.URL.revokeObjectURL(objUrl);
+
+      toast({
+        title: "Export Successful",
+        description: `Your ${type.replace('-', ' ')} report has been downloaded.`,
+      });
     } catch (error) {
       toast({
         title: "Export failed",
@@ -197,8 +273,10 @@ export default function ExportsPage() {
     },
   ];
 
+  const busy = isExporting || isPreviewing;
+
   return (
-    <PageLayout 
+    <PageLayout
       title="Export & Reports"
       subtitle="Download your receipt data in various formats"
       showBackButton={true}
@@ -212,9 +290,9 @@ export default function ExportsPage() {
                 <CalendarRange className="h-6 w-6 text-indigo-600" />
               </div>
               Custom Reports (Date Range)
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowDateRangeExport(!showDateRangeExport)}
                 className="ml-auto"
               >
@@ -230,24 +308,24 @@ export default function ExportsPage() {
               <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <Label htmlFor="start-date">Start Date</Label>
-                  <Input 
+                  <Input
                     id="start-date"
-                    type="date" 
+                    type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                   />
                 </div>
                 <div>
                   <Label htmlFor="end-date">End Date</Label>
-                  <Input 
+                  <Input
                     id="end-date"
-                    type="date" 
+                    type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                   />
                 </div>
               </div>
-              
+
               <div>
                 <Label htmlFor="category-filter">Category Filter (Optional)</Label>
                 <Select value={category} onValueChange={setCategory}>
@@ -276,7 +354,7 @@ export default function ExportsPage() {
 
               <div className="space-y-3">
                 <div className="flex items-center space-x-2">
-                  <Checkbox 
+                  <Checkbox
                     id="include-summary"
                     checked={includeSummary}
                     onCheckedChange={(checked) => setIncludeSummary(checked === true)}
@@ -284,7 +362,7 @@ export default function ExportsPage() {
                   <Label htmlFor="include-summary">Include summary and totals (PDF only)</Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Checkbox 
+                  <Checkbox
                     id="include-images"
                     checked={includeImages}
                     onCheckedChange={(checked) => setIncludeImages(checked === true)}
@@ -292,7 +370,7 @@ export default function ExportsPage() {
                   <Label htmlFor="include-images">Include receipt images (PDF only)</Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Checkbox 
+                  <Checkbox
                     id="group-by-category"
                     checked={groupByCategory}
                     onCheckedChange={(checked) => setGroupByCategory(checked === true)}
@@ -300,7 +378,7 @@ export default function ExportsPage() {
                   <Label htmlFor="group-by-category">Group receipts by category (PDF only)</Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Checkbox 
+                  <Checkbox
                     id="allow-all-time"
                     checked={allowAllTimeExport}
                     onCheckedChange={(checked) => setAllowAllTimeExport(checked === true)}
@@ -309,29 +387,104 @@ export default function ExportsPage() {
                 </div>
               </div>
 
-              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
-                <Button 
-                  onClick={() => handleDateRangeExport('pdf')}
-                  disabled={isExporting}
-                  size={isMobile ? "lg" : "default"}
-                >
-                  {isExporting && exportType === 'date-range-pdf' ? (
-                    <>
-                      <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-white border-t-transparent" />
-                      Generating PDF...
-                    </>
-                  ) : (
-                    <>
-                      <FileText className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </>
-                  )}
-                </Button>
-                <Button 
+              {/* PDF Report row */}
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Receipts PDF</p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePreview('pdf')}
+                    disabled={busy}
+                    size={isMobile ? "lg" : "default"}
+                    className="flex-1"
+                  >
+                    {isPreviewing && previewType === 'pdf' ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-gray-500 border-t-transparent" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-4 w-4 mr-2" />
+                        Preview
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={() => handleDateRangeExport('pdf')}
+                    disabled={busy}
+                    size={isMobile ? "lg" : "default"}
+                    className="flex-1"
+                  >
+                    {isExporting && exportType === 'date-range-pdf' ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-white border-t-transparent" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="h-4 w-4 mr-2" />
+                        Download PDF
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Tax Report row */}
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Tax Report</p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePreview('tax-report')}
+                    disabled={busy}
+                    size={isMobile ? "lg" : "default"}
+                    className="flex-1"
+                  >
+                    {isPreviewing && previewType === 'tax-report' ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-gray-500 border-t-transparent" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-4 w-4 mr-2" />
+                        Preview
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => handleDateRangeExport('tax-report')}
+                    disabled={busy}
+                    size={isMobile ? "lg" : "default"}
+                    className="flex-1"
+                  >
+                    {isExporting && exportType === 'date-range-tax' ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-white border-t-transparent" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Calendar className="h-4 w-4 mr-2" />
+                        Download Tax PDF
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* CSV row */}
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">CSV Spreadsheet</p>
+                <Button
                   variant="outline"
                   onClick={() => handleDateRangeExport('csv')}
-                  disabled={isExporting}
+                  disabled={busy}
                   size={isMobile ? "lg" : "default"}
+                  className="w-full"
                 >
                   {isExporting && exportType === 'date-range-csv' ? (
                     <>
@@ -342,24 +495,6 @@ export default function ExportsPage() {
                     <>
                       <Download className="h-4 w-4 mr-2" />
                       Download CSV
-                    </>
-                  )}
-                </Button>
-                <Button 
-                  variant="secondary"
-                  onClick={() => handleDateRangeExport('tax-report')}
-                  disabled={isExporting}
-                  size={isMobile ? "lg" : "default"}
-                >
-                  {isExporting && exportType === 'date-range-tax' ? (
-                    <>
-                      <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-white border-t-transparent" />
-                      Generating Tax...
-                    </>
-                  ) : (
-                    <>
-                      <Calendar className="h-4 w-4 mr-2" />
-                      Download Tax PDF
                     </>
                   )}
                 </Button>
@@ -383,9 +518,9 @@ export default function ExportsPage() {
                 <p className="text-sm text-muted-foreground">
                   {option.description}
                 </p>
-                <Button 
+                <Button
                   onClick={() => handleExport(option.type)}
-                  disabled={isExporting}
+                  disabled={busy}
                   className="w-full"
                   size={isMobile ? "lg" : "default"}
                 >
@@ -406,6 +541,33 @@ export default function ExportsPage() {
           ))}
         </div>
       </Section>
+
+      {/* PDF Preview Modal */}
+      <Dialog open={isPreviewOpen} onOpenChange={(open) => { if (!open) closePreview(); }}>
+        <DialogContent className="max-w-5xl w-full h-[90vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="flex flex-row items-center justify-between px-6 py-4 border-b shrink-0">
+            <DialogTitle>{previewTitle}</DialogTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadFromPreview}
+              className="ml-auto mr-8"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download
+            </Button>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            {previewUrl && (
+              <iframe
+                src={previewUrl}
+                className="w-full h-full border-0"
+                title={previewTitle}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </PageLayout>
   );
 }

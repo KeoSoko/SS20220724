@@ -183,10 +183,11 @@ async function handlePaystackSubscriptionDisable(data: any) {
     // Mark as cancelled but keep access until next_billing_date (user already paid for this period)
     const subscription = await billingService.getUserSubscription(user.id);
     if (subscription && subscription.nextBillingDate && new Date(subscription.nextBillingDate) > new Date()) {
-      await storage.updateUserSubscription(subscription.id, {
-        cancelledAt: new Date(),
-        updatedAt: new Date(),
-      });
+      if (storage.updateUserSubscription) {
+        await storage.updateUserSubscription(subscription.id, {
+          cancelledAt: new Date(),
+        });
+      }
       log(`Subscription marked as cancelled for user ${user.id} - access continues until ${subscription.nextBillingDate}${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
       
       await billingService.recordBillingEvent(user.id, 'subscription_disable_graceful', {
@@ -223,10 +224,11 @@ async function handlePaystackSubscriptionNotRenew(data: any) {
     // User cancelled - mark cancelledAt but keep status active until billing period ends
     const subscription = await billingService.getUserSubscription(user.id);
     if (subscription) {
-      await storage.updateUserSubscription(subscription.id, {
-        cancelledAt: new Date(),
-        updatedAt: new Date(),
-      });
+      if (storage.updateUserSubscription) {
+        await storage.updateUserSubscription(subscription.id, {
+          cancelledAt: new Date(),
+        });
+      }
       log(`Subscription set to not renew for user ${user.id} (${user.username}) - access until ${subscription.nextBillingDate}${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
       
       await billingService.recordBillingEvent(user.id, 'subscription_not_renewing', {

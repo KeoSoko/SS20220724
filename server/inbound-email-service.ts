@@ -520,11 +520,13 @@ Only return valid JSON, no markdown or explanation.`
       log(`[createReceipt] Preview image failed: ${previewError.message}`, 'inbound-email');
     }
 
+    const itemObjects = (params.items || []).map(name => ({ name, price: '' }));
+
     let category = 'other';
     try {
       const categorization = await aiCategorizationService.categorizeReceipt(
         params.storeName,
-        params.items,
+        itemObjects,
         params.total
       );
       category = categorization.category;
@@ -551,7 +553,7 @@ Only return valid JSON, no markdown or explanation.`
         storeName: params.storeName,
         date: receiptDate,
         total: params.total,
-        items: params.items,
+        items: itemObjects,
         category: category as any,
         confidenceScore: Math.round(params.confidence * 100).toString(),
         blobUrl,

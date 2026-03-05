@@ -1,0 +1,100 @@
+What your delete flow now does
+
+When a custom category is deleted:
+
+The system retrieves the category name and workspace.
+
+Merchant learning rules pointing to that category are removed.
+
+The category itself is soft-deleted (isActive = false).
+
+All steps run in one transaction, so partial states cannot occur.
+
+Resulting data behavior
+Historical receipts
+
+Existing receipts retain their stored label.
+
+Example:
+
+receipt_id | report_label
+-----------|--------------
+4211       | Home Repairs Test
+
+These remain visible in:
+
+exports
+
+P&L reports
+
+insights
+
+historical filtering
+
+That preserves financial history.
+
+Future receipts
+
+Because the merchant rule was deleted:
+
+merchant_category_rules → cleaned
+
+The system no longer auto-applies the retired label. Future receipts fall back to:
+
+rule → none
+↓
+AI classification
+↓
+user correction if needed
+Why this is the correct accounting model
+
+Financial systems should behave this way:
+
+Operation	Expected behavior
+Rename category	historical receipts update
+Delete category	historical receipts remain unchanged
+Automation rules	removed so they don't create new entries
+
+You achieved exactly that separation.
+
+What your server log confirms
+
+Your log:
+
+[merchant-learning] Deleted 1 rule(s) for retired category "Home Repairs Test"
+
+shows that the cleanup happened before the next receipt arrived. The new receipt appearing without a label proves the learning engine was correctly reset.
+
+Edge cases you already handled well
+
+Transaction ensures rule deletion and category deletion stay consistent.
+
+Workspace scoping prevents cross-user rule removal.
+
+Historical labels remain intact for reporting.
+
+These eliminate the most common failure modes.
+
+System state now
+
+Your category system now supports:
+
+create category
+rename category (propagates)
+delete category (stops learning, preserves history)
+merchant learning rules
+AI fallback
+user correction
+analytics tracking
+
+That is a fully stable lifecycle for categories.
+
+One thing to expect in real usage
+
+Users may still see historical labels in reports after deletion. That is intentional, but some users occasionally ask why.
+
+A small message in the categories UI such as:
+
+Deleting a category stops future use but keeps historical receipts unchanged.
+
+prevents confusion.

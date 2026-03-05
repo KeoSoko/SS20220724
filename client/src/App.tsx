@@ -47,7 +47,10 @@ import QuotationsPage from "@/pages/quotations-page";
 import QuotationFormPage from "@/pages/quotation-form-page";
 import InvoicesPage from "@/pages/invoices-page";
 import InvoiceFormPage from "@/pages/invoice-form-page";
+import { ErrorBoundary } from "./components/error-boundary";
+import { createClientLogger } from "@/lib/logger";
 
+const logger = createClientLogger("App");
 function Router() {
   // Add scroll restoration to automatically scroll to top on navigation
   useScrollRestoration();
@@ -98,7 +101,6 @@ function Router() {
   );
 }
 
-import { ErrorBoundary } from './components/error-boundary';
 
 function App() {
   useEffect(() => {
@@ -107,7 +109,7 @@ function App() {
   }, []);
 
   // Add debug logging for app rendering
-  console.log("[App] App component is rendering");
+  logger.debug("[App] App component is rendering");
 
   return (
     <ErrorBoundary>

@@ -9,13 +9,16 @@ import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getReceiptCategoryLabel } from '@/utils/receipt-category';
-import { 
+import {
   EnhancedButton,
   SpacingContainer,
   EnhancedEmptyState
 } from '@/components/ui/enhanced-components';
 import { RecurringExpensesWidget } from '@/components/ui/recurring-expenses-widget';
 import { motion } from 'framer-motion';
+import { createClientLogger } from '@/lib/logger';
+
+const logger = createClientLogger('smart-search');
 
 interface SearchResult {
   receipts: any[];
@@ -41,7 +44,7 @@ export function SmartSearch() {
 
   // Debug logging
   useEffect(() => {
-    console.log(`[SmartSearch] Query state: "${query}"`);
+    logger.debug(`[SmartSearch] Query state: "${query}"`);
   }, [query]);
 
   // Smart search query - disabled by default to prevent empty searches
@@ -52,10 +55,10 @@ export function SmartSearch() {
 
   // Manual search trigger when query changes
   useEffect(() => {
-    console.log(`[SmartSearch] Query changed to: "${query}", enabled: ${query.length > 0}`);
-    console.log(`[SmartSearch] Query key: `, ['/api/search', { q: query, ...activeFilters }]);
+    logger.debug(`[SmartSearch] Query changed to: "${query}", enabled: ${query.length > 0}`);
+    logger.debug(`[SmartSearch] Query key: `, ['/api/search', { q: query, ...activeFilters }]);
     if (query.length > 0) {
-      console.log(`[SmartSearch] Triggering search for: "${query}"`);
+      logger.debug(`[SmartSearch] Triggering search for: "${query}"`);
       refetch();
     }
   }, [query, refetch, activeFilters]);

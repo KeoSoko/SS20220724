@@ -10,7 +10,9 @@ import { formatReportingCategory, getReportingCategory } from './reporting-utils
 import { db } from './db.js';
 import { emailDocuments } from '../shared/schema.js';
 import { eq } from 'drizzle-orm';
+import { createServerLogger } from "./logger";
 
+const logger = createServerLogger("export-service");
 /**
  * Compress and resize logo image to reduce PDF size for email attachments
  * Returns a smaller base64-encoded JPEG image
@@ -27,7 +29,7 @@ async function compressLogoForPDF(imageBuffer: Buffer): Promise<string> {
     
     return `data:image/png;base64,${compressedBuffer.toString('base64')}`;
   } catch (error: any) {
-    console.error('[PDF] Failed to compress logo:', error.message);
+    logger.error('[PDF] Failed to compress logo:', error.message);
     // Return original as fallback
     return `data:image/png;base64,${imageBuffer.toString('base64')}`;
   }
@@ -90,10 +92,10 @@ export class ExportService {
         return `data:image/svg+xml;base64,${svgBuffer.toString('base64')}`;
       }
       
-      console.log('Simple Slips logo not found - continuing without logo');
+      logger.info('Simple Slips logo not found - continuing without logo');
       return null;
     } catch (error) {
-      console.error('Failed to load Simple Slips logo - continuing without logo:', error);
+      logger.error('Failed to load Simple Slips logo - continuing without logo:', error);
       return null;
     }
   }
@@ -189,7 +191,7 @@ export class ExportService {
 
       return csvRows.join('\n');
     } catch (error) {
-      console.error('Failed to export receipts to CSV:', error);
+      logger.error('Failed to export receipts to CSV:', error);
       throw new Error('Export failed');
     }
   }
@@ -390,7 +392,7 @@ export class ExportService {
             }
 
             if (isEmailHtml) {
-              console.log(JSON.stringify({
+              logger.info(JSON.stringify({
                 stage: "EXPORT_HTML_RECEIPT_IN_BULK",
                 receiptId: receipt.id,
                 timestamp: new Date().toISOString()
@@ -431,7 +433,7 @@ export class ExportService {
                     imageData = `data:${mimeType};base64,${base64}`;
                   }
                 } catch (fileError) {
-                  console.error(`Failed to read local file: ${filePath}`, fileError);
+                  logger.error(`Failed to read local file: ${filePath}`, fileError);
                 }
               } else if (receipt.blobName) {
                 const blobNameStr = receipt.blobName as string;
@@ -447,7 +449,7 @@ export class ExportService {
                         imageData = `data:image/jpeg;base64,${base64}`;
                       }
                     } catch (fetchError) {
-                      console.error(`Failed to fetch Azure image: ${blobNameStr}`, fetchError);
+                      logger.error(`Failed to fetch Azure image: ${blobNameStr}`, fetchError);
                     }
                   }
                 }
@@ -460,7 +462,7 @@ export class ExportService {
                   doc.addImage(imageData, 'JPEG', 20, yPos, 120, 160);
                   yPos += 165;
                 } catch (imgError) {
-                  console.error('Failed to add image to PDF:', imgError);
+                  logger.error('Failed to add image to PDF:', imgError);
                   doc.setFontSize(10);
                   doc.text('Receipt image could not be loaded', 20, yPos);
                   yPos += 15;
@@ -499,7 +501,7 @@ export class ExportService {
             }
 
           } catch (imageError) {
-            console.error(`Failed to render receipt ${receipt.id}:`, imageError);
+            logger.error(`Failed to render receipt ${receipt.id}:`, imageError);
           }
         }
       }
@@ -513,7 +515,7 @@ export class ExportService {
         this.addBrandedFooter(doc, i, totalPages, generatedDate);
       }
 
-      console.log(JSON.stringify({
+      logger.info(JSON.stringify({
         stage: "EXPORT_RECEIPTS_BY_DATE_RANGE",
         userId,
         receiptCount: filteredReceipts.length,
@@ -526,7 +528,7 @@ export class ExportService {
 
       return Buffer.from(doc.output('arraybuffer'));
     } catch (error) {
-      console.error('Failed to export receipts to PDF:', error);
+      logger.error('Failed to export receipts to PDF:', error);
       throw new Error('Export failed');
     }
   }
@@ -549,14 +551,14 @@ export class ExportService {
       }
 
       if (isEmailHtmlReceipt) {
-        console.log(JSON.stringify({
+        logger.info(JSON.stringify({
           stage: "EXPORT_HTML_RECEIPT_SUMMARY_ONLY",
           receiptId: receipt.id,
           timestamp: new Date().toISOString()
         }));
       }
 
-      console.log(JSON.stringify({
+      logger.info(JSON.stringify({
         stage: "EXPORT_SINGLE_RECEIPT_BY_ID",
         receiptId: receipt.id,
         storeName: receipt.storeName,
@@ -614,7 +616,7 @@ export class ExportService {
       const suppressSingleContent = isEmailHtmlReceipt && (!receipt.items || receipt.items.length === 0);
 
       if (suppressSingleContent) {
-        console.log(JSON.stringify({
+        logger.info(JSON.stringify({
           stage: "EXPORT_HTML_RECEIPT_SUPPRESS_EMPTY_ITEMS",
           receiptId: receipt.id,
           timestamp: new Date().toISOString()
@@ -658,7 +660,7 @@ export class ExportService {
               imageData = `data:${mimeType};base64,${base64}`;
             }
           } catch (fileError) {
-            console.error(`Failed to read local file: ${filePath}`, fileError);
+            logger.error(`Failed to read local file: ${filePath}`, fileError);
           }
         } else if (receipt.blobName) {
           const blobNameStr = receipt.blobName as string;
@@ -675,7 +677,7 @@ export class ExportService {
                   imageData = `data:image/jpeg;base64,${base64}`;
                 }
               } catch (fetchError) {
-                console.error(`Failed to fetch Azure image: ${blobNameStr}`, fetchError);
+                logger.error(`Failed to fetch Azure image: ${blobNameStr}`, fetchError);
               }
             }
           }
@@ -689,7 +691,7 @@ export class ExportService {
           try {
             doc.addImage(imageData, 'JPEG', 20, yPos, 120, 160);
           } catch (imgError) {
-            console.error('Failed to add image to PDF:', imgError);
+            logger.error('Failed to add image to PDF:', imgError);
             doc.setFontSize(10);
             doc.text('Receipt image could not be loaded', 20, yPos);
           }
@@ -705,7 +707,7 @@ export class ExportService {
 
       return Buffer.from(doc.output('arraybuffer'));
     } catch (error) {
-      console.error('Failed to export single receipt to PDF:', error);
+      logger.error('Failed to export single receipt to PDF:', error);
       throw new Error('Single receipt export failed');
     }
   }
@@ -823,7 +825,7 @@ export class ExportService {
         }
       };
     } catch (error) {
-      console.error('Failed to generate tax report:', error);
+      logger.error('Failed to generate tax report:', error);
       throw new Error('Tax report generation failed');
     }
   }
@@ -861,7 +863,7 @@ export class ExportService {
         }
       };
     } catch (error) {
-      console.error('Failed to create user backup:', error);
+      logger.error('Failed to create user backup:', error);
       throw new Error('Backup creation failed');
     }
   }
@@ -870,9 +872,9 @@ export class ExportService {
    * Export quotation to PDF
    */
   async exportQuotationToPDF(quotation: any, client: any, lineItems: any[], businessProfile: any): Promise<Buffer> {
-    console.log(`[PDF] Starting quotation PDF export for ${quotation?.quotationNumber}`);
-    console.log(`[PDF] Client: ${client?.name}, Business: ${businessProfile?.companyName}`);
-    console.log(`[PDF] Line items count: ${lineItems?.length}`);
+    logger.info(`[PDF] Starting quotation PDF export for ${quotation?.quotationNumber}`);
+    logger.info(`[PDF] Client: ${client?.name}, Business: ${businessProfile?.companyName}`);
+    logger.info(`[PDF] Line items count: ${lineItems?.length}`);
     
     try {
       const doc = new jsPDF();
@@ -898,11 +900,11 @@ export class ExportService {
             const compressedLogoData = await compressLogoForPDF(imageBuffer);
             doc.addImage(compressedLogoData, 'PNG', 15, yPos, 40, 40);
           } else {
-            console.error(`[PDF] Logo fetch failed with status ${response.status}`);
+            logger.error(`[PDF] Logo fetch failed with status ${response.status}`);
           }
         } catch (error: any) {
           // Don't let logo issues break the entire PDF
-          console.error('[PDF] Failed to load business logo (continuing without it):', error.message || error);
+          logger.error('[PDF] Failed to load business logo (continuing without it):', error.message || error);
         }
       }
 
@@ -1033,8 +1035,8 @@ export class ExportService {
 
       return Buffer.from(doc.output('arraybuffer'));
     } catch (error: any) {
-      console.error('[PDF] Failed to export quotation to PDF:', error.message || error);
-      console.error('[PDF] Stack trace:', error.stack);
+      logger.error('[PDF] Failed to export quotation to PDF:', error.message || error);
+      logger.error('[PDF] Stack trace:', error.stack);
       throw new Error(`Quotation export failed: ${error.message || 'Unknown error'}`);
     }
   }
@@ -1067,11 +1069,11 @@ export class ExportService {
             const compressedLogoData = await compressLogoForPDF(imageBuffer);
             doc.addImage(compressedLogoData, 'PNG', 15, yPos, 40, 40);
           } else {
-            console.error(`[PDF] Invoice logo fetch failed with status ${response.status}`);
+            logger.error(`[PDF] Invoice logo fetch failed with status ${response.status}`);
           }
         } catch (error: any) {
           // Don't let logo issues break the entire PDF
-          console.error('[PDF] Failed to load invoice business logo (continuing without it):', error.message || error);
+          logger.error('[PDF] Failed to load invoice business logo (continuing without it):', error.message || error);
         }
       }
 
@@ -1270,7 +1272,7 @@ export class ExportService {
 
       return Buffer.from(doc.output('arraybuffer'));
     } catch (error) {
-      console.error('Failed to export invoice to PDF:', error);
+      logger.error('Failed to export invoice to PDF:', error);
       throw new Error('Invoice export failed');
     }
   }

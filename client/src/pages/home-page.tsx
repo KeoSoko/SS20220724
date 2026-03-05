@@ -1090,7 +1090,7 @@ function HomePage() {
                           {Array.isArray(customCategories) && customCategories.length > 0 && (
                             <>
                               {customCategories.map((customCat: any) => (
-                                <SelectItem key={`custom-${customCat.id}`} value={customCat.name}>
+                                <SelectItem key={`custom-${customCat.id}`} value={customCat.displayName}>
                                   {customCat.displayName}
                                 </SelectItem>
                               ))}

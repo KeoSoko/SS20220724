@@ -8,29 +8,117 @@ import { initializeSubscriptionPlans } from "./subscription-plans-seeder";
 
 const app = express();
 
-// Security: Rate limiting
-const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Increased limit for development and testing
-  message: 'Too many requests from this IP, please try again later.',
+const isProduction = process.env.NODE_ENV === 'production';
+
+const parseEnvInt = (value: string | undefined, fallback: number): number => {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+// Production-safe defaults (overridable via env vars)
+const DEFAULT_BODY_LIMIT = process.env.DEFAULT_BODY_LIMIT || '1mb';
+const UPLOAD_BODY_LIMIT = process.env.UPLOAD_BODY_LIMIT || '25mb';
+const REQUEST_TIMEOUT_MS = parseEnvInt(process.env.REQUEST_TIMEOUT_MS, isProduction ? 30_000 : 120_000);
+const RATE_LIMIT_WINDOW_MS = parseEnvInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
+
+const AUTH_RATE_LIMIT_MAX = parseEnvInt(process.env.RATE_LIMIT_AUTH_MAX, isProduction ? 20 : 200);
+const UPLOAD_RATE_LIMIT_MAX = parseEnvInt(process.env.RATE_LIMIT_UPLOAD_MAX, isProduction ? 60 : 300);
+const SEARCH_RATE_LIMIT_MAX = parseEnvInt(process.env.RATE_LIMIT_SEARCH_MAX, isProduction ? 120 : 500);
+const GENERAL_RATE_LIMIT_MAX = parseEnvInt(process.env.RATE_LIMIT_GENERAL_MAX, isProduction ? 400 : 2000);
+
+const authEndpoints = new Set([
+  '/api/login',
+  '/api/register',
+  '/api/logout',
+  '/api/reset-password',
+  '/api/verify-email',
+  '/api/resend-verification',
+  '/api/token',
+  '/api/emergency-login',
+  '/api/invalidate-tokens',
+]);
+
+const uploadEndpointsWithLargeBodies = new Set([
+  '/api/profile/picture',
+  '/api/receipts',
+  '/api/receipts/scan',
+  '/api/business-profile/logo',
+]);
+
+const uploadRateLimitEndpoints = new Set([
+  ...Array.from(uploadEndpointsWithLargeBodies),
+  '/api/webhooks/inbound-email',
+]);
+
+const searchPathPrefixes = [
+  '/api/search',
+  '/api/smart-search',
+  '/api/receipts/search',
+  '/api/receipts/smart-search',
+  '/api/tax/ask',
+  '/api/tax-assistant',
+];
+
+const hasSearchPrefix = (pathName: string): boolean => searchPathPrefixes.some((prefix) => pathName.startsWith(prefix));
+
+const createCategoryLimiter = (max: number, message: string) => rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max,
+  message,
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per windowMs
-  message: 'Too many login attempts, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
+const authLimiter = createCategoryLimiter(AUTH_RATE_LIMIT_MAX, 'Too many authentication requests, please try again later.');
+const uploadLimiter = createCategoryLimiter(UPLOAD_RATE_LIMIT_MAX, 'Too many upload requests, please try again later.');
+const searchLimiter = createCategoryLimiter(SEARCH_RATE_LIMIT_MAX, 'Too many search requests, please try again later.');
+const generalLimiter = createCategoryLimiter(GENERAL_RATE_LIMIT_MAX, 'Too many requests from this IP, please try again later.');
+
+app.use((req, res, next) => {
+  req.setTimeout(REQUEST_TIMEOUT_MS);
+  res.setTimeout(REQUEST_TIMEOUT_MS);
+
+  const abortController = new AbortController();
+  (req as Request & { abortSignal?: AbortSignal }).abortSignal = abortController.signal;
+
+  const timeoutHandle = setTimeout(() => {
+    abortController.abort(new Error('Request timed out'));
+    if (!res.headersSent) {
+      res.status(408).json({
+        message: 'Request timed out. Please try again.',
+        timeoutMs: REQUEST_TIMEOUT_MS,
+      });
+    }
+  }, REQUEST_TIMEOUT_MS);
+
+  const cleanup = () => clearTimeout(timeoutHandle);
+  req.on('aborted', cleanup);
+  req.on('close', cleanup);
+  res.on('close', cleanup);
+  res.on('finish', cleanup);
+
+  next();
 });
 
-// Apply general rate limiting to all requests
-app.use(generalLimiter);
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api')) {
+    return next();
+  }
 
-// Apply stricter rate limiting to auth endpoints
-app.use('/api/login', authLimiter);
-app.use('/api/register', authLimiter);
+  if (authEndpoints.has(req.path)) {
+    return authLimiter(req, res, next);
+  }
+
+  if (uploadRateLimitEndpoints.has(req.path)) {
+    return uploadLimiter(req, res, next);
+  }
+
+  if (hasSearchPrefix(req.path)) {
+    return searchLimiter(req, res, next);
+  }
+
+  return generalLimiter(req, res, next);
+});
 
 // Security: CORS configuration
 app.use((req, res, next) => {
@@ -45,10 +133,17 @@ app.use((req, res, next) => {
   }
 });
 
-// Increase JSON body size limit to 50MB
-app.use(express.json({ limit: '50mb' }));
-// Increase URL-encoded body size limit to 50MB
-app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+app.use((req, res, next) => {
+  const limit = uploadEndpointsWithLargeBodies.has(req.path) ? UPLOAD_BODY_LIMIT : DEFAULT_BODY_LIMIT;
+
+  express.json({ limit })(req, res, (jsonErr) => {
+    if (jsonErr) {
+      return next(jsonErr);
+    }
+
+    express.urlencoded({ extended: false, limit })(req, res, next);
+  });
+});
 // Configure MIME types for static files
 app.use((req, res, next) => {
   // Set correct MIME types for JavaScript files

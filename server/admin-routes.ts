@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { 
   users, 
   receipts, 
@@ -1506,6 +1506,29 @@ Respond ONLY with valid JSON.`;
     } catch (error: any) {
       log(`Error in admin export tax report: ${error.message}`, 'admin');
       res.status(500).json({ error: "Failed to generate tax report" });
+    }
+  });
+
+  // ========================================
+  // SMART CATEGORIZATION ANALYTICS
+  // ========================================
+  app.get("/api/admin/analytics/smart-categorization", requireAdmin, async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE category_source = 'rule') AS auto_categorized,
+          COUNT(*) AS total
+        FROM receipts
+        WHERE created_at > NOW() - INTERVAL '7 days'
+      `);
+      const row = result.rows[0];
+      const autoCategorized = parseInt(row.auto_categorized, 10) || 0;
+      const total = parseInt(row.total, 10) || 0;
+      const rate = total > 0 ? Math.round((autoCategorized / total) * 100) / 100 : 0;
+      res.json({ autoCategorized, total, rate });
+    } catch (error: any) {
+      log(`Error in smart-categorization analytics: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to retrieve smart categorization stats" });
     }
   });
 }

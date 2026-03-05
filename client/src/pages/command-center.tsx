@@ -384,6 +384,10 @@ export default function CommandCenter() {
     enabled: showPaymentHealth,
   });
 
+  const { data: smartCat, isLoading: smartCatLoading } = useQuery<{ autoCategorized: number; total: number; rate: number }>({
+    queryKey: ['/api/admin/analytics/smart-categorization'],
+  });
+
   const { data: searchResponse, isLoading: searchLoading, refetch: refetchSearch } = useQuery<PaginatedSearchResponse>({
     queryKey: activeFilter 
       ? ['/api/admin/users/search', { filter: activeFilter, page: currentPage, limit: pageLimit }]
@@ -860,6 +864,16 @@ export default function CommandCenter() {
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : (health?.webhookStale ? "!" : "OK")}</div>
             <div className="text-xs font-medium">Webhooks</div>
             <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['webhook_stale']}</div>
+          </CardContent>
+        </Card>
+        <Card className="hover:bg-muted/50 transition-colors">
+          <CardContent className="p-4 text-center">
+            <Brain className="h-6 w-6 mx-auto mb-2 text-blue-500" />
+            <div className="text-2xl font-bold">
+              {smartCatLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : `${Math.round((smartCat?.rate ?? 0) * 100)}%`}
+            </div>
+            <div className="text-xs font-medium">Smart Cat.</div>
+            <div className="text-[10px] text-muted-foreground mt-1">auto-categorized this week</div>
           </CardContent>
         </Card>
       </div>

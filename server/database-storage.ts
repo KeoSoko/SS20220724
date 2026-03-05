@@ -533,6 +533,7 @@ export class DatabaseStorage implements IStorage {
         
         category: insertReceipt.category || 'other',
         reportLabel: insertReceipt.reportLabel || null,
+        categorySource: (insertReceipt as any).categorySource || 'ai',
         tags: tagsArray, // Explicitly use the array variable
         notes: insertReceipt.notes || null,
         
@@ -565,17 +566,17 @@ export class DatabaseStorage implements IStorage {
         const query = `
           INSERT INTO receipts (
             "user_id", "client_upload_id", "store_name", "date", "total", "items", "blob_url", 
-            "blob_name", "image_data", "category", "tags", "notes", "report_label",
+            "blob_name", "image_data", "category", "tags", "notes", "report_label", "category_source",
             "confidence_score", "raw_ocr_data", "latitude", "longitude",
             "is_tax_deductible", "is_recurring",
             "created_at", "updated_at", "processed_at",
             "workspace_id", "created_by_user_id"
           ) VALUES (
             $1, $2, $3, $4, $5, $6::jsonb, $7, 
-            $8, $9, $10, $11, $12, $13,
-            $14, $15, $16, $17,
-            $18, $19, $20, $21, $22,
-            $23, $24
+            $8, $9, $10, $11, $12, $13, $14,
+            $15, $16, $17, $18,
+            $19, $20, $21, $22, $23,
+            $24, $25
           )
           RETURNING *;
         `;
@@ -602,6 +603,7 @@ export class DatabaseStorage implements IStorage {
           tagsArray, // Native array for text[] column
           insertValues.notes,
           insertValues.reportLabel || null,
+          insertValues.categorySource || 'ai',
           insertValues.confidenceScore,
           JSON.stringify(insertValues.rawOcrData || null), // Stringify for JSONB
           insertValues.latitude,

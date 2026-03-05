@@ -1085,6 +1085,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Apply merchant category rule if no label was manually provided
       let effectiveReportLabel = sanitizedReportLabel;
+      let effectiveCategorySource = "ai";
       if (!effectiveReportLabel && sanitizedStoreName.length > 2 && storage.getMerchantCategoryRule) {
         try {
           const [userRow] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
@@ -1093,6 +1094,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const rule = await storage.getMerchantCategoryRule(userRow.workspaceId, normalizedMerchant);
             if (rule && rule.confirmations >= 2) {
               effectiveReportLabel = rule.categoryLabel;
+              effectiveCategorySource = "rule";
               log(`[merchant-learning] Auto-applied rule: "${normalizedMerchant}" → "${rule.categoryLabel}" (confirmations: ${rule.confirmations})`, 'api');
             }
           }
@@ -1112,6 +1114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           category: categoryValidation.value!,
           notes: sanitizedNotes,
           reportLabel: effectiveReportLabel,
+          categorySource: effectiveCategorySource,
           items: itemsValidation.value!,
           imageData,
           userId,
@@ -1330,6 +1333,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Update receipt data with AI suggestions
         receiptData.category = categorization.category;
+        if (receiptData.categorySource !== "rule") {
+          receiptData.categorySource = "ai";
+        }
         
       } catch (error) {
         log(`AI categorization failed: ${error instanceof Error ? error.message : String(error)}`, "ai");
@@ -1826,6 +1832,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.reportLabel = updateData.reportLabel
           ? sanitizeString(String(updateData.reportLabel), 100).trim() || null
           : null;
+      }
+
+      // Mark as user-corrected when category or reportLabel is manually changed
+      if ('reportLabel' in updateData || 'category' in updateData) {
+        updateData.categorySource = "user";
       }
 
       // Update the receipt

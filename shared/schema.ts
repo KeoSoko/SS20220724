@@ -188,6 +188,9 @@ export const receipts = pgTable("receipts", {
 
   // Reporting override — if set, reports group by this label instead of category
   reportLabel: text("report_label"),
+
+  // Categorization source tracking
+  categorySource: text("category_source").default("ai"), // 'ai' | 'rule' | 'user'
   
   // Duplicate detection
   isPotentialDuplicate: boolean("is_potential_duplicate").default(false), // Flag for potential duplicate receipts
@@ -843,6 +846,9 @@ export const insertReceiptSchema = z.object({
 
   // Reporting override
   reportLabel: z.string().nullable().optional(),
+
+  // Categorization source
+  categorySource: z.enum(["ai", "rule", "user"]).optional().default("ai"),
 });
 
 // Schema for creating and updating tags

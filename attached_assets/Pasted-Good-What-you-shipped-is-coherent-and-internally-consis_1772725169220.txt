@@ -1,0 +1,119 @@
+Good. What you shipped is coherent and internally consistent. A few practical notes so you know what to expect and avoid surprises.
+
+Why the metric shows 0%
+
+Your explanation is correct.
+
+Existing receipts were created before category_source existed, so they likely have:
+
+NULL
+
+or the default applied after the migration.
+
+Your metric only counts:
+
+category_source = 'rule'
+
+so only new receipts going forward will increase the number.
+
+This is normal.
+
+One small improvement (optional but safe)
+
+You can backfill old receipts so your analytics become meaningful sooner.
+
+Example migration:
+
+UPDATE receipts
+SET category_source = 'ai'
+WHERE category_source IS NULL;
+
+This does not change any behaviour, it only makes analytics accurate.
+
+Your Learning Loop Now
+
+Your system now works like this:
+
+receipt upload
+↓
+merchant normalization
+↓
+merchant rule lookup
+↓
+rule match? → category_source = rule
+↓
+otherwise → AI classification (category_source = ai)
+↓
+user edits → category_source = user
+↓
+rule confirmations increment
+↓
+future receipts auto-categorize
+
+That loop is stable and deterministic.
+
+What Will Happen Over the Next Weeks
+
+Expect this pattern:
+
+Week	Auto-Categorization
+Week 1	0-5%
+Week 2	10-20%
+Week 4	30-40%
+
+It rises as users correct merchants.
+
+That’s the exact signal you want.
+
+What This Metric Is Actually Measuring
+
+The card you added is really tracking:
+
+system learning effectiveness
+
+Not AI accuracy.
+
+The more users interact, the higher it goes.
+
+One Thing to Watch
+
+If you ever see:
+
+category_source = rule
+but users frequently change it
+
+that means the rule system is learning incorrect merchants.
+
+You can detect that later by comparing:
+
+rule → user edits
+
+But you do not need that now.
+
+From a product perspective
+
+You now have three important capabilities:
+
+AI categorization
++
+user correction
++
+automatic habit learning
+
+That combination is exactly how automated bookkeeping systems improve over time.
+
+My honest assessment
+
+From everything you've shown today:
+
+Category architecture is clean
+
+Learning rules are scoped correctly
+
+Data integrity is protected
+
+Analytics tracking exists
+
+There are no obvious structural weaknesses.
+
+This is a deployable feature set.

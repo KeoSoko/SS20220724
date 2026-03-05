@@ -518,6 +518,7 @@ export class MemStorage implements IStorage {
       workspaceId: (insertReceipt as { workspaceId?: number }).workspaceId || 0,
       createdByUserId: (insertReceipt as { createdByUserId?: number }).createdByUserId || insertReceipt.userId,
       reportLabel: (insertReceipt as { reportLabel?: string | null }).reportLabel || null,
+      categorySource: (insertReceipt as { categorySource?: string }).categorySource || "ai",
       
       // Timestamps
       createdAt: now,

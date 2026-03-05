@@ -2114,7 +2114,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           blobName: originalReceipt.blobName,
           tags: [],
           isRecurring: false,
-          isTaxDeductible: false
+          isTaxDeductible: false,
+          categorySource: "user" as const
         };
         
         const newReceipt = await storage.createReceipt(splitReceiptData);

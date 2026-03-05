@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { PageLayout } from "@/components/page-layout";
 import { BackButton } from "@/components/back-button";
@@ -62,6 +63,7 @@ export default function CategoriesPage() {
   const search = useSearch();
   const returnTo = new URLSearchParams(search).get("return");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
   const [editingCategory, setEditingCategory] = useState<any>(null);
   const isMobile = useMediaQuery('(max-width: 768px)');
 
@@ -182,9 +184,7 @@ export default function CategoriesPage() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm("Are you sure you want to delete this category? This action cannot be undone.")) {
-      deleteCategoryMutation.mutate(id);
-    }
+    setDeleteTargetId(id);
   };
 
   const resetDialog = () => {
@@ -444,6 +444,35 @@ export default function CategoriesPage() {
           </div>
         </div>
       </div>
+      <AlertDialog open={deleteTargetId !== null} onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete category?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>This category will be removed from your list and any automatic rules attached to it will be cleared.</p>
+                <p className="text-sm bg-muted px-3 py-2 rounded-sm">
+                  Historical receipts already tagged with this category are preserved exactly as they are — only future auto-tagging stops.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => {
+                if (deleteTargetId !== null) {
+                  deleteCategoryMutation.mutate(deleteTargetId);
+                  setDeleteTargetId(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageLayout>
   );
 }

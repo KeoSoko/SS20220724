@@ -670,7 +670,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { password, ...userWithoutPassword } = updatedUser;
       res.json(userWithoutPassword);
     } catch (error) {
-      console.error("Error updating user:", error);
+      log(`Error updating user: ${error instanceof Error ? error.message : String(error)}`, "auth", "error");
       res.status(500).json({ error: "Failed to update user profile" });
     }
   });
@@ -742,7 +742,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Your support request has been sent. We'll get back to you soon!" 
       });
     } catch (error: any) {
-      console.error("Error submitting support request:", error);
+      log(`Error submitting support request: ${error instanceof Error ? error.message : String(error)}`, "support", "error");
       res.status(500).json({ error: "Failed to submit support request" });
     }
   });
@@ -792,7 +792,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error) {
       log(`Profile picture upload error: ${error}`, 'api');
-      console.error("Error uploading profile picture:", error);
+      log(`Error uploading profile picture: ${error instanceof Error ? error.message : String(error)}`, "profile", "error");
       res.status(500).json({ error: "Failed to upload profile picture" });
     }
   });
@@ -833,7 +833,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const metrics = await replitStorage.getStorageMetrics();
       res.json(metrics);
     } catch (error) {
-      console.error("Error getting storage metrics:", error);
+      log(`Error getting storage metrics: ${error instanceof Error ? error.message : String(error)}`, "storage", "error");
       res.status(500).json({ error: "Failed to get storage metrics" });
     }
   });
@@ -849,7 +849,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         metrics
       });
     } catch (error) {
-      console.error("Error refreshing storage metrics:", error);
+      log(`Error refreshing storage metrics: ${error instanceof Error ? error.message : String(error)}`, "storage", "error");
       res.status(500).json({ error: "Failed to refresh storage metrics" });
     }
   });
@@ -2793,7 +2793,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = parseInt(req.query.offset as string) || 0;
       
-      console.log(`[API Search] Query: "${query}", User: ${getUserId(req)}`);
+      log(`[API Search] Query: "${query}", User: ${getUserId(req)}`, "search", "debug");
       
       const filters = {
         startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
@@ -2811,7 +2811,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         offset
       );
       
-      console.log(`[API Search] Results: ${results.receipts.length} receipts found for "${query}"`);
+      log(`[API Search] Results: ${results.receipts.length} receipts found for "${query}"`, "search", "debug");
       
       res.json(results);
     } catch (error: any) {

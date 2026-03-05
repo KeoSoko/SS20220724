@@ -16,7 +16,9 @@ import { Eye, EyeOff, Receipt, ArrowLeft, CheckCircle, XCircle, AlertCircle, Loa
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { createClientLogger } from "@/lib/logger";
 
+const logger = createClientLogger("auth-page");
 export default function AuthPage() {
   const [location, setLocation] = useLocation();
   const { user, loginMutation, registerMutation } = useAuth();
@@ -173,7 +175,7 @@ export default function AuthPage() {
       online: navigator.onLine,
       timestamp: new Date().toISOString()
     };
-    console.error(`[AUTH] ${context}:`, errorDetails);
+    logger.error(`[AUTH] ${context}:`, errorDetails);
     try {
       fetch('/api/log-error', {
         method: 'POST',

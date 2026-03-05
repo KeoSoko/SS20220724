@@ -1,9 +1,11 @@
 import { MailService } from '@sendgrid/mail';
 import type { Receipt, ReceiptShare, EmailReceipt, Quotation, Invoice, Client, BusinessProfile, LineItem } from '../shared/schema.js';
 import { aiEmailAssistant } from './ai-email-assistant.js';
+import { createServerLogger } from "./logger";
 
+const logger = createServerLogger("email-service");
 if (!process.env.SENDGRID_API_KEY) {
-  console.warn("SENDGRID_API_KEY not found - email features will be disabled");
+  logger.warn("SENDGRID_API_KEY not found - email features will be disabled");
 }
 
 const mailService = new MailService();
@@ -38,7 +40,7 @@ async function withRetry<T>(
       lastError = error instanceof Error ? error : new Error(String(error));
       
       if (attempt <= maxRetries) {
-        console.log(`[EMAIL] ${operationName} failed (attempt ${attempt}/${maxRetries + 1}), retrying in ${delayMs}ms...`);
+        logger.info(`[EMAIL] ${operationName} failed (attempt ${attempt}/${maxRetries + 1}), retrying in ${delayMs}ms...`);
         await new Promise(resolve => setTimeout(resolve, delayMs * attempt)); // Exponential backoff
       }
     }
@@ -56,7 +58,7 @@ export class EmailService {
    */
   async sendEmailVerification(email: string, username: string, verificationToken: string): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send email verification - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send email verification - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -92,21 +94,21 @@ export class EmailService {
         }
       };
       
-      console.log(`[EMAIL] Sending verification email to: ${email} from: ${this.fromEmail}`);
-      console.log(`[EMAIL] Verification URL being sent: ${verificationUrl}`);
-      console.log(`[EMAIL] App URL: ${this.appUrl}`);
+      logger.info(`[EMAIL] Sending verification email to: ${email} from: ${this.fromEmail}`);
+      logger.info(`[EMAIL] Verification URL being sent: ${verificationUrl}`);
+      logger.info(`[EMAIL] App URL: ${this.appUrl}`);
       const result = await mailService.send(emailData);
-      console.log(`[EMAIL] SendGrid response:`, result);
+      logger.info(`[EMAIL] SendGrid response:`, result);
       
       // Log the message ID for tracking
       if (result && result[0] && result[0].headers && result[0].headers['x-message-id']) {
-        console.log(`[EMAIL] Message ID: ${result[0].headers['x-message-id']}`);
-        console.log(`[EMAIL] Status: ${result[0].statusCode}`);
+        logger.info(`[EMAIL] Message ID: ${result[0].headers['x-message-id']}`);
+        logger.info(`[EMAIL] Status: ${result[0].statusCode}`);
       }
 
       return true;
     } catch (error) {
-      console.error('Failed to send email verification:', error);
+      logger.error('Failed to send email verification:', error);
       return false;
     }
   }
@@ -116,7 +118,7 @@ export class EmailService {
    */
   async sendEmail(to: string, subject: string, body: string): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send email - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send email - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -136,10 +138,10 @@ export class EmailService {
           <p style="color: #666; font-size: 12px;">Simple Slips Admin Alert</p>
         </div>`,
       });
-      console.log(`[EMAIL] Admin alert sent to: ${to}, subject: ${subject}`);
+      logger.info(`[EMAIL] Admin alert sent to: ${to}, subject: ${subject}`);
       return true;
     } catch (error) {
-      console.error('Failed to send admin email:', error);
+      logger.error('Failed to send admin email:', error);
       return false;
     }
   }
@@ -149,7 +151,7 @@ export class EmailService {
    */
   async sendWelcomeEmail(email: string, username: string): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send welcome email - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send welcome email - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -221,7 +223,7 @@ Need help? Visit our Tax Professionals section to connect with certified account
 
       return true;
     } catch (error) {
-      console.error('Failed to send welcome email:', error);
+      logger.error('Failed to send welcome email:', error);
       return false;
     }
   }
@@ -231,7 +233,7 @@ Need help? Visit our Tax Professionals section to connect with certified account
    */
   async sendPasswordReset(email: string, username: string, resetToken: string): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send password reset - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send password reset - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -300,7 +302,7 @@ Security Notice: This link expires in 1 hour. If you didn't request this reset, 
 
       return true;
     } catch (error) {
-      console.error('Failed to send password reset email:', error);
+      logger.error('Failed to send password reset email:', error);
       return false;
     }
   }
@@ -315,7 +317,7 @@ Security Notice: This link expires in 1 hour. If you didn't request this reset, 
     message: string
   ): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send payment failure notification - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send payment failure notification - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -410,10 +412,10 @@ Need help? Contact support at admin@simpleslips.co.za
         `
       });
 
-      console.log(`Payment failure notification sent to ${email}`);
+      logger.info(`Payment failure notification sent to ${email}`);
       return true;
     } catch (error) {
-      console.error('Failed to send payment failure notification:', error);
+      logger.error('Failed to send payment failure notification:', error);
       return false;
     }
   }
@@ -424,7 +426,7 @@ Need help? Contact support at admin@simpleslips.co.za
    */
   async sendTrialRecoveryEmail(email: string, username: string): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send trial recovery email - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send trial recovery email - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -444,8 +446,8 @@ Need help? Contact support at admin@simpleslips.co.za
           login_url: `${this.appUrl}/auth`
         };
         
-        console.log(`[EMAIL] Sending recovery email with template ${templateId}`);
-        console.log(`[EMAIL] Template data:`, JSON.stringify(templateData));
+        logger.info(`[EMAIL] Sending recovery email with template ${templateId}`);
+        logger.info(`[EMAIL] Template data:`, JSON.stringify(templateData));
         
         await mailService.send({
           from: {
@@ -534,10 +536,10 @@ If you have any questions or need help getting started, just reply to this email
         });
       }
 
-      console.log(`[EMAIL] Trial recovery email sent to ${email}`);
+      logger.info(`[EMAIL] Trial recovery email sent to ${email}`);
       return true;
     } catch (error) {
-      console.error('Failed to send trial recovery email:', error);
+      logger.error('Failed to send trial recovery email:', error);
       return false;
     }
   }
@@ -623,7 +625,7 @@ If you have any questions or need help getting started, just reply to this email
     sharedByUsername: string
   ): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send email - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send email - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -688,7 +690,7 @@ ${share.expiresAt ? `This link expires on ${share.expiresAt.toLocaleDateString()
 
       return true;
     } catch (error) {
-      console.error('Failed to send receipt share email:', error);
+      logger.error('Failed to send receipt share email:', error);
       return false;
     }
   }
@@ -705,7 +707,7 @@ ${share.expiresAt ? `This link expires on ${share.expiresAt.toLocaleDateString()
     percentageUsed: number
   ): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send email - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send email - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -768,7 +770,7 @@ Manage your budgets: ${this.appUrl}/budgets
 
       return true;
     } catch (error) {
-      console.error('Failed to send budget alert email:', error);
+      logger.error('Failed to send budget alert email:', error);
       return false;
     }
   }
@@ -783,7 +785,7 @@ Manage your budgets: ${this.appUrl}/budgets
     lastBackupDate?: Date
   ): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send email - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send email - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -843,7 +845,7 @@ Create a backup: ${this.appUrl}/settings
 
       return true;
     } catch (error) {
-      console.error('Failed to send backup reminder:', error);
+      logger.error('Failed to send backup reminder:', error);
       return false;
     }
   }
@@ -879,7 +881,7 @@ Create a backup: ${this.appUrl}/settings
         createdAt: new Date(),
       };
     } catch (error) {
-      console.error('Failed to process email receipt:', error);
+      logger.error('Failed to process email receipt:', error);
       return null;
     }
   }
@@ -898,17 +900,17 @@ Create a backup: ${this.appUrl}/settings
     aiGeneratedMessage: string
   ): Promise<{ success: boolean; error?: string; errorType?: 'pdf_generation' | 'sendgrid_api' | 'validation' | 'unknown' }> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send quotation - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send quotation - SENDGRID_API_KEY not configured");
       return { success: false, error: "Email service not configured", errorType: 'validation' };
     }
 
     if (!client.email) {
-      console.error("Cannot send quotation - client has no email address");
+      logger.error("Cannot send quotation - client has no email address");
       return { success: false, error: "Client has no email address", errorType: 'validation' };
     }
 
     if (!pdfBuffer || pdfBuffer.length === 0) {
-      console.error("Cannot send quotation - PDF not generated");
+      logger.error("Cannot send quotation - PDF not generated");
       return { success: false, error: "Failed to generate PDF attachment", errorType: 'pdf_generation' };
     }
 
@@ -962,12 +964,12 @@ Create a backup: ${this.appUrl}/settings
         { maxRetries: 2, delayMs: 1000, operationName: `Send quotation ${quotation.quotationNumber}` }
       );
 
-      console.log(`[EMAIL] Quotation ${quotation.quotationNumber} sent to ${client.email}`);
+      logger.info(`[EMAIL] Quotation ${quotation.quotationNumber} sent to ${client.email}`);
       return { success: true };
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`[EMAIL] Failed to send quotation ${quotation.quotationNumber}:`, errorMessage);
+      logger.error(`[EMAIL] Failed to send quotation ${quotation.quotationNumber}:`, errorMessage);
       
       // Determine error type from error message
       let errorType: 'sendgrid_api' | 'unknown' = 'unknown';
@@ -1003,17 +1005,17 @@ Create a backup: ${this.appUrl}/settings
     pdfBuffer: Buffer
   ): Promise<{ success: boolean; error?: string; errorType?: 'pdf_generation' | 'sendgrid_api' | 'validation' | 'unknown' }> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send quotation - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send quotation - SENDGRID_API_KEY not configured");
       return { success: false, error: "Email service not configured", errorType: 'validation' };
     }
 
     if (!client.email) {
-      console.error("Cannot send quotation - client has no email address");
+      logger.error("Cannot send quotation - client has no email address");
       return { success: false, error: "Client has no email address", errorType: 'validation' };
     }
 
     if (!pdfBuffer || pdfBuffer.length === 0) {
-      console.error("Cannot send quotation - PDF not generated");
+      logger.error("Cannot send quotation - PDF not generated");
       return { success: false, error: "Failed to generate PDF attachment", errorType: 'pdf_generation' };
     }
 
@@ -1117,12 +1119,12 @@ ${aiMessage}
         { maxRetries: 2, delayMs: 1000, operationName: `Send quotation ${quotation.quotationNumber}` }
       );
 
-      console.log(`[EMAIL] Quotation ${quotation.quotationNumber} sent to ${client.email}`);
+      logger.info(`[EMAIL] Quotation ${quotation.quotationNumber} sent to ${client.email}`);
       return { success: true };
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`[EMAIL] Failed to send quotation ${quotation.quotationNumber}:`, errorMessage);
+      logger.error(`[EMAIL] Failed to send quotation ${quotation.quotationNumber}:`, errorMessage);
       
       // Determine error type from error message
       let errorType: 'sendgrid_api' | 'unknown' = 'unknown';
@@ -1160,17 +1162,17 @@ ${aiMessage}
     customBody?: string
   ): Promise<{ success: boolean; error?: string; errorType?: 'pdf_generation' | 'sendgrid_api' | 'validation' | 'unknown' }> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send invoice - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send invoice - SENDGRID_API_KEY not configured");
       return { success: false, error: "Email service not configured", errorType: 'validation' };
     }
 
     if (!client.email) {
-      console.error("Cannot send invoice - client has no email address");
+      logger.error("Cannot send invoice - client has no email address");
       return { success: false, error: "Client has no email address", errorType: 'validation' };
     }
 
     if (!pdfBuffer || pdfBuffer.length === 0) {
-      console.error("Cannot send invoice - PDF not generated");
+      logger.error("Cannot send invoice - PDF not generated");
       return { success: false, error: "Failed to generate PDF attachment", errorType: 'pdf_generation' };
     }
 
@@ -1253,12 +1255,12 @@ ${aiMessage}
         { maxRetries: 2, delayMs: 1000, operationName: `Send invoice ${invoice.invoiceNumber}` }
       );
 
-      console.log(`[EMAIL] Invoice ${invoice.invoiceNumber} sent to ${client.email}`);
+      logger.info(`[EMAIL] Invoice ${invoice.invoiceNumber} sent to ${client.email}`);
       return { success: true };
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`[EMAIL] Failed to send invoice ${invoice.invoiceNumber}:`, errorMessage);
+      logger.error(`[EMAIL] Failed to send invoice ${invoice.invoiceNumber}:`, errorMessage);
       
       // Determine error type from error message
       let errorType: 'sendgrid_api' | 'unknown' = 'unknown';
@@ -1312,11 +1314,11 @@ ${aiMessage}
       };
 
       await mailService.send(emailData);
-      console.log(`[EMAIL] Test email sent successfully to ${email}`);
+      logger.info(`[EMAIL] Test email sent successfully to ${email}`);
       return true;
 
     } catch (error: any) {
-      console.error(`[EMAIL] Test email failed for ${email}:`, error.message);
+      logger.error(`[EMAIL] Test email failed for ${email}:`, error.message);
       throw new Error(`Email verification failed: ${error.message}. Please ensure this email is verified in SendGrid.`);
     }
   }
@@ -1326,7 +1328,7 @@ ${aiMessage}
    */
   async sendReceiptImportConfirmation(email: string, username: string, receiptCount: number): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send receipt import confirmation - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send receipt import confirmation - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -1395,11 +1397,11 @@ to automatically add them to your account.
         `
       });
 
-      console.log(`[EMAIL] Receipt import confirmation sent to ${email}`);
+      logger.info(`[EMAIL] Receipt import confirmation sent to ${email}`);
       return true;
 
     } catch (error: any) {
-      console.error(`[EMAIL] Failed to send receipt import confirmation: ${error.message}`);
+      logger.error(`[EMAIL] Failed to send receipt import confirmation: ${error.message}`);
       return false;
     }
   }
@@ -1414,7 +1416,7 @@ to automatically add them to your account.
     errorMessage: string
   ): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send receipt import failure - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send receipt import failure - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -1491,11 +1493,11 @@ Need help? Reply to this email and our support team will assist you.
         `
       });
 
-      console.log(`[EMAIL] Receipt import failure notification sent to ${email}`);
+      logger.info(`[EMAIL] Receipt import failure notification sent to ${email}`);
       return true;
 
     } catch (error: any) {
-      console.error(`[EMAIL] Failed to send receipt import failure notification: ${error.message}`);
+      logger.error(`[EMAIL] Failed to send receipt import failure notification: ${error.message}`);
       return false;
     }
   }
@@ -1523,7 +1525,7 @@ Need help? Reply to this email and our support team will assist you.
     }
   ): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
-      console.error("Cannot send support request - SENDGRID_API_KEY not configured");
+      logger.error("Cannot send support request - SENDGRID_API_KEY not configured");
       return false;
     }
 
@@ -1651,11 +1653,11 @@ Reply directly to this email to respond to the user.
         `
       });
 
-      console.log(`[EMAIL] Support request sent from ${userEmail}: ${subject}`);
+      logger.info(`[EMAIL] Support request sent from ${userEmail}: ${subject}`);
       return true;
 
     } catch (error: any) {
-      console.error(`[EMAIL] Failed to send support request: ${error.message}`);
+      logger.error(`[EMAIL] Failed to send support request: ${error.message}`);
       return false;
     }
   }

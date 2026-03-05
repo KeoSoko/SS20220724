@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Eye, EyeOff, ArrowLeft, CheckCircle, XCircle, KeyRound } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { createClientLogger } from "@/lib/logger";
 
+const logger = createClientLogger("reset-password-page");
 export default function ResetPasswordPage() {
   const [_, setLocation] = useLocation();
   const { toast } = useToast();

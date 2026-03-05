@@ -1,18 +1,13 @@
-/**
- * Unified Smart Search Component
- * AI-powered search that adapts to context and provides intelligent results across all features
- */
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { 
-  Search, 
-  Brain, 
-  Sparkles, 
-  Receipt, 
-  TrendingUp, 
-  ShoppingBag, 
+import {
+  Search,
+  Brain,
+  Sparkles,
+  Receipt,
+  TrendingUp,
+  ShoppingBag,
   Calendar,
   Banknote,
   Tag,
@@ -29,13 +24,22 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { 
-  smartSearchIntegration, 
-  SearchContext, 
-  SearchIntent, 
-  SmartSearchResult 
+import {
+  smartSearchIntegration,
+  SearchContext,
+  SearchIntent,
+  SmartSearchResult
 } from '@/services/smart-search-integration';
 import { useAuth } from '@/hooks/use-auth';
+import { createClientLogger } from '@/lib/logger';
+
+const logger = createClientLogger('unified-smart-search');
+
+/**
+ * Unified Smart Search Component
+ * AI-powered search that adapts to context and provides intelligent results across all features
+ */
+
 // Simple inline debounce instead of importing hook
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = React.useState<T>(value);
@@ -115,7 +119,7 @@ export function UnifiedSmartSearch({
     queryFn: async () => {
       if (debouncedQuery.length < 2) return [];
       const result = await smartSearchIntegration.getSuggestions(debouncedQuery, searchContext);
-      console.log(`[UnifiedSearch] Suggestions for "${debouncedQuery}":`, result);
+      logger.debug(`[UnifiedSearch] Suggestions for "${debouncedQuery}":`, result);
       return result;
     },
     enabled: showSuggestions && debouncedQuery.length >= 2,
@@ -123,23 +127,23 @@ export function UnifiedSmartSearch({
   });
 
   // Debug current state
-  console.log(`[UnifiedSearch] Current state - query: "${query}", suggestions:`, suggestions, 'isOpen:', isOpen, 'searchResults:', searchResults.length);
+  logger.debug(`[UnifiedSearch] Current state - query: "${query}", suggestions:`, suggestions, 'isOpen:', isOpen, 'searchResults:', searchResults.length);
 
   // Execute smart search
   const executeSearch = useCallback(async (searchQuery: string) => {
     if (!searchQuery.trim() || !user) return;
 
-    console.log(`[UnifiedSearch] Executing search for: "${searchQuery}"`);
+    logger.debug(`[UnifiedSearch] Executing search for: "${searchQuery}"`);
     setIsSearching(true);
     try {
       // Parse the search intent
       const intent = await smartSearchIntegration.parseSearchIntent(searchQuery, searchContext);
-      console.log(`[UnifiedSearch] Search intent:`, intent);
+      logger.debug(`[UnifiedSearch] Search intent:`, intent);
       setSearchIntent(intent);
 
       // Execute the search
       const results = await smartSearchIntegration.executeSmartSearch(intent, searchContext);
-      console.log(`[UnifiedSearch] Search results:`, results);
+      logger.debug(`[UnifiedSearch] Search results:`, results);
       setSearchResults(results);
 
       // Track the search
@@ -148,7 +152,7 @@ export function UnifiedSmartSearch({
       // Notify parent component
       onSearch?.(searchQuery);
     } catch (error) {
-      console.error('[UnifiedSearch] Search execution failed:', error);
+      logger.error('[UnifiedSearch] Search execution failed:', error);
     } finally {
       setIsSearching(false);
     }
@@ -195,7 +199,7 @@ export function UnifiedSmartSearch({
           setLocation(`${result.actionUrl}?q=${encodeURIComponent(query)}`);
         }
       } catch (error) {
-        console.error('Navigation failed:', error);
+        logger.error('Navigation failed:', error);
       } finally {
         // Always reset loading state
         setIsNavigating(false);
@@ -363,7 +367,7 @@ export function UnifiedSmartSearch({
                 {suggestions.length > 0 && (
                   <CommandGroup heading={`Smart Suggestions (${suggestions.length})`}>
                     {suggestions.map((suggestion, index) => {
-                      console.log(`[UnifiedSearch] Rendering suggestion ${index}:`, suggestion);
+                      logger.debug(`[UnifiedSearch] Rendering suggestion ${index}:`, suggestion);
                       return (
                         <CommandItem
                           key={index}

@@ -6,7 +6,9 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { XIcon, UserIcon, LockIcon } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { createClientLogger } from "@/lib/logger";
 
+const logger = createClientLogger("simple-auth");
 export default function SimpleAuthPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -38,10 +40,10 @@ export default function SimpleAuthPage() {
     setIsLoggingIn(true);
     
     try {
-      console.log("Attempting login with:", username);
+      logger.debug("Attempting login with:", username);
       
       // Add debug information to help diagnose login issues
-      console.log("LOGIN DEBUG: Using credentials", {
+      logger.debug("LOGIN DEBUG: Using credentials", {
         username,
         passwordLength: password.length,
         timestamp: new Date().toISOString()
@@ -59,13 +61,13 @@ export default function SimpleAuthPage() {
       });
       
       const responseText = await response.text();
-      console.log("Login response:", response.status, responseText);
+      logger.debug("Login response:", response.status, responseText);
       
       // Test if the endpoint is working
       if (!response.ok) {
         // Create a more detailed error message
         const errorDetails = `Status: ${response.status}, Response: ${responseText}`;
-        console.error("Login error details:", errorDetails);
+        logger.error("Login error details:", errorDetails);
         
         // Show specific error message for different types of failures
         if (response.status === 401) {
@@ -81,34 +83,34 @@ export default function SimpleAuthPage() {
       let data;
       try {
         data = JSON.parse(responseText);
-        console.log("Parsed login response data:", JSON.stringify(data));
+        logger.debug("Parsed login response data:", JSON.stringify(data));
       } catch (e) {
-        console.error("Failed to parse JSON response:", e, "Raw response:", responseText);
+        logger.error("Failed to parse JSON response:", e, "Raw response:", responseText);
         throw new Error("Invalid response from server");
       }
       
-      console.log("Login successful!", data);
+      logger.debug("Login successful!", data);
       
       // Store auth token
       if (data.token) {
         localStorage.setItem("auth_token", data.token);
-        console.log("Stored auth token (length):", data.token.length);
+        logger.debug("Stored auth token (length):", data.token.length);
         
         if (data.expiresIn) {
           const expiresAt = Date.now() + (data.expiresIn * 1000);
           localStorage.setItem("token_expires_at", expiresAt.toString());
-          console.log("Token expires at:", new Date(expiresAt).toISOString());
+          logger.debug("Token expires at:", new Date(expiresAt).toISOString());
         }
       } else {
-        console.warn("No token received in login response");
+        logger.warn("No token received in login response");
       }
       
       // Store user info
       if (data.user) {
         localStorage.setItem("user", JSON.stringify(data.user));
-        console.log("Stored user data:", data.user.id, data.user.username);
+        logger.debug("Stored user data:", data.user.id, data.user.username);
       } else {
-        console.warn("No user data received in login response");
+        logger.warn("No user data received in login response");
       }
       
       toast({
@@ -124,9 +126,9 @@ export default function SimpleAuthPage() {
             "Authorization": data.token ? `Bearer ${data.token}` : ""
           }
         });
-        console.log("User check response:", userCheckResponse.status, await userCheckResponse.text());
+        logger.debug("User check response:", userCheckResponse.status, await userCheckResponse.text());
       } catch (checkError) {
-        console.warn("User validation check failed:", checkError);
+        logger.warn("User validation check failed:", checkError);
       }
       
       // Redirect to home dashboard after a short delay
@@ -135,7 +137,7 @@ export default function SimpleAuthPage() {
       }, 1000);
       
     } catch (error) {
-      console.error("Login error:", error);
+      logger.error("Login error:", error);
       
       toast({
         title: "Login failed",

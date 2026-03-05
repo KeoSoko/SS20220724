@@ -1103,13 +1103,42 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCustomCategory(id: number): Promise<void> {
     try {
-      await db
-        .update(customCategories)
-        .set({ 
-          isActive: false,
-          updatedAt: new Date()
-        })
-        .where(eq(customCategories.id, id));
+      // Resolve the category's displayName and workspace before deleting
+      const [category] = await db
+        .select({ displayName: customCategories.displayName, userId: customCategories.userId })
+        .from(customCategories)
+        .where(eq(customCategories.id, id))
+        .limit(1);
+
+      if (!category) return;
+
+      const [userRow] = await db
+        .select({ workspaceId: users.workspaceId })
+        .from(users)
+        .where(eq(users.id, category.userId))
+        .limit(1);
+
+      await db.transaction(async (tx) => {
+        // Remove any merchant rules pointing to the retired label
+        if (userRow?.workspaceId) {
+          const deleted = await tx
+            .delete(merchantCategoryRules)
+            .where(
+              and(
+                eq(merchantCategoryRules.workspaceId, userRow.workspaceId),
+                eq(merchantCategoryRules.categoryLabel, category.displayName)
+              )
+            )
+            .returning({ id: merchantCategoryRules.id });
+          log(`[merchant-learning] Deleted ${deleted.length} rule(s) for retired category "${category.displayName}"`, 'api');
+        }
+
+        // Soft-delete the category
+        await tx
+          .update(customCategories)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(eq(customCategories.id, id));
+      });
     } catch (error) {
       console.error("Error deleting custom category:", error);
       throw error;

@@ -1032,10 +1032,10 @@ export function setupAuth(app: Express) {
           await storage.updateUser(user.id, { rememberMeToken: rememberToken });
         }
         
-        // Enforce max 3 concurrent sessions — revoke oldest if limit reached
+        // Enforce max 2 concurrent sessions — revoke oldest if limit reached
         if (storage.enforceSessionLimit) {
           try {
-            await storage.enforceSessionLimit(user.id, 3);
+            await storage.enforceSessionLimit(user.id, 2);
           } catch (limitErr) {
             log(`Failed to enforce session limit: ${limitErr}`, 'auth');
           }
@@ -1137,7 +1137,7 @@ export function setupAuth(app: Express) {
       const count = storage.getActiveSessionCount
         ? await storage.getActiveSessionCount(user.id)
         : 1;
-      res.json({ activeSessionCount: count, maxSessions: 3 });
+      res.json({ activeSessionCount: count, maxSessions: 2 });
     } catch (err) {
       log(`Failed to get session count: ${err}`, 'auth');
       res.status(500).json({ error: "Failed to retrieve session info" });

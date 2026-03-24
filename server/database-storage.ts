@@ -1039,6 +1039,48 @@ export class DatabaseStorage implements IStorage {
     
     return result.length;
   }
+
+  async getActiveSessionCount(userId: number): Promise<number> {
+    const result = await db.select({ id: authTokens.id })
+      .from(authTokens)
+      .where(and(
+        eq(authTokens.userId, userId),
+        eq(authTokens.isRevoked, false),
+        gte(authTokens.expiresAt, new Date())
+      ));
+    return result.length;
+  }
+
+  async enforceSessionLimit(userId: number, maxSessions: number = 3): Promise<void> {
+    const activeSessions = await db.select()
+      .from(authTokens)
+      .where(and(
+        eq(authTokens.userId, userId),
+        eq(authTokens.isRevoked, false),
+        gte(authTokens.expiresAt, new Date())
+      ))
+      .orderBy(asc(authTokens.createdAt));
+
+    if (activeSessions.length >= maxSessions) {
+      const toRevoke = activeSessions.slice(0, activeSessions.length - maxSessions + 1);
+      for (const session of toRevoke) {
+        await db.update(authTokens)
+          .set({ isRevoked: true })
+          .where(eq(authTokens.id, session.id));
+      }
+      log(`[session-limit] Revoked ${toRevoke.length} oldest session(s) for user ${userId} (limit: ${maxSessions})`, 'auth');
+    }
+  }
+
+  async revokeAllUserSessions(userId: number): Promise<void> {
+    await db.update(authTokens)
+      .set({ isRevoked: true })
+      .where(and(
+        eq(authTokens.userId, userId),
+        eq(authTokens.isRevoked, false)
+      ));
+    log(`[session-limit] Revoked all active sessions for user ${userId}`, 'auth');
+  }
   
   // Analytics methods
   async getCustomCategories(userId: number): Promise<any[]> {

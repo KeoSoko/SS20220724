@@ -1032,6 +1032,15 @@ export function setupAuth(app: Express) {
           await storage.updateUser(user.id, { rememberMeToken: rememberToken });
         }
         
+        // Enforce max 3 concurrent sessions — revoke oldest if limit reached
+        if (storage.enforceSessionLimit) {
+          try {
+            await storage.enforceSessionLimit(user.id, 3);
+          } catch (limitErr) {
+            log(`Failed to enforce session limit: ${limitErr}`, 'auth');
+          }
+        }
+
         // Create auth token in database if supported
         if (storage.createAuthToken) {
           try {
@@ -1116,6 +1125,42 @@ export function setupAuth(app: Express) {
     } else {
       // No session or valid token found
       res.status(200).json({ success: true, message: "Already logged out" });
+    }
+  });
+
+  // Get active session count for current user
+  app.get("/api/sessions", async (req: Request, res: Response) => {
+    if (!isAuthenticated(req)) return res.status(401).json({ error: "Unauthorized" });
+    const user = getUser(req);
+    if (!user) return res.status(401).json({ error: "No user found" });
+    try {
+      const count = storage.getActiveSessionCount
+        ? await storage.getActiveSessionCount(user.id)
+        : 1;
+      res.json({ activeSessionCount: count, maxSessions: 3 });
+    } catch (err) {
+      log(`Failed to get session count: ${err}`, 'auth');
+      res.status(500).json({ error: "Failed to retrieve session info" });
+    }
+  });
+
+  // Log out all other devices (revoke all sessions + increment token version)
+  app.post("/api/sessions/logout-all", async (req: Request, res: Response) => {
+    if (!isAuthenticated(req)) return res.status(401).json({ error: "Unauthorized" });
+    const user = getUser(req);
+    if (!user) return res.status(401).json({ error: "No user found" });
+    try {
+      if (storage.revokeAllUserSessions) {
+        await storage.revokeAllUserSessions(user.id);
+      }
+      if (storage.incrementTokenVersion) {
+        await storage.incrementTokenVersion(user.id);
+      }
+      log(`[session-limit] User ${user.id} logged out all devices`, 'auth');
+      res.json({ success: true, message: "All other devices have been logged out." });
+    } catch (err) {
+      log(`Failed to logout all devices: ${err}`, 'auth');
+      res.status(500).json({ error: "Failed to logout other devices" });
     }
   });
 

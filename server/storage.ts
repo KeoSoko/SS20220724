@@ -79,6 +79,9 @@ export interface IStorage {
   getAuthTokenByToken?(token: string): Promise<AuthToken | undefined>;
   revokeAuthToken?(tokenId: string): Promise<void>;
   cleanupExpiredTokens?(): Promise<number>;
+  getActiveSessionCount?(userId: number): Promise<number>;
+  enforceSessionLimit?(userId: number, maxSessions?: number): Promise<void>;
+  revokeAllUserSessions?(userId: number): Promise<void>;
   
   // Analytics methods
   getCategorySummary(userId: number): Promise<{ category: string, count: number, total: number }[]>;

@@ -1256,6 +1256,21 @@ export default function ProfilePage() {
   const [editingField, setEditingField] = useState<string | null>(null);
 
   const { toast } = useToast();
+
+  const { data: sessionData } = useQuery<{ activeSessionCount: number; maxSessions: number }>({
+    queryKey: ['/api/sessions'],
+  });
+
+  const logoutAllMutation = useMutation({
+    mutationFn: () => apiRequest('POST', '/api/sessions/logout-all'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/sessions'] });
+      navigate('/auth');
+    },
+    onError: () => {
+      toast({ title: 'Error', description: 'Failed to log out other devices.', variant: 'destructive' });
+    },
+  });
   
   // Create form
   const form = useForm<ProfileFormValues>({
@@ -1358,8 +1373,7 @@ export default function ProfilePage() {
   };
 
   const handleSecurityLogout = async () => {
-    await invalidateTokensMutation.mutateAsync();
-    navigate('/auth');
+    await logoutAllMutation.mutateAsync();
   };
 
 
@@ -1635,7 +1649,7 @@ export default function ProfilePage() {
         </Section>
 
         {/* Account Security Section */}
-        <Section title="Account Security" description="Manage your account security and session">
+        <Section title="Account Security" description="Manage your account security and active sessions">
           <ContentCard>
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 border rounded-none">
@@ -1658,17 +1672,38 @@ export default function ProfilePage() {
                 </div>
               )}
 
+              {/* Active Sessions */}
+              <div className="flex items-center justify-between p-4 border rounded-none">
+                <div className="flex items-center gap-3">
+                  <Monitor className="h-5 w-5 text-blue-600" />
+                  <div>
+                    <p className="font-medium">Active Sessions</p>
+                    <p className="text-sm text-gray-600">
+                      {sessionData
+                        ? `${sessionData.activeSessionCount} of ${sessionData.maxSessions} allowed device${sessionData.activeSessionCount !== 1 ? 's' : ''} active`
+                        : 'Loading...'}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">A maximum of 3 devices can be logged in at once. Oldest session is automatically removed when limit is reached.</p>
+                  </div>
+                </div>
+                {sessionData && (
+                  <StatusBadge status={sessionData.activeSessionCount >= sessionData.maxSessions ? 'warning' : 'success'}>
+                    {sessionData.activeSessionCount}/{sessionData.maxSessions}
+                  </StatusBadge>
+                )}
+              </div>
+
               <div className="border-t pl-[16px] pr-[16px] pt-[16px] pb-[16px]">
                 <Button
                   variant="outline"
                   onClick={handleSecurityLogout}
-                  disabled={invalidateTokensMutation.isPending}
+                  disabled={logoutAllMutation.isPending}
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
-                  Sign Out All Devices
+                  {logoutAllMutation.isPending ? 'Signing out...' : 'Sign Out All Devices'}
                 </Button>
-                <p className="text-xs text-gray-500 mt-2 pl-[16px] pr-[16px]">
-                  This will sign you out of all devices and require you to log in again
+                <p className="text-xs text-gray-500 mt-2">
+                  This will immediately log out all devices and require you to sign in again.
                 </p>
               </div>
             </div>

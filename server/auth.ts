@@ -676,7 +676,8 @@ export function setupAuth(app: Express) {
   app.post("/api/register", async (req: Request, res: Response, next: NextFunction) => {
     try {
       // Validate input
-      const { username, password, email, fullName, promoCode } = req.body;
+      const { username, password, fullName, promoCode } = req.body;
+      const email = req.body.email?.toLowerCase().trim();
       
       if (!username) {
         return res.status(400).json({ 

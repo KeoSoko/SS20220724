@@ -1,6 +1,7 @@
 import { storage } from "./storage";
 import { log } from "./vite";
 import { billingService } from "./billing-service";
+import { startTierMigrationMonitoring } from "./azure-tier-migration";
 
 /**
  * Seed subscription plans for Simple Slips
@@ -176,6 +177,10 @@ export async function initializeSubscriptionPlans() {
     
     // PAYMENT WARNINGS: Send trial expiry and renewal due warnings (3 days + 1 day before)
     billingService.startPaymentWarningMonitoring(12);
+
+    // AZURE TIER MIGRATION: Move blobs to Hot/Cool/Cold based on receipt age (runs every 24h)
+    // Also runs once immediately at startup to backfill all existing blobs
+    startTierMigrationMonitoring(24);
     
     log('Subscription plans initialization complete', 'billing');
   } catch (error) {

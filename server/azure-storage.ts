@@ -125,13 +125,14 @@ export class AzureBlobStorage {
         throw new Error('File size exceeds 40MB limit');
       }
       
-      // Upload blob with proper content type and cache headers
+      // Upload blob with proper content type, cache headers, and Hot tier for fast access
       const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
       await blockBlobClient.upload(buffer, buffer.length, {
         blobHTTPHeaders: {
           blobContentType: mimeType,
           blobCacheControl: 'public, max-age=31536000' // 1 year cache
-        }
+        },
+        tier: 'Hot' // New receipts start on Hot tier for fast access during active use
       });
       
       // Generate long-lived SAS URL (1 year expiry like Python version)
@@ -244,6 +245,23 @@ export class AzureBlobStorage {
     } catch (error) {
       log(`Error generating SAS URL: ${error}`, "azure");
       return null;
+    }
+  }
+  /**
+   * Set the access tier for an existing blob.
+   * Tiers: 'Hot' (fast, higher cost), 'Cool' (slower, cheaper), 'Cold' (slowest, cheapest)
+   */
+  async setBlobTier(blobName: string, tier: 'Hot' | 'Cool' | 'Cold'): Promise<boolean> {
+    try {
+      await this.initialize();
+      const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
+      const exists = await blockBlobClient.exists();
+      if (!exists) return false;
+      await blockBlobClient.setAccessTier(tier);
+      return true;
+    } catch (error) {
+      log(`Error setting tier ${tier} for blob ${blobName}: ${error}`, 'azure');
+      return false;
     }
   }
 }

@@ -36,6 +36,41 @@ async function compressLogoForPDF(imageBuffer: Buffer): Promise<string> {
 }
 
 /**
+ * Fetch an Azure blob image with a hard timeout.
+ * Returns base64 data URI or null if the fetch fails or times out.
+ * Cold-tier blobs can take 30+ seconds each — this prevents the export from hanging.
+ */
+async function fetchAzureImageWithTimeout(blobName: string, timeoutMs = 8000): Promise<string | null> {
+  if (blobName.toLowerCase().endsWith('.pdf')) return null;
+  try {
+    const imageUrl = await azureStorage.generateSasUrl(blobName, 1);
+    if (!imageUrl) return null;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(imageUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!response.ok) return null;
+      const arrayBuffer = await response.arrayBuffer();
+      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      return `data:image/jpeg;base64,${base64}`;
+    } catch (err: any) {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        logger.warn(`[export] Image fetch timed out after ${timeoutMs}ms: ${blobName}`);
+      } else {
+        logger.error(`[export] Failed to fetch Azure image: ${blobName}`, err);
+      }
+      return null;
+    }
+  } catch (err) {
+    logger.error(`[export] Failed to generate SAS URL for: ${blobName}`, err);
+    return null;
+  }
+}
+
+/**
  * Sanitize text for PDF generation - replaces problematic Unicode characters
  * with ASCII equivalents to prevent rendering issues in jsPDF
  */
@@ -369,6 +404,21 @@ export class ExportService {
           }
         }
 
+        // Pre-fetch all Azure images in parallel batches of 5 with a per-image timeout.
+        // This replaces sequential fetching which would hang for minutes on Cold-tier blobs.
+        const IMAGE_BATCH_SIZE = 5;
+        const imageCache = new Map<number, string | null>();
+        const receiptsNeedingAzureFetch = filteredReceipts.filter(
+          r => r.blobName && !r.imageData && !((r.blobUrl as string | null)?.startsWith('/uploads/'))
+        );
+        for (let i = 0; i < receiptsNeedingAzureFetch.length; i += IMAGE_BATCH_SIZE) {
+          const batch = receiptsNeedingAzureFetch.slice(i, i + IMAGE_BATCH_SIZE);
+          await Promise.all(batch.map(async (r) => {
+            const data = await fetchAzureImageWithTimeout(r.blobName as string);
+            imageCache.set(r.id, data);
+          }));
+        }
+
         for (const receipt of filteredReceipts) {
           const isEmailHtml = receipt.source === 'email' && emailHtmlReceiptIds.has(receipt.id);
           const hasRenderable = receipt.imageData || receipt.blobUrl || receipt.blobName || isEmailHtml;
@@ -418,12 +468,12 @@ export class ExportService {
               }
             } else {
               const contentStartY = metaY + 5;
-              let imageData = null;
+              let imageData: string | null = null;
 
               if (receipt.imageData) {
-                imageData = receipt.imageData;
-              } else if (receipt.blobUrl && receipt.blobUrl.startsWith('/uploads/')) {
-                const filePath = path.join(process.cwd(), receipt.blobUrl);
+                imageData = receipt.imageData as string;
+              } else if (receipt.blobUrl && (receipt.blobUrl as string).startsWith('/uploads/')) {
+                const filePath = path.join(process.cwd(), receipt.blobUrl as string);
                 try {
                   if (fs.existsSync(filePath)) {
                     const fileBuffer = fs.readFileSync(filePath);
@@ -436,23 +486,7 @@ export class ExportService {
                   logger.error(`Failed to read local file: ${filePath}`, fileError);
                 }
               } else if (receipt.blobName) {
-                const blobNameStr = receipt.blobName as string;
-                const isPdfBlob = blobNameStr.toLowerCase().endsWith('.pdf');
-                if (!isPdfBlob) {
-                  const imageUrl = await azureStorage.generateSasUrl(blobNameStr, 1);
-                  if (imageUrl) {
-                    try {
-                      const response = await fetch(imageUrl);
-                      if (response.ok) {
-                        const arrayBuffer = await response.arrayBuffer();
-                        const base64 = Buffer.from(arrayBuffer).toString('base64');
-                        imageData = `data:image/jpeg;base64,${base64}`;
-                      }
-                    } catch (fetchError) {
-                      logger.error(`Failed to fetch Azure image: ${blobNameStr}`, fetchError);
-                    }
-                  }
-                }
+                imageData = imageCache.get(receipt.id) ?? null;
               }
 
               let yPos = contentStartY;

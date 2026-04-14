@@ -9,7 +9,7 @@ import { azureStorage } from './azure-storage.js';
 import { formatReportingCategory, getReportingCategory } from './reporting-utils.js';
 import { db } from './db.js';
 import { emailDocuments } from '../shared/schema.js';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { createServerLogger } from "./logger";
 
 const logger = createServerLogger("export-service");
@@ -243,8 +243,10 @@ export class ExportService {
     groupBy?: 'category' | 'date';
   } = {}): Promise<Buffer> {
     try {
+      const exportStartedAt = Date.now();
       const receipts = await storage.getReceiptsByUser(userId, 10000);
       const user = await storage.getUser(userId);
+      const dataLoadCompletedAt = Date.now();
       
       // Filter receipts
       const filteredReceipts = receipts.filter(receipt => {
@@ -384,30 +386,38 @@ export class ExportService {
 
       // Add individual receipts with images if requested
       if (options.includeImages) {
+        const imagePhaseStartedAt = Date.now();
         const emailReceiptIds = filteredReceipts
           .filter(r => r.source === 'email')
           .map(r => r.id);
         const emailHtmlReceiptIds = new Set<number>();
+        const emailLookupStartedAt = Date.now();
         if (emailReceiptIds.length > 0) {
+          const emailReceiptIdSet = new Set(emailReceiptIds);
           const emailDocs = await db.select({
             receiptId: emailDocuments.receiptId,
             sourceType: emailDocuments.sourceType,
           })
             .from(emailDocuments)
             .where(
-              eq(emailDocuments.sourceType, 'email_body')
+              and(
+                eq(emailDocuments.sourceType, 'email_body'),
+                inArray(emailDocuments.receiptId, emailReceiptIds)
+              )
             );
           for (const doc_ of emailDocs) {
-            if (doc_.receiptId && emailReceiptIds.includes(doc_.receiptId)) {
+            if (doc_.receiptId && emailReceiptIdSet.has(doc_.receiptId)) {
               emailHtmlReceiptIds.add(doc_.receiptId);
             }
           }
         }
+        const emailLookupCompletedAt = Date.now();
 
         // Pre-fetch all Azure images in parallel batches of 5 with a per-image timeout.
         // This replaces sequential fetching which would hang for minutes on Cold-tier blobs.
         const IMAGE_BATCH_SIZE = 5;
         const imageCache = new Map<number, string | null>();
+        const azurePrefetchStartedAt = Date.now();
         const receiptsNeedingAzureFetch = filteredReceipts.filter(
           r => r.blobName && !r.imageData && !((r.blobUrl as string | null)?.startsWith('/uploads/'))
         );
@@ -418,7 +428,9 @@ export class ExportService {
             imageCache.set(r.id, data);
           }));
         }
+        const azurePrefetchCompletedAt = Date.now();
 
+        const receiptRenderStartedAt = Date.now();
         for (const receipt of filteredReceipts) {
           const isEmailHtml = receipt.source === 'email' && emailHtmlReceiptIds.has(receipt.id);
           const hasRenderable = receipt.imageData || receipt.blobUrl || receipt.blobName || isEmailHtml;
@@ -538,6 +550,23 @@ export class ExportService {
             logger.error(`Failed to render receipt ${receipt.id}:`, imageError);
           }
         }
+        const receiptRenderCompletedAt = Date.now();
+
+        logger.info(JSON.stringify({
+          stage: "EXPORT_RECEIPT_IMAGE_PHASE_TIMING",
+          userId,
+          receiptCount: filteredReceipts.length,
+          emailReceiptCount: emailReceiptIds.length,
+          emailHtmlReceiptCount: emailHtmlReceiptIds.size,
+          azureFetchCandidateCount: receiptsNeedingAzureFetch.length,
+          timingMs: {
+            emailLookup: emailLookupCompletedAt - emailLookupStartedAt,
+            azurePrefetch: azurePrefetchCompletedAt - azurePrefetchStartedAt,
+            receiptRender: receiptRenderCompletedAt - receiptRenderStartedAt,
+            imagePhaseTotal: receiptRenderCompletedAt - imagePhaseStartedAt
+          },
+          timestamp: new Date().toISOString()
+        }));
       }
 
       // Add branded footer to all pages
@@ -557,6 +586,10 @@ export class ExportService {
         endDate: options.endDate?.toISOString() || null,
         category: options.category || null,
         includeImages: options.includeImages || false,
+        timingMs: {
+          dataLoad: dataLoadCompletedAt - exportStartedAt,
+          total: Date.now() - exportStartedAt
+        },
         timestamp: new Date().toISOString()
       }));
 

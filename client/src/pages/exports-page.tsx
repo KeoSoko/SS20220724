@@ -390,7 +390,7 @@ export default function ExportsPage() {
               {/* PDF Report row */}
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Receipts PDF</p>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <Button
                     variant="outline"
                     onClick={() => handlePreview('pdf')}
@@ -434,7 +434,7 @@ export default function ExportsPage() {
               {/* Tax Report row */}
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Tax Report</p>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <Button
                     variant="outline"
                     onClick={() => handlePreview('tax-report')}
@@ -559,8 +559,9 @@ export default function ExportsPage() {
           </DialogHeader>
           <div className="flex-1 overflow-hidden">
             {previewUrl && (
-              <iframe
+              <embed
                 src={previewUrl}
+                type="application/pdf"
                 className="w-full h-full border-0"
                 title={previewTitle}
               />

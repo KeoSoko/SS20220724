@@ -1809,6 +1809,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const actualFileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
         const blobClient = containerClient.getBlockBlobClient(actualFileName);
         await blobClient.uploadData(buffer, { blobHTTPHeaders: { blobContentType: 'image/jpeg' } });
+        await blobClient.setAccessTier('Hot');
         uploadResult = { publicUrl: blobClient.url, fileName: actualFileName };
       } catch (azureError) {
         const localResult = await replitStorage.uploadReceiptImage(imageData, fileName);

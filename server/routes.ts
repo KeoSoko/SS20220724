@@ -58,6 +58,7 @@ import { aiEmailAssistant } from "./ai-email-assistant";
 import { recurringExpenseService } from "./recurring-expense-service";
 import { billingService } from "./billing-service";
 import { smartReminderService } from "./smart-reminder-service";
+import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategorization } from "./receipt-flow-utils";
 import { profitLossService } from "./profit-loss-service";
 import { registerAdminRoutes } from "./admin-routes";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
@@ -1013,7 +1014,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       
       // Security: Validate and sanitize all inputs
-      const { storeName, total, category, notes, reportLabel, items, imageData, isRecurring, isTaxDeductible, confidenceScore, clientUploadId, allowDuplicate } = req.body;
+      const { storeName, total, category, notes, reportLabel, items, imageData, source, isRecurring, isTaxDeductible, confidenceScore, clientUploadId, allowDuplicate } = req.body;
+      const receiptSource = resolveReceiptSource(source);
 
       if (clientUploadId && typeof clientUploadId === 'string' && storage.getReceiptByClientUploadId) {
         const existingReceipt = await storage.getReceiptByClientUploadId(userId, clientUploadId);
@@ -1087,7 +1089,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Apply merchant category rule if no label was manually provided
       let effectiveReportLabel = sanitizedReportLabel;
-      let effectiveCategorySource = "ai";
+      let effectiveCategorySource = resolveInitialCategorySource(receiptSource);
       if (!effectiveReportLabel && sanitizedStoreName.length > 2 && storage.getMerchantCategoryRule) {
         try {
           const [userRow] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
@@ -1124,6 +1126,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isRecurring: Boolean(isRecurring),
           isTaxDeductible: Boolean(isTaxDeductible),
           confidenceScore: confidenceScore || null
+          ,
+          source: receiptSource
         });
 
         if (!validationResult.success) {
@@ -1322,28 +1326,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         price: (item && typeof item === 'object' && item.price) ? String(item.price) : "0.00"
       }));
 
-      // AI Categorization - Override client-side category with AI prediction
-      try {
-        log(`Starting AI categorization for store: ${receiptData.storeName}`, "ai");
-        const categorization = await aiCategorizationService.categorizeReceipt(
-          receiptData.storeName,
-          receiptData.items,
-          String(receiptData.total)
-        );
-        
-        log(`AI categorization result: ${categorization.category} (confidence: ${categorization.confidence})`, "ai");
-        
-        // Update receipt data with AI suggestions
-        receiptData.category = categorization.category;
-        if (receiptData.categorySource !== "rule") {
-          receiptData.categorySource = "ai";
-        }
-        
-      } catch (error) {
-        log(`AI categorization failed: ${error instanceof Error ? error.message : String(error)}`, "ai");
-        // Continue with the original category if AI fails
-        if (!receiptData.category) {
-          receiptData.category = "other";
+      // AI Categorization - Override client-side category with AI prediction (except manual entries)
+      if (shouldRunAiCategorization(receiptSource)) {
+        try {
+          log(`Starting AI categorization for store: ${receiptData.storeName}`, "ai");
+          const categorization = await aiCategorizationService.categorizeReceipt(
+            receiptData.storeName,
+            receiptData.items,
+            String(receiptData.total)
+          );
+          
+          log(`AI categorization result: ${categorization.category} (confidence: ${categorization.confidence})`, "ai");
+          
+          // Update receipt data with AI suggestions
+          receiptData.category = categorization.category;
+          if (receiptData.categorySource !== "rule") {
+            receiptData.categorySource = "ai";
+          }
+          
+        } catch (error) {
+          log(`AI categorization failed: ${error instanceof Error ? error.message : String(error)}`, "ai");
+          // Continue with the original category if AI fails
+          if (!receiptData.category) {
+            receiptData.category = "other";
+          }
         }
       }
 
@@ -1772,6 +1778,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update a receipt
+  app.post("/api/receipts/:id/attach-image", requireWorkspaceRole("owner", "editor"), async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    try {
+      const receiptId = validateReceiptId(req.params.id);
+      const userId = getUserId(req);
+      const receipt = await storage.getReceipt(receiptId);
+      if (!receipt) return res.sendStatus(404);
+      if (receipt.userId !== userId) return res.sendStatus(403);
+
+      const imageData = req.body?.imageData;
+      if (!imageData || typeof imageData !== "string") {
+        return res.status(400).json({ error: "imageData is required" });
+      }
+      const imageValidation = validateImageData(imageData);
+      if (!imageValidation.isValid) {
+        return res.status(400).json({ error: imageValidation.error });
+      }
+
+      const fileName = `receipt-${Date.now()}.jpg`;
+      let uploadResult;
+      try {
+        const { BlobServiceClient } = require('@azure/storage-blob');
+        const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+        if (!connectionString) throw new Error('Azure connection string not available');
+        const client = BlobServiceClient.fromConnectionString(connectionString);
+        const containerClient = client.getContainerClient('receipt-images');
+        const base64Data = imageData.split(',')[1];
+        const buffer = Buffer.from(base64Data, 'base64');
+        const actualFileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
+        const blobClient = containerClient.getBlockBlobClient(actualFileName);
+        await blobClient.uploadData(buffer, { blobHTTPHeaders: { blobContentType: 'image/jpeg' } });
+        uploadResult = { publicUrl: blobClient.url, fileName: actualFileName };
+      } catch (azureError) {
+        const localResult = await replitStorage.uploadReceiptImage(imageData, fileName);
+        uploadResult = { publicUrl: localResult.publicUrl, fileName: localResult.fileName };
+      }
+
+      const updatedReceipt = await storage.updateReceipt(receiptId, {
+        blobUrl: uploadResult.publicUrl,
+        blobName: uploadResult.fileName,
+        imageData: null,
+      });
+      res.json({ receipt: updatedReceipt, imageUrl: uploadResult.publicUrl, blobName: uploadResult.fileName });
+    } catch (error) {
+      log(`Error attaching image: ${error}`, "api");
+      res.status(500).json({ error: "Failed to attach image" });
+    }
+  });
+
   app.patch("/api/receipts/:id", requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 

@@ -1125,8 +1125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           clientUploadId: typeof clientUploadId === 'string' ? clientUploadId : undefined,
           isRecurring: Boolean(isRecurring),
           isTaxDeductible: Boolean(isTaxDeductible),
-          confidenceScore: confidenceScore || null
-          ,
+          confidenceScore: confidenceScore || null,
           source: receiptSource
         });
 

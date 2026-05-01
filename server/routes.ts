@@ -58,6 +58,7 @@ import { aiEmailAssistant } from "./ai-email-assistant";
 import { recurringExpenseService } from "./recurring-expense-service";
 import { billingService } from "./billing-service";
 import { smartReminderService } from "./smart-reminder-service";
+import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategorization } from "./receipt-flow-utils";
 import { profitLossService } from "./profit-loss-service";
 import { registerAdminRoutes } from "./admin-routes";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
@@ -1013,7 +1014,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = getUserId(req);
       
       // Security: Validate and sanitize all inputs
-      const { storeName, total, category, notes, reportLabel, items, imageData, isRecurring, isTaxDeductible, confidenceScore, clientUploadId, allowDuplicate } = req.body;
+      const { storeName, total, category, notes, reportLabel, items, imageData, source, isRecurring, isTaxDeductible, confidenceScore, clientUploadId, allowDuplicate } = req.body;
+      const receiptSource = resolveReceiptSource(source);
 
       if (clientUploadId && typeof clientUploadId === 'string' && storage.getReceiptByClientUploadId) {
         const existingReceipt = await storage.getReceiptByClientUploadId(userId, clientUploadId);
@@ -1087,7 +1089,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Apply merchant category rule if no label was manually provided
       let effectiveReportLabel = sanitizedReportLabel;
-      let effectiveCategorySource = "ai";
+      let effectiveCategorySource = resolveInitialCategorySource(receiptSource);
       if (!effectiveReportLabel && sanitizedStoreName.length > 2 && storage.getMerchantCategoryRule) {
         try {
           const [userRow] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
@@ -1124,6 +1126,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isRecurring: Boolean(isRecurring),
           isTaxDeductible: Boolean(isTaxDeductible),
           confidenceScore: confidenceScore || null
+          ,
+          source: receiptSource
         });
 
         if (!validationResult.success) {
@@ -1322,28 +1326,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         price: (item && typeof item === 'object' && item.price) ? String(item.price) : "0.00"
       }));
 
-      // AI Categorization - Override client-side category with AI prediction
-      try {
-        log(`Starting AI categorization for store: ${receiptData.storeName}`, "ai");
-        const categorization = await aiCategorizationService.categorizeReceipt(
-          receiptData.storeName,
-          receiptData.items,
-          String(receiptData.total)
-        );
-        
-        log(`AI categorization result: ${categorization.category} (confidence: ${categorization.confidence})`, "ai");
-        
-        // Update receipt data with AI suggestions
-        receiptData.category = categorization.category;
-        if (receiptData.categorySource !== "rule") {
-          receiptData.categorySource = "ai";
-        }
-        
-      } catch (error) {
-        log(`AI categorization failed: ${error instanceof Error ? error.message : String(error)}`, "ai");
-        // Continue with the original category if AI fails
-        if (!receiptData.category) {
-          receiptData.category = "other";
+      // AI Categorization - Override client-side category with AI prediction (except manual entries)
+      if (shouldRunAiCategorization(receiptSource)) {
+        try {
+          log(`Starting AI categorization for store: ${receiptData.storeName}`, "ai");
+          const categorization = await aiCategorizationService.categorizeReceipt(
+            receiptData.storeName,
+            receiptData.items,
+            String(receiptData.total)
+          );
+          
+          log(`AI categorization result: ${categorization.category} (confidence: ${categorization.confidence})`, "ai");
+          
+          // Update receipt data with AI suggestions
+          receiptData.category = categorization.category;
+          if (receiptData.categorySource !== "rule") {
+            receiptData.categorySource = "ai";
+          }
+          
+        } catch (error) {
+          log(`AI categorization failed: ${error instanceof Error ? error.message : String(error)}`, "ai");
+          // Continue with the original category if AI fails
+          if (!receiptData.category) {
+            receiptData.category = "other";
+          }
         }
       }
 
@@ -1784,6 +1790,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const imageData = req.body?.imageData;
       if (!imageData || typeof imageData !== "string") {
         return res.status(400).json({ error: "imageData is required" });
+      }
+      // Keep image payload validation in attach flow to prevent arbitrary string uploads.
+      const imageValidation = validateImageData(imageData);
+      if (!imageValidation.isValid) {
+        return res.status(400).json({ error: imageValidation.error });
       }
 
       const fileName = `receipt-${Date.now()}.jpg`;

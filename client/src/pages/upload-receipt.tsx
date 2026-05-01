@@ -51,6 +51,7 @@ const formatCurrency = (amount: string | number) => {
 };
 
 export default function UploadReceipt() {
+  type ReceiptEntryMode = "scan" | "manual";
   const [_, setLocation] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -95,6 +96,7 @@ export default function UploadReceipt() {
   const [cameraMode, setCameraMode] = useState(false);
   const [showCameraPermission, setShowCameraPermission] = useState(false);
   const [newReceiptId, setNewReceiptId] = useState<number | null>(null);
+  const [entryMode, setEntryMode] = useState<ReceiptEntryMode>("scan");
   
   // Additional receipt properties for better UX
   const [isRecurring, setIsRecurring] = useState(false);
@@ -202,6 +204,7 @@ export default function UploadReceipt() {
     setScanProgress("");
     setIsScanning(false);
     setIsPdfProcessing(false);
+    setEntryMode("scan");
   };
 
   // Handle "Save & Scan Another" action
@@ -738,7 +741,7 @@ export default function UploadReceipt() {
 
   const uploadMutation = useMutation({
     mutationFn: async () => {
-      if (!imageData) {
+      if (entryMode === "scan" && !imageData) {
         throw new Error("No image data available");
       }
       const clientUploadId = clientUploadIdRef.current;
@@ -758,6 +761,7 @@ export default function UploadReceipt() {
         notes: notes || null,
         confidenceScore: confidenceScore || null,
         imageData,
+        source: entryMode === "manual" ? "manual" : "scan",
         isRecurring,
         isTaxDeductible,
         allowDuplicate: allowDuplicateSave,
@@ -803,6 +807,7 @@ export default function UploadReceipt() {
           notes: notes || null,
           confidenceScore: confidenceScore || null,
           imageData,
+          source: entryMode === "manual" ? "manual" : "scan",
           isRecurring,
           isTaxDeductible,
           allowDuplicate: allowDuplicateSave,
@@ -874,6 +879,7 @@ export default function UploadReceipt() {
           notes: notes || null,
           confidenceScore: confidenceScore || null,
           imageData,
+          source: entryMode === "manual" ? "manual" : "scan",
           isRecurring,
           isTaxDeductible,
           allowDuplicate: allowDuplicateSave,
@@ -907,6 +913,7 @@ export default function UploadReceipt() {
           notes: notes || null,
           confidenceScore: confidenceScore || null,
           imageData,
+          source: entryMode === "manual" ? "manual" : "scan",
           isRecurring,
           isTaxDeductible,
         }, '/api/receipts');
@@ -1469,6 +1476,33 @@ export default function UploadReceipt() {
           </div>
         )}
 
+        {/* Entry mode toggle */}
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant={entryMode === "scan" ? "default" : "outline"}
+            onClick={() => setEntryMode("scan")}
+            disabled={isScanning || uploadMutation.isPending}
+          >
+            📷 Scan Receipt
+          </Button>
+          <Button
+            type="button"
+            variant={entryMode === "manual" ? "default" : "outline"}
+            onClick={() => {
+              setEntryMode("manual");
+              setImageData(null);
+              setPreviewUrl(null);
+              if (!date) {
+                setDate(new Date().toISOString().split("T")[0]);
+              }
+            }}
+            disabled={isScanning || uploadMutation.isPending}
+          >
+            ✏️ Enter Manually
+          </Button>
+        </div>
+
         {/* Batch Mode UI */}
         {batchMode ? (
           <Card>
@@ -1605,7 +1639,7 @@ export default function UploadReceipt() {
               </div>
             </CardContent>
           </Card>
-        ) : !imageData ? (
+        ) : !imageData && entryMode !== "manual" ? (
           // Upload/capture interface
           <Card>
             <CardContent className="pt-6">

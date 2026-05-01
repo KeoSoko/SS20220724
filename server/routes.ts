@@ -1772,6 +1772,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update a receipt
+  app.post("/api/receipts/:id/attach-image", requireWorkspaceRole("owner", "editor"), async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    try {
+      const receiptId = validateReceiptId(req.params.id);
+      const userId = getUserId(req);
+      const receipt = await storage.getReceipt(receiptId);
+      if (!receipt) return res.sendStatus(404);
+      if (receipt.userId !== userId) return res.sendStatus(403);
+
+      const imageData = req.body?.imageData;
+      if (!imageData || typeof imageData !== "string") {
+        return res.status(400).json({ error: "imageData is required" });
+      }
+
+      const fileName = `receipt-${Date.now()}.jpg`;
+      let uploadResult;
+      try {
+        const { BlobServiceClient } = require('@azure/storage-blob');
+        const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+        if (!connectionString) throw new Error('Azure connection string not available');
+        const client = BlobServiceClient.fromConnectionString(connectionString);
+        const containerClient = client.getContainerClient('receipt-images');
+        const base64Data = imageData.split(',')[1];
+        const buffer = Buffer.from(base64Data, 'base64');
+        const actualFileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
+        const blobClient = containerClient.getBlockBlobClient(actualFileName);
+        await blobClient.uploadData(buffer, { blobHTTPHeaders: { blobContentType: 'image/jpeg' } });
+        uploadResult = { publicUrl: blobClient.url, fileName: actualFileName };
+      } catch (azureError) {
+        const localResult = await replitStorage.uploadReceiptImage(imageData, fileName);
+        uploadResult = { publicUrl: localResult.publicUrl, fileName: localResult.fileName };
+      }
+
+      const updatedReceipt = await storage.updateReceipt(receiptId, {
+        blobUrl: uploadResult.publicUrl,
+        blobName: uploadResult.fileName,
+        imageData: null,
+      });
+      res.json({ receipt: updatedReceipt, imageUrl: uploadResult.publicUrl, blobName: uploadResult.fileName });
+    } catch (error) {
+      log(`Error attaching image: ${error}`, "api");
+      res.status(500).json({ error: "Failed to attach image" });
+    }
+  });
+
   app.patch("/api/receipts/:id", requireWorkspaceRole("owner", "editor"), async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
 

@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToPDF } from "@/lib/export-individual";
+import { optimizeImage } from "@/utils/image-optimization";
 import { 
   ArrowLeft, 
   Calendar, 
@@ -131,6 +132,7 @@ export default function ReceiptDetail() {
   const [isRefreshingImage, setIsRefreshingImage] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
   const [imageErrorCount, setImageErrorCount] = useState<number>(0);
+  const [isAttachingImage, setIsAttachingImage] = useState(false);
   
   // Advanced categorization state
   const [editedSubcategory, setEditedSubcategory] = useState("");
@@ -146,6 +148,27 @@ export default function ReceiptDetail() {
     { category: "dining_takeaways", amount: 0, notes: "" }
   ]);
   const [splitMode, setSplitMode] = useState<"amount" | "percentage">("amount");
+
+  const handleAttachImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !receipt) return;
+    try {
+      setIsAttachingImage(true);
+      const optimized = await optimizeImage(file, "receipt");
+      const attachRes = await apiRequest("POST", `/api/receipts/${receipt.id}/attach-image`, {
+        imageData: optimized.dataUrl,
+      });
+      const attachData = await attachRes.json();
+      setImageUrl(attachData.imageUrl || optimized.dataUrl);
+      queryClient.invalidateQueries({ queryKey: [`/api/receipts/${id}`] });
+      toast({ title: "Image updated", description: "Receipt image has been saved." });
+    } catch (error) {
+      toast({ title: "Upload failed", description: "Could not attach receipt image.", variant: "destructive" });
+    } finally {
+      setIsAttachingImage(false);
+      e.target.value = "";
+    }
+  };
 
   // Get a specific receipt
   const { data: receipt, isLoading, error } = useQuery<Receipt>({
@@ -1028,6 +1051,13 @@ export default function ReceiptDetail() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <CardTitle>{emailHtmlContent ? 'Original Email Receipt' : 'Receipt Image'}</CardTitle>
             <div className="flex flex-wrap items-center gap-2">
+              <input
+                id="receipt-image-file"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAttachImage}
+              />
               {emailDocumentId && (
                 <Button
                   variant="outline"
@@ -1088,6 +1118,17 @@ export default function ReceiptDetail() {
                     <RefreshCcw className="h-4 w-4 mr-2" />
                   )}
                   Refresh URL
+                </Button>
+              )}
+              {!emailHtmlContent && isEditing && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isAttachingImage}
+                  onClick={() => document.getElementById("receipt-image-file")?.click()}
+                >
+                  {isAttachingImage ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  {imageUrl ? "Replace Image" : "Attach Receipt Image"}
                 </Button>
               )}
             </div>

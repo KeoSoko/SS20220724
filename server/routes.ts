@@ -1791,6 +1791,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!imageData || typeof imageData !== "string") {
         return res.status(400).json({ error: "imageData is required" });
       }
+      // Keep image payload validation in attach flow to prevent arbitrary string uploads.
       const imageValidation = validateImageData(imageData);
       if (!imageValidation.isValid) {
         return res.status(400).json({ error: imageValidation.error });

@@ -168,18 +168,48 @@ export function useMobileFeatures(): MobileFeatures {
     }
   }, []);
 
-  // Register service worker for PWA functionality
+  // Register service worker and poll for new deployments every 5 minutes
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/sw.js')
-        .then((registration) => {
-          console.log('[PWA] Service Worker registered:', registration);
-        })
-        .catch((error) => {
-          console.error('[PWA] Service Worker registration failed:', error);
-        });
-    }
+    if (!('serviceWorker' in navigator)) return;
+
+    let registration: ServiceWorkerRegistration | null = null;
+    let knownVersion: string | null = null;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((reg) => {
+        registration = reg;
+        console.log('[PWA] Service Worker registered:', reg);
+      })
+      .catch((error) => {
+        console.error('[PWA] Service Worker registration failed:', error);
+      });
+
+    const checkVersion = async () => {
+      try {
+        const res = await fetch('/api/version', { cache: 'no-store' });
+        if (!res.ok) return;
+        const { version } = await res.json();
+        if (knownVersion === null) {
+          knownVersion = version;
+          return;
+        }
+        if (version !== knownVersion && registration) {
+          console.log('[PWA] New version detected — updating service worker');
+          knownVersion = version;
+          registration.update();
+        }
+      } catch {
+        // Network error — ignore silently
+      }
+    };
+
+    intervalId = setInterval(checkVersion, 5 * 60 * 1000);
+
+    return () => {
+      if (intervalId !== null) clearInterval(intervalId);
+    };
   }, []);
 
   return {

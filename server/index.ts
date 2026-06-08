@@ -8,6 +8,8 @@ import { initializeSubscriptionPlans } from "./subscription-plans-seeder";
 
 const app = express();
 
+const BUILD_TIME = Date.now().toString();
+
 const isProduction = process.env.NODE_ENV === 'production';
 
 const parseEnvInt = (value: string | undefined, fallback: number): number => {
@@ -302,6 +304,14 @@ app.use((req, res, next) => {
       console.error('Failed to log performance data:', error);
       res.status(500).json({ error: 'Failed to log performance' });
     }
+  });
+
+  // Build version endpoint — used by PWA to detect new deployments and auto-update
+  // Must be registered before registerRoutes to avoid the /api/* catch-all
+  app.get('/api/version', (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.json({ version: BUILD_TIME });
   });
 
   // Register API routes

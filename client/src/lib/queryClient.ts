@@ -85,8 +85,14 @@ async function throwIfResNotOk(res: Response) {
       (error as any).responseData = errorData;
       throw error;
     } catch (parseError) {
-      // If JSON parsing fails, throw generic error
-      throw new Error(`${res.status}: ${text}`);
+      if (parseError instanceof Error && (parseError as any).status) {
+        throw parseError;
+      }
+
+      // If JSON parsing fails, throw generic error while keeping status metadata.
+      const error = new Error(`${res.status}: ${text}`);
+      (error as any).status = res.status;
+      throw error;
     }
   }
 }

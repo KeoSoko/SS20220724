@@ -510,6 +510,11 @@ export default function UploadReceipt() {
       }
     },
     onSuccess: (data) => {
+      if (data.offline) {
+        setIsScanning(false);
+        return;
+      }
+
       // Increment progress to show we're processing the results
       setProgressValue(75);
       setScanProgress("📋 Organizing your receipt data...");
@@ -591,7 +596,7 @@ export default function UploadReceipt() {
         setReportLabel("");
       } else {
         // Only use fallback categorization if AI didn't provide a category
-        const lowerStoreName = data.storeName.toLowerCase();
+        const lowerStoreName = (data.storeName || "").toLowerCase();
         const itemNames = items.map((item: {name: string, price: string}) => item.name.toLowerCase()).join(' ');
         const combined = `${lowerStoreName} ${itemNames}`;
         
@@ -632,7 +637,7 @@ export default function UploadReceipt() {
         setIsScanning(false);
       }, 500);
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
       setIsScanning(false);
       setScanProgress("");
       setProgressValue(0);
@@ -641,10 +646,13 @@ export default function UploadReceipt() {
       
       // Check if this is a subscription/trial expiration error FIRST
       if (
-        error.message.includes('Active subscription required') ||
-        error.message.includes('trial has ended') ||
-        error.message.includes('Please subscribe to continue') ||
-        (error.message.includes('403') && error.message.includes('subscription'))
+        error.status === 403 && (
+          error.errorType === 'Subscription required' ||
+          error.responseData?.error === 'Subscription required' ||
+          error.message.includes('subscription') ||
+          error.message.includes('trial has ended') ||
+          error.message.includes('Please subscribe to continue')
+        )
       ) {
         toast({
           title: "🔒 Trial has ended",
@@ -674,6 +682,8 @@ export default function UploadReceipt() {
       // Handle specific Azure OCR connection errors
       if (error.message.includes("invalid subscription key") || 
           error.message.includes("Access denied") ||
+          error.message.includes("Forbidden") ||
+          error.message.includes("403") ||
           error.message.includes("API endpoint") ||
           error.message.includes("service unavailable") ||
           error.message.includes("Connection failed") ||
@@ -1076,8 +1086,9 @@ export default function UploadReceipt() {
       
       // Check if this is a subscription/trial expiration error
       if (error.status === 403 && (
-        error.message.includes('Active subscription required') ||
+        error.message.includes('subscription') ||
         error.message.includes('trial has ended') ||
+        error.responseData?.error === 'Subscription required' ||
         error.responseData?.error === 'Active subscription required'
       )) {
         toast({

@@ -1496,7 +1496,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         log(`Azure OCR failed (status/code: ${azureStatus}); trying local OCR fallback: ${azureError?.message || azureError}`, "api");
 
         try {
-          receiptData = await localOcrFallback.analyzeReceipt(enhancedImageData);
+          // Tesseract is CPU-heavy and can hang on bad input; bound it so a fallback
+          // can never block the request past the client's scan timeout.
+          const fallbackTimeout = 40000; // 40 seconds max for local OCR
+          receiptData = await Promise.race([
+            localOcrFallback.analyzeReceipt(enhancedImageData),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("Local OCR fallback timed out")), fallbackTimeout)
+            )
+          ]) as any;
           receiptData.ocrProvider = "local-tesseract";
           receiptData.ocrFallbackReason = azureStatus === "unknown" ? "azure_error" : `azure_${azureStatus}`;
           ocrProvider = "local-tesseract";

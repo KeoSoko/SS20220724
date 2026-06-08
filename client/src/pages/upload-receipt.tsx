@@ -453,9 +453,9 @@ export default function UploadReceipt() {
       const startTime = Date.now();
       const progressInterval = setInterval(() => {
         const elapsedTime = Date.now() - startTime;
-        // Calculate a progressive increment (max 45% more progress over 30 seconds)
-        if (elapsedTime < 30000) {
-          const additionalProgress = Math.min(45, Math.floor(elapsedTime / 30000 * 45));
+        // Calculate a progressive increment (max 45% more progress over 60 seconds)
+        if (elapsedTime < 60000) {
+          const additionalProgress = Math.min(45, Math.floor(elapsedTime / 60000 * 45));
           setProgressValue(25 + additionalProgress);
           
           // Update the message periodically to show activity
@@ -476,7 +476,7 @@ export default function UploadReceipt() {
         const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => {
             reject(new Error('Scanning timed out - please enter details manually'));
-          }, 30000); // 30 second timeout
+          }, 65000); // 65s — must exceed backend's 60s Azure OCR cap so the server's response wins
         });
         
         // Race between API call and timeout
@@ -1282,8 +1282,22 @@ export default function UploadReceipt() {
   const handleCameraData = async (capturedImageData: string) => {
     console.log("[Upload] Camera data received, length:", capturedImageData.length);
     setCameraMode(false);
-    setImageData(capturedImageData);
-    setPreviewUrl(capturedImageData);
+
+    // Raw camera captures can be 10MB+, which makes Azure OCR slow enough to hit the
+    // processing timeout. Optimize first (same preset as file uploads) before scanning.
+    let processedImageData = capturedImageData;
+    try {
+      const blob = await (await fetch(capturedImageData)).blob();
+      const file = new File([blob], `camera-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+      const optimized = await optimizeImage(file, 'receipt');
+      processedImageData = optimized.dataUrl;
+      console.log("[Upload] Camera image optimized:", capturedImageData.length, "->", processedImageData.length);
+    } catch (optErr) {
+      console.warn("[Upload] Camera image optimization failed, using original:", optErr);
+    }
+
+    setImageData(processedImageData);
+    setPreviewUrl(processedImageData);
     
     // Check if offline before starting scan
     if (!isOnline) {
@@ -1304,7 +1318,7 @@ export default function UploadReceipt() {
     try {
       console.log("[Upload] Starting OCR scan...");
       // Scan the receipt with Azure OCR
-      await scanMutation.mutateAsync(capturedImageData);
+      await scanMutation.mutateAsync(processedImageData);
       console.log("[Upload] OCR scan completed successfully");
     } catch (error) {
       console.error("[Upload] OCR scan failed:", error);

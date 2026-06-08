@@ -143,7 +143,7 @@ function parseReceiptText(text: string): OcrReceiptData {
 }
 
 export class LocalOcrFallback {
-  async analyzeReceipt(imageData: string): Promise<OcrReceiptData> {
+  async analyzeReceipt(imageData: string, timeoutMs?: number): Promise<OcrReceiptData> {
     let worker: Worker | null = null;
 
     try {
@@ -154,7 +154,18 @@ export class LocalOcrFallback {
         tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:/- Rr$ZARzar&'()",
       });
 
-      const result = (await worker.recognize(imageData)) as RecognizeResult;
+      // Race recognition against an internal timeout. When the timeout wins, control
+      // leaves this try block and the `finally` runs worker.terminate(), which actually
+      // stops the in-progress OCR rather than leaving it running in the background.
+      const recognizePromise = worker.recognize(imageData);
+      const result = (timeoutMs && timeoutMs > 0
+        ? await Promise.race([
+            recognizePromise,
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("Local OCR recognition timed out")), timeoutMs)
+            ),
+          ])
+        : await recognizePromise) as RecognizeResult;
       const text = result.data.text?.trim() || "";
       const confidence = Number.isFinite(result.data.confidence) ? result.data.confidence : 0;
 

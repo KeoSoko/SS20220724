@@ -1476,7 +1476,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // still be able to scan instead of being forced into a hard failure.
       let receiptData: any;
       let ocrProvider = "azure";
-      
+      // End-to-end OCR budget kept under the client's ~65s scan timeout, leaving room
+      // for AI categorization and the response. Used to decide whether a fallback can
+      // still finish in time before the client gives up.
+      const OCR_DEADLINE_MS = 58000;
+      const MIN_FALLBACK_MS = 8000;
+      const scanStartedAt = Date.now();
+
       try {
         const processingTimeout = 60000; // 60 seconds max processing time
         
@@ -1495,16 +1501,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const azureStatus = azureError?.statusCode || azureError?.status || azureError?.code || "unknown";
         log(`Azure OCR failed (status/code: ${azureStatus}); trying local OCR fallback: ${azureError?.message || azureError}`, "api");
 
+        // Only attempt the fallback if it can realistically finish before the client
+        // gives up. If Azure already consumed most of the budget (e.g. it timed out),
+        // skip straight to the error so we don't run useless work past the client window.
+        const remainingBudget = OCR_DEADLINE_MS - (Date.now() - scanStartedAt);
+        if (remainingBudget < MIN_FALLBACK_MS) {
+          log(`Skipping local OCR fallback - only ${remainingBudget}ms of budget left`, "api");
+          throw azureError;
+        }
+
         try {
-          // Tesseract is CPU-heavy and can hang on bad input; bound it so a fallback
-          // can never block the request past the client's scan timeout.
-          const fallbackTimeout = 40000; // 40 seconds max for local OCR
-          receiptData = await Promise.race([
-            localOcrFallback.analyzeReceipt(enhancedImageData),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("Local OCR fallback timed out")), fallbackTimeout)
-            )
-          ]) as any;
+          // Tesseract is CPU-heavy and can hang on bad input; bound it (with true worker
+          // teardown inside analyzeReceipt) so a fallback can never block the request past
+          // the client's scan timeout. Cap at 40s but never exceed the remaining budget.
+          const fallbackTimeout = Math.min(40000, remainingBudget);
+          receiptData = await localOcrFallback.analyzeReceipt(enhancedImageData, fallbackTimeout) as any;
           receiptData.ocrProvider = "local-tesseract";
           receiptData.ocrFallbackReason = azureStatus === "unknown" ? "azure_error" : `azure_${azureStatus}`;
           ocrProvider = "local-tesseract";

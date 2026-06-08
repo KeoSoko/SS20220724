@@ -45,6 +45,7 @@ import {
 } from "@shared/schema";
 import { azureStorage } from "./azure-storage";
 import { azureFormRecognizer } from "./azure-form-recognizer";
+import { localOcrFallback } from "./ocr-fallback";
 import { replitStorage } from "./replit-storage";
 import { aiCategorizationService } from "./ai-categorization";
 import { imagePreprocessor } from "./image-preprocessing";
@@ -1470,8 +1471,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Continue with original image if enhancement fails
       }
 
-      // Step 2: Process with Azure OCR (using enhanced image)
+      // Step 2: Process with Azure OCR first, then fall back to local OCR.
+      // Azure can return 403 when the key/endpoint/quota/firewall is wrong; users should
+      // still be able to scan instead of being forced into a hard failure.
       let receiptData: any;
+      let ocrProvider = "azure";
       
       try {
         const processingTimeout = 60000; // 60 seconds max processing time
@@ -1485,11 +1489,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         receiptData = await processWithTimeout as any;
         
-        log(`OCR Results: ${receiptData.storeName} - ${receiptData.total} (Confidence: ${receiptData.confidenceScore})`, "api");
+        log(`Azure OCR Results: ${receiptData.storeName} - ${receiptData.total} (Confidence: ${receiptData.confidenceScore})`, "api");
         
-      } catch (error) {
-        log(`Azure OCR Error: ${error}`, "api");
-        throw error;
+      } catch (azureError: any) {
+        const azureStatus = azureError?.statusCode || azureError?.status || azureError?.code || "unknown";
+        log(`Azure OCR failed (status/code: ${azureStatus}); trying local OCR fallback: ${azureError?.message || azureError}`, "api");
+
+        try {
+          receiptData = await localOcrFallback.analyzeReceipt(enhancedImageData);
+          receiptData.ocrProvider = "local-tesseract";
+          receiptData.ocrFallbackReason = azureStatus === "unknown" ? "azure_error" : `azure_${azureStatus}`;
+          ocrProvider = "local-tesseract";
+          log(`Local OCR fallback Results: ${receiptData.storeName} - ${receiptData.total} (Confidence: ${receiptData.confidenceScore})`, "api");
+        } catch (fallbackError: any) {
+          log(`Local OCR fallback failed: ${fallbackError?.message || fallbackError}`, "api");
+          throw azureError;
+        }
       }
 
       // Step 3: AI Categorization (runs after OCR completes)
@@ -1514,6 +1529,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Return the extracted data (use converted image for PDFs)
       res.json({
         ...receiptData,
+        ocrProvider,
         imageData: processableImageData
       });
     } catch (error: any) {
@@ -1531,6 +1547,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (
         errorMessage.includes("invalid subscription key") || 
         errorMessage.includes("Access denied") ||
+        errorMessage.includes("Forbidden") ||
+        errorMessage.includes("403") ||
+        error.statusCode === 403 ||
+        error.status === 403 ||
         errorMessage.includes("API endpoint") ||
         errorMessage.includes("authentication") ||
         errorMessage.includes("unauthorized") ||

@@ -1,0 +1,1 @@
+- [ESM build + Azure SDKs](esm-build-azure-sdks.md) — Azure SDKs 403/fall back in prod ESM bundle but work in dev; fix is an esbuild createRequire banner.

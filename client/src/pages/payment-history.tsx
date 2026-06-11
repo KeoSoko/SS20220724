@@ -10,7 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useMemo } from "react";
 import { format, parseISO } from "date-fns";
-import { Calendar, Download, Receipt, Search, Filter, ArrowLeft, Loader2 } from "lucide-react";
+import { Calendar, Download, FileText, Search, Filter, ArrowLeft, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import { getAuthToken } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +23,7 @@ interface PaymentTransaction {
   paymentMethod: string;
   platform: string;
   platformTransactionId: string;
+  description: string | null;
   createdAt: string;
 }
 
@@ -172,7 +173,7 @@ export default function PaymentHistory() {
       <PageLayout title="Payment History">
         <ContentCard>
           <div className="text-center py-8">
-            <Receipt className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-600">Unable to load payment history</p>
             <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
               Try Again
@@ -279,7 +280,7 @@ export default function PaymentHistory() {
         {/* Transaction Table */}
         {filteredTransactions.length === 0 ? (
           <div className="text-center py-12">
-            <Receipt className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No transactions found</h3>
             <p className="text-gray-600">
               {transactions.length === 0 
@@ -294,6 +295,7 @@ export default function PaymentHistory() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
+                  <TableHead>Description</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Payment Method</TableHead>
@@ -304,14 +306,17 @@ export default function PaymentHistory() {
               <TableBody>
                 {filteredTransactions.map((transaction) => (
                   <TableRow key={transaction.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium whitespace-nowrap">
                       <div className="flex items-center">
                         <Calendar className="w-4 h-4 mr-2 text-gray-400" />
                         {formatDateTime(transaction.createdAt)}
                       </div>
                     </TableCell>
+                    <TableCell className="text-sm text-gray-700 max-w-[180px]">
+                      {transaction.description || '—'}
+                    </TableCell>
                     <TableCell>
-                      <div className="font-semibold">
+                      <div className="font-semibold whitespace-nowrap">
                         {formatCurrency(transaction.amount, transaction.currency)}
                       </div>
                     </TableCell>
@@ -335,7 +340,7 @@ export default function PaymentHistory() {
                       >
                         {downloadingInvoice[transaction.id]
                           ? <Loader2 className="w-4 h-4 animate-spin" />
-                          : <Receipt className="w-4 h-4" />
+                          : <FileText className="w-4 h-4" />
                         }
                       </Button>
                     </TableCell>

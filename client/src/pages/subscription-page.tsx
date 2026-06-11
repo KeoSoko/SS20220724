@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Crown, Calendar, CreditCard, Check, X, AlertCircle, Smartphone, Receipt, ArrowRight, Sparkles, Users, ShieldCheck } from 'lucide-react';
+import { Loader2, Crown, Calendar, CreditCard, Check, X, AlertCircle, Smartphone, FileText, ArrowRight, Sparkles, Users, ShieldCheck } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -537,7 +537,7 @@ export function SubscriptionPage() {
                 <div className="flex flex-wrap gap-2">
                   <Link href="/payment-history">
                     <Button variant="outline" size="sm">
-                      <Receipt className="h-4 w-4 mr-2" />
+                      <FileText className="h-4 w-4 mr-2" />
                       Payment History
                     </Button>
                   </Link>
@@ -755,7 +755,7 @@ export function SubscriptionPage() {
         )}
 
         {/* Recent Payment History - only show when payments exist and not workspace member */}
-        {!isWorkspaceMember && subscription && transactions.length > 0 && (
+        {!isWorkspaceMember && transactions.length > 0 && (
           <div className="mt-8">
             <ContentCard>
               <h3 className="text-lg font-semibold mb-4">Recent Payments</h3>
@@ -764,7 +764,7 @@ export function SubscriptionPage() {
                   <div key={transaction.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div className="flex items-center space-x-3">
                       <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                        <Receipt className="w-4 h-4 text-green-600" />
+                        <FileText className="w-4 h-4 text-green-600" />
                       </div>
                       <div>
                         <p className="font-medium">{formatCurrency(transaction.amount, transaction.currency)}</p>

@@ -3887,6 +3887,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Generate a downloadable PDF invoice for a specific subscription payment
+  app.get("/api/billing/invoice/:transactionId", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+
+    try {
+      const userId = getUserId(req);
+      const transactionId = parseInt(req.params.transactionId, 10);
+
+      if (isNaN(transactionId)) {
+        return res.status(400).json({ error: "Invalid transaction ID" });
+      }
+
+      // Fetch this user's transactions and find the requested one — this validates ownership
+      const transactions = await billingService.getPaymentHistory(userId);
+      const transaction = transactions.find(t => t.id === transactionId);
+
+      if (!transaction) {
+        return res.status(404).json({ error: "Transaction not found" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const pdfBuffer = await exportService.generateSubscriptionInvoicePDF(user, transaction);
+
+      const invoiceNumber = `SS-INV-${String(transaction.id).padStart(5, '0')}`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${invoiceNumber}.pdf"`);
+      res.setHeader('Content-Length', pdfBuffer.length.toString());
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      log(`Error generating invoice for transaction ${req.params.transactionId}: ${error.message}`, 'express');
+      res.status(500).json({ error: "Failed to generate invoice" });
+    }
+  });
+
   // Process Apple App Store purchase
   // Requires email verification - sensitive billing action
   app.post("/api/billing/apple/purchase", requireVerifiedEmail, async (req, res) => {

@@ -10,8 +10,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useMemo } from "react";
 import { format, parseISO } from "date-fns";
-import { Calendar, Download, Receipt, Search, Filter, ArrowLeft } from "lucide-react";
+import { Calendar, Download, Receipt, Search, Filter, ArrowLeft, Loader2 } from "lucide-react";
 import { Link } from "wouter";
+import { getAuthToken } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface PaymentTransaction {
   id: number;
@@ -26,9 +28,11 @@ interface PaymentTransaction {
 
 export default function PaymentHistory() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [methodFilter, setMethodFilter] = useState("all");
+  const [downloadingInvoice, setDownloadingInvoice] = useState<Record<number, boolean>>({});
 
   // Fetch payment transactions
   const { data: transactionsData, isLoading, error } = useQuery({
@@ -94,6 +98,34 @@ export default function PaymentHistory() {
         return '🍎';
       default:
         return '💰';
+    }
+  };
+
+  const handleDownloadInvoice = async (transaction: PaymentTransaction) => {
+    setDownloadingInvoice(prev => ({ ...prev, [transaction.id]: true }));
+    try {
+      const token = getAuthToken();
+      const response = await fetch(`/api/billing/invoice/${transaction.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error("Failed to generate invoice");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `SS-INV-${String(transaction.id).padStart(5, "0")}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast({
+        title: "Could not generate invoice",
+        description: "Please try again or contact support.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloadingInvoice(prev => ({ ...prev, [transaction.id]: false }));
     }
   };
 
@@ -294,8 +326,17 @@ export default function PaymentHistory() {
                       {transaction.platformTransactionId}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm">
-                        <Receipt className="w-4 h-4" />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDownloadInvoice(transaction)}
+                        disabled={downloadingInvoice[transaction.id]}
+                        title="Download invoice PDF"
+                      >
+                        {downloadingInvoice[transaction.id]
+                          ? <Loader2 className="w-4 h-4 animate-spin" />
+                          : <Receipt className="w-4 h-4" />
+                        }
                       </Button>
                     </TableCell>
                   </TableRow>

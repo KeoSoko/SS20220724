@@ -3,7 +3,7 @@ import autoTable from 'jspdf-autotable';
 import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
-import type { Receipt, Budget } from '../shared/schema.js';
+import type { Receipt, Budget, PaymentTransaction } from '../shared/schema.js';
 import { storage } from './storage.js';
 import { azureStorage } from './azure-storage.js';
 import { formatReportingCategory, getReportingCategory } from './reporting-utils.js';
@@ -1365,6 +1365,177 @@ export class ExportService {
     });
     
     return breakdown;
+  }
+
+  /**
+   * Generate a branded subscription invoice PDF for a specific payment transaction.
+   */
+  async generateSubscriptionInvoicePDF(
+    user: { email: string | null; username: string; fullName: string | null },
+    transaction: PaymentTransaction
+  ): Promise<Buffer> {
+    const doc = new jsPDF();
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const primaryBlue: [number, number, number] = [0, 115, 170];
+    const white: [number, number, number] = [255, 255, 255];
+    const darkGray: [number, number, number] = [60, 60, 60];
+    const lightGray: [number, number, number] = [240, 240, 240];
+    const midGray: [number, number, number] = [120, 120, 120];
+
+    const invoiceNumber = `SS-INV-${String(transaction.id).padStart(5, '0')}`;
+    const amountRands = (transaction.amount / 100).toFixed(2);
+    const isPaid = transaction.status === 'completed';
+    const txDate = new Date(transaction.createdAt);
+    const dateStr = txDate.toLocaleDateString('en-ZA', { day: '2-digit', month: 'long', year: 'numeric' });
+    const userDisplayName = sanitizeTextForPDF(user.fullName || user.username);
+    const userEmail = sanitizeTextForPDF(user.email || '');
+    const description = sanitizeTextForPDF(transaction.description || 'Simple Slips Subscription');
+
+    // ── Header bar ────────────────────────────────────────────────────────────
+    doc.setFillColor(...primaryBlue);
+    doc.rect(0, 0, pageW, 40, 'F');
+
+    // Logo (if available)
+    try {
+      const logoData = await this.getSimpleSlipsLogoBase64();
+      if (logoData && logoData.startsWith('data:image/png')) {
+        doc.addImage(logoData, 'PNG', 12, 7, 24, 24);
+      }
+    } catch (_) {}
+
+    doc.setTextColor(...white);
+    doc.setFontSize(17);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Simple Slips', 42, 19);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text('simpleslips.app', 42, 27);
+
+    // "TAX INVOICE" right side of header
+    doc.setFontSize(15);
+    doc.setFont('helvetica', 'bold');
+    doc.text('TAX INVOICE', pageW - 18, 24, { align: 'right' });
+
+    // ── Bill To (left) + Invoice details (right) ──────────────────────────────
+    let y = 52;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(...primaryBlue);
+    doc.text('BILL TO', 20, y);
+
+    y += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...darkGray);
+    doc.text(userDisplayName, 20, y);
+
+    if (userEmail) {
+      y += 6;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(...midGray);
+      doc.text(userEmail, 20, y);
+    }
+
+    // Invoice details – right column
+    const detailLabelX = 128;
+    const detailValueX = 192;
+    let dy = 52;
+    doc.setFontSize(9);
+
+    const addDetailRow = (label: string, value: string) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...darkGray);
+      doc.text(label, detailLabelX, dy);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...midGray);
+      doc.text(value, detailValueX, dy, { align: 'right' });
+      dy += 7;
+    };
+
+    addDetailRow('Invoice No:', invoiceNumber);
+    addDetailRow('Date:', dateStr);
+    addDetailRow('Status:', isPaid ? 'Paid' : (transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)));
+
+    // ── Separator ─────────────────────────────────────────────────────────────
+    y = 84;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(20, y, pageW - 20, y);
+    y += 8;
+
+    // ── Line items table ──────────────────────────────────────────────────────
+    autoTable(doc, {
+      head: [['Description', 'Qty', 'Unit Price', 'Total (ZAR)']],
+      body: [[description, '1', `R ${amountRands}`, `R ${amountRands}`]],
+      startY: y,
+      margin: { left: 20, right: 20 },
+      styles: { fontSize: 9, cellPadding: 4, textColor: darkGray },
+      headStyles: { fillColor: primaryBlue, textColor: white, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [249, 250, 251] as [number, number, number] },
+      columnStyles: {
+        0: { cellWidth: 88 },
+        1: { cellWidth: 18, halign: 'center' },
+        2: { cellWidth: 30, halign: 'right' },
+        3: { cellWidth: 34, halign: 'right' },
+      },
+    });
+
+    const tableBottom = (doc as any).lastAutoTable.finalY;
+
+    // ── Total row ─────────────────────────────────────────────────────────────
+    const totalRowY = tableBottom + 4;
+    doc.setFillColor(...lightGray);
+    doc.rect(pageW - 74, totalRowY, 54, 11, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...darkGray);
+    doc.text('Total:', pageW - 70, totalRowY + 7.5);
+    doc.text(`R ${amountRands}`, pageW - 20, totalRowY + 7.5, { align: 'right' });
+
+    // ── PAID stamp ────────────────────────────────────────────────────────────
+    let stampBottom = totalRowY + 18;
+    if (isPaid) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(32);
+      doc.setTextColor(34, 197, 94);
+      doc.text('PAID', 20, stampBottom);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...midGray);
+      doc.text(`Payment received on ${dateStr}`, 20, stampBottom + 8);
+      stampBottom += 18;
+    }
+
+    // ── Payment reference ─────────────────────────────────────────────────────
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...midGray);
+    if (transaction.platformTransactionId) {
+      doc.text(`Reference: ${sanitizeTextForPDF(transaction.platformTransactionId)}`, 20, stampBottom + 4);
+      stampBottom += 5;
+    }
+    if (transaction.paymentMethod) {
+      doc.text(`Payment method: ${sanitizeTextForPDF(transaction.paymentMethod)}`, 20, stampBottom + 4);
+    }
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    const footerY = pageH - 16;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(20, footerY - 5, pageW - 20, footerY - 5);
+    doc.setFontSize(8);
+    doc.setTextColor(...midGray);
+    doc.text(
+      'Simple Slips  |  simpleslips.app  |  support@simpleslips.app',
+      pageW / 2,
+      footerY,
+      { align: 'center' }
+    );
+    doc.text('Thank you for your business!', pageW / 2, footerY + 5, { align: 'center' });
+
+    return Buffer.from(doc.output('arraybuffer'));
   }
 }
 

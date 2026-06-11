@@ -534,10 +534,17 @@ export function SubscriptionPage() {
                     </p>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <Link href="/payment-history">
+                    <Button variant="outline" size="sm">
+                      <Receipt className="h-4 w-4 mr-2" />
+                      Payment History
+                    </Button>
+                  </Link>
                   {subscription?.status === 'active' && (
                     <Button
                       variant="outline"
+                      size="sm"
                       onClick={() => cancelMutation.mutate()}
                       disabled={cancelMutation.isPending}
                     >

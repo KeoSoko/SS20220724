@@ -42,7 +42,6 @@ export default function AcceptInvitePage() {
   const [success, setSuccess] = useState(false);
   const [migrateData, setMigrateData] = useState(true);
   const [migratedCounts, setMigratedCounts] = useState<ExistingData | null>(null);
-  const [subscriptionCancelled, setSubscriptionCancelled] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -92,9 +91,6 @@ export default function AcceptInvitePage() {
 
       if (data.migratedCounts) {
         setMigratedCounts(data.migratedCounts);
-      }
-      if (data.subscriptionCancelled) {
-        setSubscriptionCancelled(true);
       }
       setSuccess(true);
       setTimeout(() => {
@@ -168,11 +164,6 @@ export default function AcceptInvitePage() {
                     {migratedCounts.quotations > 0 && <span>{migratedCounts.quotations} quotation{migratedCounts.quotations !== 1 ? "s" : ""}</span>}
                     {migratedCounts.invoices > 0 && <span>{migratedCounts.invoices} invoice{migratedCounts.invoices !== 1 ? "s" : ""}</span>}
                   </div>
-                </div>
-              )}
-              {subscriptionCancelled && (
-                <div className="bg-blue-50 border border-blue-200 p-3 rounded-none w-full">
-                  <p className="text-xs text-blue-800">Your previous subscription has been cancelled. Billing is now managed by the workspace owner.</p>
                 </div>
               )}
               <p className="text-xs text-gray-500">Redirecting to your dashboard...</p>
@@ -271,12 +262,9 @@ export default function AcceptInvitePage() {
                   <div className="flex items-start gap-2">
                     <CreditCard className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-sm text-blue-900 font-medium">Your subscription will be cancelled</p>
+                      <p className="text-sm text-blue-900 font-medium">Billing is managed by the workspace owner</p>
                       <p className="text-xs text-blue-700 mt-1">
-                        {inviteDetails.activeSubscription.status === 'trial'
-                          ? `You have ${inviteDetails.activeSubscription.trialDaysRemaining} day${inviteDetails.activeSubscription.trialDaysRemaining !== 1 ? "s" : ""} remaining on your free trial. `
-                          : `You have an active ${inviteDetails.activeSubscription.planName} subscription. `}
-                        It will be automatically cancelled when you join this workspace, since billing is managed by the workspace owner. You won't be charged going forward.
+                        Once you join, your access is covered by the workspace owner's plan. Your own subscription stays exactly as it is — nothing is cancelled and you can manage it yourself at any time.
                       </p>
                     </div>
                   </div>

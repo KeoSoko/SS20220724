@@ -1,0 +1,104 @@
+This actually clarifies everything.
+
+The important finding is:
+
+Task #5 has not been implemented.
+
+That means all discussion about Team Plans, billing infrastructure, Paystack plan codes, authorization storage, invite limits, etc. is premature until the workspace foundation works.
+
+So I would immediately realign the roadmap.
+
+Current State
+
+✅ Architecture agreed
+
+✅ Discovery complete
+
+✅ Root cause identified
+
+❌ Task #5 not built
+
+❌ Auto-cancel bug still live
+
+❌ Workspace inheritance still missing
+
+❌ Multi-user workspaces still effectively broken
+
+What I'd Tell Replit
+
+Thank you. The investigation confirms the critical point:
+
+Task #5 has not yet been implemented.
+
+Please stop all work related to:
+
+Tax AI Assistant access control
+Team Plans
+Billing dashboards
+Authorization-code persistence
+Paystack plan-code migration
+Invite limits
+
+Those are all downstream tasks.
+
+We need to execute the roadmap in order.
+
+Priority is now:
+
+TASK #5 — Workspace Subscription Inheritance
+
+Implement exactly the approved Task #5 specification:
+
+Create getEffectiveSubscriptionStatus(userId)
+Workspace owner subscription becomes authoritative for members
+Remove the auto-cancel-on-invite logic entirely
+Fail closed when workspace owner is missing
+Add structured observability logs
+Enable refetchOnWindowFocus for subscription status queries
+Add tests covering inheritance scenarios
+Run npx tsc --noEmit
+
+Do not modify billing infrastructure.
+
+Do not modify Paystack.
+
+Do not modify Tax AI Assistant.
+
+Do not implement Team Plans.
+
+After Task #5 is complete, provide:
+
+Files changed
+Exact behavioural changes
+Test results
+Any risks discovered during implementation
+
+Only after Task #5 is built and verified will we proceed to billing infrastructure hardening.
+
+My recommendation to you
+
+Keo, if I were in your position, I'd stop the architecture work now and get Task #5 built.
+
+The biggest business problem you've uncovered is not billing.
+
+It's that:
+
+Workspace feature exists
+↓
+Users join workspace
+↓
+Subscriptions get cancelled
+↓
+Members lose access
+
+You already have three companies asking for multi-user access.
+
+The fastest path to serving them is:
+
+Fix workspace inheritance first.
+
+Then observe usage for a week or two.
+
+Only then move into Team Plans and company billing.
+
+Right now, the highest ROI change in the entire project is still Task #5.

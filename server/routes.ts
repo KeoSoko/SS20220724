@@ -62,7 +62,7 @@ import { smartReminderService } from "./smart-reminder-service";
 import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategorization } from "./receipt-flow-utils";
 import { profitLossService } from "./profit-loss-service";
 import { registerAdminRoutes } from "./admin-routes";
-import { checkFeatureAccess, requireSubscription, getSubscriptionStatus } from "./subscription-middleware";
+import { checkFeatureAccess, requireSubscription, getSubscriptionStatus, getEffectiveSubscriptionStatus } from "./subscription-middleware";
 import { log } from "./vite";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
@@ -866,7 +866,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const subscriptionStatus = await getSubscriptionStatus(userId);
+      // Report the EFFECTIVE (workspace-inherited) status so members see their
+      // true access state instead of a false "blocked". workspaceContext below
+      // still tells the UI who the owner is.
+      const subscriptionStatus = await getEffectiveSubscriptionStatus(userId);
 
       const user = await storage.getUser(userId);
       let workspaceContext = null;
@@ -7576,22 +7579,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(workspaceInvites.id, invite.id));
       });
 
-      let subscriptionCancelled = false;
-      if (oldWorkspaceId !== invite.workspaceId) {
-        try {
-          const subStatus = await billingService.getSubscriptionStatus(userId);
-          if (subStatus.hasSubscription && (subStatus.status === 'active' || subStatus.status === 'trial')) {
-            await billingService.cancelSubscription(userId);
-            subscriptionCancelled = true;
-            log(`Auto-cancelled subscription for user ${userId} after workspace migration`, "billing");
-          }
-        } catch (cancelErr) {
-          log(`Warning: Failed to auto-cancel subscription for user ${userId} after workspace migration: ${cancelErr}`, "billing");
-        }
-      }
+      // Note: the invitee's subscription is intentionally NOT cancelled here.
+      // Access now inherits from the workspace owner (see getEffectiveSubscriptionStatus),
+      // so cancelling the invitee's own subscription would needlessly lock them out.
 
-      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role} (old workspace: ${oldWorkspaceId}, migrated: ${!!migrateData}, subCancelled: ${subscriptionCancelled})`, "workspace");
-      res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role, migratedCounts, subscriptionCancelled });
+      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role} (old workspace: ${oldWorkspaceId}, migrated: ${!!migrateData})`, "workspace");
+      res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role, migratedCounts });
     } catch (error: any) {
       log(`Error accepting workspace invite: ${error.message}`, "workspace");
       res.status(500).json({ error: "Failed to accept invitation" });

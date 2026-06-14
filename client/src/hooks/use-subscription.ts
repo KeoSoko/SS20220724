@@ -21,6 +21,9 @@ export function useSubscription() {
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: hasToken,
     staleTime: 5 * 60 * 1000, // 5 minutes
+    // Members inherit the workspace owner's status; refetch on focus so a member's
+    // access refreshes when they return to the tab (no polling for V1).
+    refetchOnWindowFocus: true,
     retry: (failureCount, error) => {
       // Don't retry on 401 (authentication errors)
       if (error instanceof Error && error.message.includes('401')) {

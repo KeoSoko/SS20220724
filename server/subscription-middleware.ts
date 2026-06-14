@@ -93,6 +93,69 @@ export async function getSubscriptionStatus(userId: number): Promise<Subscriptio
   }
 }
 
+const NO_ACCESS_STATUS: SubscriptionStatus = {
+  hasActiveSubscription: false,
+  isInTrial: false,
+  subscriptionType: 'none',
+};
+
+/**
+ * Resolve the subscription status that governs a user's ACCESS, inheriting from
+ * the workspace owner.
+ *
+ * - Workspace owner: their own subscription is authoritative.
+ * - Workspace member: the owner's subscription is authoritative (read-time
+ *   inheritance only — no writes, no Paystack changes).
+ *
+ * Fails CLOSED: if the workspace or its owner cannot be resolved (orphaned
+ * workspace — `workspaces.owner_id` has no FK), access is DENIED and a CRITICAL
+ * log is emitted. We never fall back to the member's own subscription, because a
+ * silent fallback would re-introduce per-member inconsistency and mask a
+ * data-integrity defect.
+ *
+ * NOTE: This governs access only. `billingService.getSubscriptionStatus()`
+ * remains user-specific for billing display and lifecycle logic.
+ */
+export async function getEffectiveSubscriptionStatus(userId: number): Promise<SubscriptionStatus> {
+  try {
+    const user = await storage.getUser(userId);
+    if (!user) {
+      console.error(`[CRITICAL_WORKSPACE_OWNER_MISSING] ${JSON.stringify({ userId, ownerId: null, reason: 'user_not_found' })}`);
+      return { ...NO_ACCESS_STATUS };
+    }
+
+    if (!storage.getWorkspaceById) {
+      console.error(`[CRITICAL_WORKSPACE_OWNER_MISSING] ${JSON.stringify({ workspaceId: user.workspaceId, userId, ownerId: null, reason: 'workspace_lookup_unavailable' })}`);
+      return { ...NO_ACCESS_STATUS };
+    }
+
+    const workspace = await storage.getWorkspaceById(user.workspaceId);
+    if (!workspace) {
+      console.error(`[CRITICAL_WORKSPACE_OWNER_MISSING] ${JSON.stringify({ workspaceId: user.workspaceId, userId, ownerId: null, reason: 'workspace_not_found' })}`);
+      return { ...NO_ACCESS_STATUS };
+    }
+
+    // Owner: own subscription is authoritative.
+    if (workspace.ownerId === userId) {
+      return getSubscriptionStatus(userId);
+    }
+
+    // Member: inherit the owner's status, but fail closed if the owner record is gone.
+    const owner = await storage.getUser(workspace.ownerId);
+    if (!owner) {
+      console.error(`[CRITICAL_WORKSPACE_OWNER_MISSING] ${JSON.stringify({ workspaceId: workspace.id, userId, ownerId: workspace.ownerId, reason: 'owner_user_not_found' })}`);
+      return { ...NO_ACCESS_STATUS };
+    }
+
+    const ownerStatus = await getSubscriptionStatus(workspace.ownerId);
+    console.log(`[WORKSPACE_INHERITANCE] ${JSON.stringify({ workspaceId: workspace.id, memberId: userId, ownerId: workspace.ownerId, subscriptionType: ownerStatus.subscriptionType, hasActiveSubscription: ownerStatus.hasActiveSubscription })}`);
+    return ownerStatus;
+  } catch (error) {
+    console.error(`[getEffectiveSubscriptionStatus] Error resolving effective status for user ${userId}:`, error);
+    return { ...NO_ACCESS_STATUS };
+  }
+}
+
 // Middleware to require active subscription
 export function requireSubscription() {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -103,7 +166,7 @@ export function requireSubscription() {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      const subscriptionStatus = await getSubscriptionStatus(userId);
+      const subscriptionStatus = await getEffectiveSubscriptionStatus(userId);
       
       if (!subscriptionStatus.hasActiveSubscription) {
         return res.status(403).json({ 
@@ -138,7 +201,7 @@ export function checkFeatureAccess(feature: 'receipt_upload' | 'ai_categorizatio
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      const subscriptionStatus = await getSubscriptionStatus(userId);
+      const subscriptionStatus = await getEffectiveSubscriptionStatus(userId);
       
       // Premium users get unlimited access
       if (subscriptionStatus.hasActiveSubscription) {

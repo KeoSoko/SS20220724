@@ -23,6 +23,7 @@ import {
   InsertPromoCode,
   EmailEvent,
   InsertEmailEvent,
+  Workspace,
   users,
   receipts,
   tags,
@@ -87,6 +88,11 @@ export class DatabaseStorage implements IStorage {
   // User methods
   async getUser(id: number): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getWorkspaceById(id: number): Promise<Workspace | undefined> {
+    const result = await db.select().from(workspaces).where(eq(workspaces.id, id)).limit(1);
     return result[0];
   }
   

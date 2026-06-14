@@ -22,6 +22,7 @@ import {
   Budget,
   ReceiptShare,
   ExpenseCategory,
+  Workspace,
 } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
@@ -35,6 +36,7 @@ const MemoryStore = createMemoryStore(session);
 export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
+  getWorkspaceById?(id: number): Promise<Workspace | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;

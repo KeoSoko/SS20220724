@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -51,22 +51,22 @@ function makeSelectChain(): any {
   return chain;
 }
 
-// Records every row object inserted via the transaction.
+// Records every row object inserted / updated via the transaction.
 const insertedValues: any[] = [];
-const updatedTables: any[] = [];
+const updatedSets: any[] = [];
 
 const insertBuilder = () => ({
   values: (v: any) => { insertedValues.push(v); return Promise.resolve(); },
 });
 const updateBuilder = () => ({
-  set: () => ({ where: () => Promise.resolve() }),
+  set: (v: any) => { updatedSets.push(v); return { where: () => Promise.resolve() }; },
 });
 const deleteBuilder = () => ({ where: () => Promise.resolve() });
 
 const txMock = {
   select: () => makeSelectChain(),
   insert: vi.fn(() => insertBuilder()),
-  update: vi.fn(() => { updatedTables.push(true); return updateBuilder(); }),
+  update: vi.fn(() => updateBuilder()),
   delete: vi.fn(() => deleteBuilder()),
 };
 
@@ -82,25 +82,35 @@ const dbMock: any = {
 vi.mock('./db', () => ({ db: dbMock, pool: {} }));
 
 // --- Capture the real handler by registering routes on a fake app -----------
+// registerRoutes() calls many Express app methods at registration time
+// (app.post/get/use, but also app.param, app.set, etc.). A Proxy handles every
+// method generically: route registrars record their handlers, everything else
+// is a harmless no-op that returns the app for chaining.
 async function captureAcceptInviteHandler(): Promise<(req: any, res: any) => any> {
   const registered: Record<string, Map<string, Function[]>> = {};
-  const app: any = function () {}; // function so http.createServer(app) accepts it
-  const httpMethods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options', 'all', 'use'];
-  for (const m of httpMethods) {
-    app[m] = (...args: any[]) => {
-      if (typeof args[0] === 'string') {
-        const handlers = args.slice(1).filter((a) => typeof a === 'function');
-        (registered[m] ||= new Map()).set(args[0], handlers);
+  const routeMethods = new Set(['get', 'post', 'put', 'delete', 'patch', 'head', 'options', 'all', 'use']);
+
+  const target: any = function () {}; // function target so http.createServer(app) accepts it
+  const proxy: any = new Proxy(target, {
+    get(t, prop) {
+      if (typeof prop === 'symbol') return (t as any)[prop];
+      if (prop === 'locals') return {};
+      if (routeMethods.has(prop as string)) {
+        return (...args: any[]) => {
+          if (typeof args[0] === 'string') {
+            const handlers = args.slice(1).filter((a) => typeof a === 'function');
+            if (handlers.length) (registered[prop as string] ||= new Map()).set(args[0], handlers);
+          }
+          return proxy;
+        };
       }
-      return app;
-    };
-  }
-  app.set = () => app;
-  app.engine = () => app;
-  app.locals = {};
+      // param, set, engine, enable, disable, on, once, etc. -> chainable no-op
+      return () => proxy;
+    },
+  });
 
   const { registerRoutes } = await import('./routes');
-  await registerRoutes(app as any);
+  await registerRoutes(proxy);
 
   const handlers = registered['post']?.get('/api/workspace/accept-invite');
   if (!handlers || handlers.length === 0) {
@@ -123,13 +133,18 @@ beforeEach(() => {
   vi.clearAllMocks();
   selectQueue = [];
   insertedValues.length = 0;
-  updatedTables.length = 0;
+  updatedSets.length = 0;
 });
 
 describe('POST /api/workspace/accept-invite (behavioural)', () => {
-  it('creates membership, never cancels the invitee subscription, never touches their sub', async () => {
-    const handler = await captureAcceptInviteHandler();
+  // Importing ./routes pulls in a large module graph; do it once with a
+  // generous timeout so it never counts against the per-test 5s limit.
+  let handler: (req: any, res: any) => any;
+  beforeAll(async () => {
+    handler = await captureAcceptInviteHandler();
+  }, 30000);
 
+  it('creates membership, never cancels the invitee subscription, never touches their sub', async () => {
     // Invitee (user 7) belongs to their own workspace (2) and joins workspace 100.
     getUser.mockImplementation(async (id: number) =>
       id === 7 ? { id: 7, workspaceId: 2, username: 'Invitee', email: 'invitee@x.com' } : undefined,
@@ -166,11 +181,24 @@ describe('POST /api/workspace/accept-invite (behavioural)', () => {
       expect.objectContaining({ workspaceId: 100, userId: 7, role: 'editor' }),
     ]);
 
+    // (2) Workspace assignment updated correctly (user moved to the new workspace).
+    expect(updatedSets).toContainEqual(expect.objectContaining({ workspaceId: 100 }));
+
     // (3) cancelSubscription must NEVER be called during invite acceptance.
     expect(cancelSubscription).not.toHaveBeenCalled();
 
-    // (2) Invitee's own subscription is never even read, let alone modified.
+    // (4) Invitee's own subscription is never even read, let alone modified.
+    //     => status & cancelled_at are untouched, no subscription_cancelled audit.
     expect(getUserSubscription).not.toHaveBeenCalled();
+    expect(insertedValues).not.toContainEqual(
+      expect.objectContaining({ eventType: 'subscription_cancelled' }),
+    );
+    expect(updatedSets).not.toContainEqual(
+      expect.objectContaining({ status: expect.anything() }),
+    );
+    expect(updatedSets).not.toContainEqual(
+      expect.objectContaining({ cancelledAt: expect.anything() }),
+    );
 
     // Happy-path response.
     expect(res.json).toHaveBeenCalledWith(
@@ -193,11 +221,16 @@ describe('accept-invite handler (source invariant)', () => {
 
     // The bug guard: this flow must never cancel a subscription...
     expect(handlerSource).not.toMatch(/cancelSubscription/);
-    // ...nor write to the user_subscriptions table in any form.
+    // ...nor write to the user_subscriptions table in any form...
     expect(handlerSource).not.toMatch(/update\(\s*userSubscriptions/);
     expect(handlerSource).not.toMatch(/insert\(\s*userSubscriptions/);
+    // ...nor emit a subscription_cancelled audit event from this flow.
+    expect(handlerSource).not.toMatch(/subscription_cancelled/);
+    expect(handlerSource).not.toMatch(/insert\(\s*billingEvents/);
 
-    // Sanity: it really is the handler that creates workspace membership.
+    // Sanity: it really is the handler that creates workspace membership
+    // and reassigns the user's workspace.
     expect(handlerSource).toMatch(/insert\(workspaceMembers\)/);
+    expect(handlerSource).toMatch(/update\(users\)/);
   });
 });

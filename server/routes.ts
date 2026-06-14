@@ -63,6 +63,7 @@ import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategori
 import { profitLossService } from "./profit-loss-service";
 import { registerAdminRoutes } from "./admin-routes";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus, getEffectiveSubscriptionStatus } from "./subscription-middleware";
+import { getWorkspaceSeatInfo } from "./workspace-seats";
 import { log } from "./vite";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
@@ -3876,6 +3877,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // One-click upgrade to a higher-capacity Team plan using the stored Paystack
+  // authorization. Owner-only. Falls back to full checkout when no stored auth.
+  app.post("/api/billing/upgrade", requireWorkspaceRole("owner"), requireVerifiedEmail, async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const planId = Number(req.body?.planId);
+      if (!planId || Number.isNaN(planId)) {
+        return res.status(400).json({ error: "A valid planId is required" });
+      }
+
+      const result = await billingService.upgradeToPlanWithStoredAuth(userId, planId);
+
+      if (!result.success && result.needsCheckout) {
+        // No one-click path available — tell the client to run a full checkout.
+        return res.status(409).json({
+          error: "needs_checkout",
+          reason: result.reason,
+          message: "We couldn't complete a one-click upgrade. Please complete checkout to switch plans.",
+        });
+      }
+
+      const seatInfo = result.subscription
+        ? await getWorkspaceSeatInfo((await storage.getUser(userId))!.workspaceId)
+        : null;
+
+      res.json({
+        success: true,
+        plan: result.plan
+          ? { id: result.plan.id, name: result.plan.name, displayName: result.plan.displayName, maxSeats: result.plan.maxSeats }
+          : null,
+        seatInfo,
+      });
+    } catch (error: any) {
+      const message: string = error?.message || "Failed to upgrade plan";
+      if (message === "not_an_upgrade") {
+        return res.status(400).json({ error: "not_an_upgrade", message: "The selected plan does not add more seats than your current plan." });
+      }
+      if (message.startsWith("upgrade_charge_failed")) {
+        return res.status(402).json({ error: "charge_failed", message: "Your saved card couldn't be charged. Please complete checkout to upgrade." });
+      }
+      log(`Error in /api/billing/upgrade: ${message}`, 'express');
+      res.status(500).json({ error: "Failed to upgrade plan" });
+    }
+  });
+
   // Get payment history
   app.get("/api/billing/transactions", async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
@@ -7201,6 +7247,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(409).json({ error: "A pending invite already exists for this email" });
       }
 
+      // Seat-limit enforcement: a new invite reserves a seat, so block when the
+      // workspace has no available seats (members + pending invites >= capacity).
+      const seatInfo = await getWorkspaceSeatInfo(user.workspaceId);
+      if (seatInfo.availableSeats <= 0) {
+        return res.status(403).json({
+          error: "seat_limit_reached",
+          message: `Your workspace has reached its seat limit (${seatInfo.usedSeats} member${seatInfo.usedSeats === 1 ? "" : "s"}${seatInfo.pendingInvites > 0 ? ` + ${seatInfo.pendingInvites} pending invite${seatInfo.pendingInvites === 1 ? "" : "s"}` : ""} of ${seatInfo.capacity} seat${seatInfo.capacity === 1 ? "" : "s"}). Upgrade to a Team plan to add more members.`,
+          seatInfo: {
+            capacity: seatInfo.capacity,
+            usedSeats: seatInfo.usedSeats,
+            pendingInvites: seatInfo.pendingInvites,
+            availableSeats: seatInfo.availableSeats,
+            isOverCapacity: seatInfo.isOverCapacity,
+          },
+          upgradeAvailable: true,
+        });
+      }
+
       const token = randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
@@ -7469,6 +7533,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "User is already a member of this workspace." });
       }
 
+      // Seat-limit enforcement at accept time: the pending invite's reserved seat
+      // converts to a real member, so there must be room among ACTUAL members.
+      // This also catches the case where the owner downgraded (capacity dropped)
+      // after the invite was sent.
+      const acceptSeatInfo = await getWorkspaceSeatInfo(invite.workspaceId);
+      if (acceptSeatInfo.usedSeats >= acceptSeatInfo.capacity) {
+        return res.status(403).json({
+          error: "seat_limit_reached",
+          message: "This workspace is full. Ask the workspace owner to upgrade their plan or free up a seat before you can join.",
+          seatInfo: {
+            capacity: acceptSeatInfo.capacity,
+            usedSeats: acceptSeatInfo.usedSeats,
+            pendingInvites: acceptSeatInfo.pendingInvites,
+            availableSeats: acceptSeatInfo.availableSeats,
+            isOverCapacity: acceptSeatInfo.isOverCapacity,
+          },
+        });
+      }
+
       if (user.workspaceId !== invite.workspaceId) {
         const [currentOwnership] = await db
           .select({ id: workspaces.id })
@@ -7644,10 +7727,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const owner = await storage.getUser(workspace.ownerId);
       const ownerEmail = owner?.email || "";
 
-      const memberCount = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(workspaceMembers)
-        .where(eq(workspaceMembers.workspaceId, workspace.id));
+      const seatInfo = await getWorkspaceSeatInfo(workspace.id);
 
       let planName = "Free Trial";
       try {
@@ -7675,8 +7755,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...workspace,
         ownerEmail,
         planName,
-        memberCount: Number(memberCount[0]?.count || 1),
-        maxMembers: 2,
+        memberCount: seatInfo.usedSeats,
+        maxMembers: seatInfo.capacity, // backward-compat alias for seatCapacity
+        seatCapacity: seatInfo.capacity,
+        usedSeats: seatInfo.usedSeats,
+        pendingInvites: seatInfo.pendingInvites,
+        availableSeats: seatInfo.availableSeats,
+        isOverCapacity: seatInfo.isOverCapacity,
         myRole: myMembership?.role || "viewer",
       });
     } catch (error: any) {

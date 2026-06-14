@@ -489,6 +489,188 @@ export class BillingService {
   }
 
   /**
+   * Upgrade a workspace owner's subscription to a higher-capacity Team plan using
+   * the stored Paystack authorization (one-click, checkout-light). Charges the
+   * saved card for the new tier's price, then atomically switches the local
+   * subscription to the new plan so seat capacity increases immediately.
+   *
+   * Returns `{ success:false, needsCheckout:true }` when a one-click upgrade is
+   * not possible (no stored authorization, no Paystack, or no existing
+   * subscription) so the caller can fall back to a full Paystack checkout.
+   *
+   * Guard rails:
+   *  - Target must be an ACTIVE, recurring plan with a Paystack plan code.
+   *  - Target max_seats MUST exceed the current plan's capacity (no downgrades
+   *    through this path — downgrades are handled by the over-capacity policy).
+   *
+   * NOTE (recurring reconciliation): this performs a one-time charge_authorization
+   * for the new tier and switches the plan locally. The next renewal is reconciled
+   * deterministically by plan code via the existing webhook pipeline. We never
+   * create a second Paystack subscription here, to avoid any double-charge risk.
+   */
+  async upgradeToPlanWithStoredAuth(
+    userId: number,
+    targetPlanId: number
+  ): Promise<{
+    success: boolean;
+    needsCheckout?: boolean;
+    reason?: string;
+    subscription?: UserSubscription;
+    plan?: SubscriptionPlan;
+  }> {
+    if (!storage.getSubscriptionPlan) {
+      throw new Error('Subscription plan lookup not supported by current storage');
+    }
+
+    const targetPlan = await storage.getSubscriptionPlan(targetPlanId);
+    if (!targetPlan || !targetPlan.isActive) {
+      throw new Error('Target plan not found or inactive');
+    }
+    if (targetPlan.billingPeriod !== 'monthly' && targetPlan.billingPeriod !== 'yearly') {
+      throw new Error('Target plan is not a recurring plan');
+    }
+    if (!targetPlan.paystackPlanCode) {
+      throw new Error('Target plan is missing a Paystack plan code');
+    }
+
+    const subscription = await this.getUserSubscription(userId);
+    if (!subscription) {
+      // Nothing to upgrade from — the owner must run a full checkout first.
+      return { success: false, needsCheckout: true, reason: 'no_existing_subscription' };
+    }
+
+    const currentPlan = await storage.getSubscriptionPlan(subscription.planId);
+    const currentCapacity = currentPlan?.maxSeats ?? 1;
+    if ((targetPlan.maxSeats ?? 1) <= currentCapacity) {
+      throw new Error('not_an_upgrade');
+    }
+
+    const user = await storage.getUser(userId);
+    const email = user?.email;
+    if (!email) {
+      throw new Error('User email unavailable for upgrade charge');
+    }
+
+    // One-click path requires a stored authorization and an initialized Paystack client.
+    if (!this.paystack || !subscription.authorizationCode) {
+      return { success: false, needsCheckout: true, reason: 'no_stored_authorization' };
+    }
+
+    const reference = `upg_${userId}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+    let chargeData: any;
+    try {
+      const chargeResponse = await this.paystack.transaction.charge({
+        reference,
+        authorization_code: subscription.authorizationCode,
+        email,
+        amount: targetPlan.price,
+      });
+      if (!chargeResponse?.status || chargeResponse?.data?.status !== 'success') {
+        const reason = chargeResponse?.data?.gateway_response || chargeResponse?.message || 'charge_declined';
+        log(`Upgrade charge failed for user ${userId} (plan ${targetPlan.name}): ${reason}`, 'billing');
+        await this.logBillingEvent(userId, 'subscription_upgrade_failed', {
+          targetPlanId,
+          reference,
+          reason,
+        });
+        throw new Error(`upgrade_charge_failed: ${reason}`);
+      }
+      chargeData = chargeResponse.data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith('upgrade_charge_failed')) throw error;
+      log(`Error charging stored authorization for upgrade (user ${userId}): ${message}`, 'billing');
+      throw new Error(`upgrade_charge_failed: ${message}`);
+    }
+
+    const now = new Date();
+    const nextBillingDate = new Date();
+    const isYearly = targetPlan.billingPeriod === 'yearly';
+    if (isYearly) {
+      nextBillingDate.setFullYear(nextBillingDate.getFullYear() + 1);
+    } else {
+      nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
+    }
+    const refreshedAuthCode = chargeData?.authorization?.authorization_code ?? subscription.authorizationCode;
+    const customerCode = chargeData?.customer?.customer_code ?? subscription.paystackCustomerCode ?? undefined;
+
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(userSubscriptions)
+        .set({
+          status: 'active',
+          planId: targetPlan.id,
+          nextBillingDate,
+          totalPaid: (subscription.totalPaid || 0) + targetPlan.price,
+          lastPaymentDate: now,
+          paystackReference: reference,
+          paystackCustomerCode: customerCode,
+          authorizationCode: refreshedAuthCode,
+          cancelledAt: null,
+          updatedAt: now,
+        })
+        .where(eq(userSubscriptions.userId, userId))
+        .returning();
+
+      await tx
+        .update(users)
+        .set({
+          subscriptionTier: isYearly ? 'yearly' : 'monthly',
+          subscriptionExpiresAt: nextBillingDate,
+          updatedAt: now,
+        })
+        .where(eq(users.id, userId));
+
+      await tx
+        .insert(paymentTransactions)
+        .values({
+          userId,
+          subscriptionId: subscription.id,
+          amount: targetPlan.price,
+          currency: 'ZAR',
+          status: 'completed',
+          platform: 'paystack',
+          paymentMethod: 'card',
+          platformTransactionId: reference,
+          platformOrderId: chargeData?.reference || reference,
+          platformSubscriptionId: targetPlan.paystackPlanCode || 'unknown',
+          metadata: {
+            customerCode,
+            authorizationCode: refreshedAuthCode,
+            planCode: targetPlan.paystackPlanCode,
+            upgrade: true,
+            fromPlanId: subscription.planId,
+            toPlanId: targetPlan.id,
+          },
+          description: `Upgrade to ${targetPlan.displayName || targetPlan.name}`,
+          failureReason: null,
+          refundReason: null,
+        })
+        .onConflictDoNothing();
+
+      await tx
+        .insert(billingEvents)
+        .values({
+          userId,
+          eventType: 'subscription_upgraded',
+          eventData: {
+            fromPlanId: subscription.planId,
+            toPlanId: targetPlan.id,
+            fromSeats: currentCapacity,
+            toSeats: targetPlan.maxSeats ?? 1,
+            reference,
+          },
+          processed: true,
+        });
+
+      return row as UserSubscription;
+    });
+
+    log(`User ${userId} upgraded ${currentPlan?.name || 'current plan'} → ${targetPlan.name} (${currentCapacity} → ${targetPlan.maxSeats} seats) via stored authorization`, 'billing');
+    return { success: true, subscription: updated, plan: targetPlan };
+  }
+
+  /**
    * Get user's payment history
    */
   async getPaymentHistory(userId: number): Promise<PaymentTransaction[]> {

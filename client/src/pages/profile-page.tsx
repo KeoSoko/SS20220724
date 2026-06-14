@@ -567,7 +567,23 @@ interface WorkspaceInfo {
   planName: string;
   memberCount: number;
   maxMembers: number;
+  seatCapacity: number;
+  usedSeats: number;
+  pendingInvites: number;
+  availableSeats: number;
+  isOverCapacity: boolean;
   myRole: string;
+}
+
+interface BillingPlan {
+  id: number;
+  name: string;
+  displayName: string;
+  price: number;
+  billingPeriod: string;
+  maxSeats: number;
+  isActive?: boolean;
+  paystackPlanCode?: string | null;
 }
 
 interface WorkspaceMember {
@@ -615,10 +631,55 @@ function WorkspaceSection() {
 
   const isOwner = workspace?.myRole === 'owner';
   const pendingInvites = invites.filter(i => !i.acceptedAt && new Date(i.expiresAt) > new Date());
-  const assistant = members.find(m => m.role !== 'owner');
+  const nonOwnerMembers = members.filter(m => m.role !== 'owner');
   const owner = members.find(m => m.role === 'owner');
-  const hasAssistant = !!assistant;
-  const hasPendingInvite = pendingInvites.length > 0;
+  const seatCapacity = workspace?.seatCapacity ?? workspace?.maxMembers ?? 1;
+  const usedSeats = workspace?.usedSeats ?? members.length;
+  const availableSeats = workspace?.availableSeats ?? Math.max(0, seatCapacity - usedSeats - pendingInvites.length);
+  const isOverCapacity = workspace?.isOverCapacity ?? false;
+  const canInvite = isOwner && availableSeats > 0;
+  const atCapacity = isOwner && availableSeats <= 0;
+  const hasTeam = nonOwnerMembers.length > 0 || pendingInvites.length > 0;
+
+  const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
+
+  const { data: billingPlansData } = useQuery<{ plans: BillingPlan[] }>({
+    queryKey: ['/api/billing/plans'],
+    enabled: isOwner && isUpgradeOpen,
+  });
+  const upgradePlans = (billingPlansData?.plans ?? [])
+    .filter(p => (p.isActive ?? true) && p.maxSeats > seatCapacity)
+    .sort((a, b) => a.maxSeats - b.maxSeats);
+
+  const upgradeMutation = useMutation({
+    mutationFn: async (planId: number) => {
+      const response = await apiRequest("POST", "/api/billing/upgrade", { planId });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const err: any = new Error(data?.message || data?.error || 'Failed to upgrade plan');
+        err.code = data?.error;
+        throw err;
+      }
+      return data;
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/workspace'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+      setIsUpgradeOpen(false);
+      toast({ title: "Plan upgraded", description: `Your workspace now has ${data?.plan?.maxSeats ?? 'more'} seats.` });
+    },
+    onError: (error: any) => {
+      if (error?.code === 'needs_checkout' || error?.code === 'charge_failed') {
+        toast({
+          title: "Checkout required",
+          description: "We couldn't complete a one-click upgrade. Please complete checkout from the Subscription page to switch plans.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "Upgrade failed", description: error.message, variant: "destructive" });
+    },
+  });
 
   const updateNameMutation = useMutation({
     mutationFn: async (name: string) => {
@@ -780,19 +841,40 @@ function WorkspaceSection() {
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 uppercase tracking-wide">Seats</span>
-                  <p className="text-sm font-medium mt-0.5">{workspace?.memberCount}/{workspace?.maxMembers}</p>
+                  <p className="text-sm font-medium mt-0.5">
+                    {usedSeats}/{seatCapacity}
+                    {pendingInvites.length > 0 && (
+                      <span className="text-xs text-gray-500 font-normal"> ({pendingInvites.length} pending)</span>
+                    )}
+                  </p>
                 </div>
               </div>
+              {isOwner && (isOverCapacity || atCapacity) && (
+                <div className={`mt-1 flex items-center justify-between gap-3 border rounded-none p-3 ${isOverCapacity ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <AlertCircle className={`h-4 w-4 mt-0.5 flex-shrink-0 ${isOverCapacity ? 'text-red-600' : 'text-amber-600'}`} />
+                    <p className="text-xs text-gray-700">
+                      {isOverCapacity
+                        ? `Your workspace has ${usedSeats} members but your current plan only includes ${seatCapacity} seat${seatCapacity === 1 ? '' : 's'}. Existing members keep access, but you can't add anyone until you upgrade or remove members.`
+                        : `You've used all ${seatCapacity} seat${seatCapacity === 1 ? '' : 's'} on your plan. Upgrade to a Team plan to invite more members.`}
+                    </p>
+                  </div>
+                  <Button size="sm" className="gap-1.5 flex-shrink-0" onClick={() => setIsUpgradeOpen(true)}>
+                    <Crown className="h-4 w-4" />
+                    Upgrade
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Team Members</h4>
-              {isOwner && !hasAssistant && !hasPendingInvite && (
+              {canInvite && (
                 <Button size="sm" onClick={() => setIsInviteOpen(true)} className="gap-1.5">
                   <UserPlus className="h-4 w-4" />
-                  Invite Assistant
+                  Invite Member
                 </Button>
               )}
             </div>
@@ -819,30 +901,30 @@ function WorkspaceSection() {
                 </div>
               )}
 
-              {assistant && (
-                <div className="border rounded-none p-4 bg-white shadow-sm border-l-4 border-l-blue-400">
+              {nonOwnerMembers.map((member) => (
+                <div key={member.id} className="border rounded-none p-4 bg-white shadow-sm border-l-4 border-l-blue-400">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-none bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
-                      {(assistant.email || assistant.username || 'A')[0].toUpperCase()}
+                      {(member.email || member.username || 'A')[0].toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm truncate">{assistant.fullName || assistant.username}</span>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-blue-100 text-blue-800">Assistant</span>
+                        <span className="font-medium text-sm truncate">{member.fullName || member.username}</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-blue-100 text-blue-800 capitalize">{member.role === 'viewer' ? 'Viewer' : 'Assistant'}</span>
                       </div>
-                      <p className="text-xs text-gray-500 truncate">{assistant.email}</p>
+                      <p className="text-xs text-gray-500 truncate">{member.email}</p>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right flex-shrink-0">
                         <p className="text-xs text-gray-400">Last active</p>
-                        <p className="text-xs text-gray-600">{formatLastActive(assistant.lastLogin)}</p>
+                        <p className="text-xs text-gray-600">{formatLastActive(member.lastLogin)}</p>
                       </div>
                       {isOwner && (
                         <Button
                           size="sm"
                           variant="ghost"
                           className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 px-2"
-                          onClick={() => { setRemoveTarget(assistant); setIsRemoveOpen(true); }}
+                          onClick={() => { setRemoveTarget(member); setIsRemoveOpen(true); }}
                         >
                           <XCircle className="h-4 w-4" />
                         </Button>
@@ -850,7 +932,7 @@ function WorkspaceSection() {
                     </div>
                   </div>
                 </div>
-              )}
+              ))}
 
               {pendingInvites.map((invite) => (
                 <div key={invite.id} className="border rounded-none p-4 bg-gray-50 shadow-sm border-l-4 border-l-gray-300 border-dashed">
@@ -877,17 +959,22 @@ function WorkspaceSection() {
                 </div>
               ))}
 
-              {!hasAssistant && !hasPendingInvite && (
+              {!hasTeam && (
                 <div className="border rounded-none p-8 bg-gray-50 text-center">
                   <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
                   <p className="font-medium text-gray-700 mb-1">You're working solo.</p>
-                  <p className="text-sm text-gray-500 mb-4">Invite an assistant to collaborate on receipts and invoices.</p>
-                  {isOwner && (
+                  <p className="text-sm text-gray-500 mb-4">Invite a team member to collaborate on receipts and invoices.</p>
+                  {canInvite ? (
                     <Button size="sm" onClick={() => setIsInviteOpen(true)} className="gap-1.5">
                       <UserPlus className="h-4 w-4" />
-                      Invite Assistant
+                      Invite Member
                     </Button>
-                  )}
+                  ) : isOwner ? (
+                    <Button size="sm" variant="outline" onClick={() => setIsUpgradeOpen(true)} className="gap-1.5">
+                      <Crown className="h-4 w-4" />
+                      Upgrade to add seats
+                    </Button>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -972,6 +1059,49 @@ function WorkspaceSection() {
               {removeMemberMutation.isPending ? 'Removing...' : 'Remove Assistant'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isUpgradeOpen} onOpenChange={setIsUpgradeOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Crown className="h-5 w-5 text-amber-600" />
+              Upgrade your plan
+            </DialogTitle>
+            <DialogDescription>
+              Add more seats to your workspace. You're currently using {usedSeats} of {seatCapacity} seat{seatCapacity === 1 ? '' : 's'}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {upgradePlans.length === 0 ? (
+              <div className="border rounded-none p-6 bg-gray-50 text-center">
+                <p className="text-sm text-gray-600">No higher-capacity plans are available right now.</p>
+              </div>
+            ) : (
+              upgradePlans.map((plan) => (
+                <div key={plan.id} className="border rounded-none p-4 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm">{plan.displayName || plan.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {plan.maxSeats} seats · R{(plan.price / 100).toFixed(0)}/{plan.billingPeriod === 'yearly' ? 'year' : 'month'}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => upgradeMutation.mutate(plan.id)}
+                    disabled={upgradeMutation.isPending}
+                    data-testid={`button-upgrade-plan-${plan.id}`}
+                  >
+                    {upgradeMutation.isPending ? 'Upgrading...' : 'Upgrade'}
+                  </Button>
+                </div>
+              ))
+            )}
+            <p className="text-xs text-gray-400">
+              Upgrades are charged to your saved card. If we can't charge it automatically, you'll be asked to complete checkout.
+            </p>
+          </div>
         </DialogContent>
       </Dialog>
     </Section>

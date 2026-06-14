@@ -40,7 +40,13 @@ const YEARLY = makePlan({
   paystackPlanCode: "PLN_k9q25ilwueuz17j",
 });
 
-const PLANS = [MONTHLY, YEARLY];
+// Seat-based Team tiers (Solo = MONTHLY, 1 seat).
+const TEAM_S = makePlan({ id: 4, name: "team_s", billingPeriod: "monthly", price: 24500, paystackPlanCode: "PLN_15dr43omaa0569q", maxSeats: 5 });
+const TEAM_M = makePlan({ id: 5, name: "team_m", billingPeriod: "monthly", price: 49000, paystackPlanCode: "PLN_p92uns68g8zenic", maxSeats: 10 });
+const TEAM_L = makePlan({ id: 6, name: "team_l", billingPeriod: "monthly", price: 98000, paystackPlanCode: "PLN_6dn6r7nvwe2nwnh", maxSeats: 20 });
+const TEAM_XL = makePlan({ id: 7, name: "team_xl", billingPeriod: "monthly", price: 245000, paystackPlanCode: "PLN_xjrq6x5bqdxcctm", maxSeats: 50 });
+
+const PLANS = [MONTHLY, YEARLY, TEAM_S, TEAM_M, TEAM_L, TEAM_XL];
 
 describe("resolvePlanForTransaction", () => {
   it("resolves by the transaction's Paystack plan code", () => {
@@ -96,6 +102,27 @@ describe("resolvePlanForTransaction", () => {
       resolvePlanForTransaction({ plan: { plan_code: "PLN_does_not_exist" } }, PLANS),
     ).toBeNull();
     expect(resolvePlanForTransaction({ metadata: { plan_id: 999 } }, PLANS)).toBeNull();
+  });
+
+  it.each([
+    ["Team S", "PLN_15dr43omaa0569q", 4, 5],
+    ["Team M", "PLN_p92uns68g8zenic", 5, 10],
+    ["Team L", "PLN_6dn6r7nvwe2nwnh", 6, 20],
+    ["Team XL", "PLN_xjrq6x5bqdxcctm", 7, 50],
+  ])("resolves %s by its Paystack plan code to the right tier and seat count", (_label, code, expectedId, expectedSeats) => {
+    const result = resolvePlanForTransaction({ plan: { plan_code: code } }, PLANS);
+    expect(result).not.toBeNull();
+    expect(result!.plan.id).toBe(expectedId);
+    expect(result!.plan.maxSeats).toBe(expectedSeats);
+    expect(result!.source).toBe("transaction_plan_code");
+  });
+
+  it("does not confuse Team tiers with one another (each code maps to exactly one tier)", () => {
+    const sResult = resolvePlanForTransaction({ plan: { plan_code: "PLN_15dr43omaa0569q" } }, PLANS);
+    const xlResult = resolvePlanForTransaction({ plan: { plan_code: "PLN_xjrq6x5bqdxcctm" } }, PLANS);
+    expect(sResult!.plan.name).toBe("team_s");
+    expect(xlResult!.plan.name).toBe("team_xl");
+    expect(sResult!.plan.id).not.toBe(xlResult!.plan.id);
   });
 
   it("does not match plans that have no Paystack plan code (e.g. trial)", () => {

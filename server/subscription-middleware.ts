@@ -7,6 +7,27 @@ export interface SubscriptionStatus {
   subscriptionType: 'none' | 'trial' | 'premium';
   trialDaysRemaining?: number;
   subscriptionPlatform?: 'paystack' | 'google_play' | 'apple';
+  // Effective seat capacity for the workspace, derived from the owner's active
+  // plan's max_seats. Read-only — no enforcement here. Defaults to 1 (Solo).
+  seatCapacity?: number;
+}
+
+/**
+ * Resolve how many workspace seats a subscription's plan grants (its max_seats).
+ * Falls back to 1 (Solo) when the plan, its seat count, or plan lookup is
+ * unavailable. Read-only and side-effect free.
+ */
+async function resolvePlanSeatCapacity(planId: number | null | undefined): Promise<number> {
+  if (!planId || !storage.getSubscriptionPlan) return 1;
+  try {
+    const plan = await storage.getSubscriptionPlan(planId);
+    if (plan && typeof plan.maxSeats === 'number' && plan.maxSeats > 0) {
+      return plan.maxSeats;
+    }
+  } catch (error) {
+    console.error(`[resolvePlanSeatCapacity] Error resolving seats for plan ${planId}:`, error);
+  }
+  return 1;
 }
 
 export async function getSubscriptionStatus(userId: number): Promise<SubscriptionStatus> {
@@ -24,7 +45,8 @@ export async function getSubscriptionStatus(userId: number): Promise<Subscriptio
     }
 
     const now = new Date();
-    console.log(`[getSubscriptionStatus] User ${userId} subscription status: ${subscription.status}, trialEnd: ${subscription.trialEndDate}`);
+    const seatCapacity = await resolvePlanSeatCapacity(subscription.planId);
+    console.log(`[getSubscriptionStatus] User ${userId} subscription status: ${subscription.status}, trialEnd: ${subscription.trialEndDate}, seatCapacity: ${seatCapacity}`);
 
     // Check if subscription is active and billing date has not passed
     if (subscription.status === 'active' && subscription.nextBillingDate) {
@@ -34,6 +56,7 @@ export async function getSubscriptionStatus(userId: number): Promise<Subscriptio
           hasActiveSubscription: true,
           isInTrial: false,
           subscriptionType: 'premium',
+          seatCapacity,
           subscriptionPlatform: subscription.googlePlayPurchaseToken ? 'google_play' :
                              subscription.paystackReference ? 'paystack' :
                              subscription.appleReceiptData ? 'apple' : 'paystack'
@@ -60,6 +83,7 @@ export async function getSubscriptionStatus(userId: number): Promise<Subscriptio
           hasActiveSubscription: true,
           isInTrial: false,
           subscriptionType: 'premium',
+          seatCapacity,
           subscriptionPlatform: subscription.googlePlayPurchaseToken ? 'google_play' : 
                              subscription.paystackReference ? 'paystack' : 
                              subscription.appleReceiptData ? 'apple' : 'paystack'
@@ -78,7 +102,8 @@ export async function getSubscriptionStatus(userId: number): Promise<Subscriptio
           hasActiveSubscription: true,
           isInTrial: true,
           subscriptionType: 'trial',
-          trialDaysRemaining: daysRemaining
+          trialDaysRemaining: daysRemaining,
+          seatCapacity
         };
       } else {
         console.log(`[getSubscriptionStatus] User ${userId} trial has expired`);

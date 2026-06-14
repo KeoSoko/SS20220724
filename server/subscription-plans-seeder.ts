@@ -12,6 +12,42 @@ export const PAYSTACK_PLAN_CODES: Record<string, string> = {
 };
 
 /**
+ * Seat-based Team tiers. Solo (1 seat) is the existing premium_monthly plan and is
+ * intentionally not listed here. These rows are the source of truth for deterministic
+ * plan resolution (by Paystack plan code) and for a workspace's seat capacity.
+ *
+ * Prices are in cents (ZAR). Only monthly Paystack plan codes exist today; yearly
+ * variants can be added later by extending this list.
+ */
+export const TEAM_PLANS: Array<{
+  name: string;
+  displayName: string;
+  description: string;
+  price: number;
+  paystackPlanCode: string;
+  maxSeats: number;
+}> = [
+  { name: 'team_s', displayName: 'Team S', description: 'Shared workspace for small teams — up to 5 seats.', price: 24500, paystackPlanCode: 'PLN_15dr43omaa0569q', maxSeats: 5 },
+  { name: 'team_m', displayName: 'Team M', description: 'Shared workspace for growing teams — up to 10 seats.', price: 49000, paystackPlanCode: 'PLN_p92uns68g8zenic', maxSeats: 10 },
+  { name: 'team_l', displayName: 'Team L', description: 'Shared workspace for larger teams — up to 20 seats.', price: 98000, paystackPlanCode: 'PLN_6dn6r7nvwe2nwnh', maxSeats: 20 },
+  { name: 'team_xl', displayName: 'Team XL', description: 'Shared workspace for big teams — up to 50 seats.', price: 245000, paystackPlanCode: 'PLN_xjrq6x5bqdxcctm', maxSeats: 50 },
+];
+
+function buildTeamFeatures(maxSeats: number): string[] {
+  return [
+    `Shared team workspace (up to ${maxSeats} seats)`,
+    'Centralized billing for your whole team',
+    'Unlimited receipt scanning',
+    'AI-powered categorization',
+    'Smart search & analytics',
+    'Tax insights & deductions',
+    'Export to PDF & CSV',
+    'Cloud storage & sync',
+    'Priority customer support',
+  ];
+}
+
+/**
  * Seed subscription plans for Simple Slips
  * 30-day free trial followed by R49/month subscription
  */
@@ -172,6 +208,62 @@ export async function ensureYearlyPlanExists() {
 }
 
 /**
+ * Idempotently create/reconcile the seat-based Team tiers (Team S/M/L/XL).
+ * - Missing tier  -> inserted with its Paystack plan code, price and max_seats.
+ * - Existing tier -> only updated when its code, price or max_seats has drifted.
+ * Safe to run on every boot. Solo (premium_monthly, 1 seat) is handled elsewhere.
+ */
+export async function ensureTeamPlansExist() {
+  try {
+    if (!storage.createSubscriptionPlan || !storage.getSubscriptionPlans) {
+      return;
+    }
+
+    const existingPlans = await storage.getSubscriptionPlans();
+    const byName = new Map((existingPlans || []).map((p) => [p.name, p]));
+
+    for (const tier of TEAM_PLANS) {
+      const existing = byName.get(tier.name);
+
+      if (!existing) {
+        const created = await storage.createSubscriptionPlan({
+          name: tier.name,
+          displayName: tier.displayName,
+          description: tier.description,
+          price: tier.price,
+          currency: 'ZAR',
+          billingPeriod: 'monthly',
+          trialDays: 0,
+          paystackPlanCode: tier.paystackPlanCode,
+          maxSeats: tier.maxSeats,
+          features: buildTeamFeatures(tier.maxSeats),
+          isActive: true,
+        });
+        log(`Created team plan ${tier.name} (${created.id}, code=${tier.paystackPlanCode}, max_seats=${tier.maxSeats})`, 'billing');
+      } else {
+        // Reconcile in place — only writes when something actually differs.
+        const result: any = await db.execute(sql`
+          UPDATE subscription_plans
+          SET paystack_plan_code = ${tier.paystackPlanCode},
+              max_seats = ${tier.maxSeats},
+              price = ${tier.price},
+              updated_at = NOW()
+          WHERE name = ${tier.name}
+            AND (paystack_plan_code IS DISTINCT FROM ${tier.paystackPlanCode}
+              OR max_seats IS DISTINCT FROM ${tier.maxSeats}
+              OR price IS DISTINCT FROM ${tier.price})
+        `);
+        if ((result?.rowCount ?? 0) > 0) {
+          log(`Reconciled team plan ${tier.name} (code=${tier.paystackPlanCode}, max_seats=${tier.maxSeats}, price=${tier.price})`, 'billing');
+        }
+      }
+    }
+  } catch (error) {
+    log(`Error ensuring team plans exist: ${error}`, 'billing');
+  }
+}
+
+/**
  * Idempotently backfill Paystack plan codes + max_seats on existing plan rows.
  * Only writes when the value actually differs, so it is safe to run on every boot.
  */
@@ -244,6 +336,7 @@ export async function initializeSubscriptionPlans() {
   try {
     await seedSubscriptionPlans();
     await ensureYearlyPlanExists(); // Add yearly plan to existing databases
+    await ensureTeamPlansExist(); // Create/reconcile seat-based Team tiers (Team S/M/L/XL)
     await backfillPlanCodes(); // Ensure existing plan rows carry Paystack codes + max_seats
     await backfillAuthorizationCodes(); // Recover authorization codes for existing Paystack subscribers
     

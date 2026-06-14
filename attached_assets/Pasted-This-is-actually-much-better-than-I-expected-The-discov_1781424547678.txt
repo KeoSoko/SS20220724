@@ -1,0 +1,178 @@
+This is actually much better than I expected.
+
+The discovery report reveals something important:
+
+You already have 90% of the organization system built.
+
+The only thing missing is workspace-level billing inheritance.
+
+My Recommendation: Phase 1 (Low Risk)
+
+Do not build Organizations.
+
+Do not rename Workspaces.
+
+Do not rename roles.
+
+Do not create new tables.
+
+Instead:
+
+Build "Workspace Billing"
+
+From a user perspective:
+
+Acme Accounting
+├── Owner (paid)
+├── Admin
+├── Member
+├── Member
+└── Member
+
+One bill.
+
+Multiple users.
+
+That's all.
+
+The Critical Gap
+
+Today:
+
+User B uploads receipt
+↓
+checkFeatureAccess()
+↓
+getSubscriptionStatus(UserB)
+↓
+403
+
+The workspace owner is never checked.
+
+That's the entire problem.
+
+Everything else already exists:
+
+Workspace ownership ✅
+Invitations ✅
+Shared receipts ✅
+Roles ✅
+Memberships ✅
+Access control ✅
+
+What I Would Build
+Phase 1 — Shared Subscription
+
+Add one field:
+
+ALTER TABLE user_subscriptions
+ADD COLUMN workspace_id INTEGER;
+
+Populate it for existing users.
+
+Then change:
+
+getSubscriptionStatus(userId)
+
+to:
+
+getEffectiveSubscriptionStatus(userId)
+
+Logic:
+
+Is user workspace owner?
+  YES → use own subscription
+
+NO
+  ↓
+Find workspace owner
+  ↓
+Use owner's subscription
+
+That's it.
+
+No seat billing yet.
+
+No pricing changes yet.
+
+Why This First?
+
+Because you only have:
+
+345 users
+345 workspaces
+5 workspaces with more than one member
+
+Your multi-user feature is barely being used.
+
+You don't yet know how companies will use it.
+
+Phase 2 — Seat Counting
+
+Once the first few companies are active:
+
+Add:
+
+workspaces.seat_price_cents
+
+and calculate:
+
+Active members × R49
+
+Example:
+
+6 users
+×
+R49
+
+=
+R294/month
+
+Display it.
+
+Do not charge it yet.
+
+Just show it.
+
+Phase 3 — Real Company Billing
+
+Only after you've observed actual usage.
+
+Then:
+
+Workspace subscription becomes authoritative.
+Workspace owner receives one invoice.
+Seat count determines billing.
+Members never see billing screens.
+One Thing I'd Change Immediately
+
+This is dangerous:
+
+When somebody accepts an invite:
+
+Cancel their subscription
+
+The system does that today.
+
+But the owner's subscription is not inherited.
+
+So invited users lose their subscription and then get blocked.
+
+That's why almost nobody uses workspaces.
+
+I'd fix that before anything else.
+
+The Plan I Would Give Replit
+Sprint 1 (1–2 days)
+Create effective workspace subscription inheritance.
+Stop cancelling subscriptions on invite acceptance until inheritance is working.
+Add tests.
+Sprint 2 (1 day)
+Add Organization/Company wording in UI.
+Keep underlying tables as workspaces.
+Sprint 3 (later)
+Seat counting dashboard.
+Workspace billing page.
+Consolidated invoice.
+Sprint 4 (only if needed)
+True per-seat charging.

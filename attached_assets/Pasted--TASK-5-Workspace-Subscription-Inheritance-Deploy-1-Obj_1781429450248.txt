@@ -1,0 +1,294 @@
+# TASK #5 — Workspace Subscription Inheritance (Deploy 1)
+
+## Objective
+
+Fix the broken multi-user workspace experience.
+
+Today:
+
+* Workspace members are checked against their own subscription.
+* Accepting a workspace invite cancels the invitee's subscription.
+* Members lose access even when the workspace owner is paying.
+
+We are fixing this.
+
+This deployment is intentionally limited to inheritance and access control.
+
+Do NOT implement Team Plans, seat billing, Paystack changes, billing dashboards, invite limits, or any billing infrastructure.
+
+---
+
+# Scope
+
+Implement only:
+
+1. Workspace subscription inheritance
+2. Remove auto-cancel on invite acceptance
+3. Fail-closed owner lookup
+4. Structured observability logging
+5. Subscription status refresh improvements
+
+No schema changes.
+
+No Paystack changes.
+
+No webhook changes.
+
+No billing logic changes.
+
+---
+
+# Required Behaviour
+
+## Owner Status Is Authoritative
+
+Workspace owner subscription determines access for all members.
+
+Examples:
+
+Owner active
+→ members active
+
+Owner trial
+→ members trial
+
+Owner expired
+→ members expired
+
+Owner cancelled
+→ members cancelled
+
+Members inherit whatever status the owner has.
+
+Ignore the member's own subscription for access decisions.
+
+---
+
+# Create getEffectiveSubscriptionStatus(userId)
+
+Location:
+
+server/subscription-middleware.ts
+
+Create:
+
+getEffectiveSubscriptionStatus(userId)
+
+Logic:
+
+1. Determine user's workspace.
+2. Determine workspace owner.
+3. If user is owner:
+
+   * use their own subscription status.
+4. If user is member:
+
+   * use owner's subscription status.
+5. If owner missing:
+
+   * fail closed
+   * deny access
+   * emit critical log
+
+DO NOT fall back to member subscription.
+
+---
+
+# Fail Closed When Owner Missing
+
+If workspace owner cannot be found:
+
+Return no access.
+
+Emit:
+
+[CRITICAL_WORKSPACE_OWNER_MISSING]
+{
+workspaceId,
+userId,
+ownerId
+}
+
+Do not silently continue.
+
+Do not fall back.
+
+---
+
+# Wire Into Access Gates Only
+
+Use getEffectiveSubscriptionStatus() only in:
+
+* requireSubscription()
+* checkFeatureAccess()
+
+Do NOT modify:
+
+billingService.getSubscriptionStatus()
+
+The billing-service version remains user-specific.
+
+It is used for billing lifecycle decisions and must stay unchanged.
+
+---
+
+# Remove Auto-Cancel Bug
+
+Location:
+
+POST /api/workspace/accept-invite
+
+Remove the logic that:
+
+* calls billingService.cancelSubscription(userId)
+* cancels trial subscriptions
+* cancels active subscriptions
+* sets subscriptionCancelled flags
+
+Delete this behaviour entirely.
+
+Invite acceptance should:
+
+* join workspace
+* update membership
+* stop
+
+Nothing else.
+
+No subscription cancellation.
+
+No replacement logic.
+
+---
+
+# Structured Logging
+
+Add temporary observability logs.
+
+When inheritance is used:
+
+[WORKSPACE_INHERITANCE_ACTIVE]
+{
+memberId,
+workspaceId,
+ownerId,
+ownerStatus,
+previousMemberStatus
+}
+
+When access denied due to owner:
+
+[EFFECTIVE_SUBSCRIPTION_BLOCKED]
+{
+userId,
+workspaceId,
+ownerId,
+ownerStatus,
+memberStatus
+}
+
+When owner missing:
+
+[CRITICAL_WORKSPACE_OWNER_MISSING]
+{
+workspaceId,
+userId,
+ownerId
+}
+
+Keep logs concise and structured.
+
+---
+
+# Subscription Visibility Improvement
+
+Current issue:
+
+Members may retain stale subscription state after owner changes.
+
+For subscription status queries:
+
+Enable:
+
+refetchOnWindowFocus: true
+
+Do NOT introduce polling.
+
+Do NOT add intervals.
+
+Keep the solution lightweight.
+
+---
+
+# Tests
+
+Add tests covering:
+
+1. Owner active → member active
+2. Owner trial → member trial
+3. Owner expired → member expired
+4. Owner cancelled → member cancelled
+5. Owner missing → access denied
+6. Invite acceptance no longer cancels subscription
+
+Remove any tests that assume fallback-to-own-subscription.
+
+---
+
+# Verification
+
+Run:
+
+npx tsc --noEmit
+
+Confirm:
+
+* App boots cleanly
+* No TypeScript errors
+* No route regressions
+
+---
+
+# Explicitly Out Of Scope
+
+Do NOT implement:
+
+* Team Plans
+* Seat counting
+* Invite limits
+* Billing dashboard
+* Paystack plan codes
+* Authorization-code persistence
+* Webhook changes
+* Workspace billing
+* Organization refactor
+* Role renames
+* Schema migrations
+
+Those are future tasks.
+
+---
+
+# Success Criteria
+
+A workspace owner with an active subscription can invite members.
+
+Members can:
+
+* upload receipts
+* scan receipts
+* use Clients
+* use Quotations
+* use Invoices
+* use Business Hub
+* use Profit & Loss
+
+based on the owner's subscription status.
+
+Accepting an invite never cancels the invitee's subscription.
+
+Missing owners fail closed and are logged.
+
+No billing behaviour changes.
+
+No Paystack behaviour changes.

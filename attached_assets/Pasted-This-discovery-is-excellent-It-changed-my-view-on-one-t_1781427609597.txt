@@ -1,0 +1,188 @@
+This discovery is excellent. It changed my view on one thing.
+
+Originally I preferred the fixed-tier model because I wanted to avoid building billing infrastructure.
+
+But your actual Paystack implementation means you're already closer to controlled billing than I assumed.
+
+A few conclusions:
+
+1. Approve Task #5 First
+
+I wouldn't discuss Team Plans further until inheritance is live.
+
+Everything depends on this:
+
+Owner subscription
+↓
+Member access
+
+Without that, the billing model doesn't matter.
+
+2. Remove billing_owner_id
+
+I agree with Replit.
+
+For now:
+
+workspace.ownerId
+=
+payer
+
+Simple.
+
+You can always introduce a dedicated billing owner later if a customer asks:
+
+"Finance pays but Operations owns the workspace."
+
+That's not a Sprint 1 problem.
+
+3. I Would Still Launch Team Plans Before True Per-Seat Billing
+
+The discovery confirms:
+
+Paystack cannot swap plan codes in-place.
+
+That's important.
+
+Because it means every upgrade involves:
+
+old plan
+↓
+disable
+↓
+new plan
+
+Whether checkout is shown or not.
+
+So the complexity is not eliminated.
+
+4. The Most Valuable Finding
+
+This is the part I would act on immediately:
+
+authorization_code is already captured but not persisted.
+
+That is gold.
+
+Because it means you have a clean future path.
+
+Today:
+
+Upgrade
+↓
+Checkout again
+
+Future:
+
+Upgrade
+↓
+One click
+↓
+Charge authorization
+
+without redesigning everything.
+
+5. What I Would Actually Ship
+Sprint 1
+
+Task #5
+
+Sprint 2
+
+Team Plans
+
+Solo     1
+Team S   2-5
+Team M   6-10
+Team L   11-20
+
+Add:
+
+subscription_plans.max_seats
+subscription_plans.paystack_plan_code
+
+Nothing else.
+
+Sprint 3
+
+Invite limits.
+
+Sprint 4
+
+Upgrade workflow.
+
+Use Option B initially:
+
+Upgrade
+↓
+Checkout
+↓
+New subscription
+
+Why?
+
+Because it reuses your existing production-tested flow.
+
+6. Something I'd Add Before Sprint 2
+
+One more discovery task:
+
+Ask Replit:
+
+Show me exactly how Paystack webhooks identify which plan a renewal belongs to today. If Team Plans introduce 6 different recurring amounts, can charge.success reliably map every renewal to the correct plan without using amount matching?
+
+The line that worried me was:
+
+monthly vs yearly is inferred by amount.
+
+That's fragile.
+
+Today:
+
+4900
+53000
+
+is easy.
+
+Tomorrow:
+
+4900
+24500
+49000
+98000
+53000
+264600
+529200
+
+Now amount-based routing becomes dangerous.
+
+Before Team Plans, I'd want:
+
+charge.success
+↓
+plan code
+↓
+subscription_plans.id
+
+Not:
+
+charge.success
+↓
+amount
+↓
+guess plan
+My Final Recommendation
+
+If I were prioritising the next 30 days:
+
+✅ Task #5 (inheritance)
+✅ Fix webhook plan identification
+✅ Team Plans schema
+✅ Team Plans in Paystack
+✅ Invite limits
+✅ Upgrade checkout flow
+❌ No metered billing
+❌ No custom renewal engine
+❌ No billing_owner_id
+
+That gets your three interested companies onboarded with the least operational risk while keeping a path open for more sophisticated billing later.

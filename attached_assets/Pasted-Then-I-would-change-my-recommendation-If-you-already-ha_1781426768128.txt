@@ -1,0 +1,300 @@
+Then I would change my recommendation.
+
+If you already have 3 companies asking for multiple users, you're no longer validating demand. You're validating pricing and implementation.
+
+In that case, I would not launch workspace inheritance without billing.
+
+Because you'd be creating a loophole:
+
+1 subscription = R49
+10 users = R49
+20 users = R49
+
+And once customers are onboarded at that price, it's much harder to increase it later.
+
+What I Would Build
+Workspace Subscription = Billable Entity
+
+Not:
+
+User → Subscription
+
+But:
+
+Workspace → Subscription
+
+Conceptually.
+
+You don't have to migrate everything immediately, but that's the direction.
+
+Pricing Model
+
+I'd keep it simple:
+
+R49 per active user per month
+
+Examples:
+
+Users	Monthly Bill
+1	R49
+2	R98
+5	R245
+10	R490
+20	R980
+
+Easy to understand.
+
+No tiers.
+No packages.
+No hidden rules.
+
+How Paystack Should Work
+
+I would not create a Paystack subscription per user.
+
+Instead:
+
+One Paystack Subscription Per Workspace
+
+Workspace owner pays.
+
+Each month:
+
+Active members × R49
+
+Calculate amount.
+
+Charge owner.
+
+Mid-Month Changes
+
+Keep this simple too.
+
+Do not prorate.
+
+At renewal:
+
+Seat count on billing date
+×
+R49
+
+Example:
+
+July 1
+5 users
+
+July 15
+10 users
+
+July 31 renewal
+10 × R49
+
+Bill:
+
+R490
+
+Simple.
+
+Predictable.
+
+Easy to explain.
+
+What I'd Ask Replit Next
+
+Before implementing inheritance, I would ask for a workspace billing architecture plan.
+
+Specifically:
+
+Design a workspace-level billing model for Simple Slips.
+
+Current state:
+
+Billing is user-based.
+Workspaces already exist.
+We want one company bill and multiple users.
+
+Requirements:
+
+Workspace owner pays.
+Active workspace members determine billing.
+Billing formula:
+active_members × R49/month.
+Seat count is evaluated on renewal date.
+No proration for Sprint 1.
+Existing Paystack subscriptions must continue working.
+Minimise schema changes.
+Support:
+adding users
+removing users
+changing owner
+owner cancellation
+member leaving workspace
+
+Provide:
+
+Recommended schema changes
+Paystack implications
+Renewal workflow
+Seat-count workflow
+Migration plan from current user-based billing
+Edge cases
+Rollout plan
+
+Do not implement yet.
+Produce architecture only.
+
+Because I think you're now beyond:
+
+"Can members inherit access?"
+
+The real question is:
+
+"How do we bill companies correctly without breaking existing subscribers?"
+
+That's where the design work should focus next.
+
+The good news is that the discovery already showed you have:
+
+Workspaces
+Memberships
+Ownership
+Invitations
+Shared data
+
+The missing piece is billing, not collaboration.
+
+Pasted text.txt
+Document
+
+This architecture is thoughtful, but I would not implement Stages 1–5 yet.
+
+There is one thing in the proposal that concerns me:
+
+"Workspace owner pays. Active workspace members determine billing. Charge authorization on renewal."
+
+That's the right destination, but it is a billing platform project, not a feature.
+
+You have 3 companies asking for multi-user access now.
+
+You need a solution that can go live in weeks, not months.
+
+What I Would Do Instead
+Phase 1: Company Billing (Immediate)
+
+Implement Task #5 (inheritance).
+
+Then add:
+
+Workspace
+Members: 5
+Monthly Amount: R245
+Status: Pending Upgrade
+
+When the owner adds a second user:
+
+This workspace now requires a Team subscription.
+
+Current users: 2
+Monthly cost: R98
+
+Then:
+
+Create a new Paystack Team Plan.
+Charge workspace owners based on seat count tiers.
+
+Example:
+
+Users	Plan
+1	R49
+2–5	R245
+6–10	R490
+11–20	R980
+
+Why?
+
+Because Paystack is extremely good at fixed recurring plans.
+
+It is much less pleasant when you start building your own recurring charge engine.
+
+Why I'm Hesitant About Variable Monthly Charges
+
+The proposal moves you into:
+
+Stored card authorizations
+Custom renewal jobs
+Dunning
+Retry logic
+Failed-charge handling
+Seat snapshots
+Billing disputes
+Mid-cycle edge cases
+
+That's a lot of financial infrastructure.
+
+For a fintech founder, that's manageable.
+
+For a small SaaS trying to serve customers quickly, it's often unnecessary.
+
+What Dext, Hubdoc and Most SaaS Products Do
+
+Most don't truly bill:
+
+Active users × price
+
+every month dynamically.
+
+They usually bill:
+
+Plan
++
+Seat bucket
+
+Examples:
+
+1 user = R49
+
+Up to 5 users = R245
+
+Up to 10 users = R490
+
+Then if you exceed the bucket:
+
+Upgrade required
+
+Much easier operationally.
+
+My Recommendation
+Now
+
+Implement:
+
+Task #5 (workspace inheritance)
+Workspace member counting
+Workspace billing screen
+Team pricing tiers
+Later
+
+If you reach:
+
+50+ companies
+200+ seats
+Regular seat changes
+
+Then consider the architecture in the document and move to true per-seat metered billing.
+
+The Question I'd Ask You
+
+Of the 3 companies that approached you:
+
+How many users does each company need?
+Are they expecting a single invoice?
+Have they objected to paying R49 × user count?
+
+Because if Company A wants 5 users and Company B wants 8 users, I'd honestly launch:
+
+2–5 users = R245/month
+6–10 users = R490/month
+
+before I built a custom billing engine.
+
+It's simpler to support, simpler to explain, and much harder to break.

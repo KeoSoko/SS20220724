@@ -1,0 +1,141 @@
+This is a very good analysis.
+
+Based on everything you've learned, I would lock these decisions now:
+
+Decision 1: Owner's Status Is Authoritative
+
+Yes.
+
+For members:
+
+Owner active  -> member active
+Owner trial   -> member trial
+Owner expired -> member expired
+Owner cancelled -> member cancelled
+
+Ignore the member's own subscription row for access decisions.
+
+Otherwise you end up with impossible-to-explain scenarios where the owner is paying but a member is blocked.
+
+Decision 2: Members Inherit Trial Access
+
+Yes.
+
+You want onboarding to be frictionless.
+
+If a company owner creates a workspace and invites three staff members during their trial, those staff members should be able to use the product immediately.
+
+Otherwise you'll create confusion during evaluation.
+
+Decision 3: Disable Auto-Cancel On Invite Acceptance
+
+Immediately.
+
+This is the biggest bug uncovered in the assessment.
+
+Today the flow is effectively:
+
+Join workspace
+↓
+Cancel own subscription
+↓
+Still checked individually
+↓
+Lose access
+
+That's likely why only 5 workspaces have multiple members.
+
+I would remove the auto-cancel completely for Sprint 1.
+
+Not guard it.
+
+Not delay it.
+
+Remove it.
+
+You can always introduce cleanup later.
+
+Decision 4: Add Owner Cancellation Warning
+
+Yes, but not Sprint 1.
+
+It's a UI enhancement.
+
+The backend inheritance is the important part.
+
+You can add the warning when you build the Organization/Billing page.
+
+Decision 5: Leave Exports Alone
+
+Yes.
+
+Exports are already stable.
+
+Do not touch them.
+
+The assessment correctly shows they aren't subscription-gated anyway.
+
+One Additional Decision I'd Add
+Decision 6: Add Visibility Before Billing
+
+Before charging per-seat, add a simple dashboard metric:
+
+Workspace Members: 4
+Current Cost (if billed per seat): R196/month
+
+Display only.
+
+Don't charge it.
+
+Observe usage for a month or two.
+
+With only 5 multi-user workspaces today, you don't yet know how companies will actually use the feature.
+
+What I Would Implement In Sprint 1
+
+Only these two backend changes:
+
+Change 1
+
+Create:
+
+getEffectiveSubscriptionStatus(userId)
+
+Logic:
+
+Owner?
+  -> own subscription
+
+Member?
+  -> owner's subscription
+
+Use it only in:
+
+requireSubscription()
+checkFeatureAccess()
+
+Leave billingService.getSubscriptionStatus() untouched.
+
+The assessment is absolutely correct about keeping those separate.
+
+Change 2
+
+Delete the auto-cancel block during invite acceptance.
+
+Full stop.
+
+That's enough to satisfy the companies asking for:
+
+"One company account, multiple users."
+
+Without:
+
+schema migrations
+Paystack changes
+seat billing
+organization refactors
+role renames
+
+It's the smallest change that creates real customer value.
+
+If Replit implements only those two changes and nothing else, I'd be comfortable shipping it.

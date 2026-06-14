@@ -1,0 +1,106 @@
+workspace also has assistants. How will these be handled again?
+
+Good catch.
+
+Before implementing Task #5, I would explicitly ask Replit how assistants are currently licensed and permissioned.
+
+Because there are three possible models:
+
+Model A — Assistants Are Workspace Assets
+Workspace
+├── Owner
+├── Members
+└── Assistants
+
+Assistants belong to the workspace.
+
+If the workspace owner is subscribed:
+
+Members can use assistants.
+Assistants are shared resources.
+
+In this model, inheritance is straightforward.
+
+Model B — Assistants Are User Assets
+User A
+└── Assistant A
+
+User B
+└── Assistant B
+
+Then inheritance becomes trickier.
+
+Example:
+
+Owner = active
+Member = no subscription
+
+Should the member be allowed to create unlimited assistants because the owner is paying?
+
+Maybe yes.
+
+Maybe no.
+
+That's a product decision.
+
+Model C — Assistants Consume AI Credits
+
+This is the one I'd worry about.
+
+If assistants trigger:
+
+OpenAI calls
+OCR
+Embeddings
+AI workflows
+
+Then assistants are not just a feature flag.
+
+They're a cost center.
+
+Example:
+
+Owner pays R49
+10 members
+All hammer assistants
+
+Now your AI bill grows while revenue doesn't.
+
+What I Suspect
+
+Given your earlier roadmap and the planned "Simple Assistant" feature, I suspect assistants are currently:
+
+Workspace-scoped feature
++
+Subscription gated
+
+If that's true, then Task #5 should simply inherit assistant access exactly like:
+
+Invoices
+Business Hub
+Clients
+Quotations
+
+No special handling.
+
+What I'd Ask Replit
+
+Before merging Task #5:
+
+Show all assistant-related tables, routes, permissions, feature gates, and billing checks.
+
+Specifically:
+
+Are assistants owned by users or workspaces?
+Which subscription checks gate assistant usage?
+Do assistants consume paid AI resources?
+Are there existing usage limits?
+Would workspace subscription inheritance automatically grant assistant access to members?
+
+That answer determines whether assistants should be included in inheritance now or treated separately.
+
+My instinct:
+
+If assistants already sit behind requireSubscription() or checkFeatureAccess(), include them in inheritance.
+
+If assistants have significant per-use AI cost, then I'd want a separate discussion before allowing a workspace owner's subscription to unlock assistant usage for unlimited members. That's where future Team Plans and seat limits become important.

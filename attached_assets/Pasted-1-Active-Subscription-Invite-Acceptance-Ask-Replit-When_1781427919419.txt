@@ -1,0 +1,79 @@
+1. Active Subscription + Invite Acceptance
+
+Ask Replit:
+
+When a user with an active paid subscription accepts a workspace invitation today, show the exact code path. Does the subscription get cancelled immediately? Is there any warning, confirmation, grace period, or user choice? Show the exact routes and functions involved.
+
+This confirms the true impact of removing the auto-cancel logic.
+
+2. Subscription Cache / Refresh Behaviour
+
+Ask Replit:
+
+Trace the complete flow of /api/subscription/status from backend to frontend. Show cache durations, React Query settings, stale times, invalidation logic, and what happens after a successful Paystack payment. If a workspace owner upgrades, how quickly will members see the new effective subscription status without refreshing?
+
+You want to know whether:
+
+Owner upgrades
+↓
+Webhook updates subscription
+↓
+Member sees access immediately
+
+or whether members sit on stale data for 30 minutes.
+
+3. Orphaned Workspace Analysis
+
+Ask Replit:
+
+Search for every way a workspace owner can be removed, deleted, deactivated, or transferred. Can a workspace exist without a valid owner? Count how many workspaces currently have a missing, deleted, or invalid owner relationship. Show all code paths that could create an orphaned workspace.
+
+This is important because I actually disagree with the proposed fallback:
+
+Owner not found
+↓
+Use member subscription
+
+That silently hides data integrity problems.
+
+I would rather:
+
+Owner not found
+↓
+Access denied
+↓
+Critical log
+↓
+Admin intervention
+
+If orphaned workspaces can exist.
+
+4. Webhook Plan Identification
+
+This is now the biggest billing risk.
+
+Ask Replit:
+
+Trace the complete charge.success webhook processing flow. Show exactly how the current code determines which subscription plan to activate. Is it amount-based, metadata-based, plan-code-based, or a combination? Simulate the proposed Team Plans (R245, R490, R980) and identify every location that must change before Team Plans can safely go live.
+
+I would not build Team Plans until this answer is crystal clear.
+
+My Current Priority Order
+Immediate
+Investigate orphaned workspaces.
+Investigate subscription caching.
+Confirm active-subscription invite behaviour.
+Fix auto-cancel bug.
+Implement inheritance.
+Before Team Plans
+Persist authorization_code.
+Fix webhook plan identification.
+Then
+Create Team Plans.
+Add invite limits.
+Add upgrade workflow.
+Later
+Billing dashboard.
+One-click upgrades using stored authorizations.
+
+At this point the architecture is largely settled. The remaining work is less about design and more about eliminating the last unknowns before you touch production billing.

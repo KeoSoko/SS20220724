@@ -1,0 +1,184 @@
+This is excellent discovery work. It changed two things from "good ideas" into "must-fix issues."
+
+What I Would Change in Task #5
+Change 1: Fail Closed on Missing Owner
+
+I would absolutely amend the task.
+
+Originally:
+
+Owner not found
+→ fallback to member subscription
+
+Now that you've proven:
+
+0 orphaned workspaces today
+orphaning is possible
+owner_id has no FK
+6 owners can potentially be deleted
+
+I would change the rule to:
+
+Owner not found
+→ deny access
+→ emit CRITICAL log
+→ return explicit error
+
+Example log:
+
+[CRITICAL_WORKSPACE_OWNER_MISSING]
+{
+  workspaceId,
+  userId,
+  ownerId
+}
+
+This turns a data integrity issue into a visible operational issue instead of silently masking it.
+
+Change 2: Remove "Fallback to Own Subscription"
+
+Completely.
+
+That fallback would reintroduce the exact inconsistency you're trying to eliminate.
+
+You want:
+
+Workspace
+↓
+Owner
+↓
+Subscription
+
+One source of truth.
+
+Not:
+
+Try owner
+↓
+Maybe member
+↓
+Depends
+The Most Serious Discovery
+
+This one:
+
+User accepts invite
+→ local subscription cancelled
+→ Paystack keeps charging
+
+That's not merely a bug.
+
+That's a billing defect.
+
+A customer can literally:
+
+Pay
+↓
+Get charged
+↓
+Lose access
+
+I would move the auto-cancel removal to the top of the backlog.
+
+The Team Plans Blocker Is Confirmed
+
+The webhook discovery is even more important than I expected.
+
+Today:
+
+isYearly = amount >= 50000
+
+works only because:
+
+R49
+R530
+
+are the only options.
+
+The moment Team Plans arrive:
+
+24500
+49000
+98000
+
+everything breaks.
+
+And not in an obvious way.
+
+It would silently activate the wrong plan.
+
+I would now treat:
+
+"Fix webhook plan resolution"
+
+as a prerequisite to Team Plans.
+
+Not part of Team Plans.
+
+A separate ticket.
+
+Member Upgrade Visibility
+
+This is the only place where I'd be careful not to over-engineer.
+
+You discovered:
+
+staleTime = 5 minutes
+no polling
+no focus refresh
+
+For V1 I would not add polling.
+
+I'd simply enable:
+
+refetchOnWindowFocus: true
+
+for subscription status.
+
+That's enough that:
+
+Owner upgrades
+↓
+Member clicks around
+↓
+Window focus changes
+↓
+Status refreshes
+
+without introducing constant API traffic.
+
+You can add polling later if customers complain.
+
+Revised Priority Order
+Immediate
+Remove auto-cancel.
+Implement inheritance.
+Fail closed on missing owner.
+Next
+Persist authorization_code.
+Fix webhook plan identification.
+Then
+Team Plans schema.
+Team Plans in Paystack.
+Invite limits.
+Upgrade workflow.
+Later
+Billing dashboard.
+One-click upgrades using stored authorization.
+One Last Discovery I'd Ask For
+
+Before coding Team Plans:
+
+Show every place where the frontend assumes subscription status is only:
+
+'none' | 'trial' | 'premium'
+
+and identify all locations that would need updating to support:
+
+'solo' | 'team_s' | 'team_m' | 'team_l'
+
+including TypeScript types, UI badges, billing pages, upgrade prompts, and API responses.
+
+Because I strongly suspect there are more hardcoded assumptions than just the webhook.
+
+Once you know that answer, you have enough information to build the entire company billing feature safely.

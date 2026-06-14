@@ -1,0 +1,135 @@
+This is actually a very good outcome.
+
+The assistant investigation found zero blockers for Task #5.
+
+For Workspace Inheritance
+
+These features:
+
+AI Email Assistant
+AI Categorisation
+Invoice AI helpers
+Quote AI helpers
+
+already sit behind:
+
+requireSubscription()
+checkFeatureAccess()
+
+So when you implement inheritance, they automatically behave correctly.
+
+You don't need assistant-specific code.
+
+You don't need assistant-specific permissions.
+
+You don't need assistant-specific billing logic.
+
+That's exactly what we wanted.
+
+The Real Discovery
+
+The Tax AI Assistant is a completely separate issue.
+
+Current state:
+
+Authenticated user
+↓
+Tax AI Assistant
+↓
+GPT-4.1
+
+No subscription required.
+
+No usage limit.
+
+No rate limit.
+
+No quota.
+
+No workspace billing.
+
+No inheritance logic.
+
+No Team Plan awareness.
+
+And it's mounted on the dashboard and exposed through multiple API endpoints.
+
+That's not a Task #5 problem.
+
+That's a cost-control problem.
+
+What I Would Do
+Proceed with Task #5 unchanged
+
+No modifications.
+
+No assistant logic.
+
+No scope expansion.
+
+Ship it.
+
+Create a New Task
+
+Call it:
+
+Task #6A – Tax AI Assistant Access Control
+
+Goal:
+
+Put Tax AI Assistant behind requireSubscription()
+Let inheritance automatically apply
+Add basic usage monitoring
+Add soft limits before Team Plans launch
+
+Not because users are abusing it today.
+
+Because once companies arrive:
+
+1 owner
+10 members
+Tax AI Assistant
+GPT-4.1
+
+can become expensive surprisingly quickly.
+
+One Thing I Would Ask Replit Later
+
+Not now.
+
+After Task #5.
+
+Ask:
+
+Show me the last 90 days of Tax AI Assistant usage:
+
+total requests
+unique users
+requests per user
+estimated OpenAI cost
+
+You may discover:
+
+Scenario A
+20 requests/month
+
+Then don't touch it.
+
+Scenario B
+5,000 requests/month
+
+Then move it up the backlog.
+
+Let data drive the decision.
+
+My Verdict
+
+You're ready.
+
+Nothing from the assistant investigation changes the architecture.
+
+I'd tell Replit:
+
+Implement Task #5 exactly as drafted. Do not modify Tax AI Assistant. Create a separate backlog item for Tax AI Assistant subscription gating and usage controls.
+
+Then move into Build mode and ship the inheritance fix. That's the highest-value change you've identified in this entire exercise.

@@ -1,0 +1,140 @@
+This is the first design in the thread that I'd be comfortable building.
+
+A few reasons:
+
+1. It Aligns With How Customers Think
+
+Companies don't think:
+
+"I need 7.3 active seats this month."
+
+They think:
+
+"We need a team account for 5 people."
+
+The Team S / Team M / Team L model is easy to explain on a sales call.
+
+2. It Uses Paystack the Way Paystack Wants to Be Used
+
+The earlier metered model was fighting the platform.
+
+This model uses:
+
+Workspace
+↓
+Paystack Plan
+↓
+Recurring subscription
+
+Exactly what Paystack already does well.
+
+No custom billing engine.
+
+No scheduled charging service.
+
+No dunning system.
+
+No reconciliation headaches.
+
+3. The Invite Gate Is The Key Innovation
+
+This part is important:
+
+Invite user #6
+↓
+Plan limit reached
+↓
+Upgrade required
+
+That's much cleaner than:
+
+Invite user #6
+↓
+Bill changes next month
+↓
+Customer surprised
+
+I would absolutely enforce the limit at invite time.
+
+4. I Would Simplify One Thing Further
+
+I would not introduce:
+
+billing_owner_id
+
+yet.
+
+Use:
+
+workspace.ownerId
+
+as the payer.
+
+You can always add billing_owner_id later.
+
+Right now it creates complexity before you've proven you need it.
+
+5. My Suggested Rollout
+
+If I were prioritizing:
+
+Sprint 1
+
+Task #5
+
+Workspace inheritance.
+
+This is the blocker.
+
+Nothing else matters until this exists.
+
+Sprint 2
+
+Team Plans:
+
+Solo      1 user
+Team S    2–5
+Team M    6–10
+Team L    11–20
+Sprint 3
+
+Invite limits + upgrade prompts.
+
+Sprint 4
+
+Billing dashboard:
+
+Current Plan: Team S
+Users: 4 / 5
+Next Plan: Team M
+One Thing I'd Add
+
+Before building Team Plans, ask Replit one final discovery question:
+
+Show me exactly how Paystack subscriptions are created, upgraded, cancelled and renewed today. Specifically, can an existing Paystack subscription be migrated from one plan code to another without forcing the user through checkout again?
+
+Because that answer affects the upgrade experience dramatically.
+
+If Paystack supports smooth plan changes, great.
+
+If not, the upgrade workflow becomes:
+
+Upgrade
+↓
+Checkout
+↓
+New subscription
+↓
+Cancel old subscription
+
+and we should design around that.
+
+My recommendation:
+
+Approve Task #5.
+
+Then do a Paystack upgrade-path discovery.
+
+Then build Team Plans.
+
+I would not start coding Team Plans until you understand exactly how Paystack handles plan migrations today.

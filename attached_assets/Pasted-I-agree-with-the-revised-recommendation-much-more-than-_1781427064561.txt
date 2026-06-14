@@ -1,0 +1,111 @@
+I agree with the revised recommendation much more than the original metered-billing architecture.
+
+The original design was technically elegant, but it turns Simple Slips into a billing platform:
+
+Stored authorizations
+Renewal jobs
+Retry logic
+Dunning
+Seat snapshots
+Charge reconciliation
+Variable invoices
+
+That's a lot of operational risk.
+
+What I Think You Should Build
+Phase 1 (Now)
+
+Task #5: Workspace subscription inheritance.
+
+This solves the immediate customer problem:
+
+Company
+├── Owner (payer)
+├── User
+├── User
+└── User
+
+Everyone can use the system.
+
+One account owns billing.
+
+Phase 2 (Immediately After)
+
+Add Team Plans.
+
+Plan	Users	Monthly
+Solo	1	R49
+Team S	2–5	R245
+Team M	6–10	R490
+Team L	11–20	R980
+
+This is simple enough that:
+
+Sales can explain it.
+Customers understand it.
+Support can troubleshoot it.
+Why I Like This Better
+
+Think about the three companies that approached you.
+
+Nobody is asking:
+
+"Can you calculate a dynamically metered monthly seat invoice based on active-user snapshots?"
+
+They're asking:
+
+"Can my team use Simple Slips under one company bill?"
+
+The bucketed model answers that.
+
+One Change I'd Make
+
+I would not automatically upgrade people.
+
+Example:
+
+Team S
+5 users
+
+Then:
+
+Owner invites user #6
+
+Instead of silently charging more:
+
+Show:
+
+Your workspace has reached the Team S limit.
+
+Current users: 5
+Next plan: Team M
+Monthly cost: R490
+
+Upgrade required to invite additional users.
+
+That prevents billing surprises.
+
+What I'd Ask Replit Next
+
+I would not ask for implementation yet.
+
+I'd ask for a revised architecture focused on:
+
+Team plans
+Workspace billing ownership
+Upgrade workflow
+Invite limits
+Paystack plan mapping
+Migration from Solo → Team
+
+No metered billing.
+
+No authorization charging.
+
+No renewal engine.
+
+Just fixed Paystack plans.
+
+That's the architecture I'd be comfortable building for Simple Slips today.
+
+And importantly, if one day you reach hundreds of companies, you can still move to true per-seat billing later. Nothing about the tiered model prevents that future evolution.

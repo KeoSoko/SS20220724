@@ -7,7 +7,9 @@ import { Loader2, CreditCard, Shield, Globe } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 
-// Paystack plan codes
+// Paystack plan codes — FALLBACK ONLY. The server (subscription_plans.paystackPlanCode,
+// served via /api/billing/plans) is the source of truth. These are kept only so checkout
+// still works if a plan row is missing its code.
 const PAYSTACK_PLAN_CODES = {
   monthly: 'PLN_8l8p7v1mergg804',
   yearly: 'PLN_k9q25ilwueuz17j',
@@ -21,6 +23,7 @@ interface PaystackBillingProps {
     price: number;
     currency: string;
     billingPeriod: string;
+    paystackPlanCode?: string | null;
   };
   userId: number;
   userEmail: string;
@@ -78,9 +81,11 @@ export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onP
       return;
     }
 
-    // Determine Paystack plan code based on billing period
+    // Determine Paystack plan code — prefer the server-provided code (source of truth),
+    // fall back to the local constant only if the plan row is missing it.
     const isYearly = plan.billingPeriod === 'yearly';
-    const paystackPlanCode = isYearly ? PAYSTACK_PLAN_CODES.yearly : PAYSTACK_PLAN_CODES.monthly;
+    const paystackPlanCode =
+      plan.paystackPlanCode || (isYearly ? PAYSTACK_PLAN_CODES.yearly : PAYSTACK_PLAN_CODES.monthly);
     const priceDisplay = isYearly ? 'R530 yearly' : 'R49 monthly';
 
     try {

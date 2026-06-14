@@ -394,6 +394,8 @@ export const subscriptionPlans = pgTable("subscription_plans", {
   currency: text("currency").default("ZAR").notNull(),
   billingPeriod: text("billing_period").notNull(), // "trial", "monthly", "yearly"
   trialDays: integer("trial_days").default(0), // Number of trial days
+  paystackPlanCode: text("paystack_plan_code"), // Paystack plan code (source of truth for deterministic resolution)
+  maxSeats: integer("max_seats").default(1).notNull(), // Number of workspace seats this plan grants
   googlePlayProductId: text("google_play_product_id"), // Google Play product ID
   appleProductId: text("apple_product_id"), // Apple App Store product ID
   features: jsonb("features").$type<string[]>().default([]), // List of features
@@ -427,6 +429,7 @@ export const userSubscriptions = pgTable("user_subscriptions", {
   // Paystack billing integration
   paystackReference: text("paystack_reference"),
   paystackCustomerCode: text("paystack_customer_code"),
+  authorizationCode: text("authorization_code"), // Reusable Paystack authorization code for one-click charges
   
   // Apple App Store billing integration
   appleReceiptData: text("apple_receipt_data"),

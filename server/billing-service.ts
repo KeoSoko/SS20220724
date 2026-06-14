@@ -17,6 +17,7 @@ import * as crypto from "crypto";
 import { emailService } from "./email-service";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
+import { resolvePlanForTransaction } from "./plan-resolver";
 
 export interface GooglePlayPurchase {
   purchaseToken: string;
@@ -583,21 +584,32 @@ export class BillingService {
     }
 
     const transactionData = verification.subscription;
-    
-    // Detect monthly vs yearly based on amount (R530/53000 kobo = yearly, R49/4900 kobo = monthly)
     const paymentAmount = transactionData.amount || 0;
-    const isYearly = paymentAmount >= 50000; // R500+ is yearly
-    const planName = isYearly ? 'premium_yearly' : 'premium_monthly';
-    const subscriptionTier = isYearly ? 'yearly' : 'monthly';
-    
-    log(`Detected plan type: ${planName} (amount: ${paymentAmount}, isYearly: ${isYearly})`, 'billing');
 
-    // Get subscription plan
+    // DETERMINISTIC plan resolution by Paystack plan code (never by amount, never a hardcoded fallback).
     const plans = await this.getSubscriptionPlans();
-    const plan = plans.find(p => p.name === planName) || plans.find(p => p.name === 'premium_monthly');
-    if (!plan) {
-      throw new Error('Premium plan not found');
+    const resolution = resolvePlanForTransaction(transactionData, plans);
+    if (!resolution) {
+      log(`[CRITICAL] Could not deterministically resolve plan for user ${userId}, reference ${transactionReference} ` +
+        `(amount=${paymentAmount}, plan_code=${transactionData?.plan?.plan_code || 'none'}, ` +
+        `metadata_plan_code=${transactionData?.metadata?.plan_code || 'none'}, ` +
+        `metadata_plan_id=${transactionData?.metadata?.plan_id || 'none'})`, 'billing');
+      await this.logBillingEvent(userId, 'plan_resolution_failed', {
+        paystackReference: transactionReference,
+        amount: paymentAmount,
+        transactionPlanCode: transactionData?.plan?.plan_code || null,
+        metadataPlanCode: transactionData?.metadata?.plan_code || null,
+        metadataPlanId: transactionData?.metadata?.plan_id ?? null,
+        reason: 'no_matching_subscription_plan',
+      });
+      throw new Error(`Could not resolve subscription plan for transaction ${transactionReference} — flagged for manual review`);
     }
+
+    const plan = resolution.plan;
+    const isYearly = plan.billingPeriod === 'yearly';
+    const subscriptionTier = isYearly ? 'yearly' : 'monthly';
+    const authorizationCode = transactionData.authorization?.authorization_code ?? undefined;
+    log(`Resolved plan ${plan.name} (id=${plan.id}, period=${plan.billingPeriod}) via ${resolution.source} for user ${userId}`, 'billing');
 
     const now = new Date();
     const nextBillingDate = new Date();
@@ -671,6 +683,7 @@ export class BillingService {
               lastPaymentDate: now,
               paystackReference: transactionReference,
               paystackCustomerCode: transactionData.customer?.customer_code,
+              authorizationCode,
               updatedAt: now
             })
             .where(eq(userSubscriptions.userId, userId))
@@ -699,6 +712,7 @@ export class BillingService {
               googlePlaySubscriptionId: null,
               paystackReference: transactionReference,
               paystackCustomerCode: transactionData.customer?.customer_code,
+              authorizationCode,
               totalPaid: plan.price,
               lastPaymentDate: now,
             })
@@ -713,6 +727,7 @@ export class BillingService {
                 lastPaymentDate: now,
                 paystackReference: transactionReference,
                 paystackCustomerCode: transactionData.customer?.customer_code,
+                authorizationCode,
                 updatedAt: now
               }
             })
@@ -746,7 +761,7 @@ export class BillingService {
             paymentMethod: 'card',
             platformTransactionId: transactionReference,
             platformOrderId: transactionData.reference,
-            platformSubscriptionId: transactionData.subscription?.subscription_code || transactionData.plan?.plan_code || 'PLN_8l8p7v1mergg804',
+            platformSubscriptionId: transactionData.subscription?.subscription_code || transactionData.plan?.plan_code || plan.paystackPlanCode || 'unknown',
             metadata: {
               customerCode: transactionData.customer?.customer_code,
               authorizationCode: transactionData.authorization?.authorization_code,

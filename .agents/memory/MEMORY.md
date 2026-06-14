@@ -1,2 +1,3 @@
 - [ESM build + Azure SDKs](esm-build-azure-sdks.md) — Azure SDKs 403/fall back in prod ESM bundle but work in dev; fix is an esbuild createRequire banner.
 - [Receipt scan timeouts](receipt-scan-timeouts.md) — client scan timeout must stay above the backend's 60s Azure OCR cap; camera path must optimize images like the file-upload path or large photos time out.
+- [drizzle db:push TTY prompt](drizzle-push-tty-prompt.md) — push blocks on a pre-existing receipts unique-constraint prompt that ignores piped stdin; apply additive columns via idempotent ALTER, keep schema.ts authoritative.

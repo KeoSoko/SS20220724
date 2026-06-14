@@ -1,0 +1,92 @@
+Continue from the billing infrastructure audit.
+
+The User 66 cancellation investigation is complete and closed. Do not revisit it again.
+
+I need the actual billing hardening deliverables now.
+
+Using your billing code review findings, produce a complete implementation plan covering:
+
+1. Current State Audit
+
+   * How subscriptions are activated today
+   * How renewals are handled
+   * How cancellations are handled
+   * How Paystack plan information is stored
+   * How webhook plan resolution currently works
+   * Where authorization_code is captured
+   * Where customer_code is stored
+
+2. Risk Assessment
+
+   * Amount-based plan detection risks
+   * Hardcoded plan ID risks
+   * Team Plan compatibility risks
+   * Existing data integrity concerns
+
+3. Recommended Schema Changes
+
+   * Exact columns to add
+   * Exact tables affected
+   * Whether migrations are required
+   * Whether backfills are required
+
+4. Authorization Persistence Strategy
+
+   * How to persist authorization_code
+   * How to persist customer_code
+   * Backfill strategy for existing subscribers
+   * Limitations of historical recovery
+
+5. Deterministic Plan Resolution Design
+
+   * How charge.success should resolve plans
+   * How Paystack plan codes should map to subscription_plans
+   * How metadata should be used
+   * How to eliminate amount-based guessing entirely
+
+6. Migration Plan
+
+   * Phase 1
+   * Phase 2
+   * Phase 3
+   * Rollback strategy
+
+7. Team Plan Readiness Assessment
+
+   * What would still block:
+
+     * Solo
+     * Team S
+     * Team M
+     * Team L
+   * What would already be ready after billing hardening
+
+8. Task Breakdown
+
+Create separate tasks for:
+
+Task 5A
+
+* Restore the invite acceptance regression test
+
+Task 6
+
+* Billing infrastructure hardening
+
+Task 7
+
+* Team Plan platform support
+
+Task 8
+
+* Invite limits and upgrade enforcement
+
+Do not write code.
+
+Do not modify the database.
+
+Do not implement anything.
+
+This is a design and planning deliverable only.
+
+The final output should be a decision-ready architecture document that can be reviewed before entering Build mode.

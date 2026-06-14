@@ -1,0 +1,184 @@
+# Workspace Inheritance Rollout + Next Phase Billing Hardening
+
+## Current State
+
+Task #5 (Workspace Subscription Inheritance) has been implemented.
+
+Verified findings:
+
+* No orphaned workspaces exist.
+* No users will lose access due to inheritance.
+* The auto-cancel-on-invite bug has been removed.
+* Members inherit workspace owner access.
+* Fail-closed owner handling is in place.
+* Tests pass.
+* Type-check passes.
+
+Production impact assessment confirms:
+
+Workspace 272:
+
+* Owner expired
+* Member already has no access
+* No change after deployment
+
+Workspace 312:
+
+* Owner expired
+* Member already has no access
+* No change after deployment
+
+Deployment is approved.
+
+---
+
+# Phase 1 — Final Cleanup
+
+## Task A
+
+Restore the missing regression test that was dropped during merge.
+
+Add automated coverage for:
+
+Scenario:
+
+* User has active subscription
+* User accepts workspace invite
+
+Expected:
+
+* Workspace membership created
+* User subscription remains unchanged
+* billingService.cancelSubscription() is never called
+
+This test should permanently protect against reintroducing the original bug.
+
+---
+
+# Phase 2 — Billing Infrastructure Hardening
+
+This is the next milestone.
+
+Do NOT implement Team Plans yet.
+
+Do NOT implement seat billing.
+
+Do NOT implement invite limits.
+
+Do NOT implement billing dashboards.
+
+Infrastructure only.
+
+---
+
+## Investigation + Implementation
+
+Perform a complete audit and implementation plan for:
+
+### 1. Authorization Persistence
+
+Determine:
+
+* Where Paystack authorization_code is currently captured
+* Where customer_code is currently stored
+* Whether existing subscribers can be backfilled
+
+Implement:
+
+* Persistent storage of authorization_code
+* Persistent storage of customer_code
+* Migration strategy for existing records
+
+Goal:
+
+Future support for one-click upgrades without checkout.
+
+---
+
+### 2. Webhook Plan Resolution
+
+Audit every place where plan activation is determined.
+
+Current concern:
+
+Plan selection appears to rely partly on payment amount.
+
+Examples:
+
+Solo = R49
+Team S = R245
+Team M = R490
+Team L = R980
+
+Amount-based resolution will misclassify Team Plans.
+
+Implement deterministic resolution using:
+
+* Paystack plan code
+  OR
+* Explicit metadata
+
+Never amount guessing.
+
+---
+
+### 3. Plan Mapping Architecture
+
+Design and implement support for:
+
+subscription_plans.max_seats
+
+subscription_plans.paystack_plan_code
+
+No Team Plans yet.
+
+Only the infrastructure necessary to support them later.
+
+---
+
+### 4. Subscription Activation Flow
+
+Audit:
+
+* charge.success
+* subscription.create
+* renewals
+* cancellations
+
+Ensure:
+
+* Plan activation is based on plan identity
+* Not payment amount
+* Not hardcoded plan IDs
+
+---
+
+# Deliverables
+
+Provide:
+
+1. Files changed
+2. Schema changes
+3. Migration strategy
+4. Backfill strategy
+5. Risks discovered
+6. Team Plan readiness assessment
+
+---
+
+# Explicitly Out Of Scope
+
+Do NOT implement:
+
+* Team Plans
+* Solo / Team S / Team M / Team L pricing
+* Invite limits
+* Upgrade prompts
+* Billing dashboard
+* Seat counting enforcement
+* Workspace billing UI
+* Tax AI Assistant changes
+
+This phase is infrastructure hardening only.
+
+The goal is to make billing deterministic and future-proof before Team Plans are introduced.

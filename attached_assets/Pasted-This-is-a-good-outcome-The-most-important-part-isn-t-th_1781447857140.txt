@@ -1,0 +1,127 @@
+This is a good outcome.
+
+The most important part isn't the code that was added—it's the problem that was removed.
+
+Before:
+
+Owner has subscription
+↓
+Invites team member
+↓
+Team member accepts
+↓
+Subscription gets cancelled
+↓
+Member eventually loses access
+
+After:
+
+Owner has subscription
+↓
+Invites team member
+↓
+Team member accepts
+↓
+Member inherits owner access
+↓
+Workspace works as expected
+
+That's the foundation you needed before company billing could even be discussed.
+
+What I'd Verify This Week
+
+I wouldn't move immediately to Team Plans.
+
+I'd use the next few days to validate that inheritance behaves correctly in the real world.
+
+Ask Replit for:
+
+Current workspace count
+Current workspaces with 2+ members
+Current members inheriting owner access
+Any [CRITICAL_WORKSPACE_OWNER_MISSING] logs
+Any [EFFECTIVE_SUBSCRIPTION_BLOCKED] logs
+Any support tickets or user complaints after deployment
+
+What you're looking for is confirmation that inheritance is actually being exercised by real users.
+
+One Open Item I'd Reopen
+
+This statement caught my eye:
+
+a follow-up I'd proposed (a test ensuring joining a workspace never cancels a subscription) was auto-cancelled during the merge
+
+I'd restore that test.
+
+Not because the feature is risky today.
+
+Because six months from now someone may "clean up" invite logic and accidentally reintroduce the bug.
+
+This is exactly the type of regression test that pays for itself.
+
+I would ask Replit to add:
+
+Given:
+- User has active subscription
+- User accepts workspace invite
+
+Expect:
+- Workspace membership created
+- Subscription remains unchanged
+- cancelSubscription() never called
+
+That's a high-value test.
+
+What I'd Do Next
+
+Now that Task #5 is done:
+
+Next technical task
+
+Billing infrastructure hardening:
+
+Persist authorization_code
+Persist customer_code (verify existing implementation)
+Replace amount-based webhook plan resolution
+Introduce paystack_plan_code
+Make webhook activation deterministic
+
+Only after that:
+
+Team Plans
+Solo      1 seat
+Team S    2–5
+Team M    6–10
+Team L    11–20
+
+Then:
+
+Invite limits
+Current Plan: Team S
+Seats Used: 5 / 5
+
+Invite another user?
+→ Upgrade required
+My Overall Assessment
+
+You started this conversation trying to solve company billing.
+
+What you actually discovered was a broken workspace model.
+
+Fixing that first was the correct decision.
+
+Now you have:
+
+✅ Workspace inheritance
+
+✅ Auto-cancel removed
+
+✅ Fail-closed owner handling
+
+✅ Observability
+
+✅ Tests
+
+The next milestone is not more workspace work.
+
+It's making Paystack and subscription management robust enough to support Team Plans safely.

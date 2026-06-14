@@ -33,16 +33,23 @@ since a seat could have filled between send and accept). Both return HTTP 403 wi
 structured error `seat_limit_reached`.
 
 ## Upgrade path
-`billingService.upgradeToPlanWithStoredAuth(userId, targetPlanId)` does a one-click
-upgrade using the stored Paystack authorization (`charge_authorization`), then
-atomically switches the local plan so capacity increases immediately. It refuses
-non-upgrades (`not_an_upgrade` when target maxSeats <= current) and returns
-`{ success:false, needsCheckout:true }` when there is no stored auth / no Paystack /
-no existing subscription, so the caller falls back to full checkout. Route: POST
-`/api/billing/upgrade` (owner-only, requireVerifiedEmail).
+Plan upgrades go through **full Paystack checkout** (the same flow as a brand-new
+purchase). The owner picks a higher-capacity plan, completes checkout, and the
+`charge.success` webhook activates the new plan via deterministic plan-code
+resolution. Capacity rises only after a real recurring subscription exists on the
+new plan. Route POST `/api/billing/upgrade` (owner-only, requireVerifiedEmail) is
+intentionally inert — it just returns `{ needs_checkout: true }`.
 
-**Limitation (known):** the upgrade performs a one-time charge for the new tier
-and flips the plan locally; it does NOT create a second Paystack subscription
-(avoids double-charge). The next renewal is reconciled by plan code via the
-existing webhook/reconciliation pipeline. If a Paystack-side subscription object
-must reflect the new plan immediately, that reconciliation is a separate concern.
+**Why one-click stored-auth upgrades are disabled:** the old path
+(`upgradeToPlanWithStoredAuth`) did a one-time `charge_authorization` for the new
+tier and flipped the local plan immediately, but never migrated the recurring
+Paystack subscription. At the next renewal the webhook received the OLD plan code
+and correctly reconciled the customer back to the old plan — silently reducing
+seats and under-charging. That method is retained only for unit tests; do not wire
+it back into any request path.
+
+**Open follow-up (next phase, not yet built):** retiring/migrating the OLD Paystack
+subscription on upgrade. Until that exists, an existing active subscriber who
+re-checks-out to a higher plan can still be reverted by the old subscription's
+renewal, and may briefly have two Paystack subscriptions. Trial users (no prior
+recurring subscription) upgrade cleanly with no revert risk.

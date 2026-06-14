@@ -21,6 +21,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { PageLayout } from '@/components/page-layout';
 import { ContentCard, Section, StatusBadge } from '@/components/design-system';
+import { PaystackBilling } from '@/components/paystack-billing';
 // import { StorageMonitor } from '@/components/storage-monitor';
 import { useToast } from '@/hooks/use-toast';
 import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2, Copy, RefreshCw, Inbox, MessageCircle, HelpCircle, Send, Camera, Monitor, Smartphone, Users, UserPlus, Clock, XCircle } from 'lucide-react';
@@ -641,7 +642,12 @@ function WorkspaceSection() {
   const atCapacity = isOwner && availableSeats <= 0;
   const hasTeam = nonOwnerMembers.length > 0 || pendingInvites.length > 0;
 
+  const { user } = useAuth();
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
+  // Plan the owner has chosen to upgrade to. Once set, we render the standard
+  // Paystack checkout (same flow as a brand-new Team Plan purchase) instead of
+  // the disabled one-click charge path.
+  const [selectedUpgradePlan, setSelectedUpgradePlan] = useState<BillingPlan | null>(null);
 
   const { data: billingPlansData } = useQuery<{ plans: BillingPlan[] }>({
     queryKey: ['/api/billing/plans'],
@@ -651,33 +657,22 @@ function WorkspaceSection() {
     .filter(p => (p.isActive ?? true) && p.maxSeats > seatCapacity)
     .sort((a, b) => a.maxSeats - b.maxSeats);
 
-  const upgradeMutation = useMutation({
-    mutationFn: async (planId: number) => {
-      const response = await apiRequest("POST", "/api/billing/upgrade", { planId });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const err: any = new Error(data?.message || data?.error || 'Failed to upgrade plan');
-        err.code = data?.error;
-        throw err;
-      }
-      return data;
-    },
-    onSuccess: (data: any) => {
+  // Activate the subscription on the new plan after a successful Paystack checkout.
+  // This hits the SAME endpoint a brand-new purchase uses; the charge.success webhook
+  // independently reconciles the plan deterministically by plan code.
+  const activateUpgradeMutation = useMutation({
+    mutationFn: async (reference: string) =>
+      apiRequest("POST", "/api/billing/paystack/subscription", { reference }),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/workspace'] });
       queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
       setIsUpgradeOpen(false);
-      toast({ title: "Plan upgraded", description: `Your workspace now has ${data?.plan?.maxSeats ?? 'more'} seats.` });
+      setSelectedUpgradePlan(null);
+      toast({ title: "Plan upgraded", description: "Your workspace plan has been updated." });
     },
     onError: (error: any) => {
-      if (error?.code === 'needs_checkout' || error?.code === 'charge_failed') {
-        toast({
-          title: "Checkout required",
-          description: "We couldn't complete a one-click upgrade. Please complete checkout from the Subscription page to switch plans.",
-          variant: "destructive",
-        });
-        return;
-      }
-      toast({ title: "Upgrade failed", description: error.message, variant: "destructive" });
+      toast({ title: "Activation failed", description: error?.message || "Could not activate your new plan.", variant: "destructive" });
     },
   });
 
@@ -1062,7 +1057,13 @@ function WorkspaceSection() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isUpgradeOpen} onOpenChange={setIsUpgradeOpen}>
+      <Dialog
+        open={isUpgradeOpen}
+        onOpenChange={(open) => {
+          setIsUpgradeOpen(open);
+          if (!open) setSelectedUpgradePlan(null);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1070,38 +1071,75 @@ function WorkspaceSection() {
               Upgrade your plan
             </DialogTitle>
             <DialogDescription>
-              Add more seats to your workspace. You're currently using {usedSeats} of {seatCapacity} seat{seatCapacity === 1 ? '' : 's'}.
+              {selectedUpgradePlan
+                ? `Complete secure checkout to switch to ${selectedUpgradePlan.displayName || selectedUpgradePlan.name}.`
+                : `Add more seats to your workspace. You're currently using ${usedSeats} of ${seatCapacity} seat${seatCapacity === 1 ? '' : 's'}.`}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            {upgradePlans.length === 0 ? (
-              <div className="border rounded-none p-6 bg-gray-50 text-center">
-                <p className="text-sm text-gray-600">No higher-capacity plans are available right now.</p>
-              </div>
-            ) : (
-              upgradePlans.map((plan) => (
-                <div key={plan.id} className="border rounded-none p-4 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium text-sm">{plan.displayName || plan.name}</p>
-                    <p className="text-xs text-gray-500">
-                      {plan.maxSeats} seats · R{(plan.price / 100).toFixed(0)}/{plan.billingPeriod === 'yearly' ? 'year' : 'month'}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => upgradeMutation.mutate(plan.id)}
-                    disabled={upgradeMutation.isPending}
-                    data-testid={`button-upgrade-plan-${plan.id}`}
-                  >
-                    {upgradeMutation.isPending ? 'Upgrading...' : 'Upgrade'}
-                  </Button>
+
+          {selectedUpgradePlan ? (
+            <div className="space-y-3 py-2">
+              <PaystackBilling
+                plan={{
+                  id: selectedUpgradePlan.id,
+                  name: selectedUpgradePlan.name,
+                  displayName: selectedUpgradePlan.displayName || selectedUpgradePlan.name,
+                  price: selectedUpgradePlan.price,
+                  currency: 'ZAR',
+                  billingPeriod: selectedUpgradePlan.billingPeriod,
+                  paystackPlanCode: selectedUpgradePlan.paystackPlanCode ?? null,
+                }}
+                userId={user?.id ?? 0}
+                userEmail={user?.email ?? ''}
+                onPaymentSuccess={(reference) => activateUpgradeMutation.mutate(reference)}
+                onPaymentError={(error) => {
+                  toast({
+                    title: "Payment error",
+                    description: error?.message || "Payment failed. Please try again.",
+                    variant: "destructive",
+                  });
+                }}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full"
+                onClick={() => setSelectedUpgradePlan(null)}
+                data-testid="button-upgrade-back"
+              >
+                Choose a different plan
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3 py-2">
+              {upgradePlans.length === 0 ? (
+                <div className="border rounded-none p-6 bg-gray-50 text-center">
+                  <p className="text-sm text-gray-600">No higher-capacity plans are available right now.</p>
                 </div>
-              ))
-            )}
-            <p className="text-xs text-gray-400">
-              Upgrades are charged to your saved card. If we can't charge it automatically, you'll be asked to complete checkout.
-            </p>
-          </div>
+              ) : (
+                upgradePlans.map((plan) => (
+                  <div key={plan.id} className="border rounded-none p-4 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm">{plan.displayName || plan.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {plan.maxSeats} seats · R{(plan.price / 100).toFixed(0)}/{plan.billingPeriod === 'yearly' ? 'year' : 'month'}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => setSelectedUpgradePlan(plan)}
+                      data-testid={`button-upgrade-plan-${plan.id}`}
+                    >
+                      Upgrade
+                    </Button>
+                  </div>
+                ))
+              )}
+              <p className="text-xs text-gray-400">
+                Upgrades go through secure Paystack checkout. Your new plan activates as soon as payment succeeds.
+              </p>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </Section>

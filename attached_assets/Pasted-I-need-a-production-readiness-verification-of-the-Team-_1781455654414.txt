@@ -1,0 +1,170 @@
+I need a production-readiness verification of the Team Plans implementation.
+
+Do NOT change any code.
+
+Do NOT modify the database.
+
+Do NOT create tasks.
+
+Do NOT implement anything.
+
+This is a read-only investigation.
+
+## 1. Team Plans Verification
+
+Show me the actual contents of:
+
+* subscription_plans table
+* Any seat-limit fields
+* Any Paystack plan-code fields
+
+For every plan, show:
+
+| Plan Name | Plan ID | Price | Billing Period | Max Seats | Paystack Plan Code |
+| --------- | ------- | ----- | -------------- | --------- | ------------------ |
+
+I want proof that the plans exist in the database and are not just defined in code.
+
+---
+
+## 2. Seat Enforcement Verification
+
+Show the exact code path that enforces seat limits.
+
+Answer:
+
+* How are active members counted?
+* How are pending invites counted?
+* What endpoint blocks invites when a workspace is full?
+* What error is returned?
+* What UI message is displayed?
+
+Show the actual implementation path.
+
+---
+
+## 3. Upgrade Flow Verification
+
+The summary stated:
+
+"Upgrading charges their saved card and instantly raises the seat count."
+
+I need proof.
+
+Show:
+
+* The API endpoint used for upgrades
+* The service method used
+* The Paystack API call made
+* Whether authorization_code is used
+* Whether customer_code is used
+* Whether users are redirected through checkout again
+* Whether a new Paystack subscription is created
+* Whether the old Paystack subscription is disabled
+
+Provide the exact flow from clicking Upgrade through successful activation.
+
+---
+
+## 4. Webhook Resolution Verification
+
+Show how charge.success currently determines:
+
+* Which plan was purchased
+* Which subscription_plans record is activated
+
+Answer explicitly:
+
+* Is amount-based guessing still used anywhere?
+* Is paystack_plan_code now authoritative?
+* Is metadata.plan used?
+* Is there any remaining hardcoded Paystack plan ID?
+
+Show the relevant implementation path.
+
+---
+
+## 5. Renewal Behaviour
+
+Show the complete renewal flow.
+
+Answer:
+
+* What happens when Paystack renews a Team Plan?
+* How is the plan identified?
+* How is nextBillingDate updated?
+* What happens if renewal fails?
+* What happens if a Team Plan expires?
+
+---
+
+## 6. Test Evidence
+
+For each of the following, tell me whether it was:
+
+* Automated test
+* Manual test
+* Not tested
+
+Scenarios:
+
+1. Solo → Team Small upgrade
+2. Team Small → Team Medium upgrade
+3. Seat limit reached
+4. Pending invite consumes seat
+5. Invite blocked when full
+6. Successful renewal
+7. Failed renewal
+8. Existing Solo customer remains unaffected
+9. Team member inheritance still works
+10. Paystack webhook activation
+
+If tested, show evidence.
+
+---
+
+## 7. Database Sync Safety Verification
+
+The summary mentioned a dangerous post-merge sync process was removed.
+
+Show:
+
+* What command ran previously
+* What command runs now
+* Why the old command was dangerous
+* Why the new process cannot modify production schema
+
+I want evidence, not a summary.
+
+---
+
+## 8. Production Readiness Assessment
+
+Based on the actual implementation:
+
+Classify each area as:
+
+* Ready for production
+* Needs further testing
+* High risk
+
+Areas:
+
+* Team Plans
+* Seat Limits
+* Upgrades
+* Paystack Billing
+* Renewals
+* Webhooks
+* Workspace Inheritance
+
+Provide a final recommendation:
+
+A) Ready for rollout
+B) Limited beta only
+C) Not ready
+
+Read-only investigation only.
+No code changes.
+No database changes.
+No implementation.

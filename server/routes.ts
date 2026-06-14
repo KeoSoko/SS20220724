@@ -3877,49 +3877,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // One-click upgrade to a higher-capacity Team plan using the stored Paystack
-  // authorization. Owner-only. Falls back to full checkout when no stored auth.
-  app.post("/api/billing/upgrade", requireWorkspaceRole("owner"), requireVerifiedEmail, async (req, res) => {
-    try {
-      const userId = getUserId(req);
-      const planId = Number(req.body?.planId);
-      if (!planId || Number.isNaN(planId)) {
-        return res.status(400).json({ error: "A valid planId is required" });
-      }
-
-      const result = await billingService.upgradeToPlanWithStoredAuth(userId, planId);
-
-      if (!result.success && result.needsCheckout) {
-        // No one-click path available — tell the client to run a full checkout.
-        return res.status(409).json({
-          error: "needs_checkout",
-          reason: result.reason,
-          message: "We couldn't complete a one-click upgrade. Please complete checkout to switch plans.",
-        });
-      }
-
-      const seatInfo = result.subscription
-        ? await getWorkspaceSeatInfo((await storage.getUser(userId))!.workspaceId)
-        : null;
-
-      res.json({
-        success: true,
-        plan: result.plan
-          ? { id: result.plan.id, name: result.plan.name, displayName: result.plan.displayName, maxSeats: result.plan.maxSeats }
-          : null,
-        seatInfo,
-      });
-    } catch (error: any) {
-      const message: string = error?.message || "Failed to upgrade plan";
-      if (message === "not_an_upgrade") {
-        return res.status(400).json({ error: "not_an_upgrade", message: "The selected plan does not add more seats than your current plan." });
-      }
-      if (message.startsWith("upgrade_charge_failed")) {
-        return res.status(402).json({ error: "charge_failed", message: "Your saved card couldn't be charged. Please complete checkout to upgrade." });
-      }
-      log(`Error in /api/billing/upgrade: ${message}`, 'express');
-      res.status(500).json({ error: "Failed to upgrade plan" });
-    }
+  // Plan upgrades. Owner-only.
+  //
+  // SAFETY (production billing fix): one-click upgrades via the stored Paystack
+  // authorization are DISABLED. That path charged the saved card and flipped the
+  // local plan immediately WITHOUT migrating the recurring Paystack subscription,
+  // so at the next renewal the webhook received the OLD plan code and correctly
+  // reconciled the customer back to the old plan — reducing seat capacity and
+  // under-charging. We never call billingService.upgradeToPlanWithStoredAuth()
+  // (no transaction.charge, no local plan flip) here anymore.
+  //
+  // The only valid upgrade path is now full Paystack checkout (the same flow used
+  // for a brand-new Team Plan purchase): the client runs checkout for the target
+  // plan, charge.success fires with the correct plan code, and the existing
+  // deterministic webhook pipeline activates the subscription on the right plan.
+  app.post("/api/billing/upgrade", requireWorkspaceRole("owner"), requireVerifiedEmail, async (_req, res) => {
+    return res.status(200).json({
+      needs_checkout: true,
+      message: "Plan upgrades now go through secure checkout. Please complete checkout to switch to your new plan.",
+    });
   });
 
   // Get payment history

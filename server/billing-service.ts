@@ -503,10 +503,14 @@ export class BillingService {
    *  - Target max_seats MUST exceed the current plan's capacity (no downgrades
    *    through this path — downgrades are handled by the over-capacity policy).
    *
-   * NOTE (recurring reconciliation): this performs a one-time charge_authorization
-   * for the new tier and switches the plan locally. The next renewal is reconciled
-   * deterministically by plan code via the existing webhook pipeline. We never
-   * create a second Paystack subscription here, to avoid any double-charge risk.
+   * DEPRECATED / DISABLED IN PRODUCTION: this performs a one-time charge_authorization
+   * for the new tier and switches the plan locally WITHOUT migrating the recurring
+   * Paystack subscription. At the next renewal the webhook receives the OLD plan code
+   * and reconciles the customer back to the old plan (reducing seats, under-charging).
+   * The /api/billing/upgrade route NO LONGER calls this method — upgrades go through
+   * full Paystack checkout instead. Retained only for unit-test coverage; do not wire
+   * this back into any request path until proper subscription retirement/migration
+   * (disable old subscription + create new one) is implemented.
    */
   async upgradeToPlanWithStoredAuth(
     userId: number,

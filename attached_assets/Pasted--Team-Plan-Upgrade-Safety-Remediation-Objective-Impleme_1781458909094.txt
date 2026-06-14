@@ -1,0 +1,153 @@
+# Team Plan Upgrade Safety Remediation
+
+## Objective
+
+Implement the safest production path for Team Plan upgrades.
+
+We have identified a billing risk:
+
+Current one-click upgrades:
+
+* Charge the stored authorization_code
+* Update the local plan immediately
+* Increase seat capacity immediately
+
+But they do NOT:
+
+* Disable the existing recurring Paystack subscription
+* Create a replacement recurring subscription on the new Team Plan
+
+Result:
+
+At the next Paystack renewal, the webhook receives the OLD plan code and correctly reconciles the customer back to the old plan.
+
+This can:
+
+* Reduce seat capacity unexpectedly
+* Under-charge customers
+* Create billing confusion
+
+We are fixing that now.
+
+---
+
+# Scope
+
+Implement ONLY the immediate safety fix.
+
+Do NOT build subscription retirement yet.
+
+Do NOT build Paystack subscription migration yet.
+
+Do NOT build reconciliation jobs.
+
+Do NOT modify Team Plan pricing.
+
+Do NOT modify seat enforcement.
+
+Do NOT modify inheritance.
+
+---
+
+# Required Change
+
+## Disable One-Click Upgrades
+
+Current path:
+
+POST /api/billing/upgrade
+
+calls:
+
+billingService.upgradeToPlanWithStoredAuth()
+
+which performs:
+
+* transaction.charge()
+* local plan update
+
+This path must no longer be used.
+
+---
+
+## New Behaviour
+
+When an owner attempts to upgrade:
+
+Return:
+
+{
+"needs_checkout": true
+}
+
+and route them through the existing Paystack checkout flow.
+
+Use the same flow as a brand-new Team Plan purchase.
+
+Do NOT perform:
+
+* transaction.charge()
+* local plan flips
+* immediate subscription upgrades
+
+The only valid upgrade path should be:
+
+Owner clicks Upgrade
+→ Paystack checkout
+→ Successful payment
+→ charge.success webhook
+→ Deterministic plan resolution
+→ Subscription activated on the correct Team Plan
+
+---
+
+# Verification
+
+Show:
+
+1. Files changed
+2. Exact upgrade flow before
+3. Exact upgrade flow after
+4. Confirmation that one-click upgrade path is disabled
+5. Confirmation that Team Plan checkout still works
+6. Confirmation that webhook plan resolution remains unchanged
+
+---
+
+# Additional Investigation
+
+While making this change, identify:
+
+1. Where subscription_code can be captured reliably
+2. Where email_token can be captured reliably
+3. Which Paystack API endpoint will be needed for future subscription.disable support
+4. Whether existing subscribers can be backfilled using Paystack customer lookups
+
+Do NOT implement any of the above.
+
+Just document findings for the next phase.
+
+---
+
+# Success Criteria
+
+After this change:
+
+✅ Team Plans still work
+
+✅ New Team purchases still work
+
+✅ Seat limits still work
+
+✅ Workspace inheritance still works
+
+✅ No upgrade can create a local/Paystack plan mismatch
+
+✅ Renewal can no longer revert upgraded customers back to older plans
+
+This is a production-safety fix only.
+
+No new billing features.
+No subscription migration.
+No Paystack disable implementation.
+No reconciliation jobs.

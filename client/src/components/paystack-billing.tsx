@@ -86,7 +86,7 @@ export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onP
     const isYearly = plan.billingPeriod === 'yearly';
     const paystackPlanCode =
       plan.paystackPlanCode || (isYearly ? PAYSTACK_PLAN_CODES.yearly : PAYSTACK_PLAN_CODES.monthly);
-    const priceDisplay = isYearly ? 'R530 yearly' : 'R49 monthly';
+    const priceDisplay = `R${(plan.price / 100).toFixed(0)} ${isYearly ? 'yearly' : 'monthly'}`;
 
     try {
       // Use Paystack v2 checkout() method - this auto-detects iOS/Safari and shows Apple Pay
@@ -140,13 +140,13 @@ export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onP
     }
   };
 
-  // Format price display based on billing period
+  // Format price display from the plan's actual price (works for Solo and Team plans).
   const isYearly = plan.billingPeriod === 'yearly';
-  const priceAmount = isYearly ? 'R530.00' : 'R49.00';
+  const priceAmount = `R${(plan.price / 100).toFixed(2)}`;
   const pricePeriod = isYearly ? '/year' : '/month';
   const recurringDescription = isYearly 
-    ? "You'll be charged R530 automatically every year." 
-    : "You'll be charged R49 automatically every month.";
+    ? `You'll be charged ${priceAmount} automatically every year.` 
+    : `You'll be charged ${priceAmount} automatically every month.`;
 
   return (
     <Card className="border-primary/20">

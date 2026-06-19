@@ -17,7 +17,15 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Plus, Edit, Trash2, Building2, Mail, Phone } from "lucide-react";
-import { insertClientSchema, type Client, type InsertClient } from "@shared/schema";
+import { z } from "zod";
+import { insertClientSchema, type Client } from "@shared/schema";
+
+// userId and workspaceId are injected by the server from the authenticated
+// session. They must NOT be part of the form schema — otherwise react-hook-form
+// validation fails on the missing required fields and the form silently refuses
+// to submit (clicking "Add Client" does nothing).
+const clientFormSchema = insertClientSchema.omit({ userId: true, workspaceId: true });
+type ClientFormValues = z.infer<typeof clientFormSchema>;
 
 export default function ClientsPage() {
   const { toast } = useToast();
@@ -33,10 +41,9 @@ export default function ClientsPage() {
     refetchOnWindowFocus: true,
   });
 
-  const form = useForm<InsertClient>({
-    resolver: zodResolver(insertClientSchema),
+  const form = useForm<ClientFormValues>({
+    resolver: zodResolver(clientFormSchema),
     defaultValues: {
-      userId: user?.id || 0,
       name: "",
       email: "",
       phone: "",
@@ -52,7 +59,7 @@ export default function ClientsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: InsertClient) => {
+    mutationFn: async (data: ClientFormValues) => {
       return await apiRequest("POST", "/api/clients", data);
     },
     onSuccess: () => {
@@ -74,7 +81,7 @@ export default function ClientsPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertClient> }) => {
+    mutationFn: async ({ id, data }: { id: number; data: Partial<ClientFormValues> }) => {
       return await apiRequest("PATCH", `/api/clients/${id}`, data);
     },
     onSuccess: () => {
@@ -133,12 +140,10 @@ export default function ClientsPage() {
         postalCode: client.postalCode ?? "",
         notes: client.notes ?? "",
         isActive: client.isActive,
-        userId: client.userId,
       });
     } else {
       setEditingClient(null);
       form.reset({
-        userId: user?.id || 0,
         name: "",
         email: "",
         phone: "",
@@ -155,7 +160,7 @@ export default function ClientsPage() {
     setIsDialogOpen(true);
   };
 
-  const handleSubmit = (data: InsertClient) => {
+  const handleSubmit = (data: ClientFormValues) => {
     if (!user?.id) {
       toast({
         title: "Error",
@@ -165,15 +170,10 @@ export default function ClientsPage() {
       return;
     }
 
-    const clientData = {
-      ...data,
-      userId: user.id,
-    };
-
     if (editingClient) {
-      updateMutation.mutate({ id: editingClient.id, data: clientData });
+      updateMutation.mutate({ id: editingClient.id, data });
     } else {
-      createMutation.mutate(clientData);
+      createMutation.mutate(data);
     }
   };
 

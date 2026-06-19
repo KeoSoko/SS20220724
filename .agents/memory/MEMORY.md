@@ -1,4 +1,5 @@
 - [ESM build + Azure SDKs](esm-build-azure-sdks.md) — Azure SDKs 403/fall back in prod ESM bundle but work in dev; fix is an esbuild createRequire banner.
 - [Receipt scan timeouts](receipt-scan-timeouts.md) — client scan timeout must stay above the backend's 60s Azure OCR cap; camera path must optimize images like the file-upload path or large photos time out.
+- [drizzle-zod required server fields](drizzle-zod-required-server-fields.md) — NOT NULL no-default cols (workspaceId/userId) make insert schema require them; using it as a form resolver silently blocks submit. Omit server-injected fields in form schema.
 - [drizzle db:push TTY prompt](drizzle-push-tty-prompt.md) — push blocks on a pre-existing receipts unique-constraint prompt that ignores piped stdin; apply additive columns via idempotent ALTER, keep schema.ts authoritative.
 - [Workspace seat capacity](workspace-seat-capacity.md) — capacity = owner plan maxSeats (fallback 1); never auto-evict, block growth when over capacity; plan upgrades go through full Paystack checkout (one-click stored-auth charge is disabled).

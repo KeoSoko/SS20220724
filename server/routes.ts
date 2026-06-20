@@ -4579,6 +4579,255 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ADMIN: Read-only audit — find references stuck before our fix landed
+  // Returns every billing_event signal that indicates a payment was never applied,
+  // together with a flag showing whether a payment_transaction row already exists.
+  app.get("/api/admin/payments/stuck-audit", async (req, res) => {
+    try {
+      if (!req.user || !req.user.isAdmin) {
+        return res.status(401).json({ error: "Admin access required" });
+      }
+
+      // Signal 1: plan_resolution_failed — processing threw before writing anything
+      const failedRows = await db.execute<{
+        id: number; user_id: number | null; event_data: any; created_at: string;
+      }>(sql`
+        SELECT id, user_id, event_data, created_at
+        FROM billing_events
+        WHERE event_type = 'plan_resolution_failed'
+        ORDER BY created_at
+      `);
+
+      // Signal 2: legacy_paystack_webhook_processed — user found via email fallback;
+      //           downstream step may still have failed.
+      const legacyRows = await db.execute<{
+        id: number; user_id: number | null; event_data: any; created_at: string;
+      }>(sql`
+        SELECT id, user_id, event_data, created_at
+        FROM billing_events
+        WHERE event_type = 'legacy_paystack_webhook_processed'
+        ORDER BY created_at
+      `);
+
+      const seen = new Set<string>();
+      const candidates: Array<{
+        reference: string;
+        signal: string;
+        userId: number | null;
+        eventId: number;
+        eventCreatedAt: string;
+        alreadyRecorded: boolean;
+      }> = [];
+
+      const checkExists = async (ref: string) => {
+        const r = await db.execute<{ cnt: string }>(sql`
+          SELECT COUNT(*)::int AS cnt
+          FROM payment_transactions
+          WHERE platform_transaction_id = ${ref}
+             OR metadata->>'reference' = ${ref}
+        `);
+        return parseInt(((r as any).rows?.[0]?.cnt ?? "0"), 10) > 0;
+      };
+
+      for (const row of (failedRows as any).rows ?? []) {
+        const ref: string | undefined = row.event_data?.paystackReference ?? row.event_data?.reference;
+        if (!ref || seen.has(ref)) continue;
+        seen.add(ref);
+        candidates.push({
+          reference: ref,
+          signal: "plan_resolution_failed",
+          userId: row.user_id ?? null,
+          eventId: row.id,
+          eventCreatedAt: row.created_at,
+          alreadyRecorded: await checkExists(ref),
+        });
+      }
+
+      for (const row of (legacyRows as any).rows ?? []) {
+        const ref: string | undefined = row.event_data?.reference;
+        if (!ref || seen.has(ref)) continue;
+        const alreadyRecorded = await checkExists(ref);
+        if (alreadyRecorded) continue; // only surface genuinely missing ones
+        seen.add(ref);
+        candidates.push({
+          reference: ref,
+          signal: "legacy_webhook_no_transaction",
+          userId: row.user_id ?? null,
+          eventId: row.id,
+          eventCreatedAt: row.created_at,
+          alreadyRecorded,
+        });
+      }
+
+      const needsAction = candidates.filter((c) => !c.alreadyRecorded);
+      const alreadyFixed = candidates.filter((c) => c.alreadyRecorded);
+
+      log(`[STUCK_AUDIT] Found ${candidates.length} candidate(s): ${needsAction.length} need action, ${alreadyFixed.length} already recorded`, 'billing');
+
+      res.json({
+        total: candidates.length,
+        needsAction: needsAction.length,
+        alreadyFixed: alreadyFixed.length,
+        candidates,
+      });
+    } catch (error: any) {
+      log(`[STUCK_AUDIT] Error: ${error.message}`, 'billing');
+      res.status(500).json({ error: "Audit failed", details: error.message });
+    }
+  });
+
+  // ADMIN: Bulk reconcile all stuck payments found by the audit
+  // Idempotent — safe to call multiple times; skips anything already recorded.
+  // Pass dryRun: true to see what would be fixed without changing anything.
+  app.post("/api/admin/payments/reconcile-stuck-all", async (req, res) => {
+    try {
+      if (!req.user || !req.user.isAdmin) {
+        return res.status(401).json({ error: "Admin access required" });
+      }
+
+      const dryRun = req.body?.dryRun === true;
+      log(`[RECONCILE_STUCK] Starting bulk reconciliation (dryRun=${dryRun})`, 'billing');
+
+      // Gather candidates (same logic as the audit endpoint)
+      const failedRows = await db.execute<{
+        id: number; user_id: number | null; event_data: any; created_at: string;
+      }>(sql`
+        SELECT id, user_id, event_data, created_at
+        FROM billing_events
+        WHERE event_type = 'plan_resolution_failed'
+        ORDER BY created_at
+      `);
+
+      const legacyRows = await db.execute<{
+        id: number; user_id: number | null; event_data: any; created_at: string;
+      }>(sql`
+        SELECT id, user_id, event_data, created_at
+        FROM billing_events
+        WHERE event_type = 'legacy_paystack_webhook_processed'
+        ORDER BY created_at
+      `);
+
+      const checkExists = async (ref: string) => {
+        const r = await db.execute<{ cnt: string }>(sql`
+          SELECT COUNT(*)::int AS cnt
+          FROM payment_transactions
+          WHERE platform_transaction_id = ${ref}
+             OR metadata->>'reference' = ${ref}
+        `);
+        return parseInt(((r as any).rows?.[0]?.cnt ?? "0"), 10) > 0;
+      };
+
+      const seen = new Set<string>();
+      const references: Array<{ reference: string; signal: string; userId: number | null }> = [];
+
+      for (const row of (failedRows as any).rows ?? []) {
+        const ref: string | undefined = row.event_data?.paystackReference ?? row.event_data?.reference;
+        if (!ref || seen.has(ref)) continue;
+        seen.add(ref);
+        references.push({ reference: ref, signal: "plan_resolution_failed", userId: row.user_id ?? null });
+      }
+
+      for (const row of (legacyRows as any).rows ?? []) {
+        const ref: string | undefined = row.event_data?.reference;
+        if (!ref || seen.has(ref)) continue;
+        if (await checkExists(ref)) continue;
+        seen.add(ref);
+        references.push({ reference: ref, signal: "legacy_webhook_no_transaction", userId: row.user_id ?? null });
+      }
+
+      const outcomes: Array<{
+        reference: string;
+        userId: number | null;
+        result: string;
+        detail?: string;
+      }> = [];
+
+      for (const { reference, userId: hintUserId } of references) {
+        // Idempotency guard
+        if (await checkExists(reference)) {
+          outcomes.push({ reference, userId: hintUserId, result: "already_recorded" });
+          continue;
+        }
+
+        if (dryRun) {
+          outcomes.push({ reference, userId: hintUserId, result: "dry_run_skipped" });
+          continue;
+        }
+
+        // Verify with Paystack
+        let verification: Awaited<ReturnType<typeof billingService.verifyPaystackTransaction>>;
+        try {
+          verification = await billingService.verifyPaystackTransaction(reference);
+        } catch (err: any) {
+          outcomes.push({ reference, userId: hintUserId, result: "verify_failed", detail: String(err) });
+          continue;
+        }
+
+        if (!verification.valid) {
+          outcomes.push({ reference, userId: hintUserId, result: "verify_failed", detail: verification.error ?? "invalid status" });
+          continue;
+        }
+
+        // Resolve user
+        const { resolveUserForReconciliation } = await import("./reconcile-user-resolver");
+        const user = await resolveUserForReconciliation(
+          { subscription: verification.subscription as any },
+          storage,
+        );
+
+        if (!user) {
+          await billingService.recordBillingEvent(null, "manual_reconciliation_failed", {
+            reference,
+            reason: "no_user_id_and_no_matching_email",
+            customer_email: (verification.subscription as any)?.customer?.email ?? null,
+            source: "reconcile_stuck_all",
+          });
+          outcomes.push({ reference, userId: null, result: "user_not_found" });
+          continue;
+        }
+
+        try {
+          const subscription = await billingService.processPaystackSubscription(user.id, reference);
+          await billingService.recordBillingEvent(user.id, "manual_payment_reconciliation", {
+            reference,
+            subscription_id: subscription.id,
+            plan_id: subscription.planId,
+            status: subscription.status,
+            reconciled_at: new Date().toISOString(),
+            source: "reconcile_stuck_all_endpoint",
+          });
+          outcomes.push({ reference, userId: user.id, result: "reconciled" });
+          log(`[RECONCILE_STUCK] Fixed: userId=${user.id} ref=${reference}`, 'billing');
+        } catch (err: any) {
+          await billingService.recordBillingEvent(user.id, "manual_reconciliation_error", {
+            reference,
+            error: String(err),
+            source: "reconcile_stuck_all_endpoint",
+          });
+          outcomes.push({ reference, userId: user.id, result: "process_failed", detail: String(err) });
+        }
+      }
+
+      const reconciled = outcomes.filter((o) => o.result === "reconciled");
+      const alreadyRecorded = outcomes.filter((o) => o.result === "already_recorded");
+      const failed = outcomes.filter((o) => ["verify_failed", "user_not_found", "process_failed"].includes(o.result));
+
+      log(`[RECONCILE_STUCK] Done. reconciled=${reconciled.length} already_recorded=${alreadyRecorded.length} failed=${failed.length}`, 'billing');
+
+      res.json({
+        dryRun,
+        total: outcomes.length,
+        reconciled: reconciled.length,
+        alreadyRecorded: alreadyRecorded.length,
+        failed: failed.length,
+        outcomes,
+      });
+    } catch (error: any) {
+      log(`[RECONCILE_STUCK] Error: ${error.message}`, 'billing');
+      res.status(500).json({ error: "Bulk reconciliation failed", details: error.message });
+    }
+  });
+
   // ADMIN: Resend verification emails to users who never received them
   // Safe, controlled mechanism with full audit trail
   app.post("/api/admin/users/resend-verification", async (req, res) => {

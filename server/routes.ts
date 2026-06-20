@@ -58,6 +58,7 @@ import { taxAIAssistant } from "./tax-ai-assistant";
 import { aiEmailAssistant } from "./ai-email-assistant";
 import { recurringExpenseService } from "./recurring-expense-service";
 import { billingService } from "./billing-service";
+import { resolveUserForReconciliation } from "./reconcile-user-resolver";
 import { smartReminderService } from "./smart-reminder-service";
 import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategorization } from "./receipt-flow-utils";
 import { profitLossService } from "./profit-loss-service";
@@ -4515,19 +4516,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Resolve the user: prefer metadata.user_id, then fall back to the customer
       // email (renewal charges often arrive with no metadata.user_id at all).
       const metadataUserId = verification.subscription?.metadata?.user_id;
-      let user = metadataUserId ? await storage.getUser(metadataUserId) : undefined;
-
-      if (!user) {
-        if (metadataUserId) {
-          log(`[ADMIN_RECONCILE] metadata user_id ${metadataUserId} not found for ${reference}, trying email fallback`, 'billing');
-        }
-        const customerEmail = verification.subscription?.customer?.email;
-        if (customerEmail) {
-          user = await storage.getUserByEmail(customerEmail);
-          if (user) {
-            log(`[ADMIN_RECONCILE] Resolved user ${user.id} via email fallback (${customerEmail}) for ${reference}`, 'billing');
-          }
-        }
+      const user = await resolveUserForReconciliation(verification, storage);
+      if (user) {
+        log(`[ADMIN_RECONCILE] Resolved user ${user.id} for ${reference}`, 'billing');
       }
 
       if (!user) {

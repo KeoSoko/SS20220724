@@ -4458,6 +4458,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user) {
         return res.status(401).json({ error: "Unauthorized" });
       }
+      if (!req.user.isAdmin) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
 
       const { reference } = req.body;
       
@@ -4509,35 +4512,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Extract user ID from the transaction metadata
-      const userId = verification.subscription?.metadata?.user_id;
-      
-      if (!userId) {
-        log(`[ADMIN_RECONCILE] No user_id in metadata for ${reference}`, 'billing');
-        
-        await billingService.recordBillingEvent(null, 'manual_reconciliation_failed', {
-          reference,
-          reason: 'no_user_id_in_metadata'
-        });
+      // Resolve the user: prefer metadata.user_id, then fall back to the customer
+      // email (renewal charges often arrive with no metadata.user_id at all).
+      const metadataUserId = verification.subscription?.metadata?.user_id;
+      let user = metadataUserId ? await storage.getUser(metadataUserId) : undefined;
 
-        return res.status(400).json({ 
-          error: "Cannot reconcile - no user_id in payment metadata" 
-        });
-      }
-
-      // Verify user exists
-      const user = await storage.getUser(userId);
       if (!user) {
-        log(`[ADMIN_RECONCILE] User ${userId} not found for reference ${reference}`, 'billing');
-        
+        if (metadataUserId) {
+          log(`[ADMIN_RECONCILE] metadata user_id ${metadataUserId} not found for ${reference}, trying email fallback`, 'billing');
+        }
+        const customerEmail = verification.subscription?.customer?.email;
+        if (customerEmail) {
+          user = await storage.getUserByEmail(customerEmail);
+          if (user) {
+            log(`[ADMIN_RECONCILE] Resolved user ${user.id} via email fallback (${customerEmail}) for ${reference}`, 'billing');
+          }
+        }
+      }
+
+      if (!user) {
+        log(`[ADMIN_RECONCILE] Could not resolve a user for ${reference}`, 'billing');
+
         await billingService.recordBillingEvent(null, 'manual_reconciliation_failed', {
           reference,
-          reason: 'user_not_found',
-          metadata_user_id: userId
+          reason: 'no_user_id_and_no_matching_email',
+          metadata_user_id: metadataUserId ?? null,
+          customer_email: verification.subscription?.customer?.email || null,
         });
 
-        return res.status(400).json({ error: "User not found" });
+        return res.status(400).json({
+          error: "Cannot reconcile - could not match this payment to a user (no user_id in metadata and no account with the customer's email)"
+        });
       }
+
+      const userId = user.id;
 
       // Process the subscription using existing method (respects all idempotency rules)
       const subscription = await billingService.processPaystackSubscription(userId, reference);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolvePlanForTransaction } from "./plan-resolver";
+import { resolvePlanForTransaction, resolvePlanWithRenewalFallback } from "./plan-resolver";
 import type { SubscriptionPlan } from "@shared/schema";
 
 function makePlan(partial: Partial<SubscriptionPlan>): SubscriptionPlan {
@@ -132,5 +132,57 @@ describe("resolvePlanForTransaction", () => {
       [trial, ...PLANS],
     );
     expect(result).toBeNull();
+  });
+});
+
+describe("resolvePlanWithRenewalFallback", () => {
+  it("inherits the customer's CURRENT plan on a renewal charge that has no plan code/metadata", () => {
+    // The exact failure case: a renewal charge with only an amount, but the
+    // customer already has an active monthly subscription.
+    const result = resolvePlanWithRenewalFallback(
+      { amount: 4900 },
+      PLANS,
+      { status: "active", planId: MONTHLY.id },
+    );
+    expect(result).not.toBeNull();
+    expect(result!.plan.id).toBe(MONTHLY.id);
+    expect(result!.source).toBe("existing_subscription_renewal");
+  });
+
+  it("still fails safely (manual review) when there is no existing subscription to inherit from", () => {
+    expect(resolvePlanWithRenewalFallback({ amount: 4900 }, PLANS, null)).toBeNull();
+    expect(resolvePlanWithRenewalFallback({ amount: 4900 }, PLANS, undefined)).toBeNull();
+  });
+
+  it("does not inherit from a non-active subscription (cancelled/expired)", () => {
+    expect(
+      resolvePlanWithRenewalFallback({ amount: 4900 }, PLANS, { status: "cancelled", planId: MONTHLY.id }),
+    ).toBeNull();
+    expect(
+      resolvePlanWithRenewalFallback({ amount: 4900 }, PLANS, { status: "expired", planId: MONTHLY.id }),
+    ).toBeNull();
+  });
+
+  it("prefers the payload's deterministic plan code over the existing subscription's plan", () => {
+    // Customer is on monthly, but this charge explicitly carries the yearly plan code.
+    const result = resolvePlanWithRenewalFallback(
+      { plan: { plan_code: YEARLY.paystackPlanCode } },
+      PLANS,
+      { status: "active", planId: MONTHLY.id },
+    );
+    expect(result!.plan.id).toBe(YEARLY.id);
+    expect(result!.source).toBe("transaction_plan_code");
+  });
+
+  it("never guesses by amount: inheritance uses the existing plan id, not the amount", () => {
+    // Amount looks like a Team tier price, but the customer is on monthly — we
+    // inherit the customer's monthly plan, never the amount-matched plan.
+    const result = resolvePlanWithRenewalFallback(
+      { amount: 24500 },
+      PLANS,
+      { status: "active", planId: MONTHLY.id },
+    );
+    expect(result!.plan.id).toBe(MONTHLY.id);
+    expect(result!.source).toBe("existing_subscription_renewal");
   });
 });

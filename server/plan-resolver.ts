@@ -3,11 +3,18 @@ import type { SubscriptionPlan } from "@shared/schema";
 export type PlanResolutionSource =
   | "transaction_plan_code"
   | "metadata_plan_code"
-  | "metadata_plan_id";
+  | "metadata_plan_id"
+  | "existing_subscription_renewal";
 
 export interface PlanResolution {
   plan: SubscriptionPlan;
   source: PlanResolutionSource;
+}
+
+/** Minimal shape of an existing subscription needed to inherit its plan on renewal. */
+export interface ExistingSubscriptionForRenewal {
+  status: string;
+  planId: number;
 }
 
 /**
@@ -46,6 +53,39 @@ export function resolvePlanForTransaction(
       const plan = plans.find((p) => p.id === idNum);
       if (plan) return { plan, source: "metadata_plan_id" };
     }
+  }
+
+  return null;
+}
+
+/**
+ * Resolve a plan for a charge, with a safe renewal fallback.
+ *
+ * First tries the deterministic payload-based resolution. If that fails (the
+ * charge carried no plan code and no plan metadata — which Paystack can do for
+ * some recurring renewal charges), AND the customer already has an ACTIVE
+ * subscription, inherit that subscription's CURRENT plan and treat the charge
+ * as a renewal.
+ *
+ * This NEVER guesses a plan by amount: it only reuses the exact plan the
+ * customer is already on. A customer with no active subscription and no plan
+ * info still resolves to null so the caller can flag it for manual review.
+ */
+export function resolvePlanWithRenewalFallback(
+  transactionData: any,
+  plans: SubscriptionPlan[],
+  existingSubscription: ExistingSubscriptionForRenewal | null | undefined,
+): PlanResolution | null {
+  const direct = resolvePlanForTransaction(transactionData, plans);
+  if (direct) return direct;
+
+  if (
+    existingSubscription &&
+    existingSubscription.status === "active" &&
+    Array.isArray(plans)
+  ) {
+    const plan = plans.find((p) => p.id === existingSubscription.planId);
+    if (plan) return { plan, source: "existing_subscription_renewal" };
   }
 
   return null;

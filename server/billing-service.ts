@@ -16,8 +16,8 @@ import Paystack from "paystack";
 import * as crypto from "crypto";
 import { emailService } from "./email-service";
 import { db } from "./db";
-import { eq, sql } from "drizzle-orm";
-import { resolvePlanForTransaction } from "./plan-resolver";
+import { eq, sql, desc } from "drizzle-orm";
+import { resolvePlanForTransaction, resolvePlanWithRenewalFallback } from "./plan-resolver";
 
 export interface GooglePlayPurchase {
   purchaseToken: string;
@@ -773,8 +773,12 @@ export class BillingService {
     const paymentAmount = transactionData.amount || 0;
 
     // DETERMINISTIC plan resolution by Paystack plan code (never by amount, never a hardcoded fallback).
+    // RENEWAL FALLBACK: if the charge carries no plan code/metadata (Paystack sometimes
+    // omits it on recurring renewal charges) but the customer already has an ACTIVE
+    // subscription, inherit that subscription's CURRENT plan. This never guesses by amount.
     const plans = await this.getSubscriptionPlans();
-    const resolution = resolvePlanForTransaction(transactionData, plans);
+    const existingForResolution = await this.getUserSubscription(userId);
+    const resolution = resolvePlanWithRenewalFallback(transactionData, plans, existingForResolution);
     if (!resolution) {
       log(`[CRITICAL] Could not deterministically resolve plan for user ${userId}, reference ${transactionReference} ` +
         `(amount=${paymentAmount}, plan_code=${transactionData?.plan?.plan_code || 'none'}, ` +
@@ -789,6 +793,17 @@ export class BillingService {
         reason: 'no_matching_subscription_plan',
       });
       throw new Error(`Could not resolve subscription plan for transaction ${transactionReference} — flagged for manual review`);
+    }
+
+    if (resolution.source === 'existing_subscription_renewal') {
+      log(`Plan inherited from existing active subscription for user ${userId}, reference ${transactionReference} ` +
+        `(charge had no plan code/metadata; inheriting plan id=${resolution.plan.id})`, 'billing');
+      await this.logBillingEvent(userId, 'plan_inherited_from_subscription', {
+        paystackReference: transactionReference,
+        amount: paymentAmount,
+        inheritedPlanId: resolution.plan.id,
+        reason: 'renewal_charge_without_plan_metadata',
+      });
     }
 
     const plan = resolution.plan;
@@ -1514,8 +1529,27 @@ export class BillingService {
               (Date.now() - new Date(eventData?.received_at || event.createdAt).getTime()) / 60000
             );
 
+            // The 'paystack_webhook_received' event is recorded with a null user_id.
+            // If a later event for this same reference already resolved the user
+            // (e.g. legacy_paystack_webhook_processed or plan_resolution_failed),
+            // attribute the orphaned payment to that user so the alert is actionable.
+            let resolvedUserId = event.userId;
+            if (!resolvedUserId) {
+              const relatedWithUser = await db.select()
+                .from(billingEvents)
+                .where(sql`
+                  (event_data->>'reference' = ${reference} OR event_data->>'paystackReference' = ${reference})
+                  AND user_id IS NOT NULL
+                `)
+                .orderBy(desc(billingEvents.createdAt))
+                .limit(1);
+              if (relatedWithUser.length > 0) {
+                resolvedUserId = relatedWithUser[0].userId;
+              }
+            }
+
             orphanedPayments.push({
-              userId: event.userId,
+              userId: resolvedUserId,
               reference,
               amount: 0, // Will be fetched if needed
               paymentTime: eventData?.received_at || event.createdAt?.toISOString() || 'unknown',

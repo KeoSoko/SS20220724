@@ -19,7 +19,7 @@ export default function InviteEmail() {
             <div className="mb-6">
               <div className="flex items-baseline gap-1">
                 <span className="text-xl font-light tracking-widest text-gray-700 uppercase">SIMPLE</span>
-                <span className="text-xl font-bold text-blue-600 italic">slips</span>
+                <span className="text-xl font-bold italic text-[#0073AA]">SLIPS</span>
               </div>
             </div>
 

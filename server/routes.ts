@@ -7631,49 +7631,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(workspaceInvites.token, token))
         .limit(1);
 
-      let existingData = null;
       let activeSubscription = null;
-      let isWorkspaceOwner = false;
       if (isAuthenticated(req)) {
         const userId = getUserId(req);
         const invitedUser = await storage.getUser(userId);
         if (invitedUser && invitedUser.workspaceId !== invite.workspaceId) {
-          const [ownerCheck] = await db
-            .select({ id: workspaces.id })
-            .from(workspaces)
-            .where(and(eq(workspaces.id, invitedUser.workspaceId), eq(workspaces.ownerId, userId)))
-            .limit(1);
-          isWorkspaceOwner = !!ownerCheck;
-
-          if (isWorkspaceOwner) {
-            const [receiptCount] = await db
-              .select({ count: sql<number>`count(*)::int` })
-              .from(receipts)
-              .where(eq(receipts.workspaceId, invitedUser.workspaceId));
-            const [clientCount] = await db
-              .select({ count: sql<number>`count(*)::int` })
-              .from(clients)
-              .where(eq(clients.workspaceId, invitedUser.workspaceId));
-            const [quotationCount] = await db
-              .select({ count: sql<number>`count(*)::int` })
-              .from(quotations)
-              .where(eq(quotations.workspaceId, invitedUser.workspaceId));
-            const [invoiceCount] = await db
-              .select({ count: sql<number>`count(*)::int` })
-              .from(invoices)
-              .where(eq(invoices.workspaceId, invitedUser.workspaceId));
-
-            const totalItems = (receiptCount?.count || 0) + (clientCount?.count || 0) + (quotationCount?.count || 0) + (invoiceCount?.count || 0);
-            if (totalItems > 0) {
-              existingData = {
-                receipts: receiptCount?.count || 0,
-                clients: clientCount?.count || 0,
-                quotations: quotationCount?.count || 0,
-                invoices: invoiceCount?.count || 0,
-              };
-            }
-          }
-
           try {
             const subStatus = await billingService.getSubscriptionStatus(userId);
             if (subStatus.hasSubscription && (subStatus.status === 'active' || subStatus.status === 'trial')) {
@@ -7695,8 +7657,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         workspaceName: workspace[0]?.name || "Unknown Workspace",
         invitedBy: inviter[0]?.fullName || inviter[0]?.username || "Unknown",
         expiresAt: invite.expiresAt,
-        existingData,
-        isWorkspaceOwner,
         activeSubscription,
       });
     } catch (error: any) {
@@ -7707,7 +7667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/workspace/accept-invite", async (req, res) => {
     try {
-      const { token, migrateData } = req.body;
+      const { token } = req.body;
       if (!token || typeof token !== "string") {
         return res.status(400).json({ error: "Invitation token is required" });
       }
@@ -7808,56 +7768,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const oldWorkspaceId = user.workspaceId;
 
-      const [ownerCheck] = await db
-        .select({ id: workspaces.id })
-        .from(workspaces)
-        .where(and(eq(workspaces.id, oldWorkspaceId), eq(workspaces.ownerId, userId)))
-        .limit(1);
-      const isOwnerOfOldWorkspace = !!ownerCheck;
-
-      let migratedCounts = null;
-
       await db.transaction(async (tx) => {
         if (oldWorkspaceId !== invite.workspaceId) {
-          if (migrateData && isOwnerOfOldWorkspace) {
-            const [rCount] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(receipts)
-              .where(eq(receipts.workspaceId, oldWorkspaceId));
-            const [cCount] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(clients)
-              .where(eq(clients.workspaceId, oldWorkspaceId));
-            const [qCount] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(quotations)
-              .where(eq(quotations.workspaceId, oldWorkspaceId));
-            const [iCount] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(invoices)
-              .where(eq(invoices.workspaceId, oldWorkspaceId));
-
-            if ((rCount?.count || 0) > 0) {
-              await tx.update(receipts).set({ workspaceId: invite.workspaceId }).where(eq(receipts.workspaceId, oldWorkspaceId));
-            }
-            if ((cCount?.count || 0) > 0) {
-              await tx.update(clients).set({ workspaceId: invite.workspaceId }).where(eq(clients.workspaceId, oldWorkspaceId));
-            }
-            if ((qCount?.count || 0) > 0) {
-              await tx.update(quotations).set({ workspaceId: invite.workspaceId }).where(eq(quotations.workspaceId, oldWorkspaceId));
-            }
-            if ((iCount?.count || 0) > 0) {
-              await tx.update(invoices).set({ workspaceId: invite.workspaceId }).where(eq(invoices.workspaceId, oldWorkspaceId));
-            }
-
-            migratedCounts = {
-              receipts: rCount?.count || 0,
-              clients: cCount?.count || 0,
-              quotations: qCount?.count || 0,
-              invoices: iCount?.count || 0,
-            };
-          }
-
           await tx
             .delete(workspaceMembers)
             .where(
@@ -7890,8 +7802,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Access now inherits from the workspace owner (see getEffectiveSubscriptionStatus),
       // so cancelling the invitee's own subscription would needlessly lock them out.
 
-      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role} (old workspace: ${oldWorkspaceId}, migrated: ${!!migrateData})`, "workspace");
-      res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role, migratedCounts });
+      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role} (old workspace: ${oldWorkspaceId})`, "workspace");
+      res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role });
     } catch (error: any) {
       log(`Error accepting workspace invite: ${error.message}`, "workspace");
       res.status(500).json({ error: "Failed to accept invitation" });

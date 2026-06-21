@@ -5510,13 +5510,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       
       const clientsList = await db.query.clients.findMany({
         where: and(
-          eq(clients.workspaceId, workspaceId),
+          eq(clients.userId, userId),
           eq(clients.isActive, true)
         ),
         orderBy: [asc(clients.name)],
@@ -5535,9 +5532,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const clientId = parseInt(req.params.id, 10);
 
       if (isNaN(clientId)) {
@@ -5547,7 +5541,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const client = await db.query.clients.findFirst({
         where: and(
           eq(clients.id, clientId),
-          eq(clients.workspaceId, workspaceId)
+          eq(clients.userId, userId)
         ),
       });
 
@@ -5600,9 +5594,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const clientId = parseInt(req.params.id, 10);
 
       if (isNaN(clientId)) {
@@ -5617,7 +5608,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({ ...validatedData, updatedAt: new Date() })
         .where(and(
           eq(clients.id, clientId),
-          eq(clients.workspaceId, workspaceId)
+          eq(clients.userId, userId)
         ))
         .returning();
 
@@ -5641,9 +5632,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const clientId = parseInt(req.params.id, 10);
 
       if (isNaN(clientId)) {
@@ -5655,7 +5643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({ isActive: false, updatedAt: new Date() })
         .where(and(
           eq(clients.id, clientId),
-          eq(clients.workspaceId, workspaceId)
+          eq(clients.userId, userId)
         ))
         .returning();
 
@@ -5668,7 +5656,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({ isActive: false, updatedAt: new Date() })
         .where(and(
           eq(quotations.clientId, clientId),
-          eq(quotations.workspaceId, workspaceId)
+          eq(quotations.userId, userId)
         ));
 
       await db
@@ -5676,7 +5664,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({ isActive: false, updatedAt: new Date() })
         .where(and(
           eq(invoices.clientId, clientId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ));
 
       res.json({ message: "Client deleted successfully" });
@@ -5694,16 +5682,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       
       const quotationsList = await db
         .select()
         .from(quotations)
         .innerJoin(clients, eq(quotations.clientId, clients.id))
         .where(and(
-          eq(quotations.workspaceId, workspaceId),
+          eq(quotations.userId, userId),
           eq(quotations.isActive, true),
           eq(clients.isActive, true)
         ))
@@ -5722,9 +5707,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const quotationId = parseInt(req.params.id, 10);
 
       if (isNaN(quotationId)) {
@@ -5734,7 +5716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const quotation = await db.query.quotations.findFirst({
         where: and(
           eq(quotations.id, quotationId),
-          eq(quotations.workspaceId, workspaceId)
+          eq(quotations.userId, userId)
         ),
       });
 
@@ -5778,14 +5760,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const yearStart = new Date(year, 0, 1);
         const yearEnd = new Date(year + 1, 0, 1);
         
-        // Find the highest sequence number for this workspace this year
+        // Find the highest sequence number for this user this year
         const maxResult = await tx
           .select({ 
             maxNumber: sql<string>`MAX(${quotations.quotationNumber})`
           })
           .from(quotations)
           .where(and(
-            eq(quotations.workspaceId, workspaceId),
+            eq(quotations.userId, userId),
             gte(quotations.date, yearStart),
             lt(quotations.date, yearEnd)
           ));
@@ -5859,9 +5841,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const quotationId = parseInt(req.params.id, 10);
 
       if (isNaN(quotationId)) {
@@ -5881,7 +5860,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .set({ ...validatedQuotation, updatedAt: new Date() })
           .where(and(
             eq(quotations.id, quotationId),
-            eq(quotations.workspaceId, workspaceId)
+            eq(quotations.userId, userId)
           ))
           .returning();
 
@@ -5936,9 +5915,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const quotationId = parseInt(req.params.id, 10);
 
       if (isNaN(quotationId)) {
@@ -5963,7 +5939,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({ status, updatedAt: new Date() })
         .where(and(
           eq(quotations.id, quotationId),
-          eq(quotations.workspaceId, workspaceId)
+          eq(quotations.userId, userId)
         ))
         .returning();
 
@@ -5984,9 +5960,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const quotationId = parseInt(req.params.id, 10);
 
       if (isNaN(quotationId)) {
@@ -5998,7 +5971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({ isActive: false, updatedAt: new Date() })
         .where(and(
           eq(quotations.id, quotationId),
-          eq(quotations.workspaceId, workspaceId)
+          eq(quotations.userId, userId)
         ))
         .returning();
 
@@ -6032,7 +6005,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const quotation = await db.query.quotations.findFirst({
         where: and(
           eq(quotations.id, quotationId),
-          eq(quotations.workspaceId, workspaceId)
+          eq(quotations.userId, userId)
         ),
       });
 
@@ -6063,14 +6036,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const yearStart = new Date(year, 0, 1);
         const yearEnd = new Date(year + 1, 0, 1);
         
-        // Find the highest sequence number for this workspace this year
+        // Find the highest sequence number for this user this year
         const maxResult = await tx
           .select({ 
             maxNumber: sql<string>`MAX(${invoices.invoiceNumber})`
           })
           .from(invoices)
           .where(and(
-            eq(invoices.workspaceId, workspaceId),
+            eq(invoices.userId, userId),
             gte(invoices.date, yearStart),
             lt(invoices.date, yearEnd)
           ));
@@ -6152,9 +6125,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const quotationId = parseInt(req.params.id, 10);
 
       if (isNaN(quotationId)) {
@@ -6165,7 +6135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const quotation = await db.query.quotations.findFirst({
         where: and(
           eq(quotations.id, quotationId),
-          eq(quotations.workspaceId, workspaceId)
+          eq(quotations.userId, userId)
         ),
       });
 
@@ -6216,9 +6186,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const quotationId = parseInt(req.params.id, 10);
 
       if (isNaN(quotationId)) {
@@ -6229,7 +6196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const quotation = await db.query.quotations.findFirst({
         where: and(
           eq(quotations.id, quotationId),
-          eq(quotations.workspaceId, workspaceId)
+          eq(quotations.userId, userId)
         ),
       });
 
@@ -6301,9 +6268,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const quotationId = parseInt(req.params.id, 10);
       const { subject, body } = req.body;
 
@@ -6319,7 +6283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const quotation = await db.query.quotations.findFirst({
         where: and(
           eq(quotations.id, quotationId),
-          eq(quotations.workspaceId, workspaceId)
+          eq(quotations.userId, userId)
         ),
       });
 
@@ -6402,13 +6366,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       
       // Get all invoices for user
       const userInvoices = await db.query.invoices.findMany({
-        where: eq(invoices.workspaceId, workspaceId),
+        where: eq(invoices.userId, userId),
       });
 
       // Calculate stats
@@ -6451,16 +6412,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       
       const invoicesList = await db
         .select()
         .from(invoices)
         .innerJoin(clients, eq(invoices.clientId, clients.id))
         .where(and(
-          eq(invoices.workspaceId, workspaceId),
+          eq(invoices.userId, userId),
           eq(invoices.isActive, true),
           eq(clients.isActive, true)
         ))
@@ -6479,9 +6437,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
 
       if (isNaN(invoiceId)) {
@@ -6491,7 +6446,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await db.query.invoices.findFirst({
         where: and(
           eq(invoices.id, invoiceId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ),
       });
 
@@ -6541,14 +6496,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const yearStart = new Date(year, 0, 1);
         const yearEnd = new Date(year + 1, 0, 1);
         
-        // Find the highest sequence number for this workspace this year
+        // Find the highest sequence number for this user this year
         const maxResult = await tx
           .select({ 
             maxNumber: sql<string>`MAX(${invoices.invoiceNumber})`
           })
           .from(invoices)
           .where(and(
-            eq(invoices.workspaceId, workspaceId),
+            eq(invoices.userId, userId),
             gte(invoices.date, yearStart),
             lt(invoices.date, yearEnd)
           ));
@@ -6621,9 +6576,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
 
       if (isNaN(invoiceId)) {
@@ -6643,7 +6595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .set({ ...validatedInvoice, updatedAt: new Date() })
           .where(and(
             eq(invoices.id, invoiceId),
-            eq(invoices.workspaceId, workspaceId)
+            eq(invoices.userId, userId)
           ))
           .returning();
 
@@ -6698,9 +6650,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
 
       if (isNaN(invoiceId)) {
@@ -6725,7 +6674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({ status, updatedAt: new Date() })
         .where(and(
           eq(invoices.id, invoiceId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ))
         .returning();
 
@@ -6746,9 +6695,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
 
       if (isNaN(invoiceId)) {
@@ -6760,7 +6706,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({ isActive: false, updatedAt: new Date() })
         .where(and(
           eq(invoices.id, invoiceId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ))
         .returning();
 
@@ -6781,9 +6727,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
 
       if (isNaN(invoiceId)) {
@@ -6794,7 +6737,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await db.query.invoices.findFirst({
         where: and(
           eq(invoices.id, invoiceId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ),
       });
 
@@ -6851,9 +6794,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
 
       if (isNaN(invoiceId)) {
@@ -6864,7 +6804,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await db.query.invoices.findFirst({
         where: and(
           eq(invoices.id, invoiceId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ),
       });
 
@@ -6943,9 +6883,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
       const { subject, body } = req.body;
 
@@ -6957,7 +6894,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await db.query.invoices.findFirst({
         where: and(
           eq(invoices.id, invoiceId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ),
       });
 
@@ -7043,9 +6980,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
 
       if (isNaN(invoiceId)) {
@@ -7056,7 +6990,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await db.query.invoices.findFirst({
         where: and(
           eq(invoices.id, invoiceId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ),
       });
 
@@ -7176,9 +7110,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
       const { subject, body } = req.body;
 
@@ -7190,7 +7121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await db.query.invoices.findFirst({
         where: and(
           eq(invoices.id, invoiceId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ),
       });
 
@@ -7270,9 +7201,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
 
       if (isNaN(invoiceId)) {
@@ -7283,7 +7211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await db.query.invoices.findFirst({
         where: and(
           eq(invoices.id, invoiceId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ),
       });
 
@@ -7324,9 +7252,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(req);
-      const user = await storage.getUser(userId);
-      if (!user) { return res.status(401).json({ error: "User not found" }); }
-      const workspaceId = user.workspaceId;
       const invoiceId = parseInt(req.params.id, 10);
       const { subject, body } = req.body;
 
@@ -7338,7 +7263,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await db.query.invoices.findFirst({
         where: and(
           eq(invoices.id, invoiceId),
-          eq(invoices.workspaceId, workspaceId)
+          eq(invoices.userId, userId)
         ),
       });
 

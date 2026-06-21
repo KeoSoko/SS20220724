@@ -1729,14 +1729,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         newDisplayName &&
         oldDisplayName.toLowerCase() !== newDisplayName.toLowerCase();
 
-      // Get workspace ID for scoped receipt update
       const userId = getUserId(req);
-      const [userRow] = await db
-        .select({ workspaceId: users.workspaceId })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      const workspaceId = userRow?.workspaceId;
 
       // Run category update + receipt propagation in a single transaction
       let updatedCategory: any;
@@ -1748,14 +1741,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .returning();
         updatedCategory = updated;
 
-        if (nameChanged && workspaceId) {
+        if (nameChanged) {
           await tx
             .update(receipts)
             .set({ reportLabel: newDisplayName })
             .where(
               and(
                 eq(receipts.reportLabel, oldDisplayName),
-                eq(receipts.workspaceId, workspaceId)
+                eq(receipts.userId, userId)
               )
             );
         }
@@ -2083,9 +2076,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
     const userId = getUserId(req);
-    const user = await storage.getUser(userId);
-    if (!user) { return res.status(401).json({ error: "User not found" }); }
-    const workspaceId = user.workspaceId;
     
     // Get the last 8 weeks of data
     const endDate = new Date();
@@ -2099,7 +2089,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     .from(receipts)
     .where(
       and(
-        eq(receipts.workspaceId, workspaceId),
+        eq(receipts.userId, userId),
         gte(receipts.date, startDate),
         lte(receipts.date, endDate)
       )
@@ -2129,11 +2119,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get at least one receipt to use its data as reference
       const topItemsUserId = getUserId(req);
-      const topItemsUser = await storage.getUser(topItemsUserId);
-      if (!topItemsUser) { return res.status(401).json({ error: "User not found" }); }
       const receiptsResult = await db.select()
         .from(receipts)
-        .where(eq(receipts.workspaceId, topItemsUser.workspaceId))
+        .where(eq(receipts.userId, topItemsUserId))
         .limit(1);
       
       // Create sample data based on the receipt store name
@@ -2473,7 +2461,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           COUNT(*) AS count,
           SUM(CAST(total AS DECIMAL)) AS total
         FROM receipts
-        WHERE workspace_id = (SELECT workspace_id FROM users WHERE id = $1)
+        WHERE user_id = $1
           AND report_label IS NOT NULL
           AND report_label != ''
         GROUP BY report_label

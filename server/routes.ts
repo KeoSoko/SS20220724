@@ -69,7 +69,7 @@ import { log } from "./vite";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
 import { normalizeMerchantName } from "./utils/merchant-normalizer";
-import { and, asc, eq, gte, lt, lte, ne, sql, isNull, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, lte, ne, or, sql, isNull, isNotNull } from "drizzle-orm";
 import multer from "multer";
 import { scrypt, timingSafeEqual, randomBytes } from 'crypto';
 import { promisify } from 'util';
@@ -7781,10 +7781,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let planName = "Free Trial";
       try {
         const [sub] = await db
-          .select({ displayName: subscriptionPlans.displayName })
+          .select({ displayName: subscriptionPlans.displayName, status: userSubscriptions.status })
           .from(userSubscriptions)
           .innerJoin(subscriptionPlans, eq(subscriptionPlans.id, userSubscriptions.planId))
-          .where(eq(userSubscriptions.userId, workspace.ownerId))
+          .where(
+            and(
+              eq(userSubscriptions.userId, workspace.ownerId),
+              or(
+                eq(userSubscriptions.status, 'active'),
+                eq(userSubscriptions.status, 'cancelled')
+              )
+            )
+          )
+          .orderBy(desc(userSubscriptions.id))
           .limit(1);
         if (sub) planName = sub.displayName;
       } catch {}

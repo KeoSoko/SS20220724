@@ -981,7 +981,7 @@ function WorkspaceSection() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm truncate">{member.fullName || member.username}</span>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-blue-100 text-blue-800 capitalize">{member.role === 'viewer' ? 'Viewer' : 'Assistant'}</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-blue-100 text-blue-800 capitalize">{member.role === 'viewer' ? 'Viewer' : 'Member'}</span>
                         </div>
                         <p className="text-xs text-gray-500 truncate">{member.email}</p>
                       </div>
@@ -1143,7 +1143,7 @@ function WorkspaceSection() {
             {/* Billing & Admin */}
             <div className="border rounded-none p-5 bg-white shadow-sm">
               <div className="flex items-center gap-2 mb-3">
-                <CreditCard className="h-4 w-4 text-gray-400" />
+                <Settings className="h-4 w-4 text-gray-400" />
                 <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Billing & Admin</h4>
               </div>
               <p className="text-xs text-gray-500 mb-3 leading-relaxed">

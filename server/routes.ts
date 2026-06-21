@@ -7425,12 +7425,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const workspaceName = workspace[0]?.name || "a workspace";
       const inviteUrl = `${req.protocol}://${req.get("host")}/accept-invite?token=${token}`;
+      const inviterName = user.fullName || user.username;
+      const roleLabel = role === "editor" ? "an editor" : "a viewer";
+
+      const htmlBody = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f4f6;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;border-radius:4px;overflow:hidden;">
+
+        <!-- Header bar -->
+        <tr><td style="background:#f9fafb;border-bottom:1px solid #e5e7eb;padding:12px 20px;">
+          <p style="margin:0;font-size:11px;color:#6b7280;">
+            <strong style="color:#374151;">From:</strong> Simple Slips &lt;noreply@simpleslips.co.za&gt;<br>
+            <strong style="color:#374151;">To:</strong> ${normalizedEmail}<br>
+            <strong style="color:#374151;">Subject:</strong> You've been invited to join ${workspaceName} on Simple Slips
+          </p>
+        </td></tr>
+
+        <!-- Body -->
+        <tr><td style="padding:32px;">
+
+          <!-- Logo -->
+          <p style="margin:0 0 24px 0;">
+            <span style="font-size:20px;font-weight:300;letter-spacing:0.2em;color:#374151;text-transform:uppercase;">SIMPLE</span>
+            <span style="font-size:20px;font-weight:700;font-style:italic;color:#0073AA;">SLIPS</span>
+          </p>
+
+          <!-- Greeting -->
+          <p style="margin:0 0 12px 0;font-size:14px;color:#374151;">Hi there!</p>
+          <p style="margin:0 0 24px 0;font-size:14px;color:#374151;line-height:1.6;">
+            <strong>${inviterName}</strong> has invited you to join <strong>"${workspaceName}"</strong> as ${roleLabel} on Simple Slips — the AI-powered receipt and expense management platform.
+          </p>
+
+          <!-- CTA -->
+          <table cellpadding="0" cellspacing="0" style="margin:0 0 24px 0;">
+            <tr><td style="background-color:#2563eb;border-radius:4px;">
+              <a href="${inviteUrl}" style="display:inline-block;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;padding:12px 24px;">Accept Invitation</a>
+            </td></tr>
+          </table>
+
+          <!-- What you'll get -->
+          <table cellpadding="0" cellspacing="0" style="width:100%;background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;margin:0 0 24px 0;">
+            <tr><td style="padding:16px;">
+              <p style="margin:0 0 8px 0;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;">What you'll get access to</p>
+              <table cellpadding="0" cellspacing="0">
+                ${["Scan and manage receipts","View invoices and quotes","Access shared client list","Use AI tax assistant"].map(item => `
+                <tr><td style="padding:4px 0;font-size:14px;color:#374151;">
+                  <span style="display:inline-block;width:20px;height:20px;background:#dcfce7;color:#16a34a;text-align:center;line-height:20px;border-radius:50%;font-size:11px;margin-right:8px;font-weight:bold;">✓</span>${item}
+                </td></tr>`).join("")}
+              </table>
+            </td></tr>
+          </table>
+
+          <!-- Expiry notice -->
+          <table cellpadding="0" cellspacing="0" style="width:100%;background:#fffbeb;border:1px solid #fde68a;border-radius:4px;margin:0 0 24px 0;">
+            <tr><td style="padding:12px 16px;font-size:12px;color:#92400e;line-height:1.6;">
+              ⏱ &nbsp;This invitation link expires in <strong>7 days</strong>. If you don't have a Simple Slips account yet, you'll need to sign up first, then accept the invitation.
+            </td></tr>
+          </table>
+
+          <!-- Ignore note -->
+          <p style="margin:0;font-size:12px;color:#9ca3af;border-top:1px solid #f3f4f6;padding-top:16px;">
+            If you weren't expecting this invite, you can safely ignore this email. The link won't work unless you click it.
+          </p>
+
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:16px;text-align:center;">
+          <p style="margin:0;font-size:12px;color:#9ca3af;">Simple Slips &middot; South Africa</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+      const plainText = `Hi there!\n\n${inviterName} has invited you to join "${workspaceName}" as ${roleLabel} on Simple Slips.\n\nAccept your invitation here:\n${inviteUrl}\n\nThis invitation expires in 7 days.\n\nIf you don't have a Simple Slips account, you'll need to sign up first, then accept the invitation.\n\nIf you weren't expecting this invite, you can safely ignore this email.`;
 
       try {
         await emailService.sendEmail(
           normalizedEmail,
           `You've been invited to join ${workspaceName} on Simple Slips`,
-          `Hi there!\n\n${user.fullName || user.username} has invited you to join "${workspaceName}" as ${role === "editor" ? "an editor" : "a viewer"} on Simple Slips.\n\nClick the link below to accept the invitation:\n${inviteUrl}\n\nThis invitation expires in 7 days.\n\nIf you don't have a Simple Slips account, you'll need to sign up first, then accept the invitation.`
+          plainText,
+          htmlBody
         );
       } catch (emailError) {
         log(`Failed to send invite email to ${normalizedEmail}: ${emailError}`, "workspace");

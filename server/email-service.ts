@@ -116,11 +116,18 @@ export class EmailService {
   /**
    * Send a generic plain text email (used for admin alerts)
    */
-  async sendEmail(to: string, subject: string, body: string): Promise<boolean> {
+  async sendEmail(to: string, subject: string, body: string, htmlBody?: string): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
       logger.error("Cannot send email - SENDGRID_API_KEY not configured");
       return false;
     }
+
+    const html = htmlBody ?? `<div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2 style="color: #0073AA;">${subject}</h2>
+          <pre style="white-space: pre-wrap; font-family: monospace; background: #f5f5f5; padding: 15px; border-radius: 5px;">${body}</pre>
+          <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;">
+          <p style="color: #666; font-size: 12px;">Simple Slips Admin Alert</p>
+        </div>`;
 
     try {
       await mailService.send({
@@ -131,12 +138,7 @@ export class EmailService {
         },
         subject,
         text: body,
-        html: `<div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2 style="color: #0073AA;">${subject}</h2>
-          <pre style="white-space: pre-wrap; font-family: monospace; background: #f5f5f5; padding: 15px; border-radius: 5px;">${body}</pre>
-          <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;">
-          <p style="color: #666; font-size: 12px;">Simple Slips Admin Alert</p>
-        </div>`,
+        html,
       });
       logger.info(`[EMAIL] Admin alert sent to: ${to}, subject: ${subject}`);
       return true;

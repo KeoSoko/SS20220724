@@ -508,17 +508,17 @@ export function SubscriptionPage() {
                   </div>
                   <div>
                     <Badge variant="default" className="bg-green-600 text-white">
-                      Covered by workspace
+                      Access included
                     </Badge>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Your access is managed by <strong>{statusData?.workspaceContext?.ownerName}</strong> through the <strong>{statusData?.workspaceContext?.workspaceName}</strong> workspace.
+                      Your access is managed by <strong>{statusData?.workspaceContext?.ownerName}</strong>.
                     </p>
                   </div>
                 </div>
                 <Alert className="border-green-200 bg-green-50">
                   <Users className="h-4 w-4 text-green-600" />
                   <AlertDescription className="text-green-800">
-                    You have full access to all features as a workspace member. Billing is handled by the workspace owner.
+                    Your access is included in your company subscription. Billing is handled by your account owner.
                   </AlertDescription>
                 </Alert>
               </div>

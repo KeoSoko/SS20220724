@@ -24,7 +24,8 @@ import { ContentCard, Section, StatusBadge } from '@/components/design-system';
 import { PaystackBilling } from '@/components/paystack-billing';
 // import { StorageMonitor } from '@/components/storage-monitor';
 import { useToast } from '@/hooks/use-toast';
-import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2, Copy, RefreshCw, Inbox, MessageCircle, HelpCircle, Send, Camera, Monitor, Smartphone, Users, UserPlus, Clock, XCircle } from 'lucide-react';
+import { User, Mail, Phone, Shield, Edit2, Check, X, AlertCircle, Settings, Tag, ChevronRight, Crown, Trash2, Copy, RefreshCw, Inbox, MessageCircle, HelpCircle, Send, Camera, Monitor, Smartphone, Users, UserPlus, Clock, XCircle, Building2, CreditCard, Calendar, Lock, Receipt, FileText, BarChart2, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -643,6 +644,18 @@ function WorkspaceSection() {
   const hasTeam = nonOwnerMembers.length > 0 || pendingInvites.length > 0;
 
   const { user } = useAuth();
+
+  const { data: subscriptionData } = useQuery({
+    queryKey: ['/api/billing/subscription'],
+    enabled: isOwner,
+  });
+  const ownerSubscription = (subscriptionData as any)?.subscription || null;
+
+  const formatRenewalDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return null;
+    return new Date(dateStr).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
   // Plan the owner has chosen to upgrade to. Once set, we render the standard
   // Paystack checkout (same flow as a brand-new Team Plan purchase) instead of
@@ -795,126 +808,188 @@ function WorkspaceSection() {
   }
 
   return (
-    <Section title="Workspace" description="Manage your team and workspace settings">
+    <Section
+      title="Company Account"
+      description={isOwner ? "Manage your team, billing and subscription" : "Your company access and account details"}
+    >
       <ContentCard>
-        <div className="space-y-6">
-          <div className="border rounded-none p-5 bg-white shadow-sm">
-            <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Workspace Overview</h4>
-            <div className="space-y-4">
-              <div>
-                <span className="text-xs text-gray-500 uppercase tracking-wide">Workspace Name</span>
-                {isEditingName ? (
-                  <div className="flex items-center gap-2 mt-1">
-                    <Input
-                      value={editedName}
-                      onChange={(e) => setEditedName(e.target.value)}
-                      className="h-8 text-sm flex-1"
-                      autoFocus
-                    />
-                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => updateNameMutation.mutate(editedName)} disabled={updateNameMutation.isPending}>
-                      <Check className="h-4 w-4 text-green-600" />
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => setIsEditingName(false)}>
-                      <X className="h-4 w-4 text-gray-400" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-sm font-medium">{workspace?.name || 'My Workspace'}</span>
-                    {isOwner && (
+        {isOwner ? (
+          /* ───── OWNER LAYOUT ───── */
+          <div className="space-y-6">
+
+            {/* Company Overview */}
+            <div className="border rounded-none p-5 bg-white shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-gray-400" />
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Company Overview</h4>
+                </div>
+              </div>
+              <div className="space-y-4">
+                {/* Company name — editable */}
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Company Name</span>
+                  {isEditingName ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <Input
+                        value={editedName}
+                        onChange={(e) => setEditedName(e.target.value)}
+                        className="h-8 text-sm flex-1"
+                        autoFocus
+                      />
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => updateNameMutation.mutate(editedName)} disabled={updateNameMutation.isPending}>
+                        <Check className="h-4 w-4 text-green-600" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => setIsEditingName(false)}>
+                        <X className="h-4 w-4 text-gray-400" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-sm font-medium">{workspace?.name || 'My Workspace'}</span>
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditedName(workspace?.name || ''); setIsEditingName(true); }}>
                         <Edit2 className="h-3.5 w-3.5 text-gray-400" />
                       </Button>
-                    )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Seat progress bar */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-xs text-gray-500 uppercase tracking-wide">Team Seats</span>
+                    <span className={`text-sm font-semibold ${atCapacity || isOverCapacity ? 'text-amber-600' : 'text-gray-800'}`}>
+                      {usedSeats} / {seatCapacity} used
+                      {pendingInvites.length > 0 && (
+                        <span className="text-xs font-normal text-gray-500"> ({pendingInvites.length} pending)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${isOverCapacity ? 'bg-red-500' : atCapacity ? 'bg-amber-500' : 'bg-blue-500'}`}
+                      style={{ width: `${Math.min(100, Math.round((usedSeats / seatCapacity) * 100))}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    {isOverCapacity
+                      ? `Over capacity — remove members or upgrade your plan`
+                      : atCapacity
+                      ? `All seats filled — upgrade to invite more`
+                      : `${availableSeats} seat${availableSeats !== 1 ? 's' : ''} available`}
+                  </p>
+                </div>
+
+                {/* Capacity warning */}
+                {(isOverCapacity || atCapacity) && (
+                  <div className={`flex items-center justify-between gap-3 border rounded-none p-3 ${isOverCapacity ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                    <div className="flex items-start gap-2 min-w-0">
+                      <AlertCircle className={`h-4 w-4 mt-0.5 flex-shrink-0 ${isOverCapacity ? 'text-red-600' : 'text-amber-600'}`} />
+                      <p className="text-xs text-gray-700">
+                        {isOverCapacity
+                          ? `Your account has ${usedSeats} members but your plan only includes ${seatCapacity} seat${seatCapacity === 1 ? '' : 's'}. Existing members keep access until you resolve this.`
+                          : `You've used all ${seatCapacity} seat${seatCapacity === 1 ? '' : 's'}. Upgrade to invite more team members.`}
+                      </p>
+                    </div>
+                    <Button size="sm" className="gap-1.5 flex-shrink-0" onClick={() => setIsUpgradeOpen(true)}>
+                      <Crown className="h-4 w-4" />
+                      Upgrade
+                    </Button>
                   </div>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Plan</span>
-                  <p className="text-sm font-medium mt-0.5">{workspace?.planName}</p>
-                </div>
-                <div>
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Seats</span>
-                  <p className="text-sm font-medium mt-0.5">
-                    {usedSeats}/{seatCapacity}
-                    {pendingInvites.length > 0 && (
-                      <span className="text-xs text-gray-500 font-normal"> ({pendingInvites.length} pending)</span>
-                    )}
-                  </p>
-                </div>
+            </div>
+
+            {/* Billing Information */}
+            <div className="border rounded-none p-5 bg-white shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <CreditCard className="h-4 w-4 text-gray-400" />
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Billing Information</h4>
               </div>
-              {isOwner && (isOverCapacity || atCapacity) && (
-                <div className={`mt-1 flex items-center justify-between gap-3 border rounded-none p-3 ${isOverCapacity ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
-                  <div className="flex items-start gap-2 min-w-0">
-                    <AlertCircle className={`h-4 w-4 mt-0.5 flex-shrink-0 ${isOverCapacity ? 'text-red-600' : 'text-amber-600'}`} />
-                    <p className="text-xs text-gray-700">
-                      {isOverCapacity
-                        ? `Your workspace has ${usedSeats} members but your current plan only includes ${seatCapacity} seat${seatCapacity === 1 ? '' : 's'}. Existing members keep access, but you can't add anyone until you upgrade or remove members.`
-                        : `You've used all ${seatCapacity} seat${seatCapacity === 1 ? '' : 's'} on your plan. Upgrade to a Team plan to invite more members.`}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Plan Owner</span>
+                  <p className="text-sm font-medium text-gray-800 mt-0.5">{user?.fullName || user?.username}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Billing Email</span>
+                  <p className="text-sm font-medium text-gray-800 mt-0.5 truncate">{user?.email}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Current Plan</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-sm font-medium text-gray-800">{workspace?.planName || 'Free Trial'}</p>
+                    <Badge variant="secondary" className="text-xs px-1.5 py-0">{seatCapacity} seat{seatCapacity !== 1 ? 's' : ''}</Badge>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Next Renewal</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <Calendar className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                    <p className="text-sm font-medium text-gray-800">
+                      {formatRenewalDate(ownerSubscription?.nextBillingDate) || 'N/A'}
                     </p>
                   </div>
-                  <Button size="sm" className="gap-1.5 flex-shrink-0" onClick={() => setIsUpgradeOpen(true)}>
-                    <Crown className="h-4 w-4" />
-                    Upgrade
+                </div>
+              </div>
+            </div>
+
+            {/* Team Members */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-gray-400" />
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Team Members</h4>
+                  <span className="text-xs text-gray-400">({usedSeats} of {seatCapacity})</span>
+                </div>
+                {canInvite && (
+                  <Button size="sm" onClick={() => setIsInviteOpen(true)} className="gap-1.5">
+                    <UserPlus className="h-4 w-4" />
+                    Invite Member
                   </Button>
-                </div>
-              )}
-            </div>
-          </div>
+                )}
+              </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Team Members</h4>
-              {canInvite && (
-                <Button size="sm" onClick={() => setIsInviteOpen(true)} className="gap-1.5">
-                  <UserPlus className="h-4 w-4" />
-                  Invite Member
-                </Button>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              {owner && (
-                <div className="border rounded-none p-4 bg-white shadow-sm border-l-4 border-l-amber-400">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-none bg-amber-100 text-amber-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
-                      {(owner.email || owner.username || 'O')[0].toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm truncate">{owner.fullName || owner.username}</span>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-amber-100 text-amber-800">Owner</span>
-                      </div>
-                      <p className="text-xs text-gray-500 truncate">{owner.email}</p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-xs text-gray-400">Last active</p>
-                      <p className="text-xs text-gray-600">{formatLastActive(owner.lastLogin)}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {nonOwnerMembers.map((member) => (
-                <div key={member.id} className="border rounded-none p-4 bg-white shadow-sm border-l-4 border-l-blue-400">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-none bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
-                      {(member.email || member.username || 'A')[0].toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm truncate">{member.fullName || member.username}</span>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-blue-100 text-blue-800 capitalize">{member.role === 'viewer' ? 'Viewer' : 'Assistant'}</span>
-                      </div>
-                      <p className="text-xs text-gray-500 truncate">{member.email}</p>
-                    </div>
+              <div className="space-y-3">
+                {owner && (
+                  <div className="border rounded-none p-4 bg-white shadow-sm border-l-4 border-l-amber-400">
                     <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-none bg-amber-100 text-amber-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                        {(owner.email || owner.username || 'O')[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm truncate">{owner.fullName || owner.username}</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-amber-100 text-amber-800">Owner</span>
+                        </div>
+                        <p className="text-xs text-gray-500 truncate">{owner.email}</p>
+                      </div>
                       <div className="text-right flex-shrink-0">
                         <p className="text-xs text-gray-400">Last active</p>
-                        <p className="text-xs text-gray-600">{formatLastActive(member.lastLogin)}</p>
+                        <p className="text-xs text-gray-600">{formatLastActive(owner.lastLogin)}</p>
                       </div>
-                      {isOwner && (
+                    </div>
+                  </div>
+                )}
+
+                {nonOwnerMembers.map((member) => (
+                  <div key={member.id} className="border rounded-none p-4 bg-white shadow-sm border-l-4 border-l-blue-400">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-none bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                        {(member.email || member.username || 'A')[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm truncate">{member.fullName || member.username}</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-blue-100 text-blue-800 capitalize">{member.role === 'viewer' ? 'Viewer' : 'Assistant'}</span>
+                        </div>
+                        <p className="text-xs text-gray-500 truncate">{member.email}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-xs text-gray-400">Last active</p>
+                          <p className="text-xs text-gray-600">{formatLastActive(member.lastLogin)}</p>
+                        </div>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -923,17 +998,15 @@ function WorkspaceSection() {
                         >
                           <XCircle className="h-4 w-4" />
                         </Button>
-                      )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
 
-              {pendingInvites.map((invite) => (
-                <div key={invite.id} className="border rounded-none p-4 bg-gray-50 shadow-sm border-l-4 border-l-gray-300 border-dashed">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-yellow-100 text-yellow-800">Pending Invite</span>
-                    {isOwner && (
+                {pendingInvites.map((invite) => (
+                  <div key={invite.id} className="border rounded-none p-4 bg-gray-50 shadow-sm border-l-4 border-l-gray-300 border-dashed">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-none text-xs font-medium bg-yellow-100 text-yellow-800">Pending Invite</span>
                       <Button
                         size="sm"
                         variant="outline"
@@ -944,37 +1017,152 @@ function WorkspaceSection() {
                         <X className="h-3 w-3 mr-1" />
                         Cancel
                       </Button>
+                    </div>
+                    <p className="font-medium text-sm truncate">{invite.email}</p>
+                    <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                      <Clock className="h-3 w-3 flex-shrink-0" />
+                      Expires in {getDaysUntilExpiry(invite.expiresAt)} days
+                    </p>
+                  </div>
+                ))}
+
+                {!hasTeam && (
+                  <div className="border rounded-none p-8 bg-gray-50 text-center">
+                    <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                    <p className="font-medium text-gray-700 mb-1">You're working solo.</p>
+                    <p className="text-sm text-gray-500 mb-4">Invite a team member to collaborate on receipts and invoices.</p>
+                    {canInvite ? (
+                      <Button size="sm" onClick={() => setIsInviteOpen(true)} className="gap-1.5">
+                        <UserPlus className="h-4 w-4" />
+                        Invite Member
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => setIsUpgradeOpen(true)} className="gap-1.5">
+                        <Crown className="h-4 w-4" />
+                        Upgrade to add seats
+                      </Button>
                     )}
                   </div>
-                  <p className="font-medium text-sm truncate">{invite.email}</p>
-                  <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                    <Clock className="h-3 w-3 flex-shrink-0" />
-                    Expires in {getDaysUntilExpiry(invite.expiresAt)} days
+                )}
+              </div>
+            </div>
+
+            {/* Privacy notice */}
+            <div className="flex items-start gap-3 border rounded-none p-4 bg-gray-50">
+              <Lock className="h-4 w-4 text-gray-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-gray-500 leading-relaxed">
+                <span className="font-semibold text-gray-600">Data stays private per member.</span>{' '}
+                Each team member's receipts, invoices, reports and tax data are visible only to them. You share a billing account, not financial records.
+              </p>
+            </div>
+
+          </div>
+        ) : (
+          /* ───── MEMBER LAYOUT ───── */
+          <div className="space-y-6">
+
+            {/* Access Status */}
+            <div className="border rounded-none p-5 bg-white shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <ShieldCheck className="h-4 w-4 text-green-500" />
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Access Status</h4>
+              </div>
+              <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-none">
+                <div className="w-10 h-10 bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-green-800">Access included</span>
+                    <Badge className="bg-green-600 text-white text-xs">Active</Badge>
+                  </div>
+                  <p className="text-xs text-green-700 mt-0.5 leading-relaxed">
+                    Your access is included in your company subscription. Billing is managed by your account owner.
                   </p>
                 </div>
-              ))}
-
-              {!hasTeam && (
-                <div className="border rounded-none p-8 bg-gray-50 text-center">
-                  <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                  <p className="font-medium text-gray-700 mb-1">You're working solo.</p>
-                  <p className="text-sm text-gray-500 mb-4">Invite a team member to collaborate on receipts and invoices.</p>
-                  {canInvite ? (
-                    <Button size="sm" onClick={() => setIsInviteOpen(true)} className="gap-1.5">
-                      <UserPlus className="h-4 w-4" />
-                      Invite Member
-                    </Button>
-                  ) : isOwner ? (
-                    <Button size="sm" variant="outline" onClick={() => setIsUpgradeOpen(true)} className="gap-1.5">
-                      <Crown className="h-4 w-4" />
-                      Upgrade to add seats
-                    </Button>
-                  ) : null}
-                </div>
-              )}
+              </div>
             </div>
+
+            {/* Company Details */}
+            <div className="border rounded-none p-5 bg-white shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <Building2 className="h-4 w-4 text-gray-400" />
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Company Details</h4>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Company Name</span>
+                  <p className="text-sm font-medium text-gray-800 mt-0.5">{workspace?.name || 'My Workspace'}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Account Owner</span>
+                  <p className="text-sm font-medium text-gray-800 mt-0.5">{owner?.fullName || owner?.username || '—'}</p>
+                </div>
+                {owner?.email && (
+                  <div className="col-span-2">
+                    <span className="text-xs text-gray-500 uppercase tracking-wide">Owner Contact</span>
+                    <p className="text-sm font-medium text-gray-800 mt-0.5">{owner.email}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Contact the owner for billing or access queries.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Your Private Data */}
+            <div className="border rounded-none p-5 bg-white shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <Lock className="h-4 w-4 text-gray-400" />
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Your Private Data</h4>
+              </div>
+              <div className="flex items-start gap-2.5 p-3.5 bg-blue-50 border border-blue-100 rounded-none mb-4">
+                <Lock className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-800 leading-relaxed">
+                  <span className="font-semibold">Your receipts, invoices, reports and tax data remain private.</span>{' '}
+                  Sharing a billing account does not give others access to your financial records.
+                </p>
+              </div>
+              <div className="space-y-3.5">
+                {[
+                  { Icon: Receipt, label: 'Receipts', desc: 'Only you can see your receipts and scanned documents.' },
+                  { Icon: FileText, label: 'Invoices & Quotes', desc: 'Your clients and billing history are visible only to you.' },
+                  { Icon: BarChart2, label: 'Reports & Tax Data', desc: 'Your expense reports and tax summaries are private to your account.' },
+                ].map(({ Icon, label, desc }) => (
+                  <div key={label} className="flex items-start gap-3">
+                    <div className="w-7 h-7 bg-green-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Icon className="h-3.5 w-3.5 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{label}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Billing & Admin */}
+            <div className="border rounded-none p-5 bg-white shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <CreditCard className="h-4 w-4 text-gray-400" />
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Billing & Admin</h4>
+              </div>
+              <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+                Billing and team management are handled by the account owner. Contact {owner?.fullName || owner?.username || 'your owner'} for plan changes or billing questions.
+              </p>
+              <div className="space-y-2">
+                {['Upgrade or change the plan', 'Cancel the subscription', 'Invite or remove team members'].map((item) => (
+                  <div key={item} className="flex items-center gap-2 text-xs text-gray-400">
+                    <div className="w-4 h-4 border border-gray-200 bg-gray-50 flex items-center justify-center flex-shrink-0">
+                      <div className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                    </div>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+
           </div>
-        </div>
+        )}
       </ContentCard>
 
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>

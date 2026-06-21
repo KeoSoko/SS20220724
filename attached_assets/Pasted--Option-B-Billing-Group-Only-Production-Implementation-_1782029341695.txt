@@ -1,0 +1,217 @@
+# Option B (Billing Group Only) – Production Implementation Plan
+
+We have made the product decision.
+
+Workspaces will become:
+
+BILLING GROUPS
+
+and not
+
+SHARED DATA CONTAINERS.
+
+This is now the target architecture.
+
+DO NOT WRITE CODE.
+
+DO NOT MODIFY DATABASES.
+
+DO NOT CREATE MIGRATIONS.
+
+This is a planning exercise only.
+
+---
+
+## Objective
+
+Create the final production implementation plan for migrating from:
+
+Current:
+
+* One workspace
+* Shared receipts
+* Shared clients
+* Shared invoices
+* Shared reports
+
+To:
+
+Target:
+
+* One company bill
+* Multiple users
+* Private receipts
+* Private clients
+* Private invoices
+* Private reports
+* Subscription inheritance retained
+* Team plans retained
+* Seat counting retained
+* Invite system retained
+
+---
+
+## Include the following confirmed findings
+
+Migration Plan Findings:
+
+* Receipts already have userId and workspaceId
+* Clients already have userId and workspaceId
+* Quotations already have userId and workspaceId
+* Invoices already have userId and workspaceId
+* Email documents already have userId and workspaceId
+* Merchant rules are the only affected table requiring a new userId column
+
+Residual Gap Findings:
+
+1. Tax Service workspace queries
+2. Weekly analytics workspace query
+3. Top-items analytics workspace query
+4. Email document viewer/download ownership checks
+5. Category rename cascade
+6. Merchant rule lookup call site
+7. Merchant rule write call site
+
+These must be incorporated into the plan.
+
+---
+
+## Required Output
+
+### Phase 0 – Pre-deployment validation
+
+List:
+
+* data checks
+* workspace checks
+* billing checks
+* backup requirements
+
+---
+
+### Phase 1 – Security-first fixes
+
+Prioritize by privacy risk.
+
+Show:
+
+* exact routes/services affected
+* expected outcome
+* rollback strategy
+
+Focus on:
+
+* tax reports
+* email document access
+* cross-user exposure risks
+
+---
+
+### Phase 2 – Core data isolation
+
+Receipts
+
+Show:
+
+* affected methods
+* affected routes
+* testing requirements
+* rollout strategy
+
+---
+
+### Phase 3 – Business Hub isolation
+
+Clients
+Quotations
+Invoices
+
+Show:
+
+* affected services
+* numbering implications
+* testing requirements
+
+---
+
+### Phase 4 – Merchant learning isolation
+
+Merchant rules
+AI categorization
+
+Show:
+
+* schema requirements
+* migration requirements
+* validation requirements
+
+---
+
+### Phase 5 – Analytics isolation
+
+Weekly dashboard
+Top-items widget
+Reports
+
+Show:
+
+* affected queries
+* testing requirements
+
+---
+
+### Phase 6 – Production rollout
+
+Recommend:
+
+* feature flag strategy
+* deployment order
+* monitoring
+* rollback procedure
+
+---
+
+## Testing Matrix
+
+Create a full testing matrix covering:
+
+User A
+User B
+
+Same billing group
+
+Verify:
+
+* receipts isolated
+* clients isolated
+* invoices isolated
+* reports isolated
+* exports isolated
+* tax reports isolated
+* email documents isolated
+* merchant rules isolated
+
+while confirming:
+
+* billing remains shared
+* team plans remain shared
+* subscription inheritance remains shared
+* seat limits remain shared
+
+---
+
+## Final Recommendation
+
+Provide:
+
+1. safest deployment sequence
+2. estimated effort per phase
+3. total implementation effort
+4. highest-risk area
+5. go/no-go recommendation
+
+No implementation.
+
+No code.
+
+Final production migration plan only.

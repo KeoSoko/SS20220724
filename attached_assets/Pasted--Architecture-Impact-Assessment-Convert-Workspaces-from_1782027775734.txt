@@ -1,0 +1,205 @@
+# Architecture Impact Assessment – Convert Workspaces from Shared Data to Billing Groups Only
+
+We have discovered a potential product requirement mismatch.
+
+Current implementation:
+
+Workspace = Shared Data Container
+
+Meaning:
+
+* Workspace members share receipts
+* Workspace members share clients
+* Workspace members share invoices
+* Workspace members share quotations
+* Workspace members share reports
+* Workspace members share categories and learning rules (where applicable)
+
+However, customer feedback indicates the actual requirement is:
+
+Workspace = Billing Group
+
+Meaning:
+
+* One company pays for multiple users
+* Each user retains their own private account and private data
+* No receipt sharing
+* No client sharing
+* No invoice sharing
+* No report sharing
+* Billing only is centralized
+
+This is a READ-ONLY impact assessment.
+
+DO NOT change code.
+DO NOT modify the database.
+DO NOT create migrations.
+DO NOT implement anything.
+
+---
+
+## Objective
+
+Determine how difficult it would be to convert the current workspace architecture from:
+
+Shared Data
+
+to
+
+Centralized Billing + Private User Data
+
+---
+
+## Part 1 – Current Workspace Dependencies
+
+For each major feature, identify whether ownership is currently based on:
+
+* workspaceId
+* userId
+* both
+
+Features:
+
+* Receipts
+* Clients
+* Invoices
+* Quotations
+* Categories
+* Merchant Rules
+* Dashboard Analytics
+* Reports
+* Exports
+* Tax Reports
+* Budgets
+* Recurring Expenses
+* Smart Reminders
+* AI Categorization
+* AI Email Assistant
+* Subscription Access
+
+Produce a table:
+
+| Feature | Current Ownership Boundary | Notes |
+
+---
+
+## Part 2 – What Breaks?
+
+If we stop sharing data inside workspaces tomorrow:
+
+For each feature above:
+
+Classify:
+
+* No change required
+* Small change
+* Medium change
+* Major redesign
+
+Explain why.
+
+---
+
+## Part 3 – Billing Group Model
+
+Assume this future model:
+
+Company ABC
+
+Billing Owner
+├── User A
+├── User B
+├── User C
+└── User D
+
+Rules:
+
+* Billing owner pays for seats
+* Users inherit subscription entitlement
+* Users do NOT inherit data access
+* Users keep private receipts
+* Users keep private invoices
+* Users keep private reports
+* Users keep private exports
+
+Assess:
+
+Can the existing Team Plans, seat counting, seat limits, and company billing remain in place?
+
+Or do they depend on shared data?
+
+---
+
+## Part 4 – Workspace Inheritance Impact
+
+Current Task #5 implementation:
+
+getEffectiveSubscriptionStatus()
+
+Determine:
+
+Can subscription inheritance continue to work unchanged if workspaces become billing groups only?
+
+Or does it require modification?
+
+---
+
+## Part 5 – Migration Impact
+
+For existing users:
+
+What would happen to:
+
+* Existing workspaces
+* Existing shared receipts
+* Existing clients
+* Existing invoices
+* Existing members
+
+Would any data migration be required?
+
+Or can behavior simply be changed going forward?
+
+---
+
+## Part 6 – Recommended Architecture
+
+Based on the current codebase, recommend one of:
+
+Option A
+Keep shared workspaces as implemented.
+
+Option B
+Convert workspaces into billing groups only.
+
+Option C
+Support both:
+
+* Shared Workspace
+* Billing Group
+
+For each option provide:
+
+* Complexity
+* Development effort
+* Business impact
+* Risk
+
+---
+
+## Final Question
+
+If our customers only want:
+
+"One company bill for multiple users"
+
+and NOT shared company data,
+
+what is the safest and simplest path forward from the current implementation?
+
+Provide a recommendation before any code changes are made.
+
+READ ONLY.
+NO IMPLEMENTATION.
+NO DATABASE CHANGES.
+ARCHITECTURE REVIEW ONLY.

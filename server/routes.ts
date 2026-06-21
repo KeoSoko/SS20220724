@@ -2535,7 +2535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const user = req.user as any;
-      if (doc.workspaceId !== user.workspaceId) {
+      if (doc.userId !== user.id) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -2593,7 +2593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const user = req.user as any;
-      if (doc.workspaceId !== user.workspaceId) {
+      if (doc.userId !== user.id) {
         return res.status(403).send("<html><body><p>Access denied.</p></body></html>");
       }
 

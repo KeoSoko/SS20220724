@@ -1,0 +1,132 @@
+Phase 1 Implementation Only – Security Fixes
+
+We have approved the Billing Group Only architecture.
+
+DO NOT start receipt isolation.
+
+DO NOT start Business Hub isolation.
+
+DO NOT start merchant-rule migration.
+
+DO NOT start analytics isolation.
+
+DO NOT implement Phases 2–5.
+
+Implement Phase 1 only from the approved implementation plan.
+
+Objective
+
+Fix the two confirmed privacy risks while making the smallest possible production change.
+
+These fixes are independent of the wider Billing Group migration and should be deployed first.
+
+Task 1A – Tax Report Isolation
+
+File:
+server/tax-service.ts
+
+Affected methods:
+
+getTaxDashboard(userId)
+generateTaxReport(userId, year)
+getTaxYearReceipts(userId, year)
+
+Current behaviour:
+
+Resolves workspaceId from userId
+Queries receipts using workspace_id
+
+Required behaviour:
+
+Query receipts using user_id directly
+Remove dependency on workspace ownership for tax data
+
+Expected outcome:
+
+User A tax reports contain only User A receipts.
+
+User B receipts never appear in User A tax outputs.
+
+Task 1B – Email Document Isolation
+
+File:
+server/routes.ts
+
+Affected endpoints:
+
+GET /api/email-documents/:id/download
+GET /api/email-documents/:id/view
+
+Current behaviour:
+
+if (doc.workspaceId !== user.workspaceId)
+
+Required behaviour:
+
+if (doc.userId !== user.id)
+
+Expected outcome:
+
+Users can only view or download their own email documents.
+
+Members of the same billing group cannot access each other's email receipts or raw HTML emails.
+
+Automated Tests Required
+
+Create automated tests covering:
+
+Tax Reports
+
+Test:
+
+User A and User B in same workspace
+Each has unique receipts
+
+Verify:
+
+User A tax report contains only User A receipts
+User B tax report contains only User B receipts
+Email Documents
+
+Test:
+
+User A owns email document
+User B attempts view
+User B attempts download
+
+Verify:
+
+Both return 403
+Regression Tests
+
+Verify existing functionality still works:
+
+User can view own email documents
+User can download own email documents
+Tax reports still generate successfully
+Deliverables
+
+Provide:
+
+Exact files changed
+Routes changed
+Methods changed
+Tests added
+Test results
+TypeScript validation result (npx tsc --noEmit)
+Any unexpected findings
+Stop Condition
+
+After Phase 1 is complete:
+
+STOP.
+
+Do not continue into:
+
+Receipt isolation
+Client isolation
+Invoice isolation
+Analytics isolation
+Merchant-rule migration
+
+Wait for review and approval before any further implementation.

@@ -2,7 +2,7 @@ import { storage } from "./storage";
 import { Receipt } from "../shared/schema";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 import { db } from "./db";
-import { receipts, users } from "../shared/schema";
+import { receipts } from "../shared/schema";
 
 interface RecurringPattern {
   storeName: string;
@@ -50,21 +50,16 @@ export class RecurringExpenseService {
    */
   async analyzeRecurringPattern(userId: number, newReceipt: Receipt): Promise<RecurringExpenseMatch> {
     try {
-      // Get user's workspace ID
-      const [userRecord] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
-      if (!userRecord) throw new Error(`User ${userId} not found`);
-      const workspaceId = userRecord.workspaceId;
-      
       // Get user's historical receipts (last 12 months)
       const twelveMonthsAgo = new Date();
       twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
       
-      // Get historical receipts from database
+      // Get historical receipts from database — scoped to this user only
       const historicalReceipts: Receipt[] = await db.select()
         .from(receipts)
         .where(
           and(
-            eq(receipts.workspaceId, workspaceId),
+            eq(receipts.userId, userId),
             gte(receipts.date, twelveMonthsAgo)
           )
         )
@@ -254,15 +249,10 @@ export class RecurringExpenseService {
    */
   async getUserRecurringPatterns(userId: number): Promise<RecurringPattern[]> {
     try {
-      // Get user's workspace ID
-      const [userRecord] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, userId)).limit(1);
-      if (!userRecord) throw new Error(`User ${userId} not found`);
-      const workspaceId = userRecord.workspaceId;
-      
-      // Get all user receipts from database
+      // Get all receipts from database — scoped to this user only
       const userReceipts: Receipt[] = await db.select()
         .from(receipts)
-        .where(eq(receipts.workspaceId, workspaceId))
+        .where(eq(receipts.userId, userId))
         .orderBy(sql`${receipts.date} DESC`);
 
       // Group receipts by normalized store name

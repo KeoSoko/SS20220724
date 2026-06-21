@@ -764,7 +764,7 @@ function WorkspaceSection() {
       setIsRemoveOpen(false);
       setRemoveTarget(null);
       setRemoveConfirmText('');
-      toast({ title: "Assistant removed", description: "The team member has been removed from your workspace." });
+      toast({ title: "Member removed", description: "The team member has been removed from your workspace." });
     },
     onError: (error: any) => {
       toast({ title: "Remove failed", description: error.message, variant: "destructive" });
@@ -1170,10 +1170,10 @@ function WorkspaceSection() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="h-5 w-5 text-blue-600" />
-              Invite Assistant
+              Invite Team Member
             </DialogTitle>
             <DialogDescription>
-              Your assistant will have full access to receipts, invoices and clients, but cannot manage billing or account settings.
+              Your team member will have full access to receipts, invoices and clients, but cannot manage billing or account settings.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -1182,7 +1182,7 @@ function WorkspaceSection() {
               <Input
                 id="invite-email"
                 type="email"
-                placeholder="assistant@example.com"
+                placeholder="member@example.com"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 data-testid="input-invite-email"
@@ -1215,7 +1215,7 @@ function WorkspaceSection() {
       <Dialog open={isRemoveOpen} onOpenChange={(open) => { setIsRemoveOpen(open); if (!open) { setRemoveConfirmText(''); setRemoveTarget(null); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-red-600">Remove Assistant</DialogTitle>
+            <DialogTitle className="text-red-600">Remove Member</DialogTitle>
             <DialogDescription>
               This will remove <span className="font-medium">{removeTarget?.fullName || removeTarget?.email}</span> from your workspace. They will lose access to all shared data.
             </DialogDescription>
@@ -1239,7 +1239,7 @@ function WorkspaceSection() {
               disabled={removeConfirmText !== 'REMOVE' || removeMemberMutation.isPending}
               data-testid="button-confirm-remove"
             >
-              {removeMemberMutation.isPending ? 'Removing...' : 'Remove Assistant'}
+              {removeMemberMutation.isPending ? 'Removing...' : 'Remove Member'}
             </Button>
           </DialogFooter>
         </DialogContent>

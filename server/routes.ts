@@ -66,6 +66,7 @@ import { registerAdminRoutes } from "./admin-routes";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus, getEffectiveSubscriptionStatus } from "./subscription-middleware";
 import { getWorkspaceSeatInfo } from "./workspace-seats";
 import { log } from "./vite";
+import { generateUserManual } from "./user-manual";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
 import { normalizeMerchantName } from "./utils/merchant-normalizer";
@@ -7968,6 +7969,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ===== END WORKSPACE ENDPOINTS =====
+
+  // ===== USER MANUAL =====
+  // No authentication required — publicly accessible PDF download
+  app.get("/api/user-manual", (req, res) => {
+    try {
+      generateUserManual(res);
+    } catch (error: any) {
+      log(`Error generating user manual: ${error.message}`, "manual");
+      res.status(500).json({ error: "Failed to generate user manual" });
+    }
+  });
 
   // 404 handler for undefined API routes - must be last
   app.use('/api/*', (req, res) => {

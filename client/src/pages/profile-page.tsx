@@ -1999,6 +1999,26 @@ export default function ProfilePage() {
                 <ChevronRight className="h-4 w-4" />
               </Button>
               
+              <Button
+                variant="outline"
+                className="w-full justify-between p-4 h-auto"
+                onClick={() => {
+                  const a = document.createElement("a");
+                  a.href = "/api/user-manual";
+                  a.download = "Simple-Slips-User-Manual.pdf";
+                  a.click();
+                }}
+              >
+                <div className="flex items-start gap-3 flex-1">
+                  <FileText className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-left flex-1 min-w-0">
+                    <p className="font-medium">Download User Manual</p>
+                    <p className="text-sm text-gray-600 break-words whitespace-normal">Complete guide to all Simple Slips features (PDF)</p>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+
               <ContactSupportDialog />
             </div>
           </ContentCard>

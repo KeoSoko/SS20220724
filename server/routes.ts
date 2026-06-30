@@ -70,7 +70,7 @@ import { generateUserManual } from "./user-manual";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
 import { normalizeMerchantName } from "./utils/merchant-normalizer";
-import { and, asc, desc, eq, gte, lt, lte, ne, or, sql, isNull, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, lte, ne, or, sql, isNull, isNotNull } from "drizzle-orm";
 import multer from "multer";
 import { scrypt, timingSafeEqual, randomBytes } from 'crypto';
 import { promisify } from 'util';
@@ -7732,50 +7732,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      if (user.workspaceId !== invite.workspaceId) {
-        const [currentOwnership] = await db
-          .select({ id: workspaces.id })
-          .from(workspaces)
-          .where(
-            and(
-              eq(workspaces.id, user.workspaceId),
-              eq(workspaces.ownerId, userId)
-            )
-          )
-          .limit(1);
-
-        if (currentOwnership) {
-          const otherMembers = await db
-            .select({ id: workspaceMembers.id })
-            .from(workspaceMembers)
-            .where(
-              and(
-                eq(workspaceMembers.workspaceId, user.workspaceId),
-                ne(workspaceMembers.userId, userId)
-              )
-            )
-            .limit(1);
-
-          if (otherMembers.length > 0) {
-            return res.status(400).json({ error: "You have other team members in your workspace. Please transfer ownership or remove them before joining another workspace." });
-          }
-        }
-      }
-
-      const oldWorkspaceId = user.workspaceId;
-
+      // Each user keeps their own workspace and data. Accepting an invite only adds
+      // a workspace_members record for billing inheritance — it does NOT move the
+      // user's workspaceId or touch their existing workspace/data.
       await db.transaction(async (tx) => {
-        if (oldWorkspaceId !== invite.workspaceId) {
-          await tx
-            .delete(workspaceMembers)
-            .where(
-              and(
-                eq(workspaceMembers.workspaceId, oldWorkspaceId),
-                eq(workspaceMembers.userId, userId)
-              )
-            );
-        }
-
         await tx.insert(workspaceMembers).values({
           workspaceId: invite.workspaceId,
           userId,
@@ -7784,21 +7744,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         await tx
-          .update(users)
-          .set({ workspaceId: invite.workspaceId })
-          .where(eq(users.id, userId));
-
-        await tx
           .update(workspaceInvites)
           .set({ acceptedAt: new Date() })
           .where(eq(workspaceInvites.id, invite.id));
       });
 
-      // Note: the invitee's subscription is intentionally NOT cancelled here.
-      // Access now inherits from the workspace owner (see getEffectiveSubscriptionStatus),
-      // so cancelling the invitee's own subscription would needlessly lock them out.
-
-      log(`User ${userId} accepted workspace invite → workspace ${invite.workspaceId} as ${invite.role} (old workspace: ${oldWorkspaceId})`, "workspace");
+      log(`User ${userId} accepted workspace invite → billing workspace ${invite.workspaceId} as ${invite.role} (own workspace: ${user.workspaceId} unchanged)`, "workspace");
       res.json({ success: true, workspaceId: invite.workspaceId, role: invite.role });
     } catch (error: any) {
       log(`Error accepting workspace invite: ${error.message}`, "workspace");
@@ -7843,6 +7794,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await storage.getUser(userId);
       if (!user) return res.status(401).json({ error: "User not found" });
 
+      // If the user is a member (editor/viewer) of a billing workspace, show that
+      // workspace in the profile so they see the "Member" view. Otherwise show their own.
+      const [billingMembership] = await db
+        .select({ workspaceId: workspaceMembers.workspaceId, role: workspaceMembers.role })
+        .from(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.userId, userId),
+            inArray(workspaceMembers.role, ['editor', 'viewer'])
+          )
+        )
+        .limit(1);
+
+      const targetWorkspaceId = billingMembership ? billingMembership.workspaceId : user.workspaceId;
+
       const [workspace] = await db
         .select({
           id: workspaces.id,
@@ -7851,7 +7817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           createdAt: workspaces.createdAt,
         })
         .from(workspaces)
-        .where(eq(workspaces.id, user.workspaceId))
+        .where(eq(workspaces.id, targetWorkspaceId))
         .limit(1);
 
       if (!workspace) return res.status(404).json({ error: "Workspace not found" });

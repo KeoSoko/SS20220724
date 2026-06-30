@@ -1,5 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
 import { storage } from './storage';
+import { db } from './db';
+import { workspaceMembers } from '../shared/schema';
+import { eq, and, inArray } from 'drizzle-orm';
 
 export interface SubscriptionStatus {
   hasActiveSubscription: boolean;
@@ -143,38 +146,35 @@ const NO_ACCESS_STATUS: SubscriptionStatus = {
  */
 export async function getEffectiveSubscriptionStatus(userId: number): Promise<SubscriptionStatus> {
   try {
-    const user = await storage.getUser(userId);
-    if (!user) {
-      console.error(`[CRITICAL_WORKSPACE_OWNER_MISSING] ${JSON.stringify({ userId, ownerId: null, reason: 'user_not_found' })}`);
-      return { ...NO_ACCESS_STATUS };
+    // Check if this user is a member (editor/viewer) of another user's billing workspace.
+    // Each user keeps their own workspace for data; billing is inherited via workspace_members.
+    const [billingMembership] = await db
+      .select({ workspaceId: workspaceMembers.workspaceId, role: workspaceMembers.role })
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.userId, userId),
+          inArray(workspaceMembers.role, ['editor', 'viewer'])
+        )
+      )
+      .limit(1);
+
+    if (billingMembership && storage.getWorkspaceById) {
+      const billingWorkspace = await storage.getWorkspaceById(billingMembership.workspaceId);
+      if (billingWorkspace) {
+        const owner = await storage.getUser(billingWorkspace.ownerId);
+        if (!owner) {
+          console.error(`[CRITICAL_WORKSPACE_OWNER_MISSING] ${JSON.stringify({ workspaceId: billingWorkspace.id, userId, ownerId: billingWorkspace.ownerId, reason: 'owner_user_not_found' })}`);
+          return { ...NO_ACCESS_STATUS };
+        }
+        const ownerStatus = await getSubscriptionStatus(billingWorkspace.ownerId);
+        console.log(`[WORKSPACE_INHERITANCE] ${JSON.stringify({ workspaceId: billingWorkspace.id, memberId: userId, ownerId: billingWorkspace.ownerId, subscriptionType: ownerStatus.subscriptionType, hasActiveSubscription: ownerStatus.hasActiveSubscription })}`);
+        return ownerStatus;
+      }
     }
 
-    if (!storage.getWorkspaceById) {
-      console.error(`[CRITICAL_WORKSPACE_OWNER_MISSING] ${JSON.stringify({ workspaceId: user.workspaceId, userId, ownerId: null, reason: 'workspace_lookup_unavailable' })}`);
-      return { ...NO_ACCESS_STATUS };
-    }
-
-    const workspace = await storage.getWorkspaceById(user.workspaceId);
-    if (!workspace) {
-      console.error(`[CRITICAL_WORKSPACE_OWNER_MISSING] ${JSON.stringify({ workspaceId: user.workspaceId, userId, ownerId: null, reason: 'workspace_not_found' })}`);
-      return { ...NO_ACCESS_STATUS };
-    }
-
-    // Owner: own subscription is authoritative.
-    if (workspace.ownerId === userId) {
-      return getSubscriptionStatus(userId);
-    }
-
-    // Member: inherit the owner's status, but fail closed if the owner record is gone.
-    const owner = await storage.getUser(workspace.ownerId);
-    if (!owner) {
-      console.error(`[CRITICAL_WORKSPACE_OWNER_MISSING] ${JSON.stringify({ workspaceId: workspace.id, userId, ownerId: workspace.ownerId, reason: 'owner_user_not_found' })}`);
-      return { ...NO_ACCESS_STATUS };
-    }
-
-    const ownerStatus = await getSubscriptionStatus(workspace.ownerId);
-    console.log(`[WORKSPACE_INHERITANCE] ${JSON.stringify({ workspaceId: workspace.id, memberId: userId, ownerId: workspace.ownerId, subscriptionType: ownerStatus.subscriptionType, hasActiveSubscription: ownerStatus.hasActiveSubscription })}`);
-    return ownerStatus;
+    // No billing workspace membership — user is independent, use their own subscription.
+    return getSubscriptionStatus(userId);
   } catch (error) {
     console.error(`[getEffectiveSubscriptionStatus] Error resolving effective status for user ${userId}:`, error);
     return { ...NO_ACCESS_STATUS };

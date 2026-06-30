@@ -1,0 +1,192 @@
+# Company Accounts – Final Production Validation
+
+This is a validation task only.
+
+Do not redesign the architecture.
+Do not add new features.
+Do not refactor unless a defect is found.
+
+The recent fixes fundamentally changed Company Accounts:
+
+* Personal Workspace owns all user data.
+* Company Account owns billing.
+* workspace_members links users to the billing workspace.
+* Accepting an invite must NEVER move a user's data.
+* user.workspaceId now represents the user's own workspace only.
+* Billing inheritance is determined through workspace_members.
+
+## Objective
+
+Perform a complete end-to-end audit to prove this architecture is correct.
+
+---
+
+## Validate these scenarios
+
+### Scenario 1 – Existing user joins a Company Account
+
+Create or simulate:
+
+Owner
+
+* Own workspace
+* Active Team subscription
+
+Member
+
+* Existing account
+* Existing receipts
+* Existing invoices
+* Existing clients
+
+Accept invitation.
+
+Verify:
+
+✓ user.workspaceId is unchanged
+
+✓ workspace_members row created
+
+✓ Member keeps all receipts
+
+✓ Member keeps all invoices
+
+✓ Member keeps all clients
+
+✓ Member keeps all quotations
+
+✓ Member keeps tax reports
+
+✓ Member inherits billing correctly
+
+✓ Company Account page displays correctly
+
+---
+
+### Scenario 2 – New user joins Company Account
+
+Invite a brand-new account.
+
+Verify:
+
+✓ Personal workspace created
+
+✓ Billing membership created
+
+✓ Access inherited
+
+✓ No data migration occurs
+
+---
+
+### Scenario 3 – Remove member
+
+Remove member from Company Account.
+
+Verify:
+
+✓ workspace_members removed
+
+✓ Personal workspace remains
+
+✓ Receipts remain
+
+✓ Clients remain
+
+✓ Invoices remain
+
+✓ Billing access removed
+
+---
+
+### Scenario 4 – Owner subscription changes
+
+Verify:
+
+Owner active
+→ Members active
+
+Owner expired
+→ Members expired
+
+Owner renews
+→ Members regain access
+
+---
+
+### Scenario 5 – Privacy audit
+
+Confirm members CANNOT access another member's:
+
+* receipts
+* receipt images
+* invoices
+* quotations
+* clients
+* tax reports
+* analytics
+* recurring expenses
+* email documents
+
+Confirm merchant_category_rules remain intentionally shared.
+
+---
+
+### Scenario 6 – Company Account UI
+
+Verify:
+
+Owner sees:
+
+* Billing Information
+* Seat usage
+* Invite members
+* Upgrade plan
+
+Member sees:
+
+* Company information
+* Access included
+* Private data notice
+
+Member cannot:
+
+* Upgrade
+* Cancel billing
+* Manage company billing
+
+---
+
+### Scenario 7 – Database integrity
+
+Verify:
+
+user.workspaceId always points to the user's own workspace.
+
+workspace_members contains billing relationships only.
+
+No route changes user.workspaceId during invitation acceptance.
+
+No route migrates receipts, invoices, quotations or clients between workspaces.
+
+---
+
+## Deliverable
+
+Provide:
+
+1. Pass / Fail for every scenario.
+
+2. Any remaining architectural concerns.
+
+3. Any production risks.
+
+4. Recommendation:
+
+GO
+
+or
+
+NO GO
+
+No implementation unless an actual defect is discovered.

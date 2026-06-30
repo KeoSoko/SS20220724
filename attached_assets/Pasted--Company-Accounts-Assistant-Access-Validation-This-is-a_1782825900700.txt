@@ -1,0 +1,163 @@
+# Company Accounts × Assistant Access Validation
+
+This is a READ-ONLY validation task.
+
+Do NOT modify any code.
+Do NOT modify any database records.
+Do NOT redesign the assistant model.
+
+Objective:
+Validate that the new Company Accounts architecture does not interfere with Assistant relationships.
+
+Background
+
+Company Accounts now work as follows:
+
+- Personal Workspace owns all user data.
+- Company Account owns billing only.
+- workspace_members provides billing membership.
+- user.workspaceId always points to the user's own workspace.
+
+Assistant access is a completely separate concept and must remain independent of billing.
+
+We need to prove these two systems are fully decoupled.
+
+--------------------------------------------------
+
+TASK 1 – Discover Assistant Architecture
+
+Identify:
+
+- Where assistant relationships are stored.
+- Which tables are involved.
+- Which routes manage assistants.
+- Which middleware authorises assistant access.
+- Whether assistants rely on:
+    - user.workspaceId
+    - workspace_members
+    - subscription inheritance
+    - or their own relationship model.
+
+Provide a short architecture summary.
+
+--------------------------------------------------
+
+TASK 2 – Interaction Audit
+
+Determine whether joining a Company Account changes:
+
+- assistant relationships
+- assistant permissions
+- delegated access
+- assistant invitations
+- assistant removal
+
+Confirm whether any Company Account code path touches assistant records.
+
+--------------------------------------------------
+
+TASK 3 – End-to-End Validation
+
+Validate these scenarios.
+
+Scenario A
+
+Alice owns her own account.
+
+Alice is an assistant for Bob.
+
+Alice joins Company X as an employee.
+
+Verify:
+
+✓ Alice still assists Bob.
+✓ Alice keeps her own data.
+✓ Company X pays Alice's subscription.
+✓ Nothing about Bob changes.
+
+--------------------------------------------------
+
+Scenario B
+
+Alice leaves Company X.
+
+Verify:
+
+✓ Billing membership removed.
+✓ Assistant relationship still exists.
+✓ Own workspace unchanged.
+
+--------------------------------------------------
+
+Scenario C
+
+Alice is an assistant for multiple clients.
+
+Alice joins a Company Account.
+
+Verify:
+
+✓ All assistant relationships remain.
+✓ No permissions change.
+✓ No data migration.
+
+--------------------------------------------------
+
+Scenario D
+
+Alice is removed as an assistant.
+
+Verify:
+
+✓ Company billing unaffected.
+✓ Personal workspace unaffected.
+
+--------------------------------------------------
+
+Scenario E
+
+Company owner subscription expires.
+
+Verify:
+
+✓ Alice loses Company billing access.
+✓ Assistant relationships still exist.
+✓ No assistant records are deleted.
+
+--------------------------------------------------
+
+TASK 4 – Search for Hidden Dependencies
+
+Search for any assistant code referencing:
+
+- workspaceId
+- workspace_members
+- getEffectiveSubscriptionStatus()
+- requireWorkspaceRole()
+- Company Account routes
+
+Identify any hidden coupling.
+
+--------------------------------------------------
+
+DELIVERABLE
+
+Provide:
+
+1. Assistant architecture summary.
+
+2. PASS / FAIL for each scenario.
+
+3. Any architectural concerns.
+
+4. Recommendation:
+
+✅ Assistant model is fully independent of Company Accounts
+
+OR
+
+❌ Assistant model requires changes before production.
+
+This is a validation only.
+
+Do not implement anything unless an actual defect is found.

@@ -1,0 +1,177 @@
+# Company Accounts – Legacy Data Repair & Final Production Validation
+
+This is a controlled production repair.
+
+The architecture is now correct.
+
+The remaining issues are legacy data created before the Company Accounts redesign.
+
+DO NOT redesign the architecture.
+DO NOT change the billing model.
+DO NOT introduce new features.
+
+Our goal is to repair legacy data so every user conforms to the new model.
+
+====================================================
+BACKGROUND
+====================================================
+
+The correct architecture is:
+
+Personal Workspace
+- owns all user data
+- receipts
+- invoices
+- quotations
+- clients
+- tax reports
+
+Company Account
+- owns billing
+- subscription
+- seats
+
+workspace_members
+- links a personal workspace to a company billing workspace
+- NEVER owns data
+
+Invariant:
+
+user.workspaceId MUST ALWAYS equal the user's OWN workspace.
+
+Joining a Company Account MUST NEVER change user.workspaceId.
+
+====================================================
+TASK 1 – Repair Legacy Users
+====================================================
+
+Repair ONLY the affected users identified in the audit.
+
+For each user:
+
+1. Determine the workspace they actually own.
+
+2. Restore user.workspaceId to that workspace.
+
+3. Verify the owned workspace exists.
+
+4. Verify receipts remain attached.
+
+5. Verify invoices remain attached.
+
+6. Verify quotations remain attached.
+
+7. Verify clients remain attached.
+
+8. Verify tax data remains attached.
+
+9. Verify workspace_members billing membership exists if the user belongs to a Company Account.
+
+If missing:
+
+Create the correct workspace_members row.
+
+DO NOT duplicate memberships.
+
+DO NOT create duplicate workspaces.
+
+DO NOT move any data.
+
+====================================================
+TASK 2 – Build Integrity Validator
+====================================================
+
+Create a reusable validation routine that checks:
+
+✓ every user.workspaceId points to a workspace they own
+
+✓ every workspace owner owns exactly one workspace
+
+✓ workspace_members contain billing relationships only
+
+✓ no orphan memberships
+
+✓ no duplicate memberships
+
+✓ no users referencing another person's workspace
+
+✓ no workspace without an owner
+
+Return PASS / FAIL with a detailed report.
+
+This validator should be reusable before future deployments.
+
+====================================================
+TASK 3 – Production Audit
+====================================================
+
+Re-run the complete Company Accounts validation.
+
+Validate:
+
+Scenario 1
+Existing user joins Company Account
+
+Scenario 2
+New user joins Company Account
+
+Scenario 3
+Remove member
+
+Scenario 4
+Subscription inheritance
+
+Scenario 5
+Privacy isolation
+
+Scenario 6
+Company Account UI
+
+Scenario 7
+Database integrity
+
+====================================================
+SUCCESS CRITERIA
+====================================================
+
+There must be:
+
+0 users pointing to another user's workspace
+
+0 privacy leaks
+
+0 broken memberships
+
+0 duplicate memberships
+
+0 orphan workspaces
+
+0 orphan memberships
+
+100% passing validation.
+
+====================================================
+OUTPUT
+====================================================
+
+Provide:
+
+1. Every repaired user
+
+2. What changed
+
+3. Validator results
+
+4. Final audit
+
+5. Final recommendation:
+
+✅ GO
+
+or
+
+❌ NO GO
+
+Do not stop after repairing the data.
+
+Only finish once the validator and production audit both return PASS.

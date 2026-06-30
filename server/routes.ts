@@ -61,6 +61,7 @@ import { billingService } from "./billing-service";
 import { resolveUserForReconciliation } from "./reconcile-user-resolver";
 import { smartReminderService } from "./smart-reminder-service";
 import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategorization } from "./receipt-flow-utils";
+import { runWorkspaceIntegrityValidator } from "./workspace-integrity-validator";
 import { profitLossService } from "./profit-loss-service";
 import { registerAdminRoutes } from "./admin-routes";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus, getEffectiveSubscriptionStatus } from "./subscription-middleware";
@@ -4437,6 +4438,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error in /api/admin/subscription-health: ${error.message}`, 'billing');
       res.status(500).json({ error: "Failed to check subscription health" });
+    }
+  });
+
+  app.get("/api/admin/workspace-integrity", async (req, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const report = await runWorkspaceIntegrityValidator();
+      res.json(report);
+    } catch (error: any) {
+      log(`Error in /api/admin/workspace-integrity: ${error.message}`, "workspace");
+      res.status(500).json({ error: "Failed to run workspace integrity validator" });
     }
   });
 

@@ -7959,6 +7959,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===== ONE-TIME PRODUCTION REPAIR: WORKSPACE MEMBERS =====
+  // Fixes users whose workspace_id still points to billing workspace instead of own workspace,
+  // and inserts missing workspace_members rows (owner + editor) for affected users.
+  // Safe to run multiple times (uses ON CONFLICT DO NOTHING + conditional UPDATE).
+  app.post("/api/admin/repair-workspace-members", async (req, res) => {
+    try {
+      if (!req.user || !(req.user as any).isAdmin) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const results: string[] = [];
+
+      // Step 1: Fix workspace_id for users still pointing to wrong workspace
+      const workspaceIdFixes = [
+        { userId: 35, correctWorkspaceId: 144 },   // KayTest
+        { userId: 151, correctWorkspaceId: 93 },   // Test User
+        { userId: 232, correctWorkspaceId: 206 },  // Jackie
+        { userId: 279, correctWorkspaceId: 253 },  // Ilana
+        { userId: 303, correctWorkspaceId: 277 },  // Dian
+        { userId: 350, correctWorkspaceId: 324 },  // Mikalah
+      ];
+
+      for (const fix of workspaceIdFixes) {
+        const updated = await db
+          .update(users)
+          .set({ workspaceId: fix.correctWorkspaceId })
+          .where(and(eq(users.id, fix.userId), ne(users.workspaceId, fix.correctWorkspaceId)))
+          .returning({ id: users.id });
+        if (updated.length > 0) {
+          results.push(`[FIXED] workspace_id for user ${fix.userId} → workspace ${fix.correctWorkspaceId}`);
+        } else {
+          results.push(`[SKIP] workspace_id for user ${fix.userId} already correct`);
+        }
+      }
+
+      // Step 2: Insert owner rows in own workspaces (ON CONFLICT DO NOTHING)
+      const ownerRows = [
+        { workspaceId: 144, userId: 35 },   // KayTest's own workspace
+        { workspaceId: 93, userId: 151 },   // Test User's own workspace
+        { workspaceId: 206, userId: 232 },  // Jackie's own workspace
+        { workspaceId: 253, userId: 279 },  // Ilana's own workspace
+        { workspaceId: 277, userId: 303 },  // Dian's own workspace
+        { workspaceId: 324, userId: 350 },  // Mikalah's own workspace
+      ];
+
+      for (const row of ownerRows) {
+        const inserted = await db
+          .insert(workspaceMembers)
+          .values({ workspaceId: row.workspaceId, userId: row.userId, role: 'owner', invitedByUserId: row.userId })
+          .onConflictDoNothing()
+          .returning({ id: workspaceMembers.id });
+        if (inserted.length > 0) {
+          results.push(`[FIXED] Inserted owner row for user ${row.userId} in workspace ${row.workspaceId}`);
+        } else {
+          results.push(`[SKIP] Owner row already exists for user ${row.userId} in workspace ${row.workspaceId}`);
+        }
+      }
+
+      // Step 3: Insert editor rows for KayTest and Jackie in billing workspaces (if missing)
+      // These users had NO workspace_members rows at all in production
+      const ws148 = await storage.getWorkspaceById!(148);
+      const ws158 = await storage.getWorkspaceById!(158);
+
+      const editorRows = [
+        { workspaceId: 148, userId: 35, invitedByUserId: ws148?.ownerId ?? 35 },
+        { workspaceId: 158, userId: 232, invitedByUserId: ws158?.ownerId ?? 232 },
+      ];
+
+      for (const row of editorRows) {
+        const inserted = await db
+          .insert(workspaceMembers)
+          .values({ workspaceId: row.workspaceId, userId: row.userId, role: 'editor', invitedByUserId: row.invitedByUserId })
+          .onConflictDoNothing()
+          .returning({ id: workspaceMembers.id });
+        if (inserted.length > 0) {
+          results.push(`[FIXED] Inserted editor row for user ${row.userId} in workspace ${row.workspaceId} (inviter: ${row.invitedByUserId})`);
+        } else {
+          results.push(`[SKIP] Editor row already exists for user ${row.userId} in workspace ${row.workspaceId}`);
+        }
+      }
+
+      // Step 4: Insert Fatimah's (360) editor row in Ansfin workspace (333) — the key inheritance fix
+      const fatimahInserted = await db
+        .insert(workspaceMembers)
+        .values({ workspaceId: 333, userId: 360, role: 'editor', invitedByUserId: 359 })
+        .onConflictDoNothing()
+        .returning({ id: workspaceMembers.id });
+      if (fatimahInserted.length > 0) {
+        results.push(`[FIXED] Inserted editor row for Fatimah (360) in Ansfin workspace (333)`);
+      } else {
+        results.push(`[SKIP] Editor row already exists for Fatimah (360) in workspace 333`);
+      }
+
+      log(`Production workspace repair completed: ${results.length} actions`, "admin");
+      res.json({ success: true, results });
+    } catch (error: any) {
+      log(`Production workspace repair error: ${error.message}`, "admin");
+      res.status(500).json({ error: error.message });
+    }
+  });
+  // ===== END ONE-TIME PRODUCTION REPAIR =====
+
   // 404 handler for undefined API routes - must be last
   app.use('/api/*', (req, res) => {
     res.status(404).json({ error: "API endpoint not found" });

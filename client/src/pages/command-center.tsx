@@ -541,6 +541,22 @@ export default function CommandCenter() {
     }
   });
 
+  const repairWorkspaceMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/admin/repair-workspace-members", {});
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Workspace repair complete",
+        description: `${data.results?.length || 0} actions applied to production database.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Repair failed", description: error.message, variant: "destructive" });
+    }
+  });
+
   const handlePreviewEmail = (template: EmailTemplateType) => {
     if (!selectedUserId) return;
     setPreviewTemplate(template);
@@ -684,10 +700,21 @@ export default function CommandCenter() {
           </h1>
           <p className="text-muted-foreground">Operational dashboard for user diagnosis and recovery</p>
         </div>
-        <Button variant="outline" onClick={() => refetchHealth()}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => repairWorkspaceMutation.mutate()}
+            disabled={repairWorkspaceMutation.isPending}
+            className="border-orange-400 text-orange-700 hover:bg-orange-50"
+          >
+            {repairWorkspaceMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}
+            Repair Workspace Members
+          </Button>
+          <Button variant="outline" onClick={() => refetchHealth()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Today's Attention Strip */}

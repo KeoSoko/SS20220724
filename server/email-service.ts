@@ -1663,6 +1663,55 @@ Reply directly to this email to respond to the user.
       return false;
     }
   }
+
+  async sendCustomSupportEmail(
+    email: string,
+    username: string,
+    subject: string,
+    body: string
+  ): Promise<boolean> {
+    if (!process.env.SENDGRID_API_KEY) {
+      logger.error("Cannot send custom support email - SENDGRID_API_KEY not configured");
+      return false;
+    }
+
+    const bodyHtml = body
+      .split(/\n\n+/)
+      .map(p => `<p style="color:#444;line-height:1.7;margin:0 0 16px 0;">${p.replace(/\n/g, '<br>')}</p>`)
+      .join('');
+
+    try {
+      await mailService.send({
+        to: email,
+        from: { email: 'hello@simpleslips.co.za', name: 'Simple Slips' },
+        replyTo: { email: 'support@simpleslips.co.za', name: 'Simple Slips Support' },
+        subject,
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;background:#f9f9f9;">
+            <div style="background:#0073AA;padding:24px 30px;border-radius:6px 6px 0 0;text-align:center;">
+              <h1 style="color:#fff;margin:0;font-size:22px;letter-spacing:0.5px;">Simple Slips</h1>
+              <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:13px;">AI-Powered Receipt Management</p>
+            </div>
+            <div style="background:#fff;padding:30px;border-radius:0 0 6px 6px;border:1px solid #e8e8e8;border-top:none;">
+              ${bodyHtml}
+              <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+              <p style="color:#999;font-size:12px;margin:0;">
+                Simple Slips · <a href="https://simpleslips.app" style="color:#0073AA;text-decoration:none;">simpleslips.app</a><br>
+                Reply directly to this email if you need further help.
+              </p>
+            </div>
+          </div>
+        `,
+        text: body,
+      });
+
+      logger.info(`[EMAIL] Custom support email sent to ${email}: "${subject}"`);
+      return true;
+    } catch (error: any) {
+      logger.error(`[EMAIL] Failed to send custom support email: ${error.message}`);
+      return false;
+    }
+  }
 }
 
 export const emailService = new EmailService();

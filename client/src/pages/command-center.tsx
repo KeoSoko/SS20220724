@@ -3,7 +3,9 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -369,6 +371,9 @@ export default function CommandCenter() {
   const [showInboundLogs, setShowInboundLogs] = useState(false);
   const [inboundStatusFilter, setInboundStatusFilter] = useState<string>("all");
   const [showPaymentHealth, setShowPaymentHealth] = useState(false);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
 
   const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery<SystemHealth>({
     queryKey: ['/api/admin/command-center/health'],
@@ -554,6 +559,20 @@ export default function CommandCenter() {
     },
     onError: (error: any) => {
       toast({ title: "Repair failed", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const sendCustomEmailMutation = useMutation({
+    mutationFn: async ({ userId, subject, body }: { userId: number; subject: string; body: string }) => {
+      const response = await apiRequest("POST", `/api/admin/users/${userId}/send-custom-email`, { subject, body });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Email sent", description: `Delivered to ${data.email}` });
+      setEmailModalOpen(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to send email", description: error.message, variant: "destructive" });
     }
   });
 
@@ -1758,6 +1777,23 @@ export default function CommandCenter() {
                           {recoveryEmailStatus.reason}
                         </span>
                       )}
+                      {userDetail?.user.email && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-blue-400 text-blue-700 hover:bg-blue-50"
+                          onClick={() => {
+                            const name = userDetail.user.username;
+                            setEmailSubject("Your Simple Slips access has been restored");
+                            setEmailBody(
+                              `Hi ${name},\n\nWe wanted to let you know that access to your Simple Slips account has been fully restored. You're now linked to your team's billing plan, so the "trial expired" message you were seeing is gone.\n\nPlease log out and log back in with your email address and password — everything should be working normally.\n\nApologies for the inconvenience, and thank you for your patience!\n\nKind regards,\nSimple Slips Support`
+                            );
+                            setEmailModalOpen(true);
+                          }}
+                        >
+                          <Send className="h-3 w-3 mr-1" /> Send Custom Email
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -2215,6 +2251,65 @@ export default function CommandCenter() {
           </Card>
         </div>
       )}
+      {/* ===== SEND CUSTOM EMAIL DIALOG ===== */}
+      <Dialog open={emailModalOpen} onOpenChange={setEmailModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-4 w-4 text-blue-600" />
+              Send Email to {userDetail?.user.username}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Sends via SendGrid from hello@simpleslips.co.za · Reply-to: support@simpleslips.co.za
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-1">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">To</label>
+              <p className="text-sm mt-0.5 text-muted-foreground">{userDetail?.user.email}</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subject</label>
+              <Input
+                className="mt-1"
+                value={emailSubject}
+                onChange={e => setEmailSubject(e.target.value)}
+                placeholder="Subject line"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Message</label>
+              <Textarea
+                className="mt-1 min-h-[200px] text-sm font-mono"
+                value={emailBody}
+                onChange={e => setEmailBody(e.target.value)}
+                placeholder="Write your message here. Blank lines become paragraph breaks."
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!selectedUserId) return;
+                sendCustomEmailMutation.mutate({ userId: selectedUserId, subject: emailSubject, body: emailBody });
+              }}
+              disabled={sendCustomEmailMutation.isPending || !emailSubject.trim() || !emailBody.trim()}
+            >
+              {sendCustomEmailMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4 mr-2" />
+              )}
+              Send Email
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

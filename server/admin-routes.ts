@@ -1510,6 +1510,44 @@ Respond ONLY with valid JSON.`;
   });
 
   // ========================================
+  // SEND CUSTOM SUPPORT EMAIL TO USER
+  // ========================================
+  app.post("/api/admin/users/:userId/send-custom-email", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
+
+      const { subject, body } = req.body;
+      if (!subject?.trim()) return res.status(400).json({ error: "Subject is required" });
+      if (!body?.trim()) return res.status(400).json({ error: "Body is required" });
+
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      if (!user.email) return res.status(400).json({ error: "User has no email address" });
+
+      const success = await emailService.sendCustomSupportEmail(user.email, user.username, subject.trim(), body.trim());
+      if (!success) return res.status(500).json({ error: "Failed to send email — check SENDGRID_API_KEY" });
+
+      await db.insert(billingEvents).values({
+        userId,
+        eventType: 'admin_custom_email_sent',
+        eventData: {
+          adminUserId: req.user!.id,
+          subject: subject.trim(),
+          timestamp: new Date().toISOString(),
+          recipientEmail: user.email,
+        }
+      });
+
+      log(`[ADMIN_ACTION] User ${req.user!.id} sent custom email to user ${userId} (${user.email}): "${subject}"`, 'admin');
+      res.json({ success: true, email: user.email });
+    } catch (error: any) {
+      log(`Error in send-custom-email: ${error.message}`, 'admin');
+      res.status(500).json({ error: "Failed to send email" });
+    }
+  });
+
+  // ========================================
   // SMART CATEGORIZATION ANALYTICS
   // ========================================
   app.get("/api/admin/analytics/smart-categorization", requireAdmin, async (req, res) => {

@@ -814,6 +814,14 @@ export function registerAdminRoutes(app: Express) {
               nextBillingDate: nextBilling
             });
           }
+          // Also update the users table so access is restored immediately
+          await db.update(users)
+            .set({
+              subscriptionTier: 'monthly',
+              subscriptionExpiresAt: nextBilling,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, userId));
           result = { success: true, message: "Subscription activated" };
           break;
 

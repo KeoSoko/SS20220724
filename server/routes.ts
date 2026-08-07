@@ -5041,7 +5041,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         log('[webhook] Missing "to" field, skipping', 'inbound-email');
         return res.status(200).send('OK');
       }
-      
+
+      // Loop protection: reject emails sent by Simple Slips itself or common auto-reply patterns
+      const fromLower = emailData.from.toLowerCase();
+      const subjectLower = (emailData.subject || '').toLowerCase();
+      const isFromSimpleSlips = fromLower.includes('simpleslips.co.za') || fromLower.includes('simpleslips.app');
+      const isAutoReply = subjectLower.startsWith('re:') ||
+        subjectLower.includes('auto-reply') ||
+        subjectLower.includes('autoreply') ||
+        subjectLower.includes('out of office') ||
+        subjectLower.includes('delivery status') ||
+        subjectLower.includes('undeliverable') ||
+        subjectLower.includes('receipt successfully imported') ||
+        subjectLower.includes('receipt import');
+      if (isFromSimpleSlips || isAutoReply) {
+        log(`[webhook] Loop/auto-reply detected — from="${emailData.from}" subject="${emailData.subject}" — skipping`, 'inbound-email');
+        return res.status(200).send('OK');
+      }
+
       log(`Inbound email from: ${emailData.from} to: ${emailData.to}`, 'inbound-email');
       
       // Parse attachment-info for inline detection (content-id mapping)

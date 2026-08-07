@@ -1046,21 +1046,21 @@ Only return valid JSON, no markdown or explanation.`
 
       log(`Found user ${user.id} (${user.username}) for receipt email ID: ${receiptEmailId}`, 'inbound-email');
 
-      // Deduplication: skip if same subject+sender was already processed in the last 24 hours
+      // Deduplication: skip if same subject+sender has ever been successfully processed before.
+      // This prevents re-delivered emails (e.g. corporate auto-forwarders retrying every few hours)
+      // from creating duplicate receipts and firing repeated confirmation emails.
       if (emailData.subject && emailData.from) {
-        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const recent = await db.query.emailReceipts.findFirst({
-          where: (er, { and, eq, gte, sql }) =>
+        const alreadyProcessed = await db.query.emailReceipts.findFirst({
+          where: (er, { and, eq, sql }) =>
             and(
               eq(er.userId, user.id),
               eq(er.fromEmail, emailData.from),
               eq(er.subject, emailData.subject || '(No subject)'),
-              gte(er.receivedAt, cutoff),
               sql`${er.processed} = true`
             ),
         });
-        if (recent) {
-          log(`[dedup] Skipping already-processed email: subject="${emailData.subject}" from="${emailData.from}" (first seen: ${recent.receivedAt})`, 'inbound-email');
+        if (alreadyProcessed) {
+          log(`[dedup] Skipping already-processed email: subject="${emailData.subject}" from="${emailData.from}" (first seen: ${alreadyProcessed.receivedAt})`, 'inbound-email');
           return { success: true, error: 'duplicate_skipped' };
         }
       }

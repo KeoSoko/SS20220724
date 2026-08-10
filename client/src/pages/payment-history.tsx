@@ -112,13 +112,17 @@ export default function PaymentHistory() {
       if (!response.ok) throw new Error("Failed to generate invoice");
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
+      const filename = `SS-INV-${String(transaction.id).padStart(5, "0")}.pdf`;
       const a = document.createElement("a");
+      a.style.display = "none";
       a.href = url;
-      a.download = `SS-INV-${String(transaction.id).padStart(5, "0")}.pdf`;
+      a.download = filename;
       document.body.appendChild(a);
-      a.click();
+      a.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
       document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      // Delay revocation so the browser has time to start the download
+      setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      toast({ title: "Invoice downloaded", description: `${filename} saved to your downloads.` });
     } catch {
       toast({
         title: "Could not generate invoice",

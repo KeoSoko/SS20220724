@@ -1433,14 +1433,6 @@ export class ExportService {
       const description = sanitizeTextForPDF(transaction.description || 'Simple Slips Subscription');
       const statusLabel = isPaid ? 'Paid' : (transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1));
 
-      // Logo top-left — JPEG via sharp so jsPDF embeds raw bytes without decoding
-      try {
-        const logoData = await this.getSimpleSlipsLogoCompressed();
-        if (logoData && logoData.startsWith('data:image/jpeg')) {
-          doc.addImage(logoData, 'JPEG', 15, yPos, 40, 40);
-        }
-      } catch (_) {}
-
       // Company details top-right (mirrors businessProfile block in exportInvoiceToPDF)
       doc.setFontSize(10);
       doc.setTextColor(60, 60, 60);

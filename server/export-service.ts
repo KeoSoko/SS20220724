@@ -95,6 +95,7 @@ function sanitizeTextForPDF(text: string | null | undefined): string {
 
 export class ExportService {
   private cachedLogoBase64: string | null | undefined = undefined; // undefined = not yet loaded
+  private cachedLogoCompressedForPDF: string | null | undefined = undefined; // sharp-resized ≤600×600 for jsPDF
   private cachedSubscriptionInvoices = new Map<number, Buffer>(); // transactionId → PDF buffer
   private getReceiptCategoryLabel(receipt: Receipt): string {
     const rawCategory = getReportingCategory(receipt.category, receipt.reportLabel);
@@ -108,6 +109,29 @@ export class ExportService {
     const rawCategory = getReportingCategory(receipt.category, receipt.reportLabel);
     return normalizedFilter === rawCategory.trim().toLowerCase() ||
            normalizedFilter === formatReportingCategory(rawCategory).trim().toLowerCase();
+  }
+
+  /**
+   * Returns a sharp-compressed (≤600×600 px) PNG data URI of the Simple Slips logo,
+   * safe to pass to jsPDF.addImage() without the multi-second processing overhead
+   * that the raw 8334×4098 px source image causes.
+   */
+  private async getSimpleSlipsLogoCompressed(): Promise<string | null> {
+    if (this.cachedLogoCompressedForPDF !== undefined) return this.cachedLogoCompressedForPDF;
+    try {
+      const logoPath = path.join(process.cwd(), 'public', 'simple-slips-logo.png');
+      if (!fs.existsSync(logoPath)) {
+        this.cachedLogoCompressedForPDF = null;
+        return null;
+      }
+      const logoBuffer = fs.readFileSync(logoPath);
+      this.cachedLogoCompressedForPDF = await compressLogoForPDF(logoBuffer);
+      return this.cachedLogoCompressedForPDF;
+    } catch (error) {
+      logger.error('Failed to load/compress Simple Slips logo for PDF:', error);
+      this.cachedLogoCompressedForPDF = null;
+      return null;
+    }
   }
 
   /**
@@ -1403,9 +1427,10 @@ export class ExportService {
       const description = sanitizeTextForPDF(transaction.description || 'Simple Slips Subscription');
       const statusLabel = isPaid ? 'Paid' : (transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1));
 
-      // Logo top-left (same position/size as business hub logo)
+      // Logo top-left — use sharp-compressed version to avoid jsPDF processing
+      // the raw 8334×4098 px source image (which causes a 40+ second hang)
       try {
-        const logoData = await this.getSimpleSlipsLogoBase64();
+        const logoData = await this.getSimpleSlipsLogoCompressed();
         if (logoData && logoData.startsWith('data:image/png')) {
           doc.addImage(logoData, 'PNG', 15, yPos, 40, 40);
         }

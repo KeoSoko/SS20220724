@@ -94,6 +94,7 @@ function sanitizeTextForPDF(text: string | null | undefined): string {
 }
 
 export class ExportService {
+  private cachedLogoBase64: string | null | undefined = undefined; // undefined = not yet loaded
   private getReceiptCategoryLabel(receipt: Receipt): string {
     const rawCategory = getReportingCategory(receipt.category, receipt.reportLabel);
     return formatReportingCategory(rawCategory);
@@ -109,28 +110,35 @@ export class ExportService {
   }
 
   /**
-   * Convert Simple Slips SVG logo to base64 PNG for PDF embedding
+   * Convert Simple Slips logo to base64 for PDF embedding.
+   * Result is cached in memory after the first load so repeated invoice
+   * downloads don't re-read and re-encode the 390 KB PNG from disk each time.
    */
   private async getSimpleSlipsLogoBase64(): Promise<string | null> {
+    if (this.cachedLogoBase64 !== undefined) return this.cachedLogoBase64;
     try {
       // Try PNG first, fallback to SVG
       const logoPath = path.join(process.cwd(), 'public', 'simple-slips-logo.png');
       if (fs.existsSync(logoPath)) {
         const logoBuffer = fs.readFileSync(logoPath);
-        return `data:image/png;base64,${logoBuffer.toString('base64')}`;
+        this.cachedLogoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
+        return this.cachedLogoBase64;
       }
       
       // Try SVG as fallback
       const svgLogoPath = path.join(process.cwd(), 'public', 'simple-slips-logo.svg');
       if (fs.existsSync(svgLogoPath)) {
         const svgBuffer = fs.readFileSync(svgLogoPath);
-        return `data:image/svg+xml;base64,${svgBuffer.toString('base64')}`;
+        this.cachedLogoBase64 = `data:image/svg+xml;base64,${svgBuffer.toString('base64')}`;
+        return this.cachedLogoBase64;
       }
       
       logger.info('Simple Slips logo not found - continuing without logo');
+      this.cachedLogoBase64 = null;
       return null;
     } catch (error) {
       logger.error('Failed to load Simple Slips logo - continuing without logo:', error);
+      this.cachedLogoBase64 = null;
       return null;
     }
   }

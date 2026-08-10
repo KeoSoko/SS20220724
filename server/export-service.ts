@@ -112,9 +112,11 @@ export class ExportService {
   }
 
   /**
-   * Returns a sharp-compressed (≤600×600 px) PNG data URI of the Simple Slips logo,
-   * safe to pass to jsPDF.addImage() without the multi-second processing overhead
-   * that the raw 8334×4098 px source image causes.
+   * Returns a sharp-compressed JPEG data URI (≤200×200 px) of the Simple Slips logo.
+   * JPEG is critical here: jsPDF embeds raw JPEG bytes without decoding them, so it is
+   * nearly instant. PNG forces jsPDF to DEFLATE-decompress the full pixel data in pure
+   * JavaScript — on the raw 8334×4098 source that caused a 34-second hang; even at
+   * 600×600 it adds several seconds. Result is cached after first call.
    */
   private async getSimpleSlipsLogoCompressed(): Promise<string | null> {
     if (this.cachedLogoCompressedForPDF !== undefined) return this.cachedLogoCompressedForPDF;
@@ -125,7 +127,11 @@ export class ExportService {
         return null;
       }
       const logoBuffer = fs.readFileSync(logoPath);
-      this.cachedLogoCompressedForPDF = await compressLogoForPDF(logoBuffer);
+      const jpegBuffer = await sharp(logoBuffer)
+        .resize(200, 200, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      this.cachedLogoCompressedForPDF = `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
       return this.cachedLogoCompressedForPDF;
     } catch (error) {
       logger.error('Failed to load/compress Simple Slips logo for PDF:', error);
@@ -1427,12 +1433,11 @@ export class ExportService {
       const description = sanitizeTextForPDF(transaction.description || 'Simple Slips Subscription');
       const statusLabel = isPaid ? 'Paid' : (transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1));
 
-      // Logo top-left — use sharp-compressed version to avoid jsPDF processing
-      // the raw 8334×4098 px source image (which causes a 40+ second hang)
+      // Logo top-left — JPEG via sharp so jsPDF embeds raw bytes without decoding
       try {
         const logoData = await this.getSimpleSlipsLogoCompressed();
-        if (logoData && logoData.startsWith('data:image/png')) {
-          doc.addImage(logoData, 'PNG', 15, yPos, 40, 40);
+        if (logoData && logoData.startsWith('data:image/jpeg')) {
+          doc.addImage(logoData, 'JPEG', 15, yPos, 40, 40);
         }
       } catch (_) {}
 

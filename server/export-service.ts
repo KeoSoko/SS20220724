@@ -95,6 +95,7 @@ function sanitizeTextForPDF(text: string | null | undefined): string {
 
 export class ExportService {
   private cachedLogoBase64: string | null | undefined = undefined; // undefined = not yet loaded
+  private cachedSubscriptionInvoices = new Map<number, Buffer>(); // transactionId → PDF buffer
   private getReceiptCategoryLabel(receipt: Receipt): string {
     const rawCategory = getReportingCategory(receipt.category, receipt.reportLabel);
     return formatReportingCategory(rawCategory);
@@ -1382,6 +1383,10 @@ export class ExportService {
     user: { email: string | null; username: string; fullName: string | null },
     transaction: PaymentTransaction
   ): Promise<Buffer> {
+    // Return cached PDF if we've already generated this invoice
+    const cached = this.cachedSubscriptionInvoices.get(transaction.id);
+    if (cached) return cached;
+
     const doc = new jsPDF();
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
@@ -1543,7 +1548,9 @@ export class ExportService {
     );
     doc.text('Thank you for your business!', pageW / 2, footerY + 5, { align: 'center' });
 
-    return Buffer.from(doc.output('arraybuffer'));
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+    this.cachedSubscriptionInvoices.set(transaction.id, pdfBuffer);
+    return pdfBuffer;
   }
 }
 

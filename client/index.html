@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="background-color:#ffffff;">
   <head>
     <meta charset="UTF-8" />
     
@@ -12,11 +12,11 @@
     <!-- Mobile App Meta Tags -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Simple Slips" />
     <meta name="application-name" content="Simple Slips" />
-    <meta name="msapplication-TileColor" content="#0073AA" />
-    <meta name="theme-color" content="#0073AA" />
+    <meta name="msapplication-TileColor" content="#FFFFFF" />
+    <meta name="theme-color" content="#FFFFFF" />
     
     <!-- iOS Splash Screens -->
     <link rel="apple-touch-startup-image" href="/splash-828x1792.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)">
@@ -25,7 +25,7 @@
     <link rel="apple-touch-startup-image" href="/splash-1536x2048.png" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)">
     
     <!-- Icons and Manifest -->
-    <link rel="manifest" href="/manifest.json?v=1.5">
+    <link rel="manifest" href="/manifest.json?v=2.0">
     <link rel="icon" href="/icon-192.png" sizes="192x192" type="image/png">
     <link rel="icon" href="/icon-512.png" sizes="512x512" type="image/png">
     
@@ -50,8 +50,8 @@
     <!-- Paystack Payment Script (v2 - supports Apple Pay) -->
     <script src="https://js.paystack.co/v2/inline.js"></script>
   </head>
-  <body>
-    <div id="root"></div>
+  <body style="margin:0;background-color:#ffffff;">
+    <div id="root" style="background-color:#ffffff;"></div>
     <script type="module" src="/src/main.tsx"></script>
     
     <!-- PWA Service Worker Registration with forced update -->

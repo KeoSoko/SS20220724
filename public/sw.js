@@ -1,12 +1,21 @@
-const CACHE_NAME = 'simple-slips-v10';
-const STATIC_CACHE = 'simple-slips-static-v10';
-const DYNAMIC_CACHE = 'simple-slips-dynamic-v10';
+const CACHE_NAME = 'simple-slips-v11';
+const STATIC_CACHE = 'simple-slips-static-v11';
+const DYNAMIC_CACHE = 'simple-slips-dynamic-v11';
 
 const STATIC_FILES = [
-  '/manifest.json?v=1.5'
+  '/manifest.json?v=2.0',
+  '/Icon-180.png',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/Icon-152.png',
+  '/Icon-167.png',
+  '/splash-828x1792.png',
+  '/splash-1125x2436.png',
+  '/splash-1242x2208.png',
+  '/splash-1536x2048.png'
 ];
 
-const SW_VERSION = '10.0.0';
+const SW_VERSION = '11.0.0';
 
 const CRITICAL_API_PATHS = [
   '/api/login',
@@ -193,8 +202,8 @@ self.addEventListener('push', (event) => {
   let notificationData = {
     title: 'Simple Slips',
     body: 'You have a new notification',
-    icon: '/attached_assets/192 Icon redesigned_1754568272116.png',
-    badge: '/attached_assets/192 Icon redesigned_1754568272116.png',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     tag: 'simple-slips-notification',
     requireInteraction: false,
     data: { url: '/' }

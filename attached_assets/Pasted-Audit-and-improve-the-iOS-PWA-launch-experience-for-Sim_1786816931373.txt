@@ -1,0 +1,79 @@
+Audit and improve the iOS PWA launch experience for Simple Slips.
+
+Current problems:
+1. The installed PWA is showing the wrong icon on iOS.
+2. During launch, the screen flashes/uses the Simple Slips blue instead of a clean premium launch experience.
+3. I want the PWA to feel closer to a native iOS app when launched from the Home Screen.
+
+Do not make unrelated UI changes.
+
+First inspect and report the current state of:
+- manifest.webmanifest / manifest.json
+- index.html PWA/iOS meta tags
+- apple-touch-icon configuration
+- manifest icon assets and sizes
+- theme_color
+- background_color
+- apple-mobile-web-app-capable
+- apple-mobile-web-app-status-bar-style
+- apple-mobile-web-app-title
+- apple-touch-startup-image assets, if any
+- service-worker caching of icon/manifest assets
+
+Then implement the following:
+
+1. iOS Home Screen icon
+- Add/use a dedicated non-transparent 180x180 PNG apple-touch-icon.
+- Make sure index.html explicitly references it:
+  <link rel="apple-touch-icon" sizes="180x180" href="...">
+- Do not rely solely on the web manifest for iOS.
+- Verify there are no old icon references that could cause iOS to select the wrong asset.
+
+2. Manifest
+Set:
+- name: "Simple Slips"
+- short_name: "Simple Slips"
+- display: "standalone"
+- background_color: "#FFFFFF"
+- theme_color: "#FFFFFF" for the startup/loading transition
+- retain properly sized 192x192 and 512x512 PNG icons.
+
+Do not change Simple Slips' normal in-app brand colour #0073AA. This request only concerns launch/PWA chrome.
+
+3. iOS metadata
+Ensure index.html contains appropriate iOS standalone metadata:
+- apple-mobile-web-app-capable = yes
+- apple-mobile-web-app-title = Simple Slips
+- an appropriate apple-mobile-web-app-status-bar-style for a white launch/background experience.
+
+4. Premium launch experience
+Inspect whether apple-touch-startup-image is currently configured.
+
+If not, create the implementation structure needed for iOS startup images using a clean white background and a centered Simple Slips brand mark/wordmark.
+
+Do not invent a new logo or redesign the brand. Use the existing Simple Slips asset already present in the project.
+
+The desired experience is:
+tap Home Screen icon
+→ clean white Simple Slips launch screen
+→ seamless transition into the app with no blue flash.
+
+5. First-render background
+Ensure the HTML/body/root background is white before React mounts so there is no blue flash between the iOS launch screen and application render.
+
+6. Caching
+Inspect the service worker and ensure old icon/manifest/startup assets are not being permanently served from stale cache after deployment. Do not disable useful offline caching globally.
+
+7. Validation
+Run:
+- production build
+- TypeScript checks
+- manifest validation
+- verify all referenced icon/startup asset paths exist
+- verify no duplicate/conflicting apple-touch-icon or theme-color declarations exist
+
+Return:
+A. What caused the incorrect icon.
+B. What caused the blue launch background.
+C. Files changed.
+D. Exact iOS test instructions, including whether I need to delete the existing Simple Slips Home Screen installation and reinstall it to clear Apple's cached icon/launch metadata.

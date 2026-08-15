@@ -1,5 +1,5 @@
 {
-  "name": "Simple Slips - Receipt Manager",
+  "name": "Simple Slips",
   "short_name": "Simple Slips",
   "description": "Smart receipt management and expense tracking app with AI-powered categorization, tax compliance tools, and analytics for South African businesses and individuals. Scan receipts, track expenses, manage budgets, and get tax insights.",
   "start_url": "/?source=pwa",
@@ -7,7 +7,7 @@
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "background_color": "#FFFFFF",
-  "theme_color": "#0073AA",
+  "theme_color": "#FFFFFF",
   "capture_links": "existing_client_navigate",
   "orientation": "any",
   "scope": "/",

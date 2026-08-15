@@ -26,52 +26,38 @@
   "screenshots": [
     {
       "src": "/attached_assets/app-screenshot-2_1755362221669.jpg",
-      "sizes": "390x844",
+      "sizes": "1080x2185",
       "type": "image/jpeg",
       "platform": "narrow",
       "label": "AI-powered dashboard with smart expense insights and search"
     },
     {
-      "src": "/attached_assets/app-screenshot-1_1755362221669.jpg", 
-      "sizes": "390x844",
+      "src": "/attached_assets/app-screenshot-1_1755362221669.jpg",
+      "sizes": "1080x2183",
       "type": "image/jpeg",
       "platform": "narrow",
       "label": "Receipt management with filtering and categorization"
     },
     {
       "src": "/attached_assets/app-screenshot-3_1755362221669.jpg",
-      "sizes": "390x844", 
+      "sizes": "1080x2187",
       "type": "image/jpeg",
       "platform": "narrow",
       "label": "Enhanced receipt scanner with real-time OCR processing"
     },
     {
       "src": "/attached_assets/app-screenshot-5_1755362221670.jpg",
-      "sizes": "390x844", 
+      "sizes": "1080x2187",
       "type": "image/jpeg",
       "platform": "narrow",
       "label": "Comprehensive expense reports and financial analytics"
     },
     {
       "src": "/attached_assets/app-screenshot-7_1755362221670.jpg",
-      "sizes": "390x844", 
+      "sizes": "1080x2195",
       "type": "image/jpeg",
       "platform": "narrow",
       "label": "Tax dashboard with deduction tracking for South Africa"
-    },
-    {
-      "src": "/attached_assets/app-screenshot-2_1755362221669.jpg",
-      "sizes": "1280x800",
-      "type": "image/jpeg",
-      "platform": "wide",
-      "label": "Desktop dashboard with comprehensive expense analytics"
-    },
-    {
-      "src": "/attached_assets/app-screenshot-1_1755362221669.jpg",
-      "sizes": "1280x800", 
-      "type": "image/jpeg",
-      "platform": "wide",
-      "label": "Desktop receipt management interface with advanced filtering"
     }
   ],
   "shortcuts": [
@@ -114,19 +100,19 @@
       "purpose": "maskable"
     },
     {
-      "src": "/apple-touch-icon-152x152.png",
+      "src": "/Icon-152.png",
       "sizes": "152x152",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/apple-touch-icon-167x167.png",
+      "src": "/Icon-167.png",
       "sizes": "167x167",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/apple-touch-icon-180x180.png",
+      "src": "/Icon-180.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"

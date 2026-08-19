@@ -1,0 +1,404 @@
+# Paystack Final Release Blockers — Remediation Task
+
+The final pre-deployment assessment returned **DO NOT DEPLOY**.
+
+Fix only the remaining Paystack release blockers identified by that assessment.
+
+Do not deploy or publish.
+
+Do not modify existing production customer records.
+
+Do not perform real Paystack charges.
+
+Do not rewrite the billing system.
+
+Preserve all protections implemented by Task #41.
+
+---
+
+# Blocker 1 — Untracked initial charge can masquerade as recurring
+
+The current webhook logic can apparently classify an untracked transaction as recurring based on:
+
+`metadata.invoice_action`
+
+This is client-controlled metadata and must **never** be authoritative evidence that a transaction is a legitimate recurring Paystack renewal.
+
+Fix this boundary.
+
+## Required rule
+
+An initial Paystack charge that does not correspond to a tracked server-owned checkout attempt must never grant entitlement merely because metadata claims it is recurring.
+
+Recurring processing must require authoritative provider-side evidence.
+
+For a recurring renewal, require an already-established relationship to the expected Paystack subscription identity.
+
+At minimum, determine from the actual Paystack API/webhook structure what authoritative fields identify:
+
+* the Paystack subscription;
+* the Paystack invoice;
+* the Paystack customer;
+* the transaction;
+* the existing local `SUB_*` identity.
+
+Do not trust client-controlled metadata to establish this relationship.
+
+The preferred security boundary is conceptually:
+
+`verified Paystack transaction`
+
+`→ tracked initial checkout attempt?`
+
+YES:
+
+`→ initial subscription settlement path`
+
+NO:
+
+`→ does authoritative provider data prove this belongs to an already-known active SUB_* identity?`
+
+YES:
+
+`→ recurring renewal path`
+
+NO:
+
+`→ reject/quarantine for manual review`
+
+An unknown `SUB_*` arriving with an untracked transaction must not automatically establish itself as trusted and grant entitlement.
+
+---
+
+# Blocker 2 — Renewal/checkout settlement race
+
+The audit identified this sequence:
+
+1. Checkout attempt is pending.
+2. Checkout settlement begins Paystack verification.
+3. Verification occurs outside entitlement lock `36`.
+4. Recurring renewal acquires lock `36`.
+5. Renewal settles.
+6. Renewal cancels the pending checkout.
+7. Checkout verification finishes.
+8. Checkout acquires lock `36`.
+9. Checkout uses the stale previously-read `pending` state.
+10. Distinct checkout payment can still be applied.
+
+Fix this.
+
+## Required rule
+
+The checkout attempt's authoritative state must be revalidated **inside the same protected transaction/locking boundary immediately before entitlement/payment mutation**.
+
+After acquiring the entitlement lock:
+
+* re-read the checkout attempt;
+* row-lock it if appropriate;
+* verify it still exists;
+* verify its reference is unchanged;
+* verify it is still in an allowed settlement state;
+* verify immutable terms still match;
+* reject settlement if another billing operation has cancelled, failed, expired, superseded, or otherwise invalidated the attempt.
+
+Never rely on attempt status loaded before an external Paystack verification call.
+
+Conceptually:
+
+`load attempt`
+
+`→ verify Paystack externally`
+
+`→ acquire billing-owner entitlement lock`
+
+`→ BEGIN DB transaction`
+
+`→ SELECT checkout attempt again / lock row`
+
+`→ validate CURRENT state`
+
+`→ validate verified settlement against immutable terms`
+
+`→ write payment + entitlement + attempt completion atomically`
+
+If current state no longer permits settlement:
+
+**do not apply entitlement.**
+
+Record the event for manual review because the provider may have successfully collected money.
+
+Do not silently discard a genuinely successful Paystack charge.
+
+---
+
+# Blocker 3 — Same-reference Paystack popup behaviour
+
+The audit established that multiple tabs can receive the same server-owned reference and potentially both invoke:
+
+`PaystackPop.checkout()`
+
+Do not assume Paystack makes this safe.
+
+Investigate the existing frontend lifecycle and implement a server-controlled guard if necessary.
+
+Our invariant is stronger than:
+
+**one reference per intended purchase**
+
+We ultimately need:
+
+**one intended purchase must not expose the customer to multiple successful charges.**
+
+Determine whether multiple Paystack checkout initialisations using the exact same reference can result in more than one successful provider transaction.
+
+Use authoritative Paystack behaviour/documentation if available.
+
+If this cannot be proven safe, implement an additional mechanism so that only the currently valid server checkout lease can be used to initialise/open Paystack.
+
+Do not create a new reference merely to solve this problem.
+
+Do not weaken retry/lost-response recovery.
+
+Report exactly what protection is implemented and why it prevents duplicate charging.
+
+---
+
+# Blocker 4 — Production schema
+
+Do not modify production now.
+
+The production environment is missing:
+
+`paystack_subscription_identities`
+
+and:
+
+`paystack_checkout_attempts`
+
+This remains a deployment blocker but should be solved through the supported Publish schema flow only after the application blockers above pass review.
+
+Ensure the migrations remain additive and compatible with the final remediation.
+
+Do not run custom SQL against production.
+
+---
+
+# Mandatory regression tests
+
+Add tests for the exact vulnerabilities.
+
+## Test 1 — forged recurring metadata
+
+Create an untracked initial transaction containing:
+
+`metadata.invoice_action`
+
+Expected:
+
+* rejected/quarantined;
+* no payment entitlement;
+* no subscription activation;
+* no trusted SUB_* identity automatically created.
+
+## Test 2 — unknown subscription identity
+
+Verified untracked transaction contains an unknown `SUB_*`.
+
+Expected:
+
+* cannot establish itself as trusted merely from this transaction;
+* no entitlement;
+* manual-review/rejection event.
+
+## Test 3 — legitimate recurring renewal
+
+Existing active local `SUB_*` identity.
+
+Authoritative Paystack invoice/transaction corresponds to it.
+
+Expected:
+
+* renewal processes normally;
+* exactly one ledger entry;
+* exactly one entitlement extension.
+
+## Test 4 — checkout/renewal race
+
+Force this exact sequence:
+
+`checkout reads pending`
+
+`→ checkout begins verification`
+
+`→ renewal settles`
+
+`→ renewal invalidates checkout`
+
+`→ checkout verification completes`
+
+`→ checkout obtains lock`
+
+Expected:
+
+checkout re-reads current state and refuses to apply the invalidated checkout.
+
+The second payment must not produce a second entitlement extension.
+
+It must be recorded/flagged appropriately for financial review if Paystack actually collected it.
+
+## Test 5 — inverse concurrency ordering
+
+Checkout settles first.
+
+Renewal arrives immediately afterwards.
+
+Expected:
+
+one coherent entitlement result according to the existing billing rules, with no double extension.
+
+## Test 6 — duplicate callback/webhook
+
+Same tracked checkout reference arrives through callback and webhook concurrently.
+
+Expected:
+
+one payment ledger entry.
+
+one entitlement mutation.
+
+one completed checkout attempt.
+
+## Test 7 — forged plan/amount/currency/email
+
+Confirm all Task #41 immutable-term protections still pass.
+
+## Test 8 — workspace member forged renewal metadata
+
+Editor/viewer attempts an untracked initial charge containing renewal-looking metadata.
+
+Expected:
+
+cannot bypass workspace billing-owner protection.
+
+No entitlement or trusted subscription identity created.
+
+## Test 9 — same reference / multiple checkout UI sessions
+
+Test the strongest feasible simulation of two browser sessions attempting to initialise the same server checkout reference.
+
+Document:
+
+* number of server attempts;
+* number of references;
+* number of Paystack initialisations;
+* expected provider behaviour;
+* resulting local state.
+
+If Paystack provider behaviour cannot be reliably tested locally, clearly identify what is guaranteed by our application versus what requires provider confirmation.
+
+---
+
+# Preserve Task #41 protections
+
+After the fixes, explicitly reconfirm that:
+
+* references remain server-generated;
+* immutable checkout terms remain server-owned;
+* amount is verified;
+* currency is verified;
+* plan ID is verified;
+* Paystack plan code is verified;
+* billing-owner email is verified;
+* tracked reference is verified;
+* client metadata cannot determine entitlement;
+* one pending attempt per billing owner remains enforced;
+* billing-owner advisory locking remains;
+* checkout-specific locking remains;
+* payment ledger uniqueness remains;
+* workspace editors/viewers remain unable to initiate personal billing;
+* expired checkout leases reuse the existing reference;
+* reconciliation remains incapable of initiating charges;
+* existing Paystack subscriptions remain unchanged.
+
+---
+
+# Validation
+
+Run:
+
+* TypeScript;
+* production build;
+* complete focused billing suite;
+* checkout concurrency tests;
+* renewal concurrency tests;
+* webhook tests;
+* reconciliation tests;
+* all new security regression tests.
+
+Also run the full Vitest suite.
+
+The two previously known invite-flow failures may remain, but confirm no additional failures were introduced.
+
+---
+
+# STOP BEFORE DEPLOYMENT
+
+When implementation is complete, do not Publish.
+
+Return:
+
+## A. Root causes fixed
+
+Explain each vulnerability and the exact fix.
+
+## B. Files changed
+
+Exact list.
+
+## C. Untracked-charge security boundary
+
+Explain exactly how initial versus recurring payments are now distinguished without trusting client metadata.
+
+## D. Concurrency boundary
+
+Show exactly where checkout state is re-read after Paystack verification and after acquiring the billing lock.
+
+## E. Successful-but-invalidated payment handling
+
+Explain what happens if Paystack collected a payment but the checkout became invalid before local settlement.
+
+This must not silently disappear.
+
+## F. Same-reference popup analysis
+
+Explain whether multiple Paystack popup sessions using one reference can cause multiple provider charges and what protection exists.
+
+## G. Test results
+
+Provide complete results.
+
+## H. Existing protections
+
+Confirm Task #41 protections remain intact.
+
+## I. Production migration requirements
+
+Confirm both required production tables and all final columns/indexes/constraints.
+
+## J. Final recommendation
+
+End with exactly:
+
+`READY FOR FINAL PRE-DEPLOYMENT REVIEW`
+
+or:
+
+`NOT READY — [blockers]`
+
+Do not deploy.
+
+Do not publish.
+
+Do not modify production.
+
+Do not perform a real customer charge.

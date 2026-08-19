@@ -1,0 +1,422 @@
+# Paystack Payment Reconciliation & Double-Charge Audit Prompt
+
+I need you to perform a **full audit of the Paystack payment, subscription, webhook, reconciliation, retry, and account-status logic in Simple Slips**.
+
+This is a **production billing system with real paying customers**, so do **NOT make any code changes yet**.
+
+Your first job is to investigate the current implementation, trace the complete payment lifecycle, identify every scenario that could cause:
+
+* a customer to be charged twice;
+* the same Paystack transaction to be recorded twice;
+* duplicate subscriptions to be created;
+* a successful payment to be treated as unpaid;
+* an unsuccessful payment to incorrectly activate access;
+* a webhook and frontend callback both processing the same payment;
+* retries creating additional charges;
+* subscription renewals being duplicated;
+* reconciliation jobs incorrectly generating or modifying payments;
+* stale or delayed Paystack webhooks changing a newer subscription state;
+* team/workspace users being charged when billing should belong to the workspace owner;
+* an existing active subscriber being sent through checkout again;
+* multiple concurrent payment requests for the same user;
+* a payment succeeding on Paystack but Simple Slips not recognising it;
+* the database and Paystack disagreeing about the customer's subscription state.
+
+## Phase 1 — Map the Current Billing Architecture
+
+Before changing anything, identify and document:
+
+1. Every backend file, route, function, service, model and database table involved in:
+
+   * Paystack checkout;
+   * transaction initialisation;
+   * transaction verification;
+   * subscriptions;
+   * recurring payments;
+   * webhook processing;
+   * payment reconciliation;
+   * failed payments;
+   * retries;
+   * cancellations;
+   * plan changes;
+   * subscription expiry;
+   * workspace/team billing;
+   * frontend payment callbacks.
+
+2. Every frontend location that can:
+
+   * initialise a Paystack transaction;
+   * redirect/open Paystack;
+   * verify a payment;
+   * retry a payment;
+   * change subscription status.
+
+3. Every Paystack webhook event currently handled.
+
+4. Every scheduled/background/reconciliation process that reads or modifies subscription/payment information.
+
+Then give me a plain-English flow such as:
+
+`User clicks Subscribe → backend creates transaction → Paystack checkout → payment succeeds → webhook received → transaction verified → payment recorded → subscription activated`
+
+Show the **actual flow from the code**, not the intended flow.
+
+---
+
+## Phase 2 — Identify the System of Record
+
+Determine what currently acts as the source of truth for:
+
+* payment status;
+* subscription status;
+* subscription start date;
+* subscription renewal date;
+* Paystack customer ID;
+* Paystack subscription code;
+* Paystack transaction/reference;
+* plan;
+* amount paid;
+* billing owner/workspace.
+
+Tell me whether the system currently trusts:
+
+* the frontend;
+* the Paystack redirect callback;
+* Paystack verification API;
+* Paystack webhooks;
+* our own database;
+
+and where those sources can conflict.
+
+The final architecture should treat the **server + verified Paystack information** as authoritative. The frontend must never be able to mark a payment as successful merely because the user returned from Paystack.
+
+---
+
+## Phase 3 — Audit Idempotency
+
+This is extremely important.
+
+For every payment-related endpoint and webhook handler, determine:
+
+**What happens if the exact same request/event is received twice?**
+
+Paystack may resend webhooks. Browsers may retry requests. Users may double-click buttons. Network requests may time out even when the original request succeeded.
+
+Audit whether we have proper idempotency around:
+
+* transaction references;
+* Paystack transaction IDs;
+* webhook events;
+* subscription codes;
+* invoice/payment records;
+* renewal events;
+* reconciliation jobs.
+
+Look specifically for patterns like:
+
+```python
+payment = Payment(...)
+db.add(payment)
+```
+
+without first checking whether that Paystack transaction/reference has already been processed.
+
+I want database-level protection where appropriate, not only application-level `if` statements.
+
+For example, investigate whether fields such as these should have UNIQUE constraints:
+
+* Paystack transaction ID;
+* Paystack reference;
+* subscription code;
+* event identifier where available.
+
+Do **not** add constraints yet if production data may already contain duplicates. First inspect the data and report what migration would be safe.
+
+---
+
+## Phase 4 — Audit Double-Charge Risks
+
+Trace every place where our application can initialise a Paystack charge.
+
+For each one, answer:
+
+1. What stops the same user from creating two transactions within seconds?
+2. What stops an already-active subscriber from subscribing again?
+3. What happens if the user double-clicks the Subscribe button?
+4. What happens if the frontend times out and retries?
+5. What happens if a checkout session is already pending?
+6. What happens if the payment succeeds but our response is lost?
+7. What happens if the user refreshes the payment callback page?
+8. What happens if the webhook arrives before the browser callback?
+9. What happens if the callback arrives before the webhook?
+10. What happens if both attempt to activate the subscription?
+
+The same Paystack payment must be safe to process **multiple times without producing multiple effects**.
+
+---
+
+## Phase 5 — Audit Subscription Renewals
+
+Pay special attention to recurring subscriptions.
+
+Determine:
+
+* whether Simple Slips creates Paystack subscriptions or charges manually;
+* whether Paystack automatically renews customers;
+* whether our own application also attempts renewal;
+* whether any cron/reconciliation process could accidentally charge a customer already charged by Paystack.
+
+Trace renewal events from Paystack through to the database.
+
+Check events such as:
+
+* successful charge;
+* invoice/payment success;
+* failed charge;
+* subscription creation;
+* subscription disable/cancellation;
+* recurring charge events.
+
+Confirm exactly which event currently extends access.
+
+There must be **one clear rule** for when the next billing date/subscription period is updated.
+
+---
+
+## Phase 6 — Audit Payment Reconciliation
+
+Find the current reconciliation logic.
+
+Explain:
+
+* when reconciliation runs;
+* what Paystack endpoint/data it reads;
+* how it matches Paystack transactions to Simple Slips users;
+* what field it uses as the matching key;
+* what happens if the transaction already exists locally;
+* what happens if a Paystack transaction exists but the local transaction does not;
+* what happens if the local subscription says unpaid but Paystack says paid;
+* what happens if the local system says paid but Paystack has no successful transaction;
+* whether reconciliation can accidentally trigger a charge.
+
+**Reconciliation should never itself charge a customer.**
+
+Its job should only be to compare records and safely repair internal state based on verified Paystack transactions.
+
+Confirm whether our implementation obeys this rule.
+
+---
+
+## Phase 7 — Audit Existing Production Data
+
+Before proposing migrations, inspect the production-compatible database structure/code and tell me what SQL queries I should run to detect:
+
+### Duplicate Paystack references
+
+```sql
+GROUP BY paystack_reference
+HAVING COUNT(*) > 1
+```
+
+### Duplicate Paystack transaction IDs
+
+### Multiple active subscriptions for the same billing owner
+
+### Customers with active local subscriptions but no successful payment
+
+### Successful Paystack payments not represented locally
+
+### Multiple payments of the same amount for the same user within a short period
+
+### Multiple subscription records connected to the same Paystack subscription code
+
+### Team/workspace members who have their own billing record when they should inherit billing from the owner
+
+Do not delete or modify any production records automatically.
+
+Give me the diagnostic queries first.
+
+---
+
+## Phase 8 — Workspace Billing
+
+Simple Slips supports workspaces/team users.
+
+Audit the billing ownership rules.
+
+A team/editor/member who inherits access from a paid workspace must not accidentally be:
+
+* offered checkout as if they have no subscription;
+* charged separately;
+* given a second subscription;
+* reconciled against their own trial instead of the workspace owner's paid subscription.
+
+Trace the billing-owner resolution logic from:
+
+`logged-in user → workspace membership → workspace owner/billing account → effective subscription`
+
+Tell me whether every Paystack-related endpoint consistently uses that effective billing owner.
+
+---
+
+## Phase 9 — Race Conditions
+
+Look for concurrency problems.
+
+Examples:
+
+Two webhook requests arrive simultaneously:
+
+```text
+Webhook A checks: payment doesn't exist
+Webhook B checks: payment doesn't exist
+Webhook A inserts payment
+Webhook B inserts payment
+```
+
+or:
+
+```text
+Request A checks user isn't subscribed
+Request B checks user isn't subscribed
+Both initialise Paystack transactions
+```
+
+Identify where database transactions, row locking, atomic upserts, or unique constraints are required.
+
+---
+
+## Phase 10 — Security Audit
+
+Verify:
+
+* Paystack webhook signatures are validated;
+* webhook bodies are validated before processing;
+* payment references cannot be forged by the client;
+* payment verification is done server-side against Paystack;
+* amount and currency are checked against the expected plan;
+* the Paystack transaction customer matches the intended Simple Slips billing account;
+* plan price is determined by the server, not trusted from the frontend;
+* users cannot activate another user's transaction reference;
+* logs do not expose secrets;
+* Paystack secret keys exist only server-side.
+
+Flag anything unsafe.
+
+---
+
+## Phase 11 — Logging
+
+Review payment logs and recommend structured logging sufficient to trace a transaction across its complete lifecycle.
+
+I want every payment event to be traceable using:
+
+* Simple Slips user ID;
+* billing owner/workspace ID;
+* Paystack reference;
+* Paystack transaction ID;
+* Paystack customer code;
+* Paystack subscription code;
+* event type;
+* current local subscription state;
+* resulting subscription state.
+
+Do not log card details, secrets, authorisation codes, or other sensitive payment information unnecessarily.
+
+---
+
+## Phase 12 — Tests Required Before Any Fix Goes Live
+
+Design tests for at least these cases:
+
+1. New monthly subscriber pays successfully.
+2. New annual subscriber pays successfully.
+3. Paystack webhook is delivered twice.
+4. Paystack webhook is delivered five times.
+5. Browser callback occurs before webhook.
+6. Webhook occurs before browser callback.
+7. Browser callback is refreshed repeatedly.
+8. User double-clicks Subscribe.
+9. Two checkout requests arrive simultaneously.
+10. Payment succeeds but frontend disconnects.
+11. Payment succeeds but webhook is delayed.
+12. Payment succeeds but webhook never arrives and reconciliation later finds it.
+13. Failed payment.
+14. Failed renewal.
+15. Successful recurring renewal.
+16. Cancelled subscription.
+17. Existing subscriber tries to subscribe again.
+18. Team member whose workspace owner has a valid subscription.
+19. User has a stale local `trial` record but workspace owner is paid.
+20. Reconciliation processes a transaction already recorded.
+21. Reconciliation processes an unknown transaction.
+22. Payment amount does not match selected plan.
+23. Transaction belongs to another Paystack customer.
+24. Same Paystack reference submitted twice.
+25. Two webhook workers process the same event concurrently.
+
+For every test, state:
+
+**initial state → action → expected Paystack interaction → expected database state → expected user access**
+
+---
+
+# STOP BEFORE IMPLEMENTATION
+
+Do not change the code after this investigation.
+
+Give me a report containing:
+
+## A. Current Billing Flow
+
+Exact payment/subscription architecture currently implemented.
+
+## B. Critical Risks
+
+Label findings:
+
+* P0 — could cause double charging, financial loss, unauthorised access, or corrupted billing.
+* P1 — could incorrectly activate/deactivate subscriptions or require manual financial correction.
+* P2 — reliability/maintainability issue.
+
+For every finding include:
+
+**file → function → current behaviour → failure scenario → recommended fix**
+
+## C. Double-Charge Analysis
+
+Explicitly tell me whether there is currently any code path capable of charging a customer twice.
+
+## D. Duplicate-Processing Analysis
+
+Tell me whether the same Paystack payment/webhook can currently create multiple local effects.
+
+## E. Reconciliation Analysis
+
+Explain whether reconciliation is safe and whether it ever initiates charges.
+
+## F. Workspace Billing Analysis
+
+Confirm whether team users always resolve to the correct billing owner.
+
+## G. Production Data Checks
+
+Provide read-only SQL queries I can run to find existing inconsistencies or duplicates.
+
+## H. Proposed Architecture
+
+Recommend the smallest safe architecture change rather than rewriting the entire billing system.
+
+## I. Implementation Plan
+
+Give me the fixes in the exact order they should be implemented, including database migrations, backend changes, frontend changes, tests, deployment order and rollback considerations.
+
+## J. Files That Would Change
+
+List every file you expect to modify.
+
+Do **not implement anything until I review this report.**
+
+My priority is:
+
+**Never charge a customer twice. Never lose a successful payment. Never activate a subscription from unverified client-side data. Make payment processing idempotent. Make reconciliation repair state, not create charges.**

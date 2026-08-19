@@ -1,0 +1,57 @@
+# Task #40 Build Instruction
+
+Proceed with **Task #40 — Prevent duplicate Paystack checkout charges** in Build mode.
+
+Implement only the approved Phase 1 scope.
+
+Important constraints:
+
+* Do not deploy or publish to production.
+* Do not modify existing customer payment or subscription records.
+* Do not automatically cancel or repair existing workspace-member subscriptions.
+* Do not rewrite the existing renewal/reconciliation system.
+* Reconciliation must remain unable to initiate charges.
+* Preserve existing Paystack server-side verification.
+* Preserve payment ledger uniqueness.
+* Preserve advisory locking around subscription entitlement updates.
+* Preserve recurring `SUB_*` identity protections.
+* Use safe database migrations only.
+
+Pay particular attention to the concurrency requirement:
+
+**Two simultaneous checkout requests for the same billing owner must not be capable of generating two separate Paystack checkout initialisations.**
+
+The protection must be enforced server-side and at the database/concurrency layer. Frontend button disabling alone is not sufficient.
+
+Also verify the lost-response scenario:
+
+1. Server creates checkout.
+2. Paystack payment succeeds.
+3. Browser loses the response or closes.
+4. User returns and attempts checkout again.
+
+The system must safely recover/reuse/verify the existing attempt before creating another opportunity to charge the customer.
+
+For workspace members:
+
+* Editors/viewers covered by the workspace owner must not be able to initialise their own Paystack checkout.
+* Their personal trial/subscription state must not override the effective workspace billing owner.
+* Existing anomalous personal subscription rows must remain untouched for manual review.
+
+After implementation, **stop before deployment** and return the review report requested in Task #40, including:
+
+* exact files changed;
+* migration/schema changes;
+* unique constraints and indexes;
+* billing-owner resolver behaviour;
+* checkout concurrency mechanism;
+* retry/reuse behaviour;
+* lost-response recovery;
+* payment completion behaviour;
+* workspace-member blocking;
+* complete test results;
+* confirmation that existing billing protections remain intact;
+* exact production deployment sequence;
+* rollback plan.
+
+Do not deploy until the implementation has been reviewed.

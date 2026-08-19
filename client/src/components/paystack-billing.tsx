@@ -7,14 +7,6 @@ import { Loader2, CreditCard, Shield, Globe } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 
-// Paystack plan codes — FALLBACK ONLY. The server (subscription_plans.paystackPlanCode,
-// served via /api/billing/plans) is the source of truth. These are kept only so checkout
-// still works if a plan row is missing its code.
-const PAYSTACK_PLAN_CODES = {
-  monthly: 'PLN_8l8p7v1mergg804',
-  yearly: 'PLN_k9q25ilwueuz17j',
-};
-
 interface PaystackBillingProps {
   plan: {
     id: number;
@@ -25,13 +17,25 @@ interface PaystackBillingProps {
     billingPeriod: string;
     paystackPlanCode?: string | null;
   };
-  userId: number;
-  userEmail: string;
   onPaymentSuccess?: (reference: string) => void;
   onPaymentError?: (error: any) => void;
 }
 
-export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onPaymentError }: PaystackBillingProps) {
+interface ServerCheckout {
+  attemptId: number;
+  reference: string;
+  expiresAt: string;
+  billingOwnerUserId: number;
+  planId: number;
+  planName: string;
+  planCode: string;
+  amount: number;
+  currency: string;
+  billingPeriod: string;
+  email: string;
+}
+
+export function PaystackBilling({ plan, onPaymentSuccess, onPaymentError }: PaystackBillingProps) {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -48,14 +52,22 @@ export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onP
       return;
     }
 
-    // Pre-flight check: Verify email before allowing payment
-    // This calls the protected subscription endpoint to check if email is verified
+    let checkout: ServerCheckout;
     try {
-      await apiRequest('POST', '/api/billing/paystack/subscription', {
+      const response = await apiRequest('POST', '/api/billing/paystack/checkout', {
         planId: plan.id,
-        billingPeriod: plan.billingPeriod,
-        preflight: true, // Just checking email verification, not actually subscribing
       });
+      const payload = await response.json();
+      if (payload.status === 'completed') {
+        setIsProcessing(false);
+        toast({
+          title: "Payment Recovered",
+          description: payload.message || "Your previous payment was verified and applied.",
+        });
+        onPaymentSuccess?.(payload.reference);
+        return;
+      }
+      checkout = payload.checkout;
     } catch (error: any) {
       setIsProcessing(false);
       // If it's an email verification error, the global handler will show the dialog
@@ -81,30 +93,26 @@ export function PaystackBilling({ plan, userId, userEmail, onPaymentSuccess, onP
       return;
     }
 
-    // Determine Paystack plan code — prefer the server-provided code (source of truth),
-    // fall back to the local constant only if the plan row is missing it.
-    const isYearly = plan.billingPeriod === 'yearly';
-    const paystackPlanCode =
-      plan.paystackPlanCode || (isYearly ? PAYSTACK_PLAN_CODES.yearly : PAYSTACK_PLAN_CODES.monthly);
-    const priceDisplay = `R${(plan.price / 100).toFixed(0)} ${isYearly ? 'yearly' : 'monthly'}`;
+    const isYearly = checkout.billingPeriod === 'yearly';
+    const priceDisplay = `R${(checkout.amount / 100).toFixed(0)} ${isYearly ? 'yearly' : 'monthly'}`;
 
     try {
       // Use Paystack v2 checkout() method - this auto-detects iOS/Safari and shows Apple Pay
       const paystackPop = new (window as any).PaystackPop();
       await paystackPop.checkout({
         key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-        email: userEmail,
-        amount: plan.price, // Price is already in cents from database
-        currency: 'ZAR',
-        plan: paystackPlanCode,
-        ref: `ss_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        email: checkout.email,
+        amount: checkout.amount,
+        currency: checkout.currency,
+        plan: checkout.planCode,
+        ref: checkout.reference,
         metadata: {
-          user_id: userId,
-          plan_id: plan.id,
-          plan_name: plan.name,
-          user_email: userEmail,
+          user_id: checkout.billingOwnerUserId,
+          plan_id: checkout.planId,
+          plan_name: checkout.planName,
+          checkout_attempt_id: checkout.attemptId,
           subscription_type: 'recurring',
-          billing_period: plan.billingPeriod
+          billing_period: checkout.billingPeriod
         },
         onSuccess: (transaction: any) => {
           setIsProcessing(false);

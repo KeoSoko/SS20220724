@@ -138,7 +138,14 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   const limit = uploadEndpointsWithLargeBodies.has(req.path) ? UPLOAD_BODY_LIMIT : DEFAULT_BODY_LIMIT;
 
-  express.json({ limit })(req, res, (jsonErr) => {
+  express.json({
+    limit,
+    verify: (request, _response, body) => {
+      if ((request as Request).path === '/api/billing/paystack/webhook') {
+        (request as Request & { rawBody?: Buffer }).rawBody = Buffer.from(body);
+      }
+    },
+  })(req, res, (jsonErr) => {
     if (jsonErr) {
       return next(jsonErr);
     }

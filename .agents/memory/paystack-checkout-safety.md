@@ -1,0 +1,28 @@
+---
+name: Paystack checkout safety
+description: Durable ownership and concurrency rules for starting or settling Paystack checkout.
+---
+
+Covered editor/viewer membership must take precedence over ownership of the user's private workspace when resolving who controls billing.
+
+**Why:** Invited members intentionally keep their private workspace, so checking workspace ownership first lets them bypass owner-managed billing.
+
+**How to apply:** Any billing UI, checkout route, callback, or access check must use the same member-first billing-owner decision.
+
+Generic checkout must fail closed while an existing paid subscription or unresolved renewal can still settle. Checkout and renewal entitlement changes must serialize on the same owner-level boundary.
+
+**Why:** If an automatic renewal can settle after a manual recovery window opens, two distinct valid provider charges can both succeed. The approved flow may not automatically cancel or alter the existing provider subscription.
+
+**How to apply:** Do not offer a second generic checkout for active, paid-grace, paused, failed, or past-due recurring states; retire competing pending attempts when another verified payment wins.
+
+Server-issued checkout identity includes immutable commercial terms, not only a reference.
+
+**Why:** A public checkout client can alter amount, plan metadata, currency, or customer fields. A server reference alone does not prove what was purchased.
+
+**How to apply:** Snapshot the expected plan, amount, currency, provider plan code, owner email, and reference; require the verified provider transaction to match all of them before ledger or entitlement writes.
+
+A local checkout TTL must never rotate the provider reference by itself.
+
+**Why:** A “transaction not found” verification response does not prove that an already-open provider popup can no longer settle the old reference. Replacing it could expose two independently chargeable references.
+
+**How to apply:** Refresh or block the same reference until provider-side invalidation is authoritative; never mint a replacement from local expiry alone, and reject settlement of retired references.

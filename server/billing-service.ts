@@ -6,8 +6,10 @@ import {
   InsertUserSubscription,
   InsertPaymentTransaction,
   InsertBillingEvent,
+  PaystackCheckoutAttempt,
   userSubscriptions,
   paystackSubscriptionIdentities,
+  paystackCheckoutAttempts,
   paymentTransactions,
   billingEvents,
   users
@@ -17,7 +19,7 @@ import Paystack from "paystack";
 import * as crypto from "crypto";
 import { emailService } from "./email-service";
 import { db } from "./db";
-import { and, eq, sql, desc } from "drizzle-orm";
+import { and, eq, inArray, ne, sql, desc } from "drizzle-orm";
 import { resolvePlanForTransaction, resolvePlanWithRenewalFallback } from "./plan-resolver";
 import {
   advanceBillingDate,
@@ -89,6 +91,72 @@ export interface PaystackReconciliationResult {
   outcome: "reconciled_paid" | "payment_required" | "current" | "unresolved";
   reason: string;
   subscriptionCode?: string;
+}
+
+export type PaystackCheckoutAttemptResult =
+  | { outcome: "created" | "reused"; attempt: PaystackCheckoutAttempt }
+  | {
+      outcome: "checkout_blocked";
+      reason: "active_paid_subscription" | "paid_grace_period" | "renewal_recovery_required";
+      subscription: UserSubscription;
+    };
+
+export type TrackedCheckoutTermsResult =
+  | { valid: true }
+  | {
+      valid: false;
+      reason:
+        | "reference_mismatch"
+        | "stored_plan_mismatch"
+        | "plan_code_mismatch"
+        | "metadata_plan_mismatch"
+        | "amount_mismatch"
+        | "currency_mismatch"
+        | "customer_email_mismatch";
+    };
+
+export function validateTrackedCheckoutTerms(
+  attempt: Pick<
+    PaystackCheckoutAttempt,
+    "planId" | "amount" | "currency" | "paystackPlanCode" | "customerEmail" | "paystackReference"
+  >,
+  plan: SubscriptionPlan,
+  transactionData: any,
+): TrackedCheckoutTermsResult {
+  if (transactionData?.reference !== attempt.paystackReference) {
+    return { valid: false, reason: "reference_mismatch" };
+  }
+  if (plan.id !== attempt.planId || plan.paystackPlanCode !== attempt.paystackPlanCode) {
+    return { valid: false, reason: "stored_plan_mismatch" };
+  }
+
+  const providerPlanCode = typeof transactionData?.plan === "string"
+    ? transactionData.plan
+    : transactionData?.plan?.plan_code ?? transactionData?.plan_code;
+  if (providerPlanCode !== attempt.paystackPlanCode) {
+    return { valid: false, reason: "plan_code_mismatch" };
+  }
+  const metadataPlanId = transactionData?.metadata?.plan_id;
+  const metadataPlanCode = transactionData?.metadata?.plan_code;
+  if (
+    (metadataPlanId !== undefined && Number(metadataPlanId) !== attempt.planId)
+    || (metadataPlanCode !== undefined && metadataPlanCode !== attempt.paystackPlanCode)
+  ) {
+    return { valid: false, reason: "metadata_plan_mismatch" };
+  }
+  if (!Number.isFinite(Number(transactionData?.amount)) || Number(transactionData.amount) !== attempt.amount) {
+    return { valid: false, reason: "amount_mismatch" };
+  }
+  if (String(transactionData?.currency ?? "").toUpperCase() !== attempt.currency.toUpperCase()) {
+    return { valid: false, reason: "currency_mismatch" };
+  }
+  if (
+    String(transactionData?.customer?.email ?? "").trim().toLowerCase()
+    !== attempt.customerEmail.trim().toLowerCase()
+  ) {
+    return { valid: false, reason: "customer_email_mismatch" };
+  }
+  return { valid: true };
 }
 
 interface PaystackProcessingContext {
@@ -922,6 +990,179 @@ export class BillingService {
   }
 
   /**
+   * Create or reuse a server-owned checkout reference. Advisory locking and the
+   * partial unique index independently enforce one pending attempt per owner.
+   */
+  async createOrReusePaystackCheckoutAttempt(input: {
+    billingOwnerUserId: number;
+    requestedByUserId: number;
+    planId: number;
+    amount: number;
+    currency: string;
+    paystackPlanCode: string;
+    customerEmail: string;
+  }): Promise<PaystackCheckoutAttemptResult> {
+    return db.transaction(async (tx) => {
+      // Lock 36 is shared with every Paystack entitlement mutation. Taking it
+      // before the attempt lock prevents checkout creation from racing a renewal.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.billingOwnerUserId}, 36)`);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.billingOwnerUserId}, 41)`);
+
+      const [existingSubscription] = await tx
+        .select()
+        .from(userSubscriptions)
+        .where(eq(userSubscriptions.userId, input.billingOwnerUserId))
+        .limit(1);
+
+      const now = new Date();
+      if (existingSubscription?.status === "active") {
+        return {
+          outcome: "checkout_blocked",
+          reason: "active_paid_subscription",
+          subscription: existingSubscription,
+        };
+      }
+      if (
+        existingSubscription?.status === "cancelled"
+        && existingSubscription.nextBillingDate
+        && new Date(existingSubscription.nextBillingDate).getTime() > now.getTime()
+      ) {
+        return {
+          outcome: "checkout_blocked",
+          reason: "paid_grace_period",
+          subscription: existingSubscription,
+        };
+      }
+      if (existingSubscription && ["paused", "payment_failed", "past_due"].includes(existingSubscription.status)) {
+        // A provider retry may still settle an existing Paystack subscription.
+        // Under the no-automatic-cancellation constraint, opening a second
+        // generic checkout would create an unavoidable double-charge window.
+        return {
+          outcome: "checkout_blocked",
+          reason: "renewal_recovery_required",
+          subscription: existingSubscription,
+        };
+      }
+
+      const [existingAttempt] = await tx
+        .select()
+        .from(paystackCheckoutAttempts)
+        .where(
+          and(
+            eq(paystackCheckoutAttempts.billingOwnerUserId, input.billingOwnerUserId),
+            eq(paystackCheckoutAttempts.status, "pending"),
+          ),
+        )
+        .orderBy(desc(paystackCheckoutAttempts.createdAt))
+        .limit(1);
+      if (existingAttempt) {
+        log(`Reusing Paystack checkout attempt ${existingAttempt.id} for billing owner ${input.billingOwnerUserId}`, "billing");
+        return { outcome: "reused", attempt: existingAttempt };
+      }
+
+      const paystackReference = `ss_srv_${input.billingOwnerUserId}_${crypto.randomBytes(12).toString("hex")}`;
+      const expiresAt = new Date(now.getTime() + 30 * 60 * 1000);
+      const [createdAttempt] = await tx
+        .insert(paystackCheckoutAttempts)
+        .values({
+          billingOwnerUserId: input.billingOwnerUserId,
+          requestedByUserId: input.requestedByUserId,
+          planId: input.planId,
+          amount: input.amount,
+          currency: input.currency.toUpperCase(),
+          paystackPlanCode: input.paystackPlanCode,
+          customerEmail: input.customerEmail.trim().toLowerCase(),
+          paystackReference,
+          status: "pending",
+          expiresAt,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      if (!createdAttempt) {
+        const [contendedAttempt] = await tx
+          .select()
+          .from(paystackCheckoutAttempts)
+          .where(
+            and(
+              eq(paystackCheckoutAttempts.billingOwnerUserId, input.billingOwnerUserId),
+              eq(paystackCheckoutAttempts.status, "pending"),
+            ),
+          )
+          .orderBy(desc(paystackCheckoutAttempts.createdAt))
+          .limit(1);
+        if (contendedAttempt) {
+          log(`Reused contended Paystack checkout attempt ${contendedAttempt.id} for billing owner ${input.billingOwnerUserId}`, "billing");
+          return { outcome: "reused", attempt: contendedAttempt };
+        }
+        throw new Error("Could not create or reuse a pending Paystack checkout attempt");
+      }
+
+      log(`Created Paystack checkout attempt ${createdAttempt.id} for billing owner ${input.billingOwnerUserId}`, "billing");
+      return { outcome: "created", attempt: createdAttempt };
+    });
+  }
+
+  async getPaystackCheckoutAttempt(reference: string): Promise<PaystackCheckoutAttempt | null> {
+    const [attempt] = await db
+      .select()
+      .from(paystackCheckoutAttempts)
+      .where(eq(paystackCheckoutAttempts.paystackReference, reference))
+      .limit(1);
+    return attempt ?? null;
+  }
+
+  async refreshPaystackCheckoutAttemptAfterVerification(
+    reference: string,
+  ): Promise<PaystackCheckoutAttempt | null> {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 30 * 60 * 1000);
+    const [refreshed] = await db
+      .update(paystackCheckoutAttempts)
+      .set({ status: "pending", expiresAt, updatedAt: now })
+      .where(
+        and(
+          eq(paystackCheckoutAttempts.paystackReference, reference),
+          eq(paystackCheckoutAttempts.status, "pending"),
+          sql`${paystackCheckoutAttempts.expiresAt} <= ${now}`,
+        ),
+      )
+      .returning();
+    if (refreshed) {
+      log(`Refreshed verified-unpaid Paystack checkout attempt ${refreshed.id} without rotating its reference`, "billing");
+    }
+    return refreshed ?? null;
+  }
+
+  private async markPaystackCheckoutAttemptCompleted(reference: string): Promise<void> {
+    const now = new Date();
+    await db
+      .update(paystackCheckoutAttempts)
+      .set({ status: "completed", completedAt: now, updatedAt: now })
+      .where(eq(paystackCheckoutAttempts.paystackReference, reference));
+  }
+
+  private async cancelOtherPendingCheckoutAttempts(
+    tx: any,
+    userId: number,
+    successfulReference: string,
+    now: Date,
+  ): Promise<void> {
+    await tx
+      .update(paystackCheckoutAttempts)
+      .set({ status: "cancelled", updatedAt: now })
+      .where(
+        and(
+          eq(paystackCheckoutAttempts.billingOwnerUserId, userId),
+          inArray(paystackCheckoutAttempts.status, ["pending", "expired"]),
+          ne(paystackCheckoutAttempts.paystackReference, successfulReference),
+        ),
+      );
+  }
+
+  /**
    * Process Paystack subscription payment
    * ATOMIC: All database writes wrapped in a single transaction with rollback on failure
    */
@@ -931,6 +1172,20 @@ export class BillingService {
     context: PaystackProcessingContext = {},
   ): Promise<UserSubscription> {
     log(`Processing Paystack subscription for user ${userId}, reference: ${transactionReference}`, 'billing');
+
+    const checkoutAttempt = await this.getPaystackCheckoutAttempt(transactionReference);
+    if (checkoutAttempt?.billingOwnerUserId !== undefined && checkoutAttempt.billingOwnerUserId !== userId) {
+      throw new Error("Checkout attempt belongs to a different billing owner");
+    }
+    if (checkoutAttempt && ["cancelled", "failed", "expired"].includes(checkoutAttempt.status)) {
+      throw new Error(`Checkout attempt is ${checkoutAttempt.status} and cannot grant entitlement`);
+    }
+    const checkoutPlan = checkoutAttempt
+      ? await storage.getSubscriptionPlan?.(checkoutAttempt.planId)
+      : null;
+    if (checkoutAttempt && !checkoutPlan) {
+      throw new Error("Checkout attempt plan no longer exists");
+    }
 
     // Verify the transaction BEFORE starting the transaction
     const verification = await this.verifyPaystackTransaction(transactionReference);
@@ -942,6 +1197,23 @@ export class BillingService {
     const transactionData = verification.subscription;
     const paymentAmount = transactionData.amount || 0;
     await this.assertPaystackTransactionOwnership(userId, transactionData);
+    if (checkoutAttempt && checkoutPlan) {
+      const terms = validateTrackedCheckoutTerms(checkoutAttempt, checkoutPlan, transactionData);
+      if (!terms.valid) {
+        await this.logBillingEvent(userId, "checkout_terms_mismatch", {
+          reference: transactionReference,
+          attemptId: checkoutAttempt.id,
+          attemptPlanId: checkoutAttempt.planId,
+          reason: terms.reason,
+          receivedAmount: transactionData?.amount ?? null,
+          receivedCurrency: transactionData?.currency ?? null,
+          receivedPlanCode: typeof transactionData?.plan === "string"
+            ? transactionData.plan
+            : transactionData?.plan?.plan_code ?? transactionData?.plan_code ?? null,
+        });
+        throw new Error(`Verified Paystack transaction does not match checkout terms: ${terms.reason}`);
+      }
+    }
 
     // A reference that was already applied stays idempotent even if the user's
     // active SUB_* identity changed later.
@@ -958,6 +1230,7 @@ export class BillingService {
       if (!duplicateSubscription) {
         throw new Error("Duplicate transaction but no subscription found");
       }
+      await this.markPaystackCheckoutAttemptCompleted(transactionReference);
       return duplicateSubscription;
     }
 
@@ -1021,7 +1294,9 @@ export class BillingService {
     // subscription, inherit that subscription's CURRENT plan. This never guesses by amount.
     const plans = await this.getSubscriptionPlans();
     const existingForResolution = await this.getUserSubscription(userId);
-    const resolution = resolvePlanWithRenewalFallback(transactionData, plans, existingForResolution);
+    const resolution = checkoutPlan
+      ? { plan: checkoutPlan, source: "server_checkout_attempt" as const }
+      : resolvePlanWithRenewalFallback(transactionData, plans, existingForResolution);
     if (!resolution) {
       log(`[CRITICAL] Could not deterministically resolve plan for user ${userId}, reference ${transactionReference} ` +
         `(amount=${paymentAmount}, plan_code=${transactionData?.plan?.plan_code || 'none'}, ` +
@@ -1086,6 +1361,11 @@ export class BillingService {
             .limit(1);
           
           if (existingSub.length > 0) {
+            await tx
+              .update(paystackCheckoutAttempts)
+              .set({ status: "completed", completedAt: now, updatedAt: now })
+              .where(eq(paystackCheckoutAttempts.paystackReference, transactionReference));
+            await this.cancelOtherPendingCheckoutAttempts(tx, userId, transactionReference, now);
             return existingSub[0] as UserSubscription;
           }
           throw new Error('Duplicate transaction but no subscription found');
@@ -1215,6 +1495,15 @@ export class BillingService {
             refundReason: null,
           })
           .onConflictDoNothing(); // Ignore if duplicate (idempotency)
+
+        // Checkout attempts complete only after verified entitlement and ledger
+        // writes succeed in the same transaction. Webhook/callback overlap is
+        // harmless because both the ledger reference and this update are idempotent.
+        await tx
+          .update(paystackCheckoutAttempts)
+          .set({ status: "completed", completedAt: now, updatedAt: now })
+          .where(eq(paystackCheckoutAttempts.paystackReference, transactionReference));
+        await this.cancelOtherPendingCheckoutAttempts(tx, userId, transactionReference, now);
 
         // Log billing event
         await tx
@@ -1443,7 +1732,7 @@ export class BillingService {
         user.email,
         user.fullName || user.username || "there",
         "payment_failed",
-        "We could not confirm payment for your latest renewal. Your subscription is paused. Open Subscription and complete secure Paystack checkout to update your payment method and restore access.",
+        "We could not confirm payment for your latest renewal. Your subscription is paused. Open Subscription for secure recovery instructions.",
       );
     }
 

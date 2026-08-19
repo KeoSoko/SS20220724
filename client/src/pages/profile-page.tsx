@@ -1277,8 +1277,6 @@ function WorkspaceSection() {
                   billingPeriod: selectedUpgradePlan.billingPeriod,
                   paystackPlanCode: selectedUpgradePlan.paystackPlanCode ?? null,
                 }}
-                userId={user?.id ?? 0}
-                userEmail={user?.email ?? ''}
                 onPaymentSuccess={(reference) => activateUpgradeMutation.mutate(reference)}
                 onPaymentError={(error) => {
                   toast({

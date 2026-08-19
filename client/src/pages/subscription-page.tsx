@@ -759,8 +759,6 @@ export function SubscriptionPage() {
                   {/* Paystack Payment Option */}
                   <PaystackBilling
                     plan={selectedPlan}
-                    userId={user?.id || 0}
-                    userEmail={user?.email || ''}
                     onPaymentSuccess={handlePaystackSuccess}
                     onPaymentError={(error) => {
                       toast({

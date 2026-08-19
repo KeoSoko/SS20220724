@@ -460,6 +460,25 @@ export const paystackSubscriptionIdentities = pgTable("paystack_subscription_ide
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Server-owned checkout lifecycle. The migration adds a partial unique index
+// that permits only one pending attempt per billing owner.
+export const paystackCheckoutAttempts = pgTable("paystack_checkout_attempts", {
+  id: serial("id").primaryKey(),
+  billingOwnerUserId: integer("billing_owner_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  requestedByUserId: integer("requested_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  planId: integer("plan_id").notNull().references(() => subscriptionPlans.id),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull(),
+  paystackPlanCode: text("paystack_plan_code").notNull(),
+  customerEmail: text("customer_email").notNull(),
+  paystackReference: text("paystack_reference").notNull().unique(),
+  status: text("status").notNull().default("pending"), // pending, completed, failed, expired, cancelled
+  expiresAt: timestamp("expires_at").notNull(),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Payment transactions for billing history
 export const paymentTransactions = pgTable("payment_transactions", {
   id: serial("id").primaryKey(),
@@ -540,6 +559,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   taxSettings: one(taxSettings),
   subscriptions: many(userSubscriptions),
   paystackSubscriptionIdentities: many(paystackSubscriptionIdentities),
+  paystackCheckoutAttempts: many(paystackCheckoutAttempts, { relationName: "checkoutBillingOwner" }),
+  requestedPaystackCheckoutAttempts: many(paystackCheckoutAttempts, { relationName: "checkoutRequester" }),
   paymentTransactions: many(paymentTransactions),
   workspace: one(workspaces, {
     fields: [users.workspaceId],
@@ -663,6 +684,7 @@ export const receiptAuditTrailRelations = relations(receiptAuditTrail, ({ one })
 // Billing table relations
 export const subscriptionPlansRelations = relations(subscriptionPlans, ({ many }) => ({
   subscriptions: many(userSubscriptions),
+  paystackCheckoutAttempts: many(paystackCheckoutAttempts),
 }));
 
 export const userSubscriptionsRelations = relations(userSubscriptions, ({ one, many }) => ({
@@ -681,6 +703,23 @@ export const paystackSubscriptionIdentitiesRelations = relations(paystackSubscri
   user: one(users, {
     fields: [paystackSubscriptionIdentities.userId],
     references: [users.id],
+  }),
+}));
+
+export const paystackCheckoutAttemptsRelations = relations(paystackCheckoutAttempts, ({ one }) => ({
+  billingOwner: one(users, {
+    fields: [paystackCheckoutAttempts.billingOwnerUserId],
+    references: [users.id],
+    relationName: "checkoutBillingOwner",
+  }),
+  requestedBy: one(users, {
+    fields: [paystackCheckoutAttempts.requestedByUserId],
+    references: [users.id],
+    relationName: "checkoutRequester",
+  }),
+  plan: one(subscriptionPlans, {
+    fields: [paystackCheckoutAttempts.planId],
+    references: [subscriptionPlans.id],
   }),
 }));
 
@@ -1111,6 +1150,7 @@ export type InsertPaymentTransaction = z.infer<typeof insertPaymentTransactionSc
 export type BillingEvent = typeof billingEvents.$inferSelect;
 export type InsertBillingEvent = z.infer<typeof insertBillingEventSchema>;
 export type PaystackSubscriptionIdentity = typeof paystackSubscriptionIdentities.$inferSelect;
+export type PaystackCheckoutAttempt = typeof paystackCheckoutAttempts.$inferSelect;
 export type PromoCode = typeof promoCodes.$inferSelect;
 export type InsertPromoCode = z.infer<typeof insertPromoCodeSchema>;
 

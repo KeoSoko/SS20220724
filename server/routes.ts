@@ -66,6 +66,7 @@ import { profitLossService } from "./profit-loss-service";
 import { registerAdminRoutes } from "./admin-routes";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus, getEffectiveSubscriptionStatus } from "./subscription-middleware";
 import { getWorkspaceSeatInfo } from "./workspace-seats";
+import { resolveBillingOwner } from "./billing-owner";
 import { log } from "./vite";
 import { generateUserManual } from "./user-manual";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
@@ -75,6 +76,7 @@ import {
   extractPaystackSubscriptionCode,
   extractPaystackTransactionReference,
   isPaystackInvoicePaid,
+  isPaystackRecurringInvoiceTransaction,
 } from "./paystack-renewal";
 import { and, asc, desc, eq, gte, inArray, lt, lte, ne, or, sql, isNull, isNotNull } from "drizzle-orm";
 import multer from "multer";
@@ -111,6 +113,41 @@ import * as crypto from "crypto";
 async function handlePaystackChargeSuccess(data: any) {
   try {
     log(`Processing Paystack charge success: ${data.reference}`, 'billing');
+
+    // A server-owned checkout attempt is authoritative for initial checkout
+    // ownership. Legacy/renewal events continue through the established resolver.
+    const checkoutAttempt = data.reference
+      ? await billingService.getPaystackCheckoutAttempt(data.reference)
+      : null;
+    if (checkoutAttempt?.status === "cancelled") {
+      await billingService.recordBillingEvent(
+        checkoutAttempt.billingOwnerUserId,
+        "cancelled_checkout_reference_settled",
+        {
+          reference: data.reference,
+          attemptId: checkoutAttempt.id,
+          reason: "another_verified_payment_won",
+        },
+      );
+      log(`Rejected cancelled checkout attempt ${checkoutAttempt.id}; manual review required for reference ${data.reference}`, "billing");
+      return;
+    }
+    if (checkoutAttempt) {
+      await billingService.processPaystackSubscription(
+        checkoutAttempt.billingOwnerUserId,
+        data.reference,
+      );
+      log(`Successfully activated subscription for billing owner ${checkoutAttempt.billingOwnerUserId} via checkout attempt ${checkoutAttempt.id}`, 'billing');
+      return;
+    }
+    if (!isPaystackRecurringInvoiceTransaction(data)) {
+      await billingService.recordBillingEvent(null, "untracked_paystack_charge_rejected", {
+        reference: data.reference ?? null,
+        reason: "initial_checkout_requires_server_attempt",
+      });
+      log(`Rejected untracked initial Paystack charge ${data.reference ?? "unknown"}; manual review required`, "billing");
+      return;
+    }
     
     const resolved = await resolvePaystackUser(data, 'charge.success');
     if (!resolved) return;
@@ -926,27 +963,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // still tells the UI who the owner is.
       const subscriptionStatus = await getEffectiveSubscriptionStatus(userId);
 
-      const user = await storage.getUser(userId);
       let workspaceContext = null;
-      if (user) {
+      const billingOwner = await resolveBillingOwner(userId);
+      if (billingOwner.state === "resolved" && billingOwner.relationship === "workspace_member") {
         const [workspace] = await db
           .select({ id: workspaces.id, name: workspaces.name, ownerId: workspaces.ownerId })
           .from(workspaces)
-          .where(eq(workspaces.id, user.workspaceId))
+          .where(eq(workspaces.id, billingOwner.workspaceId!))
           .limit(1);
         if (workspace) {
-          const isOwner = workspace.ownerId === userId;
-          if (!isOwner) {
-            const owner = await storage.getUser(workspace.ownerId);
-            workspaceContext = {
-              isOwner: false,
-              workspaceName: workspace.name,
-              ownerName: owner?.fullName || owner?.username || "the workspace owner",
-            };
-          } else {
-            workspaceContext = { isOwner: true };
-          }
+          const owner = await storage.getUser(billingOwner.billingOwnerUserId);
+          workspaceContext = {
+            isOwner: false,
+            workspaceName: workspace.name,
+            ownerName: owner?.fullName || owner?.username || "the workspace owner",
+          };
         }
+      } else if (billingOwner.state === "unresolved") {
+        workspaceContext = {
+          isOwner: false,
+          workspaceName: "your workspace",
+          ownerName: "the workspace owner",
+        };
+      } else if (billingOwner.state === "resolved") {
+        workspaceContext = { isOwner: true };
       }
 
       res.json({ ...subscriptionStatus, workspaceContext });
@@ -3707,6 +3747,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const userId = getUserId(req);
+      const billingOwner = await resolveBillingOwner(userId);
+      if (billingOwner.state === "unresolved") {
+        return res.status(409).json({
+          error: "Billing owner could not be resolved",
+          code: "billing_owner_unresolved",
+        });
+      }
+      if (!billingOwner.canManageBilling) {
+        return res.status(403).json({
+          error: "Billing is managed by your workspace owner",
+          code: "workspace_member_billing_restricted",
+        });
+      }
       const { purchaseToken, orderId, productId, subscriptionId } = req.body;
       
       if (!purchaseToken || !productId) {
@@ -3730,6 +3783,147 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create or reuse a server-owned Paystack checkout attempt. The database
+  // enforces one pending attempt per billing owner.
+  app.post("/api/billing/paystack/checkout", requireVerifiedEmail, async (req, res) => {
+    try {
+      const requestedByUserId = getUserId(req);
+      const planId = Number(req.body?.planId);
+      if (!Number.isInteger(planId) || planId <= 0) {
+        return res.status(400).json({ error: "A valid subscription plan is required" });
+      }
+
+      const billingOwner = await resolveBillingOwner(requestedByUserId);
+      if (billingOwner.state === "unresolved") {
+        return res.status(409).json({
+          error: "Billing owner could not be resolved",
+          code: "billing_owner_unresolved",
+        });
+      }
+      if (!billingOwner.canManageBilling) {
+        log(`Blocked Paystack checkout for workspace member ${requestedByUserId} in workspace ${billingOwner.workspaceId}`, "billing");
+        return res.status(403).json({
+          error: "Billing is managed by your workspace owner",
+          code: "workspace_member_billing_restricted",
+        });
+      }
+
+      const requestedPlan = await storage.getSubscriptionPlan?.(planId);
+      if (!requestedPlan || !requestedPlan.isActive || requestedPlan.billingPeriod === "trial") {
+        return res.status(404).json({ error: "Subscription plan is not available" });
+      }
+      if (!requestedPlan.paystackPlanCode) {
+        return res.status(409).json({ error: "This plan is not configured for Paystack checkout" });
+      }
+
+      const ownerUser = await storage.getUser(billingOwner.billingOwnerUserId);
+      if (!ownerUser?.email) {
+        return res.status(409).json({ error: "Billing owner does not have a valid email address" });
+      }
+
+      let attemptResult = await billingService.createOrReusePaystackCheckoutAttempt({
+        billingOwnerUserId: billingOwner.billingOwnerUserId,
+        requestedByUserId,
+        planId: requestedPlan.id,
+        amount: requestedPlan.price,
+        currency: requestedPlan.currency,
+        paystackPlanCode: requestedPlan.paystackPlanCode,
+        customerEmail: ownerUser.email,
+      });
+
+      if (attemptResult.outcome === "checkout_blocked") {
+        const isRenewalRecovery = attemptResult.reason === "renewal_recovery_required";
+        return res.status(409).json({
+          error: isRenewalRecovery
+            ? "An existing subscription renewal must be resolved before starting a new checkout"
+            : "This account already has paid access",
+          code: isRenewalRecovery
+            ? "existing_renewal_checkout_blocked"
+            : "active_subscription_checkout_blocked",
+          nextBillingDate: attemptResult.subscription.nextBillingDate,
+        });
+      }
+
+      let attempt = attemptResult.attempt;
+      let outcome = attemptResult.outcome;
+      if (outcome === "reused") {
+        const verification = await billingService.verifyPaystackTransaction(attempt.paystackReference);
+        if (verification.valid) {
+          await billingService.processPaystackSubscription(
+            attempt.billingOwnerUserId,
+            attempt.paystackReference,
+          );
+          return res.status(200).json({
+            status: "completed",
+            reference: attempt.paystackReference,
+            message: "Your successful payment was recovered and applied.",
+          });
+        }
+
+        const isExpired = attempt.expiresAt.getTime() <= Date.now();
+        if (!isExpired) {
+          // A pending/failed provider result before the TTL reuses the same
+          // reference, so retries and multiple tabs cannot open a second charge.
+          outcome = "reused";
+        } else {
+        // Only a provider response that definitively says no transaction exists
+        // permits a new opportunity. Network/auth ambiguity keeps the same attempt.
+        const verificationError = verification.error || "";
+        const definitivelyMissing = /not found|invalid reference|does not exist|no transaction/i.test(verificationError);
+        if (!definitivelyMissing) {
+          return res.status(409).json({
+            error: "We are still verifying the previous checkout. Please try again shortly.",
+            code: "checkout_verification_pending",
+            reference: attempt.paystackReference,
+          });
+        }
+
+        const refreshedAttempt = await billingService.refreshPaystackCheckoutAttemptAfterVerification(
+          attempt.paystackReference,
+        );
+        if (!refreshedAttempt) {
+          return res.status(409).json({
+            error: "The existing checkout could not be refreshed. Please try again shortly.",
+            code: "checkout_refresh_pending",
+            reference: attempt.paystackReference,
+          });
+        }
+        // Never rotate a checkout reference on TTL alone. A provider "not found"
+        // response does not prove an already-open popup can no longer settle.
+        attempt = refreshedAttempt;
+        outcome = "reused";
+        }
+      }
+
+      const checkoutPlan = attempt.planId === requestedPlan.id
+        ? requestedPlan
+        : await storage.getSubscriptionPlan?.(attempt.planId);
+      if (!checkoutPlan?.paystackPlanCode) {
+        return res.status(409).json({ error: "The pending checkout plan is no longer available" });
+      }
+
+      return res.status(outcome === "created" ? 201 : 200).json({
+        status: outcome,
+        checkout: {
+          attemptId: attempt.id,
+          reference: attempt.paystackReference,
+          expiresAt: attempt.expiresAt,
+          billingOwnerUserId: attempt.billingOwnerUserId,
+          planId: checkoutPlan.id,
+          planName: checkoutPlan.name,
+           planCode: attempt.paystackPlanCode,
+           amount: attempt.amount,
+           currency: attempt.currency,
+          billingPeriod: checkoutPlan.billingPeriod,
+           email: attempt.customerEmail,
+        },
+      });
+    } catch (error: any) {
+      log(`Error creating Paystack checkout attempt: ${error.message}`, "billing");
+      return res.status(500).json({ error: "Failed to initialize Paystack checkout" });
+    }
+  });
+
   // Process Paystack subscription - Verifies and activates if webhook hasn't processed it yet
   // Primary activation is via webhook, but this provides a fallback safety net
   // Requires email verification - sensitive billing action
@@ -3742,6 +3936,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Preflight check: Just verify email is verified (middleware already did this)
       // Return success so client knows they can proceed with payment
       if (preflight === true) {
+        const billingOwner = await resolveBillingOwner(userId);
+        if (billingOwner.state === "unresolved") {
+          return res.status(409).json({
+            error: "Billing owner could not be resolved",
+            code: "billing_owner_unresolved",
+          });
+        }
+        if (!billingOwner.canManageBilling) {
+          return res.status(403).json({
+            error: "Billing is managed by your workspace owner",
+            code: "workspace_member_billing_restricted",
+          });
+        }
         return res.status(200).json({ 
           success: true, 
           message: "Email verification passed, you may proceed with payment" 
@@ -3751,6 +3958,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!reference) {
         return res.status(400).json({ error: "Paystack transaction reference is required" });
       }
+
+      const billingOwner = await resolveBillingOwner(userId);
+      if (billingOwner.state === "unresolved") {
+        return res.status(409).json({
+          error: "Billing owner could not be resolved",
+          code: "billing_owner_unresolved",
+        });
+      }
+      if (!billingOwner.canManageBilling) {
+        return res.status(403).json({
+          error: "Billing is managed by your workspace owner",
+          code: "workspace_member_billing_restricted",
+        });
+      }
+
+      const checkoutAttempt = await billingService.getPaystackCheckoutAttempt(reference);
+      if (!checkoutAttempt) {
+        return res.status(400).json({
+          error: "Checkout reference was not issued by this server",
+          code: "untracked_checkout_reference",
+        });
+      }
+      if (checkoutAttempt.status === "cancelled") {
+        return res.status(409).json({
+          error: "This checkout was retired because another payment completed first",
+          code: "checkout_reference_cancelled",
+        });
+      }
+      if (checkoutAttempt.billingOwnerUserId !== billingOwner.billingOwnerUserId) {
+        return res.status(403).json({ error: "Checkout attempt belongs to another billing account" });
+      }
+      const processingUserId = checkoutAttempt.billingOwnerUserId;
 
       // Verify the transaction with Paystack
       const verification = await billingService.verifyPaystackTransaction(reference);
@@ -3763,7 +4002,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check current subscription status
-      const currentSubscription = await billingService.getUserSubscription(userId);
+      const currentSubscription = await billingService.getUserSubscription(processingUserId);
       
       // FALLBACK ACTIVATION: If payment is verified but subscription is not active,
       // activate it now. This handles cases where webhooks fail or are delayed.
@@ -3775,20 +4014,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         if (needsActivation) {
           try {
-            await billingService.processPaystackSubscription(userId, reference);
+            await billingService.processPaystackSubscription(processingUserId, reference);
             activated = true;
-            log(`Fallback activation: Subscription activated for user ${userId} via verification endpoint`, 'billing');
+            log(`Fallback activation: Subscription activated for billing owner ${processingUserId} via verification endpoint`, 'billing');
           } catch (activationError: any) {
             // If activation fails due to duplicate, that's OK - webhook already processed it
             if (!activationError.message?.includes('duplicate') && !activationError.message?.includes('conflict')) {
-              log(`Fallback activation failed for user ${userId}: ${activationError.message}`, 'billing');
+              log(`Fallback activation failed for billing owner ${processingUserId}: ${activationError.message}`, 'billing');
             }
           }
         }
       }
 
       // Get updated subscription status
-      const updatedSubscription = await billingService.getUserSubscription(userId);
+      const updatedSubscription = await billingService.getUserSubscription(processingUserId);
       
       res.json({ 
         verified: true,
@@ -3837,8 +4076,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     log(`[WEBHOOK_ARRIVAL] timestamp=${webhookReceivedAt} event=${event || 'missing'} reference=${reference} has_metadata_user_id=${hasMetadataUserId}`, 'billing');
 
     // Verify signature BEFORE acknowledging - reject bad actors immediately
-    const hash = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY || '').update(JSON.stringify(req.body)).digest('hex');
-    if (hash !== req.headers['x-paystack-signature']) {
+    const webhookSecret = process.env.PAYSTACK_SECRET_KEY;
+    const receivedSignature = req.headers['x-paystack-signature'];
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+    if (!webhookSecret || typeof receivedSignature !== 'string' || !rawBody) {
+      log(`[WEBHOOK_REJECTED] Missing signature prerequisites for reference=${reference} event=${event}`, 'billing');
+      return res.status(400).json({ error: 'Invalid signature' });
+    }
+    const expectedSignature = crypto
+      .createHmac('sha512', webhookSecret)
+      .update(rawBody)
+      .digest('hex');
+    const signatureIsValid = expectedSignature.length === receivedSignature.length
+      && crypto.timingSafeEqual(
+        Buffer.from(expectedSignature, 'utf8'),
+        Buffer.from(receivedSignature, 'utf8'),
+      );
+    if (!signatureIsValid) {
       log(`[WEBHOOK_REJECTED] Invalid signature for reference=${reference} event=${event}`, 'billing');
       return res.status(400).json({ error: 'Invalid signature' });
     }
@@ -3998,6 +4252,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const userId = getUserId(req);
+      const billingOwner = await resolveBillingOwner(userId);
+      if (billingOwner.state === "unresolved") {
+        return res.status(409).json({
+          error: "Billing owner could not be resolved",
+          code: "billing_owner_unresolved",
+        });
+      }
+      if (!billingOwner.canManageBilling) {
+        return res.status(403).json({
+          error: "Billing is managed by your workspace owner",
+          code: "workspace_member_billing_restricted",
+        });
+      }
       const { receiptData, productId, transactionId, originalTransactionId, purchaseDate } = req.body;
       
       // Validate required fields

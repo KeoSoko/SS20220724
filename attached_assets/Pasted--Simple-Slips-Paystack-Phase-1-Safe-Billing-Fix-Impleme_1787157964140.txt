@@ -1,0 +1,511 @@
+# Simple Slips Paystack — Phase 1 Safe Billing Fix
+
+Implement **only the two P0 findings from the Paystack billing audit**:
+
+1. Server-owned checkout idempotency.
+2. Workspace billing-owner enforcement.
+
+This is a production billing system with real customers.
+
+## Critical rules
+
+* Do not rewrite the billing system.
+* Do not change the existing renewal/reconciliation architecture unless required for compatibility with these two fixes.
+* Do not change existing Paystack customers or subscriptions.
+* Do not delete or automatically repair production subscription/payment records.
+* Do not create a new charging mechanism.
+* Reconciliation must remain read/verify/repair only and must never initiate charges.
+* Preserve the existing payment ledger uniqueness and advisory-lock protections.
+* All database changes must use safe migrations.
+* Existing customers must continue to have access during deployment.
+
+---
+
+# Part 1 — Create a canonical billing-owner resolver
+
+We currently have an inconsistency:
+
+Protected application access correctly resolves workspace members to the workspace owner's subscription, but Paystack billing endpoints can still use the logged-in user's ID.
+
+Fix this by creating/reusing **one canonical server-side billing-owner resolver**.
+
+Conceptually:
+
+`authenticated user`
+
+`→ inspect workspace relationship`
+
+`→ determine effective billing owner`
+
+`→ return billingOwnerUserId + relationship/context`
+
+The resolver must be deterministic.
+
+For a normal individual account:
+
+`billingOwnerUserId = authenticatedUser.id`
+
+For a workspace owner:
+
+`billingOwnerUserId = owner.id`
+
+For an editor/viewer covered by an owner's subscription:
+
+`billingOwnerUserId = workspace.owner_id`
+
+and:
+
+`canManageBilling = false`
+
+Do not silently fall back to personal billing for a workspace member if owner resolution fails.
+
+Fail safely.
+
+---
+
+# Part 2 — Enforce billing ownership across Paystack checkout
+
+Before initiating any Paystack checkout:
+
+1. Resolve the effective billing owner.
+2. Determine whether the authenticated user is permitted to manage billing.
+3. If they are a covered workspace member rather than the billing owner:
+
+**Do not initialise Paystack.**
+
+Return a safe response indicating that billing is managed by the workspace owner.
+
+The frontend should display an appropriate message such as:
+
+> Your subscription is managed by your workspace owner.
+
+Do not show the normal Subscribe/payment CTA to covered workspace members.
+
+Do not automatically cancel any existing personal subscriptions belonging to workspace members. Existing anomalies must be reviewed separately.
+
+---
+
+# Part 3 — Server-owned checkout attempts
+
+Currently the browser generates the Paystack reference.
+
+Remove the browser as the authority for generating payment references.
+
+Create a server-owned checkout attempt system.
+
+Add an appropriate table, for example:
+
+`paystack_checkout_attempts`
+
+Suggested fields:
+
+* `id`
+* `billing_owner_user_id`
+* `requested_by_user_id`
+* `plan_id`
+* `paystack_reference`
+* `status`
+* `created_at`
+* `updated_at`
+* `expires_at`
+* `completed_at`
+
+Possible statuses:
+
+* `pending`
+* `completed`
+* `failed`
+* `expired`
+* `cancelled`
+
+Use naming consistent with the existing codebase if different names are more appropriate.
+
+The **server**, not React, generates the Paystack reference.
+
+---
+
+# Part 4 — One pending checkout per billing owner
+
+Checkout initiation must be atomic.
+
+When a billing owner requests checkout:
+
+1. Resolve billing owner.
+2. Lock checkout creation for that billing owner.
+3. Check their effective subscription.
+4. If they already have an active paid subscription and this is not an explicitly supported plan-change flow:
+
+**Do not initialise another subscription checkout.**
+
+5. Check for a valid pending checkout attempt.
+6. If one already exists for the same owner/plan:
+
+reuse the existing safe attempt where possible, or return its state instead of creating another Paystack transaction.
+
+7. If none exists:
+
+   * generate the reference server-side;
+   * create the pending attempt;
+   * initialise the Paystack checkout;
+   * return the required checkout data to the frontend.
+
+Two simultaneous requests must not be able to create two pending checkout attempts.
+
+Use a database-backed concurrency guarantee.
+
+Do not rely only on:
+
+```text
+if pending_attempt:
+```
+
+because two concurrent requests can both pass that check.
+
+Use an appropriate combination of:
+
+* database transaction;
+* unique constraint;
+* advisory lock;
+* row locking;
+
+consistent with the existing PostgreSQL architecture.
+
+---
+
+# Part 5 — Protect against double clicks
+
+Update:
+
+`client/src/components/paystack-billing.tsx`
+
+The frontend should disable the Subscribe/payment button immediately while checkout initialisation is in progress.
+
+But this is **only a UX protection**.
+
+The backend must remain fully safe if:
+
+* the button is clicked twice;
+* JavaScript submits twice;
+* two tabs are open;
+* the browser retries;
+* the network response is lost;
+* the component remounts;
+* two requests arrive simultaneously.
+
+The financial protection must exist server-side.
+
+---
+
+# Part 6 — Connect successful payment to checkout attempt
+
+When the existing verified Paystack payment processor receives a successful transaction:
+
+match the verified Paystack reference to its checkout attempt.
+
+Only after normal server-side Paystack verification succeeds:
+
+`pending → completed`
+
+Do not mark an attempt completed based solely on a frontend callback.
+
+Preserve the existing rule:
+
+**Paystack verification + server processing determines payment success.**
+
+The existing payment transaction ledger should remain the authoritative local record of the completed provider transaction.
+
+---
+
+# Part 7 — Failed/abandoned attempts
+
+A customer abandoning Paystack must not permanently block future checkout.
+
+Pending attempts need a reasonable expiry mechanism.
+
+After expiry:
+
+`pending → expired`
+
+and a new checkout may safely be created.
+
+Do not treat an expired local checkout attempt as proof that the Paystack transaction failed.
+
+If there is ambiguity, verify against Paystack before allowing behaviour that could create another charge.
+
+The design must specifically handle this scenario:
+
+1. Customer pays Paystack successfully.
+2. Browser disconnects before Simple Slips receives the response.
+3. Local attempt still appears pending.
+4. Customer returns and clicks Subscribe again.
+
+The system must first determine whether the existing reference succeeded before creating a second charge opportunity.
+
+---
+
+# Part 8 — Existing subscribers
+
+Before creating checkout, determine the billing owner's effective subscription.
+
+If already legitimately paid/active:
+
+Do not create another generic subscription checkout.
+
+Return an appropriate status to the frontend.
+
+Do not interfere with explicit renewal recovery or future plan-change functionality unless those flows are already intentionally implemented.
+
+---
+
+# Part 9 — Workspace tests
+
+Add integration tests proving:
+
+### Individual user
+
+Individual user can create checkout.
+
+### Workspace owner
+
+Owner can create checkout for their billing account.
+
+### Covered editor
+
+Editor inherits owner's subscription.
+
+Editor cannot initialise personal Paystack checkout.
+
+### Covered viewer
+
+Viewer inherits owner's subscription.
+
+Viewer cannot initialise personal Paystack checkout.
+
+### Stale personal trial
+
+Member has an expired/stale personal trial but owner is paid.
+
+Expected:
+
+Member remains covered by owner.
+
+Member cannot be sent into checkout because of their personal trial state.
+
+### Existing personal member subscription
+
+If a member already has a personal subscription record:
+
+Do not automatically delete/cancel/change it.
+
+Flag it for manual review.
+
+---
+
+# Part 10 — Double-charge tests
+
+These tests are mandatory.
+
+## Test A — double click
+
+Two checkout requests from same billing owner milliseconds apart.
+
+Expected:
+
+**one server checkout attempt**
+
+**one Paystack initialisation**
+
+## Test B — two browser tabs
+
+Two simultaneous requests.
+
+Expected:
+
+**one effective checkout**
+
+## Test C — network retry
+
+Checkout request succeeds server-side but client loses response and retries.
+
+Expected:
+
+existing attempt reused/recovered.
+
+No second Paystack checkout is created.
+
+## Test D — existing subscriber
+
+Active paid subscriber clicks Subscribe.
+
+Expected:
+
+Paystack is never called.
+
+## Test E — member checkout
+
+Paid workspace owner's editor attempts checkout.
+
+Expected:
+
+Paystack is never called.
+
+## Test F — callback + webhook
+
+Both process the successful transaction.
+
+Expected:
+
+one payment ledger entry.
+
+one entitlement update.
+
+checkout attempt completed once.
+
+## Test G — successful payment but lost browser response
+
+Paystack succeeds.
+
+Browser never completes callback.
+
+Webhook/reconciliation processes transaction.
+
+Expected:
+
+payment recorded once.
+
+subscription active.
+
+checkout attempt eventually completed/reconciled.
+
+## Test H — concurrent server requests
+
+Two checkout requests execute concurrently at database level.
+
+Expected:
+
+database/concurrency protection ensures only one active checkout attempt exists.
+
+---
+
+# Part 11 — Migration safety
+
+Before running the migration:
+
+1. Show me the proposed schema.
+2. Show me all indexes and UNIQUE constraints.
+3. Explain how the migration behaves with existing users.
+4. Confirm it does not modify existing payment/subscription records.
+5. Confirm rollback behaviour.
+
+Also confirm the previously identified:
+
+`paystack_subscription_identities`
+
+production migration requirement.
+
+Do not assume it exists in production merely because it exists in development.
+
+---
+
+# Part 12 — Observability
+
+Add structured logging around checkout creation.
+
+Log safe identifiers:
+
+* authenticated user ID;
+* billing owner ID;
+* workspace ID where relevant;
+* checkout attempt ID;
+* Paystack reference;
+* plan ID;
+* attempt status;
+* reason checkout was reused/rejected/created.
+
+Never log:
+
+* Paystack secret;
+* card data;
+* sensitive authorization information.
+
+I need to be able to identify:
+
+`User requested checkout`
+
+`→ billing owner resolved`
+
+`→ attempt created/reused/rejected`
+
+`→ Paystack initialized`
+
+`→ verified payment received`
+
+`→ payment recorded`
+
+`→ attempt completed`
+
+---
+
+# STOP BEFORE DEPLOYMENT
+
+You may implement the code and tests in the development environment, but **do not publish/deploy to production yet**.
+
+When finished, give me:
+
+## A. Files changed
+
+Exact list.
+
+## B. Database migration
+
+Full description of new tables/indexes/constraints.
+
+## C. Billing-owner logic
+
+Explain exactly how individual, owner, editor and viewer accounts resolve.
+
+## D. Checkout idempotency
+
+Explain exactly what now prevents:
+
+* double clicks;
+* two tabs;
+* network retries;
+* concurrent requests;
+* already-active subscribers;
+* covered workspace members;
+
+from generating a second Paystack charge.
+
+## E. Payment completion
+
+Explain how a verified payment transitions the checkout attempt to completed.
+
+## F. Test results
+
+Show results for every required test.
+
+## G. Existing behaviour preserved
+
+Explicitly confirm:
+
+* Paystack server verification still occurs;
+* payment ledger uniqueness remains;
+* advisory entitlement locking remains;
+* reconciliation still cannot charge customers;
+* recurring renewal identity checks remain;
+* existing subscriptions were not altered.
+
+## H. Deployment plan
+
+Give me the exact migration → application deployment → verification sequence.
+
+## I. Rollback plan
+
+Explain how we safely roll this back without removing existing payment idempotency protections.
+
+Do not deploy until I review the result.
+
+The overriding requirement is:
+
+**One intended subscription purchase must create at most one Paystack checkout opportunity, regardless of retries, concurrency, tabs, callbacks or workspace membership.**

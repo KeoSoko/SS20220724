@@ -3,3 +3,4 @@
 - [drizzle-zod required server fields](drizzle-zod-required-server-fields.md) — NOT NULL no-default cols (workspaceId/userId) make insert schema require them; using it as a form resolver silently blocks submit. Omit server-injected fields in form schema.
 - [drizzle db:push TTY prompt](drizzle-push-tty-prompt.md) — push blocks on a pre-existing receipts unique-constraint prompt that ignores piped stdin; apply additive columns via idempotent ALTER, keep schema.ts authoritative.
 - [Workspace seat capacity](workspace-seat-capacity.md) — capacity = owner plan maxSeats (fallback 1); never auto-evict, block growth when over capacity; plan upgrades go through full Paystack checkout (one-click stored-auth charge is disabled).
+- [Paystack renewal identity](paystack-renewal-identity.md) — subscription listing needs numeric customer ID; use invoice history for recovery and never guess between multiple attention subscriptions.

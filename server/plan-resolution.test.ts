@@ -149,6 +149,17 @@ describe("resolvePlanWithRenewalFallback", () => {
     expect(result!.source).toBe("existing_subscription_renewal");
   });
 
+  it("inherits the current plan for a delayed renewal success after payment pause", () => {
+    const result = resolvePlanWithRenewalFallback(
+      { amount: 4900, metadata: null, plan: null },
+      PLANS,
+      { status: "paused", planId: 2 },
+    );
+
+    expect(result?.source).toBe("existing_subscription_renewal");
+    expect(result?.plan.id).toBe(2);
+  });
+
   it("still fails safely (manual review) when there is no existing subscription to inherit from", () => {
     expect(resolvePlanWithRenewalFallback({ amount: 4900 }, PLANS, null)).toBeNull();
     expect(resolvePlanWithRenewalFallback({ amount: 4900 }, PLANS, undefined)).toBeNull();

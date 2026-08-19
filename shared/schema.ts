@@ -444,6 +444,22 @@ export const userSubscriptions = pgTable("user_subscriptions", {
   updatedAt: timestamp("updated_at"),
 });
 
+// Durable Paystack subscription ownership.
+// A customer can have old SUB_* records as well as one current record, so this is
+// intentionally a history table rather than a single column on user_subscriptions.
+export const paystackSubscriptionIdentities = pgTable("paystack_subscription_identities", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  subscriptionCode: text("subscription_code").notNull().unique(),
+  customerCode: text("customer_code"),
+  planCode: text("plan_code"),
+  status: text("status").notNull().default("active"), // "active", "retired", "unresolved"
+  providerCreatedAt: timestamp("provider_created_at"),
+  retiredAt: timestamp("retired_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Payment transactions for billing history
 export const paymentTransactions = pgTable("payment_transactions", {
   id: serial("id").primaryKey(),
@@ -523,6 +539,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   customCategories: many(customCategories),
   taxSettings: one(taxSettings),
   subscriptions: many(userSubscriptions),
+  paystackSubscriptionIdentities: many(paystackSubscriptionIdentities),
   paymentTransactions: many(paymentTransactions),
   workspace: one(workspaces, {
     fields: [users.workspaceId],
@@ -658,6 +675,13 @@ export const userSubscriptionsRelations = relations(userSubscriptions, ({ one, m
     references: [subscriptionPlans.id],
   }),
   transactions: many(paymentTransactions),
+}));
+
+export const paystackSubscriptionIdentitiesRelations = relations(paystackSubscriptionIdentities, ({ one }) => ({
+  user: one(users, {
+    fields: [paystackSubscriptionIdentities.userId],
+    references: [users.id],
+  }),
 }));
 
 export const paymentTransactionsRelations = relations(paymentTransactions, ({ one }) => ({
@@ -1086,6 +1110,7 @@ export type PaymentTransaction = typeof paymentTransactions.$inferSelect;
 export type InsertPaymentTransaction = z.infer<typeof insertPaymentTransactionSchema>;
 export type BillingEvent = typeof billingEvents.$inferSelect;
 export type InsertBillingEvent = z.infer<typeof insertBillingEventSchema>;
+export type PaystackSubscriptionIdentity = typeof paystackSubscriptionIdentities.$inferSelect;
 export type PromoCode = typeof promoCodes.$inferSelect;
 export type InsertPromoCode = z.infer<typeof insertPromoCodeSchema>;
 

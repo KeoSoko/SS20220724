@@ -33,6 +33,27 @@ export const TEAM_PLANS: Array<{
   { name: 'team_xl', displayName: 'Enterprise Team', description: 'Shared workspace for big teams — up to 50 seats.', price: 245000, paystackPlanCode: 'PLN_xjrq6x5bqdxcctm', maxSeats: 50 },
 ];
 
+async function ensurePaystackSubscriptionIdentitySchema(): Promise<void> {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS paystack_subscription_identities (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      subscription_code text NOT NULL UNIQUE,
+      customer_code text,
+      plan_code text,
+      status text NOT NULL DEFAULT 'active',
+      provider_created_at timestamp,
+      retired_at timestamp,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS paystack_subscription_identities_user_status_idx
+    ON paystack_subscription_identities (user_id, status)
+  `);
+}
+
 function buildTeamFeatures(maxSeats: number): string[] {
   return [
     `Shared team workspace (up to ${maxSeats} seats)`,
@@ -336,6 +357,11 @@ export async function backfillAuthorizationCodes() {
  * Initialize subscription plans on server startup
  */
 export async function initializeSubscriptionPlans() {
+  // Renewal processing depends on durable SUB_* identity history. Fail startup
+  // explicitly if the additive schema cannot be installed instead of silently
+  // serving a billing path that will fail later.
+  await ensurePaystackSubscriptionIdentitySchema();
+
   try {
     await seedSubscriptionPlans();
     await ensureYearlyPlanExists(); // Add yearly plan to existing databases
@@ -347,8 +373,8 @@ export async function initializeSubscriptionPlans() {
     // Checks every 5 minutes for payments that didn't create subscriptions
     billingService.startOrphanedPaymentMonitoring(5);
     
-    // RECONCILIATION: Check for overdue subscription renewals every 24 hours
-    billingService.startReconciliationMonitoring(24);
+    // RECONCILIATION: Query Paystack hourly for overdue renewals
+    billingService.startReconciliationMonitoring(1);
     
     // WEBHOOK HEALTH: Monitor Paystack webhook connectivity every 12 hours
     billingService.startWebhookHealthMonitoring(12);

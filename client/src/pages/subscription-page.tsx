@@ -162,6 +162,10 @@ export function SubscriptionPage() {
     hasActiveSubscription: boolean;
     isInTrial: boolean;
     subscriptionType: string;
+    paymentRequired?: boolean;
+    paymentRecoveryRecommended?: boolean;
+    renewalDueDate?: string;
+    recoveryPath?: string;
     workspaceContext: {
       isOwner: boolean;
       workspaceName?: string;
@@ -221,6 +225,11 @@ export function SubscriptionPage() {
   const plans = allPlans.filter(plan => plan.name !== 'free_trial');
   const subscription: UserSubscription | null = (subscriptionData as any)?.subscription || null;
   const transactions: PaymentTransaction[] = (transactionsData as any)?.transactions || [];
+  const needsPaymentRecovery = !!(
+    statusData?.paymentRequired
+    || statusData?.paymentRecoveryRecommended
+    || subscription?.status === 'paused'
+  );
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-ZA', {
@@ -241,6 +250,8 @@ export function SubscriptionPage() {
 
   const getSubscriptionStatus = () => {
     if (!subscription) return 'No subscription';
+    if (statusData?.paymentRequired || subscription.status === 'paused') return 'Payment required';
+    if (statusData?.paymentRecoveryRecommended) return 'Renewal needs attention';
     
     if (subscription.isTrialActive) {
       const trialEndDate = subscription.trialEndDate ? new Date(subscription.trialEndDate) : null;
@@ -523,37 +534,52 @@ export function SubscriptionPage() {
                 </Alert>
               </div>
             ) : (
-              <div className="flex items-center justify-between">
-                <div>
-                  <Badge variant={subscription?.status === 'active' ? 'default' : 'secondary'}>
-                    {getSubscriptionStatus()}
-                  </Badge>
-                  {subscription?.nextBillingDate && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Next billing: {formatDate(subscription.nextBillingDate)}
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Link href="/payment-history">
-                    <Button variant="outline" size="sm">
-                      <FileText className="h-4 w-4 mr-2" />
-                      Payment History
-                    </Button>
-                  </Link>
-                  {subscription?.status === 'active' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => cancelMutation.mutate()}
-                      disabled={cancelMutation.isPending}
-                    >
-                      {cancelMutation.isPending && (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      )}
-                      Cancel Subscription
-                    </Button>
-                  )}
+              <div className="space-y-4">
+                {needsPaymentRecovery && (
+                  <Alert className="border-amber-300 bg-amber-50">
+                    <AlertCircle className="h-4 w-4 text-amber-700" />
+                    <AlertDescription className="text-amber-900">
+                      {statusData?.paymentRequired || subscription?.status === 'paused'
+                        ? 'We could not confirm your latest renewal payment. Complete secure Paystack checkout below to update your payment method and restore access.'
+                        : 'Your renewal needs attention, but your access remains available while we verify it. You can complete secure Paystack checkout below to update your payment method.'}
+                      {' '}You will not be charged through a stored card.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Badge variant={subscription?.status === 'active' ? 'default' : 'secondary'}>
+                      {getSubscriptionStatus()}
+                    </Badge>
+                    {subscription?.nextBillingDate && (
+                      <p className="text-sm text-muted-foreground mt-2">
+                        {needsPaymentRecovery
+                          ? `Renewal due since: ${formatDate(subscription.nextBillingDate)}`
+                          : `Next billing: ${formatDate(subscription.nextBillingDate)}`}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Link href="/payment-history">
+                      <Button variant="outline" size="sm">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Payment History
+                      </Button>
+                    </Link>
+                    {subscription?.status === 'active' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => cancelMutation.mutate()}
+                        disabled={cancelMutation.isPending}
+                      >
+                        {cancelMutation.isPending && (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        )}
+                        Cancel Subscription
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -641,7 +667,9 @@ export function SubscriptionPage() {
                     </ul>
                   </CardContent>
                   <CardFooter>
-                    {subscription?.planId === selectedBillingPlan.id && subscription?.status === 'active' ? (
+                    {subscription?.planId === selectedBillingPlan.id
+                    && subscription?.status === 'active'
+                    && !statusData?.paymentRecoveryRecommended ? (
                       <Badge variant="default" className="w-full justify-center py-2">
                         Current Plan
                       </Badge>
@@ -651,7 +679,11 @@ export function SubscriptionPage() {
                         onClick={() => handleSubscribe(selectedBillingPlan)}
                         data-testid="button-subscribe"
                       >
-                        {subscription?.status === 'cancelled' ? 'Resubscribe Now' : 'Subscribe Now'}
+                        {needsPaymentRecovery
+                          ? 'Update payment method'
+                          : subscription?.status === 'cancelled'
+                            ? 'Resubscribe Now'
+                            : 'Subscribe Now'}
                       </Button>
                     )}
                   </CardFooter>

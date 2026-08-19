@@ -1,0 +1,164 @@
+import { describe, expect, it } from "vitest";
+import {
+  advanceBillingDate,
+  checkPaystackTransactionOwnership,
+  classifyPaystackInvoice,
+  extractPaystackTransactionReference,
+  isPaystackRecurringInvoiceTransaction,
+  paystackInvoiceFailureTransactionId,
+  selectPaystackSubscriptionIdentityCandidate,
+  subscriptionIdentityMatches,
+} from "./paystack-renewal";
+
+describe("Paystack renewal classification", () => {
+  const now = new Date("2026-08-19T10:00:00.000Z");
+
+  it("classifies a paid invoice and extracts the verified transaction reference", () => {
+    const result = classifyPaystackInvoice({
+      invoice_code: "INV_paid",
+      paid: true,
+      transaction: { reference: "renewal_ref", status: "success" },
+      subscription: { subscription_code: "SUB_current" },
+    }, "2026-08-01T00:00:00.000Z", now);
+
+    expect(result).toMatchObject({
+      state: "paid",
+      invoiceCode: "INV_paid",
+      subscriptionCode: "SUB_current",
+      transactionReference: "renewal_ref",
+    });
+  });
+
+  it("classifies Paystack's transaction-shaped subscription invoice response", () => {
+    const result = classifyPaystackInvoice({
+      status: "success",
+      reference: "renewal_ref_from_fetch",
+      paid_at: "2026-08-02T06:36:43.000Z",
+      metadata: { invoice_action: "update", subscription_type: "recurring" },
+      subscription: { subscription_code: "SUB_current" },
+    }, "2026-08-02T06:36:43.000Z", now);
+
+    expect(result).toMatchObject({
+      state: "paid",
+      transactionReference: "renewal_ref_from_fetch",
+      subscriptionCode: "SUB_current",
+    });
+    expect(isPaystackRecurringInvoiceTransaction({
+      metadata: { invoice_action: "update" },
+    })).toBe(true);
+  });
+
+  it("classifies an overdue unpaid invoice as payment required", () => {
+    const result = classifyPaystackInvoice({
+      invoice_code: "INV_unpaid",
+      paid: 0,
+      subscription: { subscription_code: "SUB_current" },
+    }, "2026-08-02T00:00:00.000Z", now);
+
+    expect(result.state).toBe("unpaid_due");
+  });
+
+  it("does not fail an invoice before its billing date", () => {
+    const result = classifyPaystackInvoice({
+      invoice_code: "INV_future",
+      paid: false,
+    }, "2026-09-02T00:00:00.000Z", now);
+
+    expect(result.state).toBe("pending");
+  });
+
+  it("rejects an invoice from a stale Paystack subscription identity", () => {
+    expect(subscriptionIdentityMatches("SUB_old", "SUB_current")).toBe("conflict");
+    expect(subscriptionIdentityMatches("SUB_current", "SUB_current")).toBe("match");
+    expect(subscriptionIdentityMatches(null, "SUB_current")).toBe("unknown");
+  });
+
+  it("uses the same success reference for charge.success and invoice.update duplicates", () => {
+    expect(extractPaystackTransactionReference({ reference: "renewal_ref" }))
+      .toBe(extractPaystackTransactionReference({
+        transaction: { reference: "renewal_ref" },
+      }));
+  });
+
+  it("uses a stable failure key for duplicate unpaid invoice events", () => {
+    expect(paystackInvoiceFailureTransactionId("INV_duplicate"))
+      .toBe("paystack-invoice:INV_duplicate");
+    expect(paystackInvoiceFailureTransactionId("INV_duplicate"))
+      .toBe(paystackInvoiceFailureTransactionId("INV_duplicate"));
+  });
+});
+
+describe("Paystack subscription identity recovery", () => {
+  const candidate = (code: string, status: string) => ({
+    subscription_code: code,
+    status,
+    customer: { customer_code: "CUS_current" },
+    plan: { plan_code: "PLN_monthly" },
+  });
+
+  it("selects the one active identity among stale attention subscriptions", () => {
+    expect(selectPaystackSubscriptionIdentityCandidate([
+      candidate("SUB_old", "attention"),
+      candidate("SUB_current", "active"),
+    ], "CUS_current", "PLN_monthly")?.subscription_code).toBe("SUB_current");
+  });
+
+  it("refuses to guess between multiple attention subscriptions", () => {
+    expect(selectPaystackSubscriptionIdentityCandidate([
+      candidate("SUB_first", "attention"),
+      candidate("SUB_second", "attention"),
+    ], "CUS_current", "PLN_monthly")).toBeNull();
+  });
+
+  it("ignores terminal identities when one viable candidate remains", () => {
+    expect(selectPaystackSubscriptionIdentityCandidate([
+      candidate("SUB_old", "complete"),
+      candidate("SUB_current", "attention"),
+    ], "CUS_current", "PLN_monthly")?.subscription_code).toBe("SUB_current");
+  });
+});
+
+describe("renewal billing dates", () => {
+  it("advances from the prior entitlement boundary instead of webhook arrival", () => {
+    expect(advanceBillingDate(
+      new Date("2026-07-02T06:36:43.000Z"),
+      "monthly",
+    ).toISOString()).toBe("2026-08-02T06:36:43.000Z");
+  });
+
+  it("clamps month-end renewals instead of skipping a month", () => {
+    expect(advanceBillingDate(
+      new Date("2025-01-31T12:00:00.000Z"),
+      "monthly",
+    ).toISOString()).toBe("2025-02-28T12:00:00.000Z");
+  });
+
+  it("clamps leap-day yearly renewals", () => {
+    expect(advanceBillingDate(
+      new Date("2024-02-29T12:00:00.000Z"),
+      "yearly",
+    ).toISOString()).toBe("2025-02-28T12:00:00.000Z");
+  });
+});
+
+describe("Paystack transaction ownership", () => {
+  const expected = {
+    userId: 268,
+    email: "customer@example.com",
+    customerCode: "CUS_current",
+  };
+
+  it("accepts renewal charges without metadata when the verified email matches", () => {
+    expect(checkPaystackTransactionOwnership({
+      metadata: null,
+      customer: { email: "CUSTOMER@example.com", customer_code: "CUS_current" },
+    }, expected)).toEqual({ valid: true, reason: "ownership_confirmed" });
+  });
+
+  it("rejects a valid Paystack reference owned by another customer", () => {
+    expect(checkPaystackTransactionOwnership({
+      metadata: { user_id: 999 },
+      customer: { email: "other@example.com", customer_code: "CUS_other" },
+    }, expected)).toEqual({ valid: false, reason: "metadata_user_mismatch" });
+  });
+});

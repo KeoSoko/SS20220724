@@ -19,8 +19,9 @@ export interface ReconcileUserLookup<TUser extends { id: number }> {
 /**
  * Resolve the user for a reconciliation request.
  * Order of precedence (never guesses):
- *   1. metadata.user_id (if present and the account exists)
- *   2. the verified Paystack customer email
+ *   1. metadata.user_id, when present and valid
+ *   2. the verified Paystack customer email, only when metadata is absent
+ * If both identifiers resolve to different users, resolution fails closed.
  * Returns null when neither resolves to an account.
  */
 export async function resolveUserForReconciliation<TUser extends { id: number }>(
@@ -31,17 +32,21 @@ export async function resolveUserForReconciliation<TUser extends { id: number }>
   const metadataUserId =
     typeof rawMetadataUserId === "string" ? Number(rawMetadataUserId) : rawMetadataUserId;
 
-  let user: TUser | undefined;
+  let metadataUser: TUser | undefined;
   if (typeof metadataUserId === "number" && Number.isFinite(metadataUserId)) {
-    user = await lookup.getUser(metadataUserId);
+    metadataUser = await lookup.getUser(metadataUserId);
   }
 
-  if (!user) {
-    const customerEmail = verification.subscription?.customer?.email;
-    if (customerEmail) {
-      user = await lookup.getUserByEmail(customerEmail);
-    }
+  const customerEmail = verification.subscription?.customer?.email;
+  const emailUser = customerEmail
+    ? await lookup.getUserByEmail(customerEmail)
+    : undefined;
+
+  if (metadataUserId !== undefined && metadataUserId !== null) {
+    if (!metadataUser) return null;
+    if (emailUser && emailUser.id !== metadataUser.id) return null;
+    return metadataUser;
   }
 
-  return user ?? null;
+  return emailUser ?? null;
 }

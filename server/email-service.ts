@@ -368,9 +368,9 @@ Security Notice: This link expires in 1 hour. If you didn't request this reset, 
                     <li>You can resubscribe anytime to restore full access</li>
                   `
                   : `
-                    <li>We'll automatically retry the payment in a few days</li>
-                    <li>You can update your payment method now to avoid service interruption</li>
-                    <li>Your access remains active for now, but may be suspended after multiple failed attempts</li>
+                    <li>Your subscription is paused until payment is confirmed</li>
+                    <li>Use secure Paystack checkout to update your payment method</li>
+                    <li>Your access is restored automatically after a verified successful payment</li>
                   `
                 }
               </ul>
@@ -403,9 +403,9 @@ ${notificationType === 'subscription_cancelled'
   ? `- Your access to premium features has been disabled
 - Business Hub (quotations, invoices, P&L reports) is no longer accessible
 - You can resubscribe anytime to restore full access`
-  : `- We'll automatically retry the payment in a few days
-- You can update your payment method now to avoid service interruption
-- Your access remains active for now, but may be suspended after multiple failed attempts`
+  : `- Your subscription is paused until payment is confirmed
+- Use secure Paystack checkout to update your payment method
+- Your access is restored automatically after a verified successful payment`
 }
 
 ${notificationType === 'subscription_cancelled' ? 'Resubscribe' : 'Update your payment method'} at: ${this.appUrl}/subscription

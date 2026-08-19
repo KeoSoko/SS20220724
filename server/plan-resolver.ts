@@ -63,13 +63,14 @@ export function resolvePlanForTransaction(
  *
  * First tries the deterministic payload-based resolution. If that fails (the
  * charge carried no plan code and no plan metadata — which Paystack can do for
- * some recurring renewal charges), AND the customer already has an ACTIVE
- * subscription, inherit that subscription's CURRENT plan and treat the charge
- * as a renewal.
+ * some recurring renewal charges), AND the customer already has an ACTIVE or
+ * payment-PAUSED subscription, inherit that subscription's CURRENT plan and
+ * treat the charge as a renewal. Paused is included so a delayed success can
+ * recover an exact-identity unpaid renewal.
  *
  * This NEVER guesses a plan by amount: it only reuses the exact plan the
- * customer is already on. A customer with no active subscription and no plan
- * info still resolves to null so the caller can flag it for manual review.
+ * customer is already on. Expired and cancelled accounts still resolve to null
+ * so lifecycle policy is not guessed here.
  */
 export function resolvePlanWithRenewalFallback(
   transactionData: any,
@@ -81,7 +82,7 @@ export function resolvePlanWithRenewalFallback(
 
   if (
     existingSubscription &&
-    existingSubscription.status === "active" &&
+    (existingSubscription.status === "active" || existingSubscription.status === "paused") &&
     Array.isArray(plans)
   ) {
     const plan = plans.find((p) => p.id === existingSubscription.planId);

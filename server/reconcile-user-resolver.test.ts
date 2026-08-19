@@ -22,7 +22,7 @@ describe("resolveUserForReconciliation", () => {
     );
     expect(user?.id).toBe(140);
     expect(lookup.getUser).toHaveBeenCalledWith(140);
-    expect(lookup.getUserByEmail).not.toHaveBeenCalled();
+    expect(lookup.getUserByEmail).toHaveBeenCalledWith(ian.email);
   });
 
   it("falls back to the customer email when metadata.user_id is absent (the renewal case)", async () => {
@@ -35,15 +35,25 @@ describe("resolveUserForReconciliation", () => {
     expect(lookup.getUserByEmail).toHaveBeenCalledWith(ian.email);
   });
 
-  it("falls back to email when metadata.user_id points to a non-existent account", async () => {
+  it("fails closed when metadata.user_id points to a non-existent account", async () => {
     const lookup = makeLookup([ian]);
     const user = await resolveUserForReconciliation(
       { subscription: { metadata: { user_id: 99999 }, customer: { email: ian.email } } },
       lookup,
     );
-    expect(user?.id).toBe(140);
+    expect(user).toBeNull();
     expect(lookup.getUser).toHaveBeenCalledWith(99999);
     expect(lookup.getUserByEmail).toHaveBeenCalledWith(ian.email);
+  });
+
+  it("fails closed when metadata and customer email resolve to different users", async () => {
+    const other = { id: 141, email: "other@example.com" };
+    const lookup = makeLookup([ian, other]);
+    const user = await resolveUserForReconciliation(
+      { subscription: { metadata: { user_id: 140 }, customer: { email: other.email } } },
+      lookup,
+    );
+    expect(user).toBeNull();
   });
 
   it("coerces a string metadata.user_id to a number before lookup", async () => {

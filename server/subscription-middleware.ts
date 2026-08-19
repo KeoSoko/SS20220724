@@ -10,6 +10,10 @@ export interface SubscriptionStatus {
   subscriptionType: 'none' | 'trial' | 'premium';
   trialDaysRemaining?: number;
   subscriptionPlatform?: 'paystack' | 'google_play' | 'apple';
+  paymentRequired?: boolean;
+  paymentRecoveryRecommended?: boolean;
+  renewalDueDate?: string;
+  recoveryPath?: string;
   // Effective seat capacity for the workspace, derived from the owner's active
   // plan's max_seats. Read-only — no enforcement here. Defaults to 1 (Solo).
   seatCapacity?: number;
@@ -51,29 +55,43 @@ export async function getSubscriptionStatus(userId: number): Promise<Subscriptio
     const seatCapacity = await resolvePlanSeatCapacity(subscription.planId);
     console.log(`[getSubscriptionStatus] User ${userId} subscription status: ${subscription.status}, trialEnd: ${subscription.trialEndDate}, seatCapacity: ${seatCapacity}`);
 
-    // Check if subscription is active and billing date has not passed
+    // Keep access while an active Paystack renewal is unresolved. Reconciliation
+    // changes the row to paused only after an exact-identity unpaid invoice.
     if (subscription.status === 'active' && subscription.nextBillingDate) {
       const nextBilling = new Date(subscription.nextBillingDate);
-      if (now < nextBilling) {
-        return {
-          hasActiveSubscription: true,
-          isInTrial: false,
-          subscriptionType: 'premium',
-          seatCapacity,
-          subscriptionPlatform: subscription.googlePlayPurchaseToken ? 'google_play' :
-                             subscription.paystackReference ? 'paystack' :
-                             subscription.appleReceiptData ? 'apple' : 'paystack'
-        };
-      } else {
-        console.log(`[getSubscriptionStatus] User ${userId} active subscription is overdue (nextBillingDate: ${nextBilling.toISOString()})`);
-        return { hasActiveSubscription: false, isInTrial: false, subscriptionType: 'none' };
-      }
+      const paymentRecoveryRecommended = now >= nextBilling;
+      return {
+        hasActiveSubscription: true,
+        isInTrial: false,
+        subscriptionType: 'premium',
+        seatCapacity,
+        paymentRecoveryRecommended,
+        renewalDueDate: paymentRecoveryRecommended ? nextBilling.toISOString() : undefined,
+        recoveryPath: paymentRecoveryRecommended ? '/subscription' : undefined,
+        subscriptionPlatform: subscription.googlePlayPurchaseToken ? 'google_play' :
+                           subscription.paystackReference ? 'paystack' :
+                           subscription.appleReceiptData ? 'apple' : 'paystack'
+      };
     }
 
     // active status with no nextBillingDate — deny access
     if (subscription.status === 'active' && !subscription.nextBillingDate) {
       console.log(`[getSubscriptionStatus] User ${userId} active subscription has no nextBillingDate — denying access`);
       return { hasActiveSubscription: false, isInTrial: false, subscriptionType: 'none' };
+    }
+
+    if (subscription.status === 'paused') {
+      return {
+        hasActiveSubscription: false,
+        isInTrial: false,
+        subscriptionType: 'none',
+        paymentRequired: true,
+        renewalDueDate: subscription.nextBillingDate?.toISOString(),
+        recoveryPath: '/subscription',
+        subscriptionPlatform: subscription.googlePlayPurchaseToken ? 'google_play' :
+          subscription.paystackReference ? 'paystack' :
+          subscription.appleReceiptData ? 'apple' : 'paystack',
+      };
     }
 
     // Check if subscription was cancelled but user still has paid time remaining
@@ -194,11 +212,17 @@ export function requireSubscription() {
       const subscriptionStatus = await getEffectiveSubscriptionStatus(userId);
       
       if (!subscriptionStatus.hasActiveSubscription) {
+        const message = subscriptionStatus.paymentRequired
+          ? 'Your renewal payment needs attention. Open Subscription and complete secure checkout to update your payment method and restore access.'
+          : 'Your free trial has ended. Subscribe to continue using Simple Slips and access all your receipts.';
+        const userMessage = subscriptionStatus.paymentRequired
+          ? 'Your renewal payment needs attention. Please update your payment method.'
+          : 'Your free trial has ended. Please subscribe to continue.';
         return res.status(403).json({ 
-          error: 'Subscription required',
+          error: subscriptionStatus.paymentRequired ? 'Payment required' : 'Subscription required',
           subscriptionStatus,
-          message: 'Your free trial has ended. Subscribe to continue using Simple Slips and access all your receipts.',
-          userMessage: 'Your free trial has ended. Please subscribe to continue.'
+          message,
+          userMessage,
         });
       }
 
@@ -235,11 +259,17 @@ export function checkFeatureAccess(feature: 'receipt_upload' | 'ai_categorizatio
       }
 
       // No free tier - users must subscribe after trial ends
+      const message = subscriptionStatus.paymentRequired
+        ? 'Your renewal payment needs attention. Open Subscription and complete secure checkout to restore access.'
+        : 'Your free trial has ended. Subscribe to continue using Simple Slips.';
+      const userMessage = subscriptionStatus.paymentRequired
+        ? 'Your renewal payment needs attention. Please update your payment method.'
+        : 'Your free trial has ended. Please subscribe to continue.';
       return res.status(403).json({
-        error: 'Subscription required',
+        error: subscriptionStatus.paymentRequired ? 'Payment required' : 'Subscription required',
         subscriptionStatus,
-        message: 'Your free trial has ended. Subscribe to continue using Simple Slips.',
-        userMessage: 'Your free trial has ended. Please subscribe to continue.'
+        message,
+        userMessage,
       });
     } catch (error) {
       console.error('Error in checkFeatureAccess middleware:', error);

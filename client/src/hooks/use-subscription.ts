@@ -7,6 +7,10 @@ export interface SubscriptionStatus {
   subscriptionType: 'none' | 'trial' | 'premium';
   trialDaysRemaining?: number;
   subscriptionPlatform?: 'paystack' | 'google_play' | 'apple';
+  paymentRequired?: boolean;
+  paymentRecoveryRecommended?: boolean;
+  renewalDueDate?: string;
+  recoveryPath?: string;
 }
 
 const getStoredToken = (): string | null => {

@@ -71,6 +71,11 @@ import { generateUserManual } from "./user-manual";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
 import { normalizeMerchantName } from "./utils/merchant-normalizer";
+import {
+  extractPaystackSubscriptionCode,
+  extractPaystackTransactionReference,
+  isPaystackInvoicePaid,
+} from "./paystack-renewal";
 import { and, asc, desc, eq, gte, inArray, lt, lte, ne, or, sql, isNull, isNotNull } from "drizzle-orm";
 import multer from "multer";
 import { scrypt, timingSafeEqual, randomBytes } from 'crypto';
@@ -121,7 +126,17 @@ async function handlePaystackChargeSuccess(data: any) {
 async function handlePaystackSubscriptionCreate(data: any) {
   try {
     log(`Paystack subscription created: ${data.subscription_code}`, 'billing');
-    // Log for tracking - actual activation happens on charge.success
+    const resolved = await resolvePaystackUser(data, 'subscription.create');
+    if (!resolved) return;
+
+    const identity = await billingService.recordPaystackSubscriptionIdentity(
+      resolved.user.id,
+      data,
+    );
+    log(
+      `Paystack subscription identity ${identity.subscriptionCode} recorded for user ${resolved.user.id} as ${identity.status}`,
+      'billing',
+    );
   } catch (error) {
     log(`Error handling Paystack subscription create: ${error}`, 'billing');
   }
@@ -131,8 +146,12 @@ async function resolvePaystackUser(data: any, eventDescription: string): Promise
   let user: any = null;
   let usedLegacyFallback = false;
   
-  const metadataUserId = data.metadata?.user_id;
-  if (metadataUserId) {
+  const rawMetadataUserId = data.metadata?.user_id ?? data.subscription?.metadata?.user_id;
+  const metadataUserId = rawMetadataUserId === undefined || rawMetadataUserId === null
+    ? null
+    : Number(rawMetadataUserId);
+  const customerEmail = data.customer?.email ?? data.subscription?.customer?.email;
+  if (metadataUserId !== null && Number.isFinite(metadataUserId)) {
     user = await storage.getUser(metadataUserId);
     if (!user) {
       log(`User ID ${metadataUserId} not found for ${eventDescription}`, 'billing');
@@ -145,8 +164,23 @@ async function resolvePaystackUser(data: any, eventDescription: string): Promise
       });
       return null;
     }
+
+    if (customerEmail) {
+      const emailUser = await storage.getUserByEmail(customerEmail);
+      if (emailUser && emailUser.id !== user.id) {
+        log(`Rejected ${eventDescription}: metadata user ${user.id} disagrees with customer email owner ${emailUser.id}`, 'billing');
+        await billingService.recordBillingEvent(null, 'paystack_webhook_failed_user_resolution', {
+          subscription_code: data.subscription_code ?? data.subscription?.subscription_code,
+          reference: data.reference,
+          reason: 'metadata_email_user_disagreement',
+          metadata_user_id: user.id,
+          email_user_id: emailUser.id,
+          event_type: eventDescription,
+        });
+        return null;
+      }
+    }
   } else {
-    const customerEmail = data.customer?.email;
     if (customerEmail) {
       user = await storage.getUserByEmail(customerEmail);
       if (user) {
@@ -267,32 +301,24 @@ async function handlePaystackPaymentFailed(data: any) {
     if (!resolved) return;
     const { user, usedLegacyFallback } = resolved;
 
-    await billingService.recordPaymentFailure(
+    const result = await billingService.recordPaystackRenewalFailure(
       user.id,
-      data.reference || data.invoice_code || 'unknown',
-      data.gateway_response || data.description || 'Payment failed',
-      data.amount,
-      data.currency
+      data,
+      'invoice.payment_failed',
     );
-
     const failureReason = data.gateway_response || data.description || 'Your payment could not be processed';
-    if (user.email) {
-      await emailService.sendPaymentFailureNotification(
-        user.email,
-        user.username,
-        'payment_failed',
-        `${failureReason}. Please update your payment method to ensure uninterrupted service.`
-      );
-      log(`Payment failure notification sent to user ${user.id}${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
-    }
+    log(`Payment failure result for user ${user.id}: ${result.outcome} (${result.reason})${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
 
     // Also notify admin
     const adminEmail = process.env.ADMIN_EMAIL || 'support@simpleslips.co.za';
-    if (emailService) {
+    if (emailService && result.outcome !== 'duplicate') {
       await emailService.sendEmail(
         adminEmail,
         `🔴 Payment Failed: ${user.username}`,
-        `Payment failed for ${user.username} (${user.email}).\nReason: ${failureReason}\nReference: ${data.reference || data.invoice_code || 'unknown'}\nAmount: ${data.amount ? `R${(data.amount / 100).toFixed(2)}` : 'unknown'}`
+        `Payment failed for ${user.username} (${user.email}).\nReason: ${failureReason}\n` +
+        `Result: ${result.outcome} (${result.reason})\n` +
+        `Reference: ${data.reference || data.invoice_code || 'unknown'}\n` +
+        `Amount: ${data.amount ? `R${(data.amount / 100).toFixed(2)}` : 'unknown'}`
       );
     }
   } catch (error) {
@@ -305,7 +331,8 @@ async function handlePaystackInvoiceCreate(data: any) {
     // Paystack sends this 3 days before subscription is due
     log(`Paystack invoice created: ${data.invoice_code || 'unknown'} for subscription ${data.subscription?.subscription_code || 'unknown'}`, 'billing');
     
-    await billingService.recordBillingEvent(null, 'paystack_invoice_created', {
+    const resolved = await resolvePaystackUser(data, 'invoice.create');
+    await billingService.recordBillingEvent(resolved?.user.id ?? null, 'paystack_invoice_created', {
       invoice_code: data.invoice_code,
       subscription_code: data.subscription?.subscription_code,
       amount: data.amount,
@@ -322,7 +349,10 @@ async function handlePaystackInvoiceUpdate(data: any) {
   try {
     log(`Paystack invoice updated: ${data.invoice_code || 'unknown'} - paid=${data.paid}`, 'billing');
     
-    await billingService.recordBillingEvent(null, 'paystack_invoice_updated', {
+    const resolved = await resolvePaystackUser(data, 'invoice.update');
+    if (!resolved) return;
+
+    await billingService.recordBillingEvent(resolved.user.id, 'paystack_invoice_updated', {
       invoice_code: data.invoice_code,
       subscription_code: data.subscription?.subscription_code,
       amount: data.amount,
@@ -330,11 +360,32 @@ async function handlePaystackInvoiceUpdate(data: any) {
       customer_email: data.customer?.email,
     });
 
-    // If invoice was paid, this is a renewal confirmation
-    // charge.success is the primary handler, but this serves as backup logging
-    if (data.paid === true) {
-      log(`Invoice ${data.invoice_code} marked as paid - renewal confirmed (charge.success is primary handler)`, 'billing');
+    // charge.success is primary. A paid invoice with a reference is an
+    // authoritative fallback when that webhook is delayed or missing.
+    if (isPaystackInvoicePaid(data)) {
+      const transactionReference = extractPaystackTransactionReference(data);
+      if (transactionReference) {
+        await billingService.processPaystackSubscription(resolved.user.id, transactionReference, {
+          expectedSubscriptionCode: extractPaystackSubscriptionCode(data),
+          source: "invoice.update",
+        });
+        log(`Invoice ${data.invoice_code} paid transaction reconciled via ${transactionReference}`, 'billing');
+      } else {
+        await billingService.recordBillingEvent(resolved.user.id, 'renewal_reconciliation_unresolved', {
+          reason: 'paid_invoice_missing_transaction_reference',
+          invoice_code: data.invoice_code,
+          subscription_code: data.subscription?.subscription_code,
+        });
+      }
+      return;
     }
+
+    const result = await billingService.recordPaystackRenewalFailure(
+      resolved.user.id,
+      data,
+      'invoice.update',
+    );
+    log(`Invoice ${data.invoice_code} unpaid result: ${result.outcome} (${result.reason})`, 'billing');
   } catch (error) {
     log(`Error handling Paystack invoice update: ${error}`, 'billing');
   }

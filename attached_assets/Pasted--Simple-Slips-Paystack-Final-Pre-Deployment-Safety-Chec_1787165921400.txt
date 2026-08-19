@@ -1,0 +1,262 @@
+# Simple Slips Paystack — Final Pre-Deployment Safety Check
+
+Task #41 — Prevent duplicate Paystack checkout charges — has passed implementation and independent review.
+
+Do **not deploy yet**.
+
+Perform a final **read-only pre-deployment assessment** of the exact code and migrations that would be released to production.
+
+This is not another implementation task. Do not modify application code, migrations, payment data, subscriptions, or customer records unless you discover a genuine release blocker and report it first.
+
+## 1. Confirm production migration requirements
+
+List every database migration required by the current Paystack billing code, including:
+
+* `paystack_checkout_attempts`;
+* immutable checkout-attempt fields introduced by Task #41;
+* indexes;
+* unique constraints;
+* foreign keys;
+* `paystack_subscription_identities`;
+* any other billing-related schema dependency required by the currently merged application.
+
+For each one tell me:
+
+**migration → required table/columns → whether current application code depends on it → consequence if application deploys before migration**
+
+Explicitly confirm whether the earlier finding that production did not expose:
+
+`paystack_subscription_identities`
+
+has been resolved or is still outstanding.
+
+Do not assume production contains a migration merely because development does.
+
+---
+
+## 2. Determine exact migration order
+
+Give me the exact production-safe sequence.
+
+For example:
+
+`backup/check → migration A → verify → migration B → verify → application deploy → smoke tests`
+
+Do not use this example blindly. Determine the correct sequence from the actual repository.
+
+All required additive schema changes must exist before application code starts depending on them.
+
+---
+
+## 3. Check migration safety against existing production data
+
+Confirm that the migrations:
+
+* do not delete existing payment records;
+* do not delete subscriptions;
+* do not cancel Paystack subscriptions;
+* do not modify customer billing status unexpectedly;
+* do not generate new Paystack references for existing customers;
+* do not initialise Paystack transactions;
+* do not overwrite existing Paystack customer/subscription identities;
+* do not require unsafe destructive backfills.
+
+For the Task #41 immutable checkout-term backfill, explain exactly:
+
+* which existing rows are affected;
+* where the backfilled values come from;
+* what happens if a historical row cannot be safely backfilled;
+* whether the migration can fail halfway;
+* whether it is transaction-safe;
+* whether existing customers without checkout-attempt rows are unaffected.
+
+---
+
+## 4. Verify database constraints
+
+Show the actual database-level mechanism preventing duplicate checkout creation.
+
+I specifically want confirmation of the interaction between:
+
+**billing-owner lock + database constraints + checkout-attempt state**
+
+Explain what happens when five requests arrive simultaneously.
+
+The expected result from the implementation tests was:
+
+`1 created`
+
+`4 reused`
+
+Confirm that this behaviour is guaranteed by the production implementation and not merely an artefact of the test environment.
+
+---
+
+## 5. Verify Paystack is called once
+
+Database idempotency is not enough if two requests can initialise Paystack before the database protection takes effect.
+
+Trace the actual concurrent execution path and explicitly answer:
+
+> Can two simultaneous requests ever reach Paystack transaction initialisation with two different references?
+
+If no, show which server/database boundary prevents it.
+
+Also confirm:
+
+> Can two simultaneous requests initialise Paystack twice using the same reference?
+
+If this remains theoretically possible, explain the consequences and whether Paystack's behaviour makes this safe or whether another guard is required.
+
+Do not make changes unless this is a release blocker. Report first.
+
+---
+
+## 6. Verify workspace billing boundary
+
+Confirm using the merged code:
+
+### Individual user
+
+Can manage their own billing.
+
+### Workspace owner
+
+Can manage workspace billing.
+
+### Editor
+
+Cannot initialise their own Paystack subscription while covered by owner billing.
+
+### Viewer
+
+Cannot initialise their own Paystack subscription while covered by owner billing.
+
+### Member with stale personal trial
+
+Still resolves to owner-funded access and cannot accidentally enter personal checkout.
+
+### Member with existing personal subscription
+
+Existing data is not automatically cancelled, deleted, or altered.
+
+Confirm the blocking occurs **before Paystack initialisation**.
+
+---
+
+## 7. Verify successful-payment security
+
+Confirm the currently merged implementation requires the verified Paystack settlement to match the server-owned checkout attempt for:
+
+* reference;
+* billing owner;
+* email;
+* Plan ID;
+* Paystack plan code;
+* amount;
+* currency;
+* relevant metadata.
+
+Confirm entitlement is derived from the server-owned attempt and not client-provided metadata.
+
+Confirm an untracked initial Paystack transaction cannot grant entitlement.
+
+Confirm recurring renewals remain on their separate verified renewal path.
+
+---
+
+## 8. Verify existing protections remain
+
+Explicitly confirm the release still preserves:
+
+* server-side Paystack verification;
+* payment ledger uniqueness;
+* entitlement advisory locking;
+* recurring `SUB_*` identity matching;
+* reconciliation cannot initiate charges;
+* duplicate callback/webhook processing cannot extend entitlement twice;
+* failed/expired/cancelled checkout attempts cannot grant access.
+
+---
+
+## 9. Known unrelated test failures
+
+The full Vitest suite currently contains two previously known invite-flow failures.
+
+Confirm:
+
+* exact failing tests;
+* they existed before Task #41;
+* they do not touch billing, subscription, workspace billing-owner resolution, authentication required by checkout, or payment processing;
+* they do not represent a regression introduced by Task #41.
+
+If any of those statements are false, flag the release.
+
+Do not fix the invite tests as part of this assessment.
+
+---
+
+## 10. Production smoke-test plan
+
+Give me a minimal production verification procedure that does **not require intentionally charging a real customer twice**.
+
+Include checks for:
+
+* application startup;
+* migration presence;
+* checkout-attempt table;
+* subscription-identity table;
+* normal login/access;
+* workspace member access;
+* billing-owner resolution;
+* checkout initiation;
+* attempt creation;
+* Paystack reference creation;
+* server logs;
+* webhook health;
+* reconciliation health.
+
+Clearly distinguish which tests can be performed without completing a real payment.
+
+---
+
+## 11. Monitoring immediately after release
+
+Tell me exactly what logs/database conditions I should monitor during the first 24 hours.
+
+Include signals for:
+
+* multiple checkout attempts for one billing owner;
+* rejected settlement mismatches;
+* untracked Paystack charges;
+* webhook verification failures;
+* verified payments not applied locally;
+* reconciliation repairs;
+* workspace members attempting personal checkout;
+* migration/schema errors.
+
+Provide read-only SQL diagnostics where appropriate.
+
+---
+
+# Final decision
+
+End with exactly one recommendation:
+
+### READY TO DEPLOY
+
+No unresolved billing release blockers found.
+
+or
+
+### DO NOT DEPLOY
+
+Then list the exact blockers that must be resolved first.
+
+Do not deploy.
+
+Do not modify production.
+
+Do not perform a real customer charge.
+
+This is the final safety gate before I approve production deployment.

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { validateTrackedCheckoutTerms } from "./billing-service";
+import {
+  validateCurrentTrackedCheckoutAttempt,
+  validateTrackedCheckoutTerms,
+} from "./billing-service";
 
 const attempt = {
   planId: 2,
@@ -63,5 +66,55 @@ describe("tracked Paystack checkout terms", () => {
       ...verifiedTransaction,
       currency: "USD",
     })).toEqual({ valid: false, reason: "currency_mismatch" });
+  });
+
+  it.each([
+    ["billingOwnerUserId", 99],
+    ["requestedByUserId", 99],
+    ["planId", 3],
+    ["amount", 100],
+    ["currency", "USD"],
+    ["paystackPlanCode", "PLN_other"],
+    ["customerEmail", "other@example.com"],
+  ])("rejects a %s change between verification reads", (field, value) => {
+    const initial = {
+      ...attempt,
+      id: 41,
+      billingOwnerUserId: 10,
+      requestedByUserId: 10,
+      status: "pending",
+      expiresAt: new Date(),
+      completedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    expect(validateCurrentTrackedCheckoutAttempt(
+      initial as any,
+      { ...initial, [field]: value } as any,
+      plan,
+      10,
+      verifiedTransaction,
+    )).toEqual({ valid: false, reason: "checkout_attempt_terms_changed" });
+  });
+
+  it("rejects a checkout invalidated while Paystack verification was in flight", () => {
+    const initial = {
+      ...attempt,
+      id: 41,
+      billingOwnerUserId: 10,
+      requestedByUserId: 10,
+      status: "pending",
+      expiresAt: new Date(),
+      completedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    expect(validateCurrentTrackedCheckoutAttempt(
+      initial as any,
+      { ...initial, status: "cancelled" } as any,
+      plan,
+      10,
+      verifiedTransaction,
+    )).toEqual({ valid: false, reason: "checkout_state_invalid" });
   });
 });

@@ -12,6 +12,7 @@ import {
   paystackCheckoutAttempts,
   paymentTransactions,
   billingEvents,
+  subscriptionPlans,
   users
 } from "@shared/schema";
 import { log } from "./vite";
@@ -20,18 +21,17 @@ import * as crypto from "crypto";
 import { emailService } from "./email-service";
 import { db } from "./db";
 import { and, eq, inArray, ne, sql, desc } from "drizzle-orm";
-import { resolvePlanForTransaction, resolvePlanWithRenewalFallback } from "./plan-resolver";
 import {
   advanceBillingDate,
   checkPaystackTransactionOwnership,
   classifyPaystackInvoice,
   extractPaystackCustomerCode,
   extractPaystackSubscriptionCode,
-  isPaystackRecurringInvoiceTransaction,
   parsePaystackDate,
   paystackInvoiceFailureTransactionId,
   selectPaystackSubscriptionIdentityCandidate,
   subscriptionIdentityMatches,
+  validateActivePaystackRenewalRelationship,
 } from "./paystack-renewal";
 
 export interface GooglePlayPurchase {
@@ -115,6 +115,15 @@ export type TrackedCheckoutTermsResult =
         | "customer_email_mismatch";
     };
 
+type TrackedCheckoutInvalidReason = Extract<
+  TrackedCheckoutTermsResult,
+  { valid: false }
+>["reason"];
+
+function normalizePaystackEmail(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 export function validateTrackedCheckoutTerms(
   attempt: Pick<
     PaystackCheckoutAttempt,
@@ -161,7 +170,68 @@ export function validateTrackedCheckoutTerms(
 
 interface PaystackProcessingContext {
   expectedSubscriptionCode?: string | null;
-  source?: "invoice.update" | "reconciliation";
+  expectedCustomerCode?: string | null;
+  expectedInvoiceCode?: string | null;
+  source?: "charge.success" | "invoice.update" | "reconciliation";
+}
+
+interface PaystackLifecycleContext {
+  expectedSubscriptionCode: string;
+  expectedCustomerCode: string;
+  source: "subscription.disable" | "subscription.not_renew";
+}
+
+export type CurrentTrackedCheckoutResult =
+  | { valid: true }
+  | {
+      valid: false;
+      reason:
+        | "checkout_attempt_missing"
+        | "checkout_attempt_changed"
+        | "checkout_attempt_terms_changed"
+        | "checkout_owner_mismatch"
+        | "checkout_state_invalid"
+        | "checkout_plan_missing"
+        | TrackedCheckoutInvalidReason;
+    };
+
+export function validateCurrentTrackedCheckoutAttempt(
+  initialAttempt: PaystackCheckoutAttempt,
+  currentAttempt: PaystackCheckoutAttempt | null | undefined,
+  currentPlan: SubscriptionPlan | null | undefined,
+  userId: number,
+  transactionData: any,
+): CurrentTrackedCheckoutResult {
+  if (!currentAttempt) {
+    return { valid: false, reason: "checkout_attempt_missing" };
+  }
+  if (
+    currentAttempt.id !== initialAttempt.id
+    || currentAttempt.paystackReference !== initialAttempt.paystackReference
+  ) {
+    return { valid: false, reason: "checkout_attempt_changed" };
+  }
+  if (
+    currentAttempt.billingOwnerUserId !== initialAttempt.billingOwnerUserId
+    || currentAttempt.requestedByUserId !== initialAttempt.requestedByUserId
+    || currentAttempt.planId !== initialAttempt.planId
+    || currentAttempt.amount !== initialAttempt.amount
+    || currentAttempt.currency !== initialAttempt.currency
+    || currentAttempt.paystackPlanCode !== initialAttempt.paystackPlanCode
+    || normalizePaystackEmail(currentAttempt.customerEmail) !== normalizePaystackEmail(initialAttempt.customerEmail)
+  ) {
+    return { valid: false, reason: "checkout_attempt_terms_changed" };
+  }
+  if (currentAttempt.billingOwnerUserId !== userId) {
+    return { valid: false, reason: "checkout_owner_mismatch" };
+  }
+  if (currentAttempt.status !== "pending") {
+    return { valid: false, reason: "checkout_state_invalid" };
+  }
+  if (!currentPlan) {
+    return { valid: false, reason: "checkout_plan_missing" };
+  }
+  return validateTrackedCheckoutTerms(currentAttempt, currentPlan, transactionData);
 }
 
 export class BillingService {
@@ -557,21 +627,78 @@ export class BillingService {
   /**
    * Cancel user subscription
    */
-  async cancelSubscription(userId: number): Promise<void> {
-    try {
-      const subscription = await this.getUserSubscription(userId);
-      if (!subscription) {
-        throw new Error('No active subscription found');
-      }
+  private async validatePaystackLifecycleIdentityInTransaction(
+    tx: any,
+    userId: number,
+    context: PaystackLifecycleContext,
+  ): Promise<boolean> {
+    const [activeIdentity] = await tx
+      .select()
+      .from(paystackSubscriptionIdentities)
+      .where(and(
+        eq(paystackSubscriptionIdentities.userId, userId),
+        eq(paystackSubscriptionIdentities.status, "active"),
+      ))
+      .orderBy(desc(paystackSubscriptionIdentities.providerCreatedAt), desc(paystackSubscriptionIdentities.createdAt))
+      .limit(1);
+    const relationship = validateActivePaystackRenewalRelationship(
+      context.expectedSubscriptionCode,
+      context.expectedCustomerCode,
+      activeIdentity ?? null,
+    );
+    if (relationship.valid) return true;
 
+    await tx.insert(billingEvents).values({
+      userId,
+      eventType: "paystack_lifecycle_event_rejected",
+      eventData: {
+        source: context.source,
+        reason: relationship.reason,
+        expectedSubscriptionCode: context.expectedSubscriptionCode,
+        expectedCustomerCode: context.expectedCustomerCode,
+        activeSubscriptionCode: activeIdentity?.subscriptionCode ?? null,
+        activeCustomerCode: activeIdentity?.customerCode ?? null,
+      },
+      processed: false,
+    });
+    return false;
+  }
+
+  async cancelSubscription(
+    userId: number,
+    lifecycleContext?: PaystackLifecycleContext,
+  ): Promise<boolean> {
+    try {
       const cancelledAt = new Date();
-      if (!storage.updateUserSubscription) {
-        throw new Error('User subscription updates not supported by current storage');
-      }
-      await storage.updateUserSubscription(subscription.id, {
-        status: 'cancelled',
-        cancelledAt
+      const subscription = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+        if (
+          lifecycleContext
+          && !await this.validatePaystackLifecycleIdentityInTransaction(tx, userId, lifecycleContext)
+        ) {
+          return null;
+        }
+        const [lockedSubscription] = await tx
+          .select()
+          .from(userSubscriptions)
+          .where(eq(userSubscriptions.userId, userId))
+          .limit(1)
+          .for("update");
+        if (!lockedSubscription) {
+          throw new Error('No active subscription found');
+        }
+        const [cancelled] = await tx
+          .update(userSubscriptions)
+          .set({
+            status: 'cancelled',
+            cancelledAt,
+            updatedAt: cancelledAt,
+          })
+          .where(eq(userSubscriptions.id, lockedSubscription.id))
+          .returning();
+        return cancelled ?? lockedSubscription;
       });
+      if (!subscription) return false;
 
       await this.logBillingEvent(userId, 'subscription_cancelled', {
         subscriptionId: subscription.id,
@@ -579,11 +706,42 @@ export class BillingService {
       });
 
       log(`Subscription cancelled for user ${userId}`, 'billing');
+      return true;
 
     } catch (error) {
       log(`Error cancelling subscription for user ${userId}: ${error}`, 'billing');
       throw error;
     }
+  }
+
+  async markSubscriptionNotRenewing(
+    userId: number,
+    lifecycleContext?: PaystackLifecycleContext,
+  ): Promise<UserSubscription | null> {
+    const cancelledAt = new Date();
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+      if (
+        lifecycleContext
+        && !await this.validatePaystackLifecycleIdentityInTransaction(tx, userId, lifecycleContext)
+      ) {
+        return null;
+      }
+      const [lockedSubscription] = await tx
+        .select()
+        .from(userSubscriptions)
+        .where(eq(userSubscriptions.userId, userId))
+        .limit(1)
+        .for("update");
+      if (!lockedSubscription) return null;
+
+      const [updated] = await tx
+        .update(userSubscriptions)
+        .set({ cancelledAt, updatedAt: cancelledAt })
+        .where(eq(userSubscriptions.id, lockedSubscription.id))
+        .returning();
+      return (updated ?? lockedSubscription) as UserSubscription;
+    });
   }
 
   /**
@@ -836,9 +994,11 @@ export class BillingService {
    * Persist a SUB_* identity without allowing a delayed old subscription.create
    * event to replace a newer active identity.
    */
-  async recordPaystackSubscriptionIdentity(
+  private async recordPaystackSubscriptionIdentityInTransaction(
+    tx: any,
     userId: number,
     data: any,
+    options: { supersedeExisting?: boolean; allowNewActive?: boolean } = {},
   ): Promise<{ subscriptionCode: string; status: string }> {
     const subscriptionCode = extractPaystackSubscriptionCode(data);
     if (!subscriptionCode) {
@@ -854,90 +1014,117 @@ export class BillingService {
     );
     const now = new Date();
 
-    return db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+    const [existingCode] = await tx
+      .select()
+      .from(paystackSubscriptionIdentities)
+      .where(eq(paystackSubscriptionIdentities.subscriptionCode, subscriptionCode))
+      .limit(1);
 
-      const [existingCode] = await tx
-        .select()
-        .from(paystackSubscriptionIdentities)
-        .where(eq(paystackSubscriptionIdentities.subscriptionCode, subscriptionCode))
-        .limit(1);
+    if (existingCode && existingCode.userId !== userId) {
+      throw new Error(`Paystack subscription ${subscriptionCode} is already owned by another user`);
+    }
 
-      if (existingCode && existingCode.userId !== userId) {
-        throw new Error(`Paystack subscription ${subscriptionCode} is already owned by another user`);
+    const [activeIdentity] = await tx
+      .select()
+      .from(paystackSubscriptionIdentities)
+      .where(and(
+        eq(paystackSubscriptionIdentities.userId, userId),
+        eq(paystackSubscriptionIdentities.status, "active"),
+      ))
+      .orderBy(desc(paystackSubscriptionIdentities.providerCreatedAt), desc(paystackSubscriptionIdentities.createdAt))
+      .limit(1);
+
+    let identityStatus = existingCode?.status
+      ?? (options.allowNewActive ? "active" : "unresolved");
+    if (activeIdentity && activeIdentity.subscriptionCode !== subscriptionCode) {
+      const existingProviderTime = activeIdentity.providerCreatedAt?.getTime();
+      const incomingProviderTime = providerCreatedAt?.getTime();
+
+      if (options.supersedeExisting) {
+        await tx
+          .update(paystackSubscriptionIdentities)
+          .set({ status: "retired", retiredAt: now, updatedAt: now })
+          .where(eq(paystackSubscriptionIdentities.id, activeIdentity.id));
+        identityStatus = "active";
+      } else if (!options.allowNewActive) {
+        identityStatus = "unresolved";
+      } else if (existingProviderTime && incomingProviderTime && incomingProviderTime > existingProviderTime) {
+        await tx
+          .update(paystackSubscriptionIdentities)
+          .set({ status: "retired", retiredAt: now, updatedAt: now })
+          .where(eq(paystackSubscriptionIdentities.id, activeIdentity.id));
+      } else if (existingProviderTime && incomingProviderTime && incomingProviderTime <= existingProviderTime) {
+        identityStatus = "retired";
+      } else {
+        // Without provider timestamps, replacing an existing active identity
+        // could let a delayed stale event own the account.
+        identityStatus = "unresolved";
       }
+    } else if (options.allowNewActive) {
+      identityStatus = "active";
+    }
 
-      const [activeIdentity] = await tx
-        .select()
-        .from(paystackSubscriptionIdentities)
-        .where(and(
-          eq(paystackSubscriptionIdentities.userId, userId),
-          eq(paystackSubscriptionIdentities.status, "active"),
-        ))
-        .orderBy(desc(paystackSubscriptionIdentities.providerCreatedAt), desc(paystackSubscriptionIdentities.createdAt))
-        .limit(1);
-
-      let identityStatus = "active";
-      if (activeIdentity && activeIdentity.subscriptionCode !== subscriptionCode) {
-        const existingProviderTime = activeIdentity.providerCreatedAt?.getTime();
-        const incomingProviderTime = providerCreatedAt?.getTime();
-
-        if (existingProviderTime && incomingProviderTime && incomingProviderTime > existingProviderTime) {
-          await tx
-            .update(paystackSubscriptionIdentities)
-            .set({ status: "retired", retiredAt: now, updatedAt: now })
-            .where(eq(paystackSubscriptionIdentities.id, activeIdentity.id));
-        } else if (existingProviderTime && incomingProviderTime && incomingProviderTime <= existingProviderTime) {
-          identityStatus = "retired";
-        } else {
-          // Without provider timestamps, replacing an existing active identity
-          // could let a delayed stale event own the account.
-          identityStatus = "unresolved";
-        }
-      }
-
-      const [identity] = await tx
-        .insert(paystackSubscriptionIdentities)
-        .values({
-          userId,
-          subscriptionCode,
+    const [identity] = await tx
+      .insert(paystackSubscriptionIdentities)
+      .values({
+        userId,
+        subscriptionCode,
+        customerCode,
+        planCode,
+        status: identityStatus,
+        providerCreatedAt,
+        retiredAt: identityStatus === "retired" ? now : null,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: paystackSubscriptionIdentities.subscriptionCode,
+        set: {
           customerCode,
           planCode,
           status: identityStatus,
-          providerCreatedAt,
+          providerCreatedAt: providerCreatedAt ?? existingCode?.providerCreatedAt ?? null,
           retiredAt: identityStatus === "retired" ? now : null,
           updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: paystackSubscriptionIdentities.subscriptionCode,
-          set: {
-            customerCode,
-            planCode,
-            status: identityStatus,
-            providerCreatedAt: providerCreatedAt ?? existingCode?.providerCreatedAt ?? null,
-            retiredAt: identityStatus === "retired" ? now : null,
-            updatedAt: now,
-          },
-        })
-        .returning();
-
-      await tx.insert(billingEvents).values({
-        userId,
-        eventType: "paystack_subscription_identified",
-        eventData: {
-          subscriptionCode,
-          customerCode,
-          planCode,
-          status: identity?.status ?? identityStatus,
         },
-        processed: true,
-      });
+      })
+      .returning();
 
-      return {
+    await tx.insert(billingEvents).values({
+      userId,
+      eventType: "paystack_subscription_identified",
+      eventData: {
         subscriptionCode,
+        customerCode,
+        planCode,
         status: identity?.status ?? identityStatus,
-      };
+      },
+      processed: true,
     });
+
+    return {
+      subscriptionCode,
+      status: identity?.status ?? identityStatus,
+    };
+  }
+
+  async recordPaystackSubscriptionIdentity(
+    userId: number,
+    data: any,
+    options: { allowNewActive?: boolean } = {},
+  ): Promise<{ subscriptionCode: string; status: string }> {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+      return this.recordPaystackSubscriptionIdentityInTransaction(tx, userId, data, options);
+    });
+  }
+
+  async getPaystackSubscriptionIdentityByCode(subscriptionCode: string) {
+    const [identity] = await db
+      .select()
+      .from(paystackSubscriptionIdentities)
+      .where(eq(paystackSubscriptionIdentities.subscriptionCode, subscriptionCode))
+      .limit(1);
+    return identity ?? null;
   }
 
   private async assertPaystackTransactionOwnership(userId: number, transactionData: any): Promise<void> {
@@ -1136,14 +1323,6 @@ export class BillingService {
     return refreshed ?? null;
   }
 
-  private async markPaystackCheckoutAttemptCompleted(reference: string): Promise<void> {
-    const now = new Date();
-    await db
-      .update(paystackCheckoutAttempts)
-      .set({ status: "completed", completedAt: now, updatedAt: now })
-      .where(eq(paystackCheckoutAttempts.paystackReference, reference));
-  }
-
   private async cancelOtherPendingCheckoutAttempts(
     tx: any,
     userId: number,
@@ -1173,21 +1352,19 @@ export class BillingService {
   ): Promise<UserSubscription> {
     log(`Processing Paystack subscription for user ${userId}, reference: ${transactionReference}`, 'billing');
 
+    // This first read determines the path only. A tracked attempt is re-read and
+    // row-locked after provider verification, inside lock 36, before mutation.
     const checkoutAttempt = await this.getPaystackCheckoutAttempt(transactionReference);
     if (checkoutAttempt?.billingOwnerUserId !== undefined && checkoutAttempt.billingOwnerUserId !== userId) {
       throw new Error("Checkout attempt belongs to a different billing owner");
     }
-    if (checkoutAttempt && ["cancelled", "failed", "expired"].includes(checkoutAttempt.status)) {
-      throw new Error(`Checkout attempt is ${checkoutAttempt.status} and cannot grant entitlement`);
-    }
     const checkoutPlan = checkoutAttempt
       ? await storage.getSubscriptionPlan?.(checkoutAttempt.planId)
       : null;
-    if (checkoutAttempt && !checkoutPlan) {
-      throw new Error("Checkout attempt plan no longer exists");
-    }
 
-    // Verify the transaction BEFORE starting the transaction
+    // External provider verification intentionally happens before opening the
+    // database transaction. No attempt state read before this call authorizes
+    // settlement; current state is checked again under the entitlement lock.
     const verification = await this.verifyPaystackTransaction(transactionReference);
     
     if (!verification.valid) {
@@ -1197,42 +1374,6 @@ export class BillingService {
     const transactionData = verification.subscription;
     const paymentAmount = transactionData.amount || 0;
     await this.assertPaystackTransactionOwnership(userId, transactionData);
-    if (checkoutAttempt && checkoutPlan) {
-      const terms = validateTrackedCheckoutTerms(checkoutAttempt, checkoutPlan, transactionData);
-      if (!terms.valid) {
-        await this.logBillingEvent(userId, "checkout_terms_mismatch", {
-          reference: transactionReference,
-          attemptId: checkoutAttempt.id,
-          attemptPlanId: checkoutAttempt.planId,
-          reason: terms.reason,
-          receivedAmount: transactionData?.amount ?? null,
-          receivedCurrency: transactionData?.currency ?? null,
-          receivedPlanCode: typeof transactionData?.plan === "string"
-            ? transactionData.plan
-            : transactionData?.plan?.plan_code ?? transactionData?.plan_code ?? null,
-        });
-        throw new Error(`Verified Paystack transaction does not match checkout terms: ${terms.reason}`);
-      }
-    }
-
-    // A reference that was already applied stays idempotent even if the user's
-    // active SUB_* identity changed later.
-    const duplicatePayment = await db
-      .select()
-      .from(paymentTransactions)
-      .where(sql`${paymentTransactions.platform} = 'paystack' AND ${paymentTransactions.platformTransactionId} = ${transactionReference}`)
-      .limit(1);
-    if (duplicatePayment.length > 0) {
-      if (duplicatePayment[0].userId !== userId) {
-        throw new Error("Paystack transaction reference belongs to a different user");
-      }
-      const duplicateSubscription = await this.getUserSubscription(userId);
-      if (!duplicateSubscription) {
-        throw new Error("Duplicate transaction but no subscription found");
-      }
-      await this.markPaystackCheckoutAttemptCompleted(transactionReference);
-      return duplicateSubscription;
-    }
 
     const verifiedSubscriptionCode = extractPaystackSubscriptionCode(transactionData);
     const expectedSubscriptionCode = context.expectedSubscriptionCode ?? null;
@@ -1249,55 +1390,50 @@ export class BillingService {
     }
 
     const effectiveSubscriptionCode = verifiedSubscriptionCode ?? expectedSubscriptionCode;
-    const isRecurringInvoice = !!context.source
-      || isPaystackRecurringInvoiceTransaction(transactionData);
-    let activeIdentity = await this.getActivePaystackSubscriptionIdentity(userId);
+    const verifiedCustomerCode = extractPaystackCustomerCode(transactionData);
+    const expectedCustomerCode = context.expectedCustomerCode ?? null;
+    const isRecurringInvoice = !checkoutAttempt;
 
-    if (isRecurringInvoice) {
-      if (!effectiveSubscriptionCode) {
-        await this.logBillingEvent(userId, "renewal_reconciliation_unresolved", {
-          reason: "successful_renewal_missing_subscription_identity",
-          transactionReference,
-          source: context.source ?? "charge.success",
-        });
-        throw new Error("Successful Paystack renewal has no exact subscription identity");
-      }
-
-      if (!activeIdentity) {
-        const recorded = await this.recordPaystackSubscriptionIdentity(userId, {
-          ...transactionData,
-          subscription_code: effectiveSubscriptionCode,
-        });
-        if (recorded.status === "active") {
-          const refreshedIdentity = await this.getActivePaystackSubscriptionIdentity(userId);
-          if (refreshedIdentity) activeIdentity = refreshedIdentity;
-        }
-      }
-
-      if (subscriptionIdentityMatches(
-        effectiveSubscriptionCode,
-        activeIdentity?.subscriptionCode ?? null,
-      ) !== "match") {
-        await this.logBillingEvent(userId, "renewal_reconciliation_unresolved", {
-          reason: "successful_charge_from_stale_subscription_identity",
-          transactionReference,
-          incomingSubscriptionCode: effectiveSubscriptionCode,
-          activeSubscriptionCode: activeIdentity?.subscriptionCode ?? null,
-        });
-        throw new Error("Verified Paystack renewal belongs to a stale subscription identity");
-      }
+    if (
+      expectedCustomerCode
+      && verifiedCustomerCode
+      && expectedCustomerCode !== verifiedCustomerCode
+    ) {
+      await this.logBillingEvent(userId, "renewal_reconciliation_unresolved", {
+        reason: "verified_and_event_customer_identity_disagree",
+        transactionReference,
+        verifiedCustomerCode,
+        expectedCustomerCode,
+        source: context.source ?? "direct_verification",
+      });
+      throw new Error("Paystack transaction and renewal event identify different customers");
     }
 
-    // DETERMINISTIC plan resolution by Paystack plan code (never by amount, never a hardcoded fallback).
-    // RENEWAL FALLBACK: if the charge carries no plan code/metadata (Paystack sometimes
-    // omits it on recurring renewal charges) but the customer already has an ACTIVE
-    // subscription, inherit that subscription's CURRENT plan. This never guesses by amount.
+    if (isRecurringInvoice && (!effectiveSubscriptionCode || !verifiedCustomerCode)) {
+      await this.logBillingEvent(userId, "untracked_paystack_charge_rejected", {
+        reason: !effectiveSubscriptionCode
+          ? "successful_untracked_charge_missing_subscription_identity"
+          : "successful_untracked_charge_missing_customer_identity",
+        transactionReference,
+        source: context.source ?? "direct_verification",
+      });
+      throw new Error("Untracked Paystack charge lacks an authoritative subscription relationship");
+    }
+
+    // Initial checkout uses the server-owned attempt plan. A renewal always uses
+    // the existing local subscription plan, never transaction metadata.
     const plans = await this.getSubscriptionPlans();
     const existingForResolution = await this.getUserSubscription(userId);
     const resolution = checkoutPlan
       ? { plan: checkoutPlan, source: "server_checkout_attempt" as const }
-      : resolvePlanWithRenewalFallback(transactionData, plans, existingForResolution);
-    if (!resolution) {
+      : existingForResolution
+        && ["active", "paused"].includes(existingForResolution.status)
+        ? {
+            plan: plans.find((candidate) => candidate.id === existingForResolution.planId) ?? null,
+            source: "existing_subscription_renewal" as const,
+          }
+        : null;
+    if (!resolution?.plan) {
       log(`[CRITICAL] Could not deterministically resolve plan for user ${userId}, reference ${transactionReference} ` +
         `(amount=${paymentAmount}, plan_code=${transactionData?.plan?.plan_code || 'none'}, ` +
         `metadata_plan_code=${transactionData?.metadata?.plan_code || 'none'}, ` +
@@ -1315,12 +1451,12 @@ export class BillingService {
 
     if (resolution.source === 'existing_subscription_renewal') {
       log(`Plan inherited from existing active subscription for user ${userId}, reference ${transactionReference} ` +
-        `(charge had no plan code/metadata; inheriting plan id=${resolution.plan.id})`, 'billing');
+        `(renewal metadata ignored; inheriting plan id=${resolution.plan.id})`, 'billing');
       await this.logBillingEvent(userId, 'plan_inherited_from_subscription', {
         paystackReference: transactionReference,
         amount: paymentAmount,
         inheritedPlanId: resolution.plan.id,
-        reason: 'renewal_charge_without_plan_metadata',
+        reason: 'trusted_renewal_uses_existing_subscription_plan',
       });
     }
 
@@ -1342,6 +1478,50 @@ export class BillingService {
         // Serialize every Paystack entitlement mutation for this user. This
         // prevents two different renewal events racing totalPaid/billing dates.
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+
+        const requireFinancialReview = async (
+          reason: string,
+          details: Record<string, unknown> = {},
+        ) => {
+          await tx.insert(billingEvents).values({
+            userId,
+            eventType: "paystack_successful_payment_requires_review",
+            eventData: {
+              reason,
+              transactionReference,
+              source: context.source ?? (checkoutAttempt ? "tracked_checkout" : "direct_verification"),
+              expectedSubscriptionCode,
+              verifiedSubscriptionCode,
+              expectedCustomerCode,
+              verifiedCustomerCode,
+              invoiceCode: context.expectedInvoiceCode ?? null,
+              ...details,
+            },
+            processed: false,
+          });
+          return { outcome: "review_required" as const, reason };
+        };
+
+        let currentCheckoutAttempt: PaystackCheckoutAttempt | null = null;
+        let currentCheckoutPlan: SubscriptionPlan | null = null;
+        if (checkoutAttempt) {
+          const [lockedAttempt] = await tx
+            .select()
+            .from(paystackCheckoutAttempts)
+            .where(eq(paystackCheckoutAttempts.paystackReference, transactionReference))
+            .limit(1)
+            .for("update");
+          currentCheckoutAttempt = lockedAttempt ?? null;
+
+          if (currentCheckoutAttempt) {
+            const [lockedPlan] = await tx
+              .select()
+              .from(subscriptionPlans)
+              .where(eq(subscriptionPlans.id, currentCheckoutAttempt.planId))
+              .limit(1);
+            currentCheckoutPlan = lockedPlan ?? null;
+          }
+        }
 
         // Check for duplicate transaction using the UNIQUE constraint
         const existingPayment = await tx
@@ -1366,9 +1546,36 @@ export class BillingService {
               .set({ status: "completed", completedAt: now, updatedAt: now })
               .where(eq(paystackCheckoutAttempts.paystackReference, transactionReference));
             await this.cancelOtherPendingCheckoutAttempts(tx, userId, transactionReference, now);
-            return existingSub[0] as UserSubscription;
+            return {
+              outcome: "duplicate" as const,
+              subscription: existingSub[0] as UserSubscription,
+            };
           }
           throw new Error('Duplicate transaction but no subscription found');
+        }
+
+        // The provider call is complete and lock 36 is held. This is the first
+        // point where a tracked attempt is allowed to authorize settlement.
+        if (checkoutAttempt) {
+          const currentState = validateCurrentTrackedCheckoutAttempt(
+            checkoutAttempt,
+            currentCheckoutAttempt,
+            currentCheckoutPlan,
+            userId,
+            transactionData,
+          );
+          if (!currentState.valid) {
+            return requireFinancialReview(currentState.reason, {
+              attemptId: checkoutAttempt.id,
+              currentAttemptId: currentCheckoutAttempt?.id ?? null,
+              currentAttemptStatus: currentCheckoutAttempt?.status ?? null,
+              receivedAmount: transactionData?.amount ?? null,
+              receivedCurrency: transactionData?.currency ?? null,
+              receivedPlanCode: typeof transactionData?.plan === "string"
+                ? transactionData.plan
+                : transactionData?.plan?.plan_code ?? transactionData?.plan_code ?? null,
+            });
+          }
         }
 
         // Check if user already has a subscription (UPSERT semantics)
@@ -1380,6 +1587,57 @@ export class BillingService {
 
         let subscription: UserSubscription;
         const existing = existingSubscription[0];
+
+        if (isRecurringInvoice) {
+          const [activeIdentity] = await tx
+            .select()
+            .from(paystackSubscriptionIdentities)
+            .where(and(
+              eq(paystackSubscriptionIdentities.userId, userId),
+              eq(paystackSubscriptionIdentities.status, "active"),
+            ))
+            .orderBy(desc(paystackSubscriptionIdentities.providerCreatedAt), desc(paystackSubscriptionIdentities.createdAt))
+            .limit(1);
+
+          const renewalRelationship = validateActivePaystackRenewalRelationship(
+            effectiveSubscriptionCode,
+            verifiedCustomerCode,
+            activeIdentity ?? null,
+          );
+          if (!renewalRelationship.valid) {
+            return requireFinancialReview(
+              renewalRelationship.reason,
+              {
+                activeSubscriptionCode: activeIdentity?.subscriptionCode ?? null,
+                activeCustomerCode: activeIdentity?.customerCode ?? null,
+              },
+            );
+          }
+          if (
+            !existing
+            || !["active", "paused"].includes(existing.status)
+            || !!existing.cancelledAt
+            || existing.planId !== plan.id
+          ) {
+            return requireFinancialReview("renewal_subscription_state_changed", {
+              currentSubscriptionStatus: existing?.status ?? null,
+              currentSubscriptionCancelledAt: existing?.cancelledAt ?? null,
+              currentPlanId: existing?.planId ?? null,
+              expectedPlanId: plan.id,
+            });
+          }
+
+          const providerPlanCode = typeof transactionData?.plan === "string"
+            ? transactionData.plan
+            : transactionData?.plan?.plan_code ?? transactionData?.plan_code ?? null;
+          if (providerPlanCode && plan.paystackPlanCode && providerPlanCode !== plan.paystackPlanCode) {
+            return requireFinancialReview("renewal_provider_plan_mismatch", {
+              providerPlanCode,
+              currentPlanCode: plan.paystackPlanCode,
+            });
+          }
+        }
+
         const billingBase = existing?.nextBillingDate
           && new Date(existing.nextBillingDate).getTime() > paidAt.getTime()
           ? new Date(existing.nextBillingDate)
@@ -1398,6 +1656,7 @@ export class BillingService {
             .set({
               status: 'active',
               planId: plan.id,
+              cancelledAt: null,
               subscriptionStartDate: isRenewal ? existing.subscriptionStartDate : paidAt,
               nextBillingDate,
               totalPaid: sql`COALESCE(${userSubscriptions.totalPaid}, 0) + ${chargedAmount}`,
@@ -1442,6 +1701,7 @@ export class BillingService {
               set: {
                 status: 'active',
                 planId: plan.id,
+                cancelledAt: null,
                 subscriptionStartDate: paidAt,
                 nextBillingDate,
                 totalPaid: sql`COALESCE(${userSubscriptions.totalPaid}, 0) + ${chargedAmount}`,
@@ -1496,6 +1756,30 @@ export class BillingService {
           })
           .onConflictDoNothing(); // Ignore if duplicate (idempotency)
 
+        if (checkoutAttempt) {
+          if (effectiveSubscriptionCode) {
+            await this.recordPaystackSubscriptionIdentityInTransaction(
+              tx,
+              userId,
+              {
+                ...transactionData,
+                subscription_code: effectiveSubscriptionCode,
+              },
+              { supersedeExisting: true, allowNewActive: true },
+            );
+          } else {
+            // Do not leave an older SUB_* trusted during the gap before
+            // subscription.create identifies the new checkout's subscription.
+            await tx
+              .update(paystackSubscriptionIdentities)
+              .set({ status: "unresolved", updatedAt: now })
+              .where(and(
+                eq(paystackSubscriptionIdentities.userId, userId),
+                eq(paystackSubscriptionIdentities.status, "active"),
+              ));
+          }
+        }
+
         // Checkout attempts complete only after verified entitlement and ledger
         // writes succeed in the same transaction. Webhook/callback overlap is
         // harmless because both the ledger reference and this update are idempotent.
@@ -1522,18 +1806,15 @@ export class BillingService {
           });
 
         log(`Paystack subscription activated for user ${userId}, plan: ${plan.name}`, 'billing');
-        return subscription;
+        return { outcome: "applied" as const, subscription };
       });
 
-      const subscriptionCode = extractPaystackSubscriptionCode(transactionData);
-      if (subscriptionCode) {
-        await this.recordPaystackSubscriptionIdentity(userId, {
-          ...transactionData,
-          subscription_code: subscriptionCode,
-        });
+      if (result.outcome === "review_required") {
+        throw new Error(
+          `Verified Paystack payment requires financial review: ${result.reason}`,
+        );
       }
-
-      return result;
+      return result.subscription;
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1781,7 +2062,11 @@ export class BillingService {
       return null;
     }
 
-    const recorded = await this.recordPaystackSubscriptionIdentity(userId, candidate);
+    const recorded = await this.recordPaystackSubscriptionIdentity(
+      userId,
+      candidate,
+      { allowNewActive: true },
+    );
     return recorded.status === "active"
       ? await this.getActivePaystackSubscriptionIdentity(userId)
       : null;

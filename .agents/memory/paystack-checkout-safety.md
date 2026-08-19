@@ -26,3 +26,9 @@ A local checkout TTL must never rotate the provider reference by itself.
 **Why:** A “transaction not found” verification response does not prove that an already-open provider popup can no longer settle the old reference. Replacing it could expose two independently chargeable references.
 
 **How to apply:** Refresh or block the same reference until provider-side invalidation is authoritative; never mint a replacement from local expiry alone, and reject settlement of retired references.
+
+A provider-success renewal received after local cancellation intent must fail closed to financial review until the cancellation-grace policy is explicitly decided.
+
+**Why:** Automatically reactivating extends entitlement against the user's recorded cancellation, while silently dropping a successful provider charge creates an untracked financial exception. Neither outcome is safe to guess.
+
+**How to apply:** Serialize cancellation and settlement on the owner lock; if cancellation wins, record a manual-review event without ledger or entitlement mutation. Keep the separate cancellation-grace policy task as the place to choose any future automated behavior.

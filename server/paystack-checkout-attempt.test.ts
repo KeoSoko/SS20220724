@@ -112,7 +112,7 @@ beforeEach(() => {
 });
 
 describe("server-owned Paystack checkout attempts", () => {
-  it("serializes simultaneous requests into one attempt and one reference", async () => {
+  it("serializes simultaneous browser sessions into one attempt and one reference", async () => {
     const service = new BillingService();
     const results = await Promise.all(
       Array.from({ length: 12 }, () => service.createOrReusePaystackCheckoutAttempt(checkoutInput())),

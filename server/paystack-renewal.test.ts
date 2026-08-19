@@ -3,11 +3,12 @@ import {
   advanceBillingDate,
   checkPaystackTransactionOwnership,
   classifyPaystackInvoice,
+  extractPaystackRenewalEvidence,
   extractPaystackTransactionReference,
-  isPaystackRecurringInvoiceTransaction,
   paystackInvoiceFailureTransactionId,
   selectPaystackSubscriptionIdentityCandidate,
   subscriptionIdentityMatches,
+  validateActivePaystackRenewalRelationship,
 } from "./paystack-renewal";
 
 describe("Paystack renewal classification", () => {
@@ -43,9 +44,34 @@ describe("Paystack renewal classification", () => {
       transactionReference: "renewal_ref_from_fetch",
       subscriptionCode: "SUB_current",
     });
-    expect(isPaystackRecurringInvoiceTransaction({
-      metadata: { invoice_action: "update" },
-    })).toBe(true);
+  });
+
+  it("never treats client-controlled recurring metadata as provider evidence", () => {
+    expect(extractPaystackRenewalEvidence({
+      status: "success",
+      reference: "forged_initial_ref",
+      customer: { customer_code: "CUS_attacker" },
+      metadata: {
+        invoice_action: "update",
+        subscription_type: "recurring",
+        subscription_code: "SUB_forged",
+      },
+    })).toBeNull();
+  });
+
+  it("extracts a provider subscription, customer, invoice, and transaction relationship", () => {
+    expect(extractPaystackRenewalEvidence({
+      invoice_code: "INV_authoritative",
+      transaction: { reference: "renewal_ref", status: "success" },
+      subscription: { subscription_code: "SUB_current" },
+      customer: { customer_code: "CUS_current" },
+      metadata: { invoice_action: "forged-value-is-ignored" },
+    })).toEqual({
+      invoiceCode: "INV_authoritative",
+      transactionReference: "renewal_ref",
+      subscriptionCode: "SUB_current",
+      customerCode: "CUS_current",
+    });
   });
 
   it("classifies an overdue unpaid invoice as payment required", () => {
@@ -85,6 +111,37 @@ describe("Paystack renewal classification", () => {
       .toBe("paystack-invoice:INV_duplicate");
     expect(paystackInvoiceFailureTransactionId("INV_duplicate"))
       .toBe(paystackInvoiceFailureTransactionId("INV_duplicate"));
+  });
+
+  it("does not allow an unknown SUB_* to establish itself from a successful charge", () => {
+    expect(validateActivePaystackRenewalRelationship(
+      "SUB_unknown",
+      "CUS_current",
+      null,
+    )).toEqual({ valid: false, reason: "unknown_subscription_identity" });
+  });
+
+  it("accepts only the exact active subscription and customer relationship", () => {
+    const identity = {
+      subscriptionCode: "SUB_current",
+      customerCode: "CUS_current",
+      status: "active",
+    };
+    expect(validateActivePaystackRenewalRelationship(
+      "SUB_current",
+      "CUS_current",
+      identity,
+    )).toEqual({ valid: true });
+    expect(validateActivePaystackRenewalRelationship(
+      "SUB_stale",
+      "CUS_current",
+      identity,
+    )).toEqual({ valid: false, reason: "stale_subscription_identity" });
+    expect(validateActivePaystackRenewalRelationship(
+      "SUB_current",
+      "CUS_other",
+      identity,
+    )).toEqual({ valid: false, reason: "subscription_customer_mismatch" });
   });
 });
 

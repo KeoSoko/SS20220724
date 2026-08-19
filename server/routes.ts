@@ -73,10 +73,11 @@ import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
 import { normalizeMerchantName } from "./utils/merchant-normalizer";
 import {
+  extractPaystackCustomerCode,
+  extractPaystackRenewalEvidence,
   extractPaystackSubscriptionCode,
-  extractPaystackTransactionReference,
   isPaystackInvoicePaid,
-  isPaystackRecurringInvoiceTransaction,
+  validateActivePaystackRenewalRelationship,
 } from "./paystack-renewal";
 import { and, asc, desc, eq, gte, inArray, lt, lte, ne, or, sql, isNull, isNotNull } from "drizzle-orm";
 import multer from "multer";
@@ -140,21 +141,54 @@ async function handlePaystackChargeSuccess(data: any) {
       log(`Successfully activated subscription for billing owner ${checkoutAttempt.billingOwnerUserId} via checkout attempt ${checkoutAttempt.id}`, 'billing');
       return;
     }
-    if (!isPaystackRecurringInvoiceTransaction(data)) {
+    const renewalEvidence = extractPaystackRenewalEvidence(data);
+    if (!renewalEvidence || renewalEvidence.transactionReference !== data.reference) {
       await billingService.recordBillingEvent(null, "untracked_paystack_charge_rejected", {
         reference: data.reference ?? null,
-        reason: "initial_checkout_requires_server_attempt",
+        reason: "missing_authoritative_subscription_relationship",
       });
       log(`Rejected untracked initial Paystack charge ${data.reference ?? "unknown"}; manual review required`, "billing");
       return;
     }
-    
-    const resolved = await resolvePaystackUser(data, 'charge.success');
-    if (!resolved) return;
-    const { user, usedLegacyFallback } = resolved;
 
-    await billingService.processPaystackSubscription(user.id, data.reference);
-    log(`Successfully activated subscription for user ${user.id} via webhook${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
+    const knownIdentity = await billingService.getPaystackSubscriptionIdentityByCode(
+      renewalEvidence.subscriptionCode,
+    );
+    const renewalRelationship = validateActivePaystackRenewalRelationship(
+      renewalEvidence.subscriptionCode,
+      renewalEvidence.customerCode,
+      knownIdentity,
+    );
+    if (!renewalRelationship.valid) {
+      await billingService.recordBillingEvent(
+        knownIdentity?.userId ?? null,
+        "untracked_paystack_charge_rejected",
+        {
+          reference: renewalEvidence.transactionReference,
+          reason: renewalRelationship.reason,
+          subscriptionCode: renewalEvidence.subscriptionCode,
+          customerCode: renewalEvidence.customerCode,
+        },
+      );
+      log(
+        `Rejected untracked Paystack charge ${renewalEvidence.transactionReference}; ` +
+        `subscription identity ${renewalEvidence.subscriptionCode} is not an exact active match`,
+        "billing",
+      );
+      return;
+    }
+
+    await billingService.processPaystackSubscription(
+      knownIdentity.userId,
+      renewalEvidence.transactionReference,
+      {
+        expectedSubscriptionCode: renewalEvidence.subscriptionCode,
+        expectedCustomerCode: renewalEvidence.customerCode,
+        expectedInvoiceCode: renewalEvidence.invoiceCode,
+        source: "charge.success",
+      },
+    );
+    log(`Successfully applied trusted renewal for user ${knownIdentity.userId} via webhook`, 'billing');
   } catch (error) {
     log(`Error handling Paystack charge success: ${error}`, 'billing');
   }
@@ -249,31 +283,81 @@ async function resolvePaystackUser(data: any, eventDescription: string): Promise
   return { user, usedLegacyFallback };
 }
 
+async function resolveActivePaystackLifecycleUser(data: any, eventDescription: string) {
+  const subscriptionCode = extractPaystackSubscriptionCode(data);
+  const customerCode = extractPaystackCustomerCode(data);
+  const identity = subscriptionCode
+    ? await billingService.getPaystackSubscriptionIdentityByCode(subscriptionCode)
+    : null;
+  const relationship = validateActivePaystackRenewalRelationship(
+    subscriptionCode,
+    customerCode,
+    identity,
+  );
+
+  if (!relationship.valid || !identity) {
+    await billingService.recordBillingEvent(
+      identity?.userId ?? null,
+      "paystack_lifecycle_event_rejected",
+      {
+        event_type: eventDescription,
+        reason: relationship.valid ? "unknown_subscription_identity" : relationship.reason,
+        subscription_code: subscriptionCode,
+        customer_code: customerCode,
+      },
+    );
+    log(
+      `Rejected Paystack ${eventDescription}; no exact active subscription/customer identity`,
+      "billing",
+    );
+    return null;
+  }
+
+  const user = await storage.getUser(identity.userId);
+  if (!user) {
+    await billingService.recordBillingEvent(
+      identity.userId,
+      "paystack_lifecycle_event_rejected",
+      {
+        event_type: eventDescription,
+        reason: "identity_owner_missing",
+        subscription_code: subscriptionCode,
+        customer_code: customerCode,
+      },
+    );
+    return null;
+  }
+  return { user, subscriptionCode, customerCode };
+}
+
 async function handlePaystackSubscriptionDisable(data: any) {
   try {
     log(`Paystack subscription disabled: ${data.subscription_code}`, 'billing');
     
-    const resolved = await resolvePaystackUser(data, 'subscription.disable');
-    if (!resolved) return;
-    const { user, usedLegacyFallback } = resolved;
+    const lifecycle = await resolveActivePaystackLifecycleUser(data, 'subscription.disable');
+    if (!lifecycle) return;
+    const { user, subscriptionCode, customerCode } = lifecycle;
+    const lifecycleContext = {
+      expectedSubscriptionCode: subscriptionCode!,
+      expectedCustomerCode: customerCode!,
+      source: "subscription.disable" as const,
+    };
 
     // Mark as cancelled but keep access until next_billing_date (user already paid for this period)
     const subscription = await billingService.getUserSubscription(user.id);
     if (subscription && subscription.nextBillingDate && new Date(subscription.nextBillingDate) > new Date()) {
-      if (storage.updateUserSubscription) {
-        await storage.updateUserSubscription(subscription.id, {
-          cancelledAt: new Date(),
-        });
-      }
-      log(`Subscription marked as cancelled for user ${user.id} - access continues until ${subscription.nextBillingDate}${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
+      const updated = await billingService.markSubscriptionNotRenewing(user.id, lifecycleContext);
+      if (!updated) return;
+      log(`Subscription marked as cancelled for user ${user.id} - access continues until ${updated.nextBillingDate}`, 'billing');
       
       await billingService.recordBillingEvent(user.id, 'subscription_disable_graceful', {
         subscription_code: data.subscription_code,
-        accessUntil: subscription.nextBillingDate,
+        accessUntil: updated.nextBillingDate,
       });
     } else {
-      await billingService.cancelSubscription(user.id);
-      log(`Subscription cancelled immediately for user ${user.id} (no remaining paid period)${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
+      const cancelled = await billingService.cancelSubscription(user.id, lifecycleContext);
+      if (!cancelled) return;
+      log(`Subscription cancelled immediately for user ${user.id} (no remaining paid period)`, 'billing');
     }
 
     // Notify admin
@@ -294,23 +378,24 @@ async function handlePaystackSubscriptionNotRenew(data: any) {
   try {
     log(`Paystack subscription not renewing: ${data.subscription_code}`, 'billing');
     
-    const resolved = await resolvePaystackUser(data, 'subscription.not_renew');
-    if (!resolved) return;
-    const { user, usedLegacyFallback } = resolved;
+    const lifecycle = await resolveActivePaystackLifecycleUser(data, 'subscription.not_renew');
+    if (!lifecycle) return;
+    const { user, subscriptionCode, customerCode } = lifecycle;
 
     // User cancelled - mark cancelledAt but keep status active until billing period ends
     const subscription = await billingService.getUserSubscription(user.id);
     if (subscription) {
-      if (storage.updateUserSubscription) {
-        await storage.updateUserSubscription(subscription.id, {
-          cancelledAt: new Date(),
-        });
-      }
-      log(`Subscription set to not renew for user ${user.id} (${user.username}) - access until ${subscription.nextBillingDate}${usedLegacyFallback ? ' (legacy fallback)' : ''}`, 'billing');
+      const updated = await billingService.markSubscriptionNotRenewing(user.id, {
+        expectedSubscriptionCode: subscriptionCode!,
+        expectedCustomerCode: customerCode!,
+        source: "subscription.not_renew",
+      });
+      if (!updated) return;
+      log(`Subscription set to not renew for user ${user.id} (${user.username}) - access until ${updated.nextBillingDate}`, 'billing');
       
       await billingService.recordBillingEvent(user.id, 'subscription_not_renewing', {
         subscription_code: data.subscription_code,
-        accessUntil: subscription.nextBillingDate,
+        accessUntil: updated.nextBillingDate,
         username: user.username,
         email: user.email,
       });
@@ -400,16 +485,48 @@ async function handlePaystackInvoiceUpdate(data: any) {
     // charge.success is primary. A paid invoice with a reference is an
     // authoritative fallback when that webhook is delayed or missing.
     if (isPaystackInvoicePaid(data)) {
-      const transactionReference = extractPaystackTransactionReference(data);
-      if (transactionReference) {
-        await billingService.processPaystackSubscription(resolved.user.id, transactionReference, {
-          expectedSubscriptionCode: extractPaystackSubscriptionCode(data),
+      const renewalEvidence = extractPaystackRenewalEvidence(data);
+      if (renewalEvidence) {
+        const knownIdentity = await billingService.getPaystackSubscriptionIdentityByCode(
+          renewalEvidence.subscriptionCode,
+        );
+        const renewalRelationship = validateActivePaystackRenewalRelationship(
+          renewalEvidence.subscriptionCode,
+          renewalEvidence.customerCode,
+          knownIdentity,
+        );
+        if (
+          !renewalRelationship.valid
+          || !knownIdentity
+          || knownIdentity.userId !== resolved.user.id
+        ) {
+          await billingService.recordBillingEvent(
+            knownIdentity?.userId ?? resolved.user.id,
+            "renewal_reconciliation_unresolved",
+            {
+              reason: knownIdentity && knownIdentity.userId !== resolved.user.id
+                  ? "subscription_owner_mismatch"
+                  : renewalRelationship.valid
+                    ? "unknown_subscription_identity"
+                    : renewalRelationship.reason,
+              invoice_code: renewalEvidence.invoiceCode,
+              subscription_code: renewalEvidence.subscriptionCode,
+              transactionReference: renewalEvidence.transactionReference,
+            },
+          );
+          return;
+        }
+
+        await billingService.processPaystackSubscription(knownIdentity.userId, renewalEvidence.transactionReference, {
+          expectedSubscriptionCode: renewalEvidence.subscriptionCode,
+          expectedCustomerCode: renewalEvidence.customerCode,
+          expectedInvoiceCode: renewalEvidence.invoiceCode,
           source: "invoice.update",
         });
-        log(`Invoice ${data.invoice_code} paid transaction reconciled via ${transactionReference}`, 'billing');
+        log(`Invoice ${data.invoice_code} paid transaction reconciled via ${renewalEvidence.transactionReference}`, 'billing');
       } else {
         await billingService.recordBillingEvent(resolved.user.id, 'renewal_reconciliation_unresolved', {
-          reason: 'paid_invoice_missing_transaction_reference',
+          reason: 'paid_invoice_missing_authoritative_relationship',
           invoice_code: data.invoice_code,
           subscription_code: data.subscription?.subscription_code,
         });

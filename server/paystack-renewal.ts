@@ -10,6 +10,25 @@ export interface ClassifiedPaystackInvoice {
   failureReason: string | null;
 }
 
+export interface PaystackRenewalEvidence {
+  subscriptionCode: string;
+  customerCode: string;
+  transactionReference: string;
+  invoiceCode: string | null;
+}
+
+export type ActivePaystackRenewalRelationshipResult =
+  | { valid: true }
+  | {
+      valid: false;
+      reason:
+        | "unknown_subscription_identity"
+        | "inactive_subscription_identity"
+        | "stale_subscription_identity"
+        | "subscription_customer_identity_missing"
+        | "subscription_customer_mismatch";
+    };
+
 function asNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
@@ -49,6 +68,28 @@ export function extractPaystackTransactionReference(data: any): string | null {
     data?.reference,
   ];
   return candidates.map(asNonEmptyString).find(Boolean) ?? null;
+}
+
+/**
+ * Extract only provider-owned renewal identifiers.
+ *
+ * Deliberately excludes metadata: Paystack metadata is supplied by the
+ * application/browser and cannot establish that an otherwise untracked charge
+ * belongs to a recurring subscription.
+ */
+export function extractPaystackRenewalEvidence(data: any): PaystackRenewalEvidence | null {
+  const subscriptionCode = extractPaystackSubscriptionCode(data);
+  const customerCode = extractPaystackCustomerCode(data);
+  const transactionReference = extractPaystackTransactionReference(data);
+  if (!subscriptionCode || !customerCode || !transactionReference) {
+    return null;
+  }
+  return {
+    subscriptionCode,
+    customerCode,
+    transactionReference,
+    invoiceCode: extractPaystackInvoiceCode(data),
+  };
 }
 
 export function isPaystackInvoicePaid(data: any): boolean {
@@ -98,9 +139,37 @@ export function subscriptionIdentityMatches(
   return incomingSubscriptionCode === activeSubscriptionCode ? "match" : "conflict";
 }
 
-export function isPaystackRecurringInvoiceTransaction(data: any): boolean {
-  return typeof data?.metadata?.invoice_action === "string"
-    && data.metadata.invoice_action.trim().length > 0;
+export function validateActivePaystackRenewalRelationship(
+  subscriptionCode: string | null,
+  customerCode: string | null,
+  identity: {
+    subscriptionCode: string;
+    customerCode: string | null;
+    status: string;
+  } | null | undefined,
+): ActivePaystackRenewalRelationshipResult {
+  if (!identity) {
+    return { valid: false, reason: "unknown_subscription_identity" };
+  }
+  if (identity.status !== "active") {
+    return { valid: false, reason: "inactive_subscription_identity" };
+  }
+  const match = subscriptionIdentityMatches(subscriptionCode, identity.subscriptionCode);
+  if (match !== "match") {
+    return {
+      valid: false,
+      reason: match === "conflict"
+        ? "stale_subscription_identity"
+        : "unknown_subscription_identity",
+    };
+  }
+  if (!customerCode || !identity.customerCode) {
+    return { valid: false, reason: "subscription_customer_identity_missing" };
+  }
+  if (customerCode !== identity.customerCode) {
+    return { valid: false, reason: "subscription_customer_mismatch" };
+  }
+  return { valid: true };
 }
 
 export function selectPaystackSubscriptionIdentityCandidate(

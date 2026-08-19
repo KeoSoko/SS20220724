@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveBillingOwnerFromCandidates } from "./billing-owner";
+import { extractPaystackRenewalEvidence } from "./paystack-renewal";
 
 describe("billing owner resolution", () => {
   it("allows an individual to manage their own billing", () => {
@@ -74,5 +75,31 @@ describe("billing owner resolution", () => {
       billingOwnerUserId: 10,
       canManageBilling: false,
     });
+  });
+
+  it("does not let an editor turn forged renewal metadata into personal entitlement", () => {
+    const billingOwner = resolveBillingOwnerFromCandidates({
+      userId: 11,
+      ownedWorkspaceId: 201,
+      membership: { workspaceId: 200, ownerId: 10, ownerExists: 10 },
+    });
+    const forgedCharge = {
+      status: "success",
+      reference: "editor_direct_charge",
+      customer: { customer_code: "CUS_editor", email: "editor@example.com" },
+      metadata: {
+        user_id: 11,
+        invoice_action: "update",
+        subscription_type: "recurring",
+        subscription_code: "SUB_editor_forged",
+      },
+    };
+
+    expect(billingOwner).toMatchObject({
+      billingOwnerUserId: 10,
+      relationship: "workspace_member",
+      canManageBilling: false,
+    });
+    expect(extractPaystackRenewalEvidence(forgedCharge)).toBeNull();
   });
 });

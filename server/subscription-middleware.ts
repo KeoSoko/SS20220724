@@ -205,7 +205,7 @@ export function requireSubscription() {
       
       if (!subscriptionStatus.hasActiveSubscription) {
         const message = subscriptionStatus.paymentRequired
-          ? 'Your renewal payment needs attention. Open Subscription and complete secure checkout to update your payment method and restore access.'
+          ? 'We couldn’t process your latest renewal payment. Update your payment method securely with Paystack to continue your subscription.'
           : 'Your free trial has ended. Subscribe to continue using Simple Slips and access all your receipts.';
         const userMessage = subscriptionStatus.paymentRequired
           ? 'Your renewal payment needs attention. Please update your payment method.'
@@ -252,7 +252,7 @@ export function checkFeatureAccess(feature: 'receipt_upload' | 'ai_categorizatio
 
       // No free tier - users must subscribe after trial ends
       const message = subscriptionStatus.paymentRequired
-        ? 'Your renewal payment needs attention. Open Subscription and complete secure checkout to restore access.'
+        ? 'We couldn’t process your latest renewal payment. Update your payment method securely with Paystack to continue your subscription.'
         : 'Your free trial has ended. Subscribe to continue using Simple Slips.';
       const userMessage = subscriptionStatus.paymentRequired
         ? 'Your renewal payment needs attention. Please update your payment method.'

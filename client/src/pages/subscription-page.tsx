@@ -548,7 +548,7 @@ export function SubscriptionPage() {
                     <AlertCircle className="h-4 w-4 text-amber-700" />
                     <AlertDescription className="text-amber-900">
                       {paymentActuallyFailed
-                        ? 'We could not confirm your latest renewal payment. Complete secure Paystack checkout below to update your payment method and restore access.'
+                        ? 'We couldn’t process your latest renewal payment. Update your payment method securely with Paystack to continue your subscription.'
                         : recoveryCheckoutEligible
                           ? 'Automatic renewal needs to be set up again. No new payment has been attempted yet. Continue below to deliberately open a new secure Paystack checkout.'
                           : 'Automatic renewal needs to be set up again. We need to confirm the previous Paystack relationship before a new payment can be started.'}

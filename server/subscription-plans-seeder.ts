@@ -4,6 +4,7 @@ import { billingService } from "./billing-service";
 import { startTierMigrationMonitoring } from "./azure-tier-migration";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { getPaystackBillingSchemaReadiness } from "./paystack-billing-schema";
 
 // Centralized Paystack plan codes (server is the source of truth).
 export const PAYSTACK_PLAN_CODES: Record<string, string> = {
@@ -32,27 +33,6 @@ export const TEAM_PLANS: Array<{
   { name: 'team_l', displayName: 'Large Team', description: 'Shared workspace for larger teams — up to 20 seats.', price: 98000, paystackPlanCode: 'PLN_6dn6r7nvwe2nwnh', maxSeats: 20 },
   { name: 'team_xl', displayName: 'Enterprise Team', description: 'Shared workspace for big teams — up to 50 seats.', price: 245000, paystackPlanCode: 'PLN_xjrq6x5bqdxcctm', maxSeats: 50 },
 ];
-
-async function ensurePaystackSubscriptionIdentitySchema(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS paystack_subscription_identities (
-      id serial PRIMARY KEY,
-      user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      subscription_code text NOT NULL UNIQUE,
-      customer_code text,
-      plan_code text,
-      status text NOT NULL DEFAULT 'active',
-      provider_created_at timestamp,
-      retired_at timestamp,
-      created_at timestamp NOT NULL DEFAULT now(),
-      updated_at timestamp NOT NULL DEFAULT now()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS paystack_subscription_identities_user_status_idx
-    ON paystack_subscription_identities (user_id, status)
-  `);
-}
 
 function buildTeamFeatures(maxSeats: number): string[] {
   return [
@@ -357,10 +337,10 @@ export async function backfillAuthorizationCodes() {
  * Initialize subscription plans on server startup
  */
 export async function initializeSubscriptionPlans() {
-  // Renewal processing depends on durable SUB_* identity history. Fail startup
-  // explicitly if the additive schema cannot be installed instead of silently
-  // serving a billing path that will fail later.
-  await ensurePaystackSubscriptionIdentitySchema();
+  // Publish owns production schema changes. This check is catalog-only: when a
+  // new server starts before Publish finishes the additive schema, billing stays
+  // closed while all unrelated application startup work continues.
+  await getPaystackBillingSchemaReadiness();
 
   try {
     await seedSubscriptionPlans();

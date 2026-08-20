@@ -11,6 +11,14 @@ const state = vi.hoisted(() => ({
 vi.mock("./storage", () => ({ storage: {} }));
 vi.mock("./vite", () => ({ log: vi.fn() }));
 vi.mock("./email-service", () => ({ emailService: null }));
+vi.mock("./paystack-billing-schema", () => ({
+  getPaystackBillingSchemaReadiness: vi.fn(async () => ({
+    ready: true,
+    missing: [],
+    checkedAt: new Date(),
+  })),
+  requirePaystackBillingSchema: vi.fn(async () => undefined),
+}));
 
 vi.mock("./db", () => {
   function createTx() {

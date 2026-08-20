@@ -33,6 +33,10 @@ import {
   subscriptionIdentityMatches,
   validateActivePaystackRenewalRelationship,
 } from "./paystack-renewal";
+import {
+  getPaystackBillingSchemaReadiness,
+  requirePaystackBillingSchema,
+} from "./paystack-billing-schema";
 
 export interface GooglePlayPurchase {
   purchaseToken: string;
@@ -242,6 +246,14 @@ export class BillingService {
     if (process.env.PAYSTACK_SECRET_KEY) {
       this.paystack = Paystack(process.env.PAYSTACK_SECRET_KEY);
     }
+  }
+
+  async getPaystackBillingSchemaReadiness() {
+    return getPaystackBillingSchemaReadiness();
+  }
+
+  private async requirePaystackBillingSchema(): Promise<void> {
+    await requirePaystackBillingSchema();
   }
   
   /**
@@ -669,6 +681,9 @@ export class BillingService {
     lifecycleContext?: PaystackLifecycleContext,
   ): Promise<boolean> {
     try {
+      if (lifecycleContext) {
+        await this.requirePaystackBillingSchema();
+      }
       const cancelledAt = new Date();
       const subscription = await db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
@@ -718,6 +733,9 @@ export class BillingService {
     userId: number,
     lifecycleContext?: PaystackLifecycleContext,
   ): Promise<UserSubscription | null> {
+    if (lifecycleContext) {
+      await this.requirePaystackBillingSchema();
+    }
     const cancelledAt = new Date();
     return db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
@@ -949,6 +967,7 @@ export class BillingService {
    * Create Paystack subscription
    */
   async createPaystackSubscription(userId: number, email: string, planCode: string): Promise<any> {
+    await this.requirePaystackBillingSchema();
     if (!this.paystack) {
       throw new Error('Paystack not initialized');
     }
@@ -978,6 +997,7 @@ export class BillingService {
   }
 
   async getActivePaystackSubscriptionIdentity(userId: number) {
+    await this.requirePaystackBillingSchema();
     const [identity] = await db
       .select()
       .from(paystackSubscriptionIdentities)
@@ -1112,6 +1132,7 @@ export class BillingService {
     data: any,
     options: { allowNewActive?: boolean } = {},
   ): Promise<{ subscriptionCode: string; status: string }> {
+    await this.requirePaystackBillingSchema();
     return db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
       return this.recordPaystackSubscriptionIdentityInTransaction(tx, userId, data, options);
@@ -1119,6 +1140,7 @@ export class BillingService {
   }
 
   async getPaystackSubscriptionIdentityByCode(subscriptionCode: string) {
+    await this.requirePaystackBillingSchema();
     const [identity] = await db
       .select()
       .from(paystackSubscriptionIdentities)
@@ -1146,6 +1168,7 @@ export class BillingService {
    * Verify Paystack transaction
    */
   async verifyPaystackTransaction(reference: string): Promise<PaystackVerificationResponse> {
+    await this.requirePaystackBillingSchema();
     if (!this.paystack) {
       throw new Error('Paystack not initialized');
     }
@@ -1189,6 +1212,7 @@ export class BillingService {
     paystackPlanCode: string;
     customerEmail: string;
   }): Promise<PaystackCheckoutAttemptResult> {
+    await this.requirePaystackBillingSchema();
     return db.transaction(async (tx) => {
       // Lock 36 is shared with every Paystack entitlement mutation. Taking it
       // before the attempt lock prevents checkout creation from racing a renewal.
@@ -1293,6 +1317,7 @@ export class BillingService {
   }
 
   async getPaystackCheckoutAttempt(reference: string): Promise<PaystackCheckoutAttempt | null> {
+    await this.requirePaystackBillingSchema();
     const [attempt] = await db
       .select()
       .from(paystackCheckoutAttempts)
@@ -1304,6 +1329,7 @@ export class BillingService {
   async refreshPaystackCheckoutAttemptAfterVerification(
     reference: string,
   ): Promise<PaystackCheckoutAttempt | null> {
+    await this.requirePaystackBillingSchema();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 30 * 60 * 1000);
     const [refreshed] = await db
@@ -1350,6 +1376,7 @@ export class BillingService {
     transactionReference: string,
     context: PaystackProcessingContext = {},
   ): Promise<UserSubscription> {
+    await this.requirePaystackBillingSchema();
     log(`Processing Paystack subscription for user ${userId}, reference: ${transactionReference}`, 'billing');
 
     // This first read determines the path only. A tracked attempt is re-read and
@@ -1864,6 +1891,7 @@ export class BillingService {
     data: any,
     source: "invoice.payment_failed" | "invoice.update" | "reconciliation",
   ): Promise<PaystackRenewalFailureResult> {
+    await this.requirePaystackBillingSchema();
     const subscription = await this.getUserSubscription(userId);
     if (!subscription) {
       return { outcome: "ignored", reason: "no_local_subscription" };
@@ -2073,6 +2101,10 @@ export class BillingService {
   }
 
   async reconcilePaystackSubscriptionForUser(userId: number): Promise<PaystackReconciliationResult> {
+    const readiness = await this.getPaystackBillingSchemaReadiness();
+    if (!readiness.ready) {
+      return { outcome: "unresolved", reason: "billing_schema_not_ready" };
+    }
     const subscription = await this.getUserSubscription(userId);
     if (!subscription?.nextBillingDate) {
       return { outcome: "unresolved", reason: "missing_local_subscription_or_billing_date" };
@@ -2553,6 +2585,23 @@ export class BillingService {
   }
 
   /**
+   * Preserve a signed provider event when settlement must be deferred during a
+   * schema rollout. billing_events predates the Paystack identity/attempt
+   * tables, so this write remains available in the old-schema window.
+   */
+  async deferPaystackWebhookForSchema(
+    eventData: Record<string, unknown>,
+  ): Promise<void> {
+    await db.insert(billingEvents).values({
+      userId: null,
+      eventType: "paystack_event_deferred_schema_unavailable",
+      eventData,
+      processed: false,
+      processingError: "billing_schema_not_ready",
+    });
+  }
+
+  /**
    * Log billing event for auditing with enhanced error handling
    */
   private async logBillingEvent(userId: number, eventType: string, eventData: any, retryCount: number = 0): Promise<void> {
@@ -2872,6 +2921,11 @@ This will safely verify the payment with Paystack and create the subscription if
   }>> {
     try {
       log(`[RECONCILIATION] Running subscription reconciliation check...`, 'billing');
+      const readiness = await this.getPaystackBillingSchemaReadiness();
+      if (!readiness.ready) {
+        log(`[RECONCILIATION] Deferred: Paystack billing schema is not ready`, "billing");
+        return [];
+      }
 
       const now = new Date();
       const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);

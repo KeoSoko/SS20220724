@@ -38,9 +38,11 @@ interface ServerCheckout {
 export function PaystackBilling({ plan, onPaymentSuccess, onPaymentError }: PaystackBillingProps) {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [billingUnavailable, setBillingUnavailable] = useState(false);
 
   const initializePaystackPayment = async () => {
     setIsProcessing(true);
+    setBillingUnavailable(false);
 
     if (!(window as any).PaystackPop) {
       toast({
@@ -82,6 +84,18 @@ export function PaystackBilling({ plan, onPaymentSuccess, onPaymentError }: Pays
       
       if (isVerificationError) {
         // Dialog is already shown by global event handler, just return silently
+        return;
+      }
+      const isBillingUnavailable =
+        error?.responseData?.code === 'billing_temporarily_unavailable' ||
+        error?.responseData?.error === 'billing_temporarily_unavailable' ||
+        error?.message?.includes('billing_temporarily_unavailable');
+      if (isBillingUnavailable) {
+        setBillingUnavailable(true);
+        toast({
+          title: "Billing temporarily unavailable",
+          description: "We’re completing a safe update. Please try again in a few minutes.",
+        });
         return;
       }
       // For other errors, show toast
@@ -204,6 +218,13 @@ export function PaystackBilling({ plan, onPaymentSuccess, onPaymentError }: Pays
             Your subscription will activate immediately after successful payment. You can cancel anytime from your account settings.
           </AlertDescription>
         </Alert>
+        {billingUnavailable && (
+          <Alert>
+            <AlertDescription className="text-sm">
+              Billing is temporarily unavailable while we complete a safe update. Please try again in a few minutes.
+            </AlertDescription>
+          </Alert>
+        )}
       </CardContent>
       <CardFooter>
         <Button 

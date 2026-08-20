@@ -115,6 +115,73 @@ describe("Paystack route safety invariants", () => {
     expect(paystackClient).not.toContain("randomUUID");
   });
 
+  it("returns a controlled temporary-unavailable result before checkout, settlement, or provider verification", () => {
+    const checkout = routeSource(
+      'app.post("/api/billing/paystack/checkout"',
+      'app.post("/api/billing/paystack/subscription"',
+    );
+    const settlement = routeSource(
+      'app.post("/api/billing/paystack/subscription"',
+      'app.post("/api/billing/paystack/verify"',
+    );
+    const verification = routeSource(
+      'app.post("/api/billing/paystack/verify"',
+      'app.post("/api/billing/paystack/webhook"',
+    );
+
+    expect(routes).toContain('code: "billing_temporarily_unavailable"');
+    expect(checkout.indexOf('requirePaystackBillingSchemaForRequest')).toBeLessThan(
+      checkout.indexOf("createOrReusePaystackCheckoutAttempt"),
+    );
+    expect(settlement.indexOf('requirePaystackBillingSchemaForRequest')).toBeLessThan(
+      settlement.indexOf("verifyPaystackTransaction(reference)"),
+    );
+    expect(verification.indexOf('requirePaystackBillingSchemaForRequest')).toBeLessThan(
+      verification.indexOf("verifyPaystackTransaction(reference)"),
+    );
+  });
+
+  it("durably defers signed provider events while the required schema is unavailable", () => {
+    const webhook = routeSource(
+      'app.post("/api/billing/paystack/webhook"',
+      'app.post("/api/billing/verify-subscription"',
+    );
+
+    expect(webhook).toContain("deferPaystackWebhookForSchema");
+    expect(webhook).toContain("paystack_event_deferred_schema_unavailable");
+    expect(webhook).toContain('retryAction: "replay_after_billing_schema_ready"');
+    expect(webhook.indexOf("deferPaystackWebhookForSchema")).toBeLessThan(
+      webhook.indexOf("setImmediate"),
+    );
+  });
+
+  it("replays deferred signed events only after readiness recovers and marks them complete afterward", () => {
+    const replay = routeSource(
+      "async function replayDeferredPaystackWebhooks",
+      "function startDeferredPaystackWebhookReplay",
+    );
+
+    expect(replay).toContain('eventType, "paystack_event_deferred_schema_unavailable"');
+    expect(replay).toContain('.for("update", { skipLocked: true })');
+    expect(replay.indexOf("await dispatchPaystackWebhookEvent")).toBeLessThan(
+      replay.indexOf("set({ processed: true, processingError: null })"),
+    );
+    expect(routes).toContain("startDeferredPaystackWebhookReplay();");
+  });
+
+  it("does not let a poison deferred event starve later events", () => {
+    const replay = routeSource(
+      "async function replayDeferredPaystackWebhooks",
+      "function scheduleDeferredPaystackWebhookReplay",
+    );
+
+    expect(routes).toContain('const deferredReplayRetryPrefix = "deferred_replay_retry"');
+    expect(replay).toContain("deferredReplayRetryPrefix");
+    expect(replay).toContain("deferred_replay_invalid_envelope_manual_review");
+    expect(replay).toContain('if (outcome === "empty") break;');
+    expect(replay).toContain("split_part");
+  });
+
   it("captures and verifies the exact raw webhook body", () => {
     expect(index).toContain("rawBody = Buffer.from(body)");
     const source = routeSource(

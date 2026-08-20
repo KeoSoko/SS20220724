@@ -86,6 +86,25 @@ import { promisify } from 'util';
 
 const scryptAsync = promisify(scrypt);
 
+async function requirePaystackBillingSchemaForRequest(
+  res: Response,
+  operation: string,
+): Promise<boolean> {
+  const readiness = await billingService.getPaystackBillingSchemaReadiness();
+  if (readiness.ready) return true;
+
+  log(JSON.stringify({
+    event: "billing_operation_deferred_schema_unavailable",
+    operation,
+    missing: readiness.missing,
+  }), "billing");
+  res.status(503).json({
+    error: "Billing is temporarily unavailable while we complete a safe update. Please try again shortly.",
+    code: "billing_temporarily_unavailable",
+  });
+  return false;
+}
+
 // Password comparison function matching the auth system
 async function comparePasswordsForDeletion(supplied: string, stored: string): Promise<boolean> {
   try {
@@ -191,6 +210,7 @@ async function handlePaystackChargeSuccess(data: any) {
     log(`Successfully applied trusted renewal for user ${knownIdentity.userId} via webhook`, 'billing');
   } catch (error) {
     log(`Error handling Paystack charge success: ${error}`, 'billing');
+    throw error;
   }
 }
 
@@ -210,6 +230,7 @@ async function handlePaystackSubscriptionCreate(data: any) {
     );
   } catch (error) {
     log(`Error handling Paystack subscription create: ${error}`, 'billing');
+    throw error;
   }
 }
 
@@ -371,6 +392,7 @@ async function handlePaystackSubscriptionDisable(data: any) {
     }
   } catch (error) {
     log(`Error handling Paystack subscription disable: ${error}`, 'billing');
+    throw error;
   }
 }
 
@@ -412,6 +434,7 @@ async function handlePaystackSubscriptionNotRenew(data: any) {
     }
   } catch (error) {
     log(`Error handling Paystack subscription not_renew: ${error}`, 'billing');
+    throw error;
   }
 }
 
@@ -445,6 +468,7 @@ async function handlePaystackPaymentFailed(data: any) {
     }
   } catch (error) {
     log(`Error handling Paystack payment failed: ${error}`, 'billing');
+    throw error;
   }
 }
 
@@ -464,6 +488,7 @@ async function handlePaystackInvoiceCreate(data: any) {
     });
   } catch (error) {
     log(`Error handling Paystack invoice create: ${error}`, 'billing');
+    throw error;
   }
 }
 
@@ -542,7 +567,139 @@ async function handlePaystackInvoiceUpdate(data: any) {
     log(`Invoice ${data.invoice_code} unpaid result: ${result.outcome} (${result.reason})`, 'billing');
   } catch (error) {
     log(`Error handling Paystack invoice update: ${error}`, 'billing');
+    throw error;
   }
+}
+
+async function dispatchPaystackWebhookEvent(event: string, data: any): Promise<void> {
+  switch (event) {
+    case "charge.success":
+      await handlePaystackChargeSuccess(data);
+      return;
+    case "subscription.create":
+      await handlePaystackSubscriptionCreate(data);
+      return;
+    case "subscription.disable":
+      await handlePaystackSubscriptionDisable(data);
+      return;
+    case "subscription.not_renew":
+      await handlePaystackSubscriptionNotRenew(data);
+      return;
+    case "invoice.payment_failed":
+      await handlePaystackPaymentFailed(data);
+      return;
+    case "invoice.update":
+      await handlePaystackInvoiceUpdate(data);
+      return;
+    case "invoice.create":
+      await handlePaystackInvoiceCreate(data);
+      return;
+    default:
+      log(`Unhandled Paystack webhook event: ${event}`, "billing");
+  }
+}
+
+let deferredPaystackReplayInFlight = false;
+const deferredReplayRetryPrefix = "deferred_replay_retry";
+
+function getDeferredReplayAttempt(processingError: string | null): number {
+  const match = processingError?.match(/^deferred_replay_retry:(\d+):/);
+  return match ? Number(match[1]) : 0;
+}
+
+async function replayDeferredPaystackWebhooks(limit = 20): Promise<void> {
+  if (deferredPaystackReplayInFlight) return;
+  const readiness = await billingService.getPaystackBillingSchemaReadiness();
+  if (!readiness.ready) return;
+
+  deferredPaystackReplayInFlight = true;
+  try {
+    for (let count = 0; count < limit; count += 1) {
+      const outcome = await db.transaction(async (tx) => {
+        const [deferredEvent] = await tx
+          .select()
+          .from(billingEvents)
+          .where(and(
+            eq(billingEvents.eventType, "paystack_event_deferred_schema_unavailable"),
+            eq(billingEvents.processed, false),
+            sql`(
+              ${billingEvents.processingError} IS NULL
+              OR ${billingEvents.processingError} NOT LIKE ${`${deferredReplayRetryPrefix}:%`}
+              OR NULLIF(split_part(${billingEvents.processingError}, ':', 3), '')::bigint
+                <= (extract(epoch from now()) * 1000)::bigint
+            )`,
+          ))
+          .orderBy(asc(billingEvents.id))
+          .limit(1)
+          .for("update", { skipLocked: true });
+        if (!deferredEvent) return "empty" as const;
+
+        const envelope = deferredEvent.eventData as {
+          event?: unknown;
+          data?: unknown;
+          reference?: unknown;
+        } | null;
+        if (typeof envelope?.event !== "string") {
+          await tx
+            .update(billingEvents)
+            .set({
+              processed: true,
+              processingError: "deferred_replay_invalid_envelope_manual_review",
+            })
+            .where(eq(billingEvents.id, deferredEvent.id));
+          log(`Deferred Paystack webhook ${deferredEvent.id} has an invalid envelope and requires manual review`, "billing");
+          return "invalid" as const;
+        }
+
+        try {
+          await dispatchPaystackWebhookEvent(envelope.event, envelope.data);
+          await tx
+            .update(billingEvents)
+            .set({ processed: true, processingError: null })
+            .where(eq(billingEvents.id, deferredEvent.id));
+          log(JSON.stringify({
+            event: "paystack_event_replayed_after_schema_ready",
+            paystackEvent: envelope.event,
+            reference: envelope.reference ?? null,
+            deferredEventId: deferredEvent.id,
+          }), "billing");
+          return "replayed" as const;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const attempt = getDeferredReplayAttempt(deferredEvent.processingError) + 1;
+          const retryDelayMs = Math.min(5 * 60_000, 15_000 * 2 ** Math.min(attempt - 1, 4));
+          const nextRetryAt = Date.now() + retryDelayMs;
+          await tx
+            .update(billingEvents)
+            .set({
+              processingError: `${deferredReplayRetryPrefix}:${attempt}:${nextRetryAt}:${message}`,
+            })
+            .where(eq(billingEvents.id, deferredEvent.id));
+          log(
+            `Deferred Paystack webhook ${deferredEvent.id} replay failed (attempt ${attempt}; retry after ${new Date(nextRetryAt).toISOString()}): ${message}`,
+            "billing",
+          );
+          return "failed" as const;
+        }
+      });
+      if (outcome === "empty") break;
+    }
+  } finally {
+    deferredPaystackReplayInFlight = false;
+  }
+}
+
+function scheduleDeferredPaystackWebhookReplay(): void {
+  void replayDeferredPaystackWebhooks().catch((error) => {
+    log(`Deferred Paystack webhook replay worker failed: ${error}`, "billing");
+  });
+}
+
+function startDeferredPaystackWebhookReplay(): void {
+  scheduleDeferredPaystackWebhookReplay();
+  setInterval(() => {
+    scheduleDeferredPaystackWebhookReplay();
+  }, 15_000);
 }
 
 // Security validation utilities
@@ -3904,6 +4061,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // enforces one pending attempt per billing owner.
   app.post("/api/billing/paystack/checkout", requireVerifiedEmail, async (req, res) => {
     try {
+      if (!await requirePaystackBillingSchemaForRequest(res, "checkout")) return;
+
       const requestedByUserId = getUserId(req);
       const planId = Number(req.body?.planId);
       if (!Number.isInteger(planId) || planId <= 0) {
@@ -4047,6 +4206,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/billing/paystack/subscription", requireVerifiedEmail, async (req, res) => {
     
     try {
+      if (!await requirePaystackBillingSchemaForRequest(res, "initial_settlement")) return;
+
       const userId = getUserId(req);
       const { reference, preflight } = req.body;
       
@@ -4167,6 +4328,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!isAuthenticated(req)) return res.sendStatus(401);
     
     try {
+      if (!await requirePaystackBillingSchemaForRequest(res, "transaction_verification")) return;
+
       const { reference } = req.body;
       
       if (!reference) {
@@ -4214,6 +4377,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(400).json({ error: 'Invalid signature' });
     }
 
+    const readiness = await billingService.getPaystackBillingSchemaReadiness();
+    if (!readiness.ready) {
+      try {
+        await billingService.deferPaystackWebhookForSchema({
+          event: event || "missing",
+          reference,
+          data: data ?? null,
+          receivedAt: webhookReceivedAt,
+          signatureVerified: true,
+          missingSchemaRequirements: readiness.missing,
+          retryAction: "replay_after_billing_schema_ready",
+        });
+        log(JSON.stringify({
+          event: "paystack_event_deferred_schema_unavailable",
+          paystackEvent: event || "missing",
+          reference,
+          missing: readiness.missing,
+        }), "billing");
+        return res.status(200).json({ status: "deferred" });
+      } catch (error: any) {
+        // Do not acknowledge an event that was not durably preserved. Paystack
+        // will retry its signed delivery after this transient database failure.
+        log(`Unable to defer Paystack webhook ${event || "missing"}: ${error.message}`, "billing");
+        return res.status(503).json({ error: "Billing event storage is temporarily unavailable" });
+      }
+    }
+
     // Return 200 OK immediately - Paystack requires this within 30 seconds
     res.status(200).json({ status: 'success' });
 
@@ -4230,32 +4420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         log(`Paystack webhook processing: ${event}`, 'billing');
-
-        switch (event) {
-          case 'charge.success':
-            await handlePaystackChargeSuccess(data);
-            break;
-          case 'subscription.create':
-            await handlePaystackSubscriptionCreate(data);
-            break;
-          case 'subscription.disable':
-            await handlePaystackSubscriptionDisable(data);
-            break;
-          case 'subscription.not_renew':
-            await handlePaystackSubscriptionNotRenew(data);
-            break;
-          case 'invoice.payment_failed':
-            await handlePaystackPaymentFailed(data);
-            break;
-          case 'invoice.update':
-            await handlePaystackInvoiceUpdate(data);
-            break;
-          case 'invoice.create':
-            await handlePaystackInvoiceCreate(data);
-            break;
-          default:
-            log(`Unhandled Paystack webhook event: ${event}`, 'billing');
-        }
+        await dispatchPaystackWebhookEvent(event, data);
       } catch (error: any) {
         log(`Error processing Paystack webhook (${event}): ${error.message}`, 'billing');
       }
@@ -4898,6 +5063,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user.isAdmin) {
         return res.status(403).json({ error: "Admin access required" });
       }
+      if (!await requirePaystackBillingSchemaForRequest(res, "manual_reconciliation")) return;
 
       const { reference } = req.body;
       
@@ -5120,6 +5286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user || !req.user.isAdmin) {
         return res.status(401).json({ error: "Admin access required" });
       }
+      if (!await requirePaystackBillingSchemaForRequest(res, "bulk_reconciliation")) return;
 
       const dryRun = req.body?.dryRun === true;
       log(`[RECONCILE_STUCK] Starting bulk reconciliation (dryRun=${dryRun})`, 'billing');
@@ -8518,6 +8685,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(404).json({ error: "API endpoint not found" });
   });
 
+  startDeferredPaystackWebhookReplay();
   const httpServer = createServer(app);
   return httpServer;
 }

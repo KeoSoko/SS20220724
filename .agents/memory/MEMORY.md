@@ -5,3 +5,4 @@
 - [Workspace seat capacity](workspace-seat-capacity.md) — capacity = owner plan maxSeats (fallback 1); never auto-evict, block growth when over capacity; plan upgrades go through full Paystack checkout (one-click stored-auth charge is disabled).
 - [Paystack renewal identity](paystack-renewal-identity.md) — subscription listing needs numeric customer ID; use invoice history for recovery and never guess between multiple attention subscriptions.
 - [Paystack checkout safety](paystack-checkout-safety.md) — covered workspace membership outranks private-workspace ownership; checkout terms are immutable and renewal overlap fails closed.
+- [Paystack schema rollout](paystack-schema-rollout.md) — missing billing tables require read-only fail-closed checks plus durable deferred-event replay with poison-event backoff.

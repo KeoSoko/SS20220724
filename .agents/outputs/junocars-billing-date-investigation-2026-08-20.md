@@ -17,7 +17,8 @@ local subscription is active and has:
 - next billing date: **2026-08-23 06:00:20.934 UTC**
 - last payment date: **2026-07-23 06:00:20.934 UTC**
 - five completed local Paystack payments through July 23
-- no active local Paystack subscription-identity row
+- no active local Paystack subscription-identity row at the time of the
+  original investigation
 
 The previously observed June date belonged to the development database's older
 state. It must not be used as evidence of current production billing state.
@@ -79,6 +80,30 @@ An active identity with `unknown` readiness is sufficient for the current
 reconciliation code to inspect provider invoices; `unknown` does not itself
 authorize a stored-card charge.
 
+## Authenticated production identity-repair update
+
+After a later authenticated admin preview reconfirmed every approved local
+check, one scoped production repair was executed at 2026-08-20 21:31 UTC.
+
+The endpoint response confirmed no provider request or provider mutation. The
+post-write production read verifies:
+
+- one active canonical local identity for the approved billing owner;
+- recurring readiness remains `unknown`;
+- authorization evidence and provider-verification fields remain empty;
+- one non-sensitive manual-reconciliation audit event;
+- the disabled duplicate is not an active local identity;
+- subscription status, start date, next billing date, payment total, and
+  entitlement date are unchanged;
+- the local Paystack payment count remains five;
+- no pending checkout exists; and
+- no recently-created identity belongs to another billing owner.
+
+The only production writes were the one approved identity row and one audit
+event. No charge, checkout, historical collection, Paystack call, payment
+change, subscription change, entitlement change, or other-customer change
+occurred.
+
 ## Source evidence
 
 - `server/billing-service.ts` — verified settlement advances local billing
@@ -90,6 +115,8 @@ authorize a stored-card charge.
 
 ## Conclusion
 
-No billing-date mutation is proposed or required from this investigation.
-The production local date is already August 23; the authoritative provider
-future charge date remains unproven.
+No billing-date mutation was proposed or performed. The production local date
+remains August 23, while the provider-issued future charge date remains
+unproven. The later identity repair only records the approved local
+relationship; it does not claim recurring authorization or modify billing
+dates.

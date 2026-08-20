@@ -1,0 +1,156 @@
+# Simple Slips Authentication & Integration Audit
+
+Do not make any changes.
+
+I am integrating a separate Bank Statement Processor application into Simple Slips.
+
+I need you to inspect the current Simple Slips authentication and application architecture and report back.
+
+## 1. Authentication architecture
+
+Explain exactly how users currently authenticate.
+
+Include:
+
+* login flow
+* registration flow
+* password handling
+* JWT/session implementation
+* access tokens
+* refresh tokens if any
+* cookies
+* localStorage/sessionStorage
+* token expiry
+* logout
+* backend authentication middleware/dependencies
+
+Identify the exact files responsible.
+
+## 2. User identity
+
+Explain:
+
+* primary user table/model
+* primary user ID
+* email uniqueness
+* workspace/account model
+* relationship between users and workspaces
+* subscription relationship
+* role/permission model if any
+
+## 3. Current domain architecture
+
+Identify all configured application URLs/domains including:
+
+* frontend production URL
+* backend/API URL
+* marketing site URL if referenced
+* development URLs
+* callback URLs
+* CORS origins
+
+Do not expose secrets.
+
+## 4. Authentication cookies
+
+If cookies are used, report:
+
+* cookie name
+* HttpOnly setting
+* Secure setting
+* SameSite setting
+* Path
+* Domain
+* expiry
+* whether the cookie could safely work across Simple Slips subdomains
+
+Do not reveal the cookie value.
+
+## 5. JWT details
+
+If JWTs are used, explain:
+
+* where they are created
+* where they are verified
+* claims included
+* signing algorithm
+* whether another trusted Simple Slips service could verify them
+* whether token audiences/issuers are currently used
+* security implications of allowing another service to verify them
+
+Do not reveal signing keys or secrets.
+
+## 6. External-service authentication
+
+Assume I have another backend running separately called the Simple Slips Bank Statement Processor.
+
+I want an authenticated Simple Slips user to click:
+
+Bank Statements
+
+and arrive in that application already authenticated.
+
+Assess the safest options supported by the current architecture, including:
+
+* shared parent-domain cookie
+* short-lived signed handoff token
+* token exchange
+* backend-to-backend session verification
+* OAuth/OIDC-style flow
+* reverse proxying the processor behind Simple Slips
+
+Recommend the best approach for the current codebase, but do not implement it.
+
+## 7. Entitlements
+
+Explain how the app currently determines:
+
+* active trial
+* active paid subscription
+* cancelled subscription
+* expired account
+* workspace access
+
+Identify which backend function/API should ultimately decide whether a user is allowed to access Bank Statement Processing.
+
+## 8. Navigation and routing
+
+Identify:
+
+* frontend router
+* application navigation/sidebar component
+* protected route implementation
+* best technical location for a future `/bank-statements` route or Bank Statements navigation item
+
+Do not add it.
+
+## 9. Security risks
+
+Identify any important security risks we should account for before allowing another application to trust Simple Slips authentication.
+
+Specifically inspect for:
+
+* JWT leakage
+* tokens in URLs
+* insecure localStorage
+* broad CORS
+* cross-site cookies
+* CSRF
+* open redirects
+* missing audience validation
+* authentication bypass possibilities
+
+## 10. Relevant files
+
+Finish with the exact files I should provide to an external developer for this integration, grouped into:
+
+* authentication
+* user/workspace models
+* subscription/entitlements
+* API security
+* frontend routing
+* navigation
+* config/CORS
+* deployment
+
+Audit only. Do not modify code, database, secrets, configuration or deployment.

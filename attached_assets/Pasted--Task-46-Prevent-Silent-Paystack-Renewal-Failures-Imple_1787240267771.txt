@@ -1,0 +1,718 @@
+# Task #46 — Prevent Silent Paystack Renewal Failures
+
+Implement Task #46 as a **guarded renewal-recovery improvement**.
+
+This is a production billing system with real customers.
+
+The existing Paystack checkout, settlement, idempotency, workspace billing-owner, subscription-identity, reconciliation, webhook deferral/replay, and deployment-safety architecture has already been hardened.
+
+**Do not redesign or weaken those protections.**
+
+Do not deploy or publish automatically.
+
+Do not modify production customer records during implementation.
+
+Do not charge a stored card automatically.
+
+Do not issue refunds or cancellations.
+
+---
+
+# Problem
+
+We have an important legacy/recovery state:
+
+A customer may have:
+
+* a previously successful verified Paystack payment;
+* a locally paid/active Simple Slips subscription;
+* a Paystack customer relationship;
+
+but **no trusted active recurring Paystack `SUB_*` identity** locally.
+
+When the next billing date arrives, Paystack may therefore have no verified recurring relationship through which Simple Slips can expect an automatic renewal.
+
+Currently this condition can surface to the customer as though:
+
+> payment failed / payment is due
+
+even though Paystack may never actually have attempted a renewal.
+
+That is incorrect.
+
+We need to distinguish:
+
+**payment was attempted and failed**
+
+from:
+
+**no verified recurring billing relationship exists, so automatic renewal could not occur**
+
+and from:
+
+**renewal may still be processing/reconciling.**
+
+---
+
+# Critical invariant
+
+A missing Paystack `SUB_*` identity must **never** be interpreted as a failed or declined renewal unless authoritative Paystack evidence proves an actual renewal invoice/charge was attempted and failed.
+
+Absence of a recurring relationship is:
+
+**renewal setup/recovery required**
+
+not:
+
+**payment declined**
+
+---
+
+# 1. Reproduce the current state
+
+Before implementing the fix, trace the exact current behaviour for a customer with:
+
+`local paid subscription`
+
+`+ previous successful Paystack transaction`
+
+`+ Paystack customer code`
+
+`+ no trusted active paystack_subscription_identity`
+
+`+ renewal date reached/passed`
+
+Trace this through:
+
+* subscription access;
+* scheduled reconciliation;
+* renewal status;
+* customer-facing subscription page;
+* Paystack invoice lookup;
+* checkout eligibility.
+
+Document the current path briefly before changing it.
+
+---
+
+# 2. Introduce explicit renewal states
+
+The application must be able to distinguish at least these conceptual states.
+
+Use names appropriate to the existing architecture rather than introducing unnecessary schema if the states can safely be derived.
+
+## A. Active / not yet due
+
+Existing subscription is valid and renewal is not currently required.
+
+## B. Renewal processing/reconciling
+
+There is authoritative evidence that renewal may be processing or reconciliation has not yet resolved the provider state.
+
+Customer meaning:
+
+> We're confirming your renewal.
+
+Do not prematurely tell them payment failed.
+
+## C. Payment actually failed
+
+Use this state **only when authoritative Paystack evidence shows an actual renewal invoice/charge attempt failed or was declined.**
+
+Customer meaning:
+
+> We couldn't process your renewal payment.
+
+Existing secure recovery behaviour may then apply.
+
+## D. Renewal setup/recovery required
+
+The subscription has reached its renewal boundary but there is no trusted recurring Paystack relationship through which automatic renewal can safely occur.
+
+Customer meaning:
+
+> Your automatic renewal needs to be set up again.
+
+Do not describe this as:
+
+* card declined;
+* payment failed;
+* debit failed;
+
+unless Paystack actually attempted a payment.
+
+---
+
+# 3. Guarded provider-identity recovery
+
+Before offering a new checkout, determine whether the existing Paystack recurring relationship can be safely recovered.
+
+Recovery must use authoritative Paystack/provider information.
+
+Never trust:
+
+* client metadata;
+* browser-supplied `SUB_*`;
+* guessed subscription ownership;
+* amount alone;
+* plan metadata alone.
+
+A provider subscription may be recovered only when ownership is **unambiguous**.
+
+At minimum validate:
+
+* Paystack customer code;
+* Paystack subscription code;
+* billing owner;
+* current Simple Slips subscription;
+* expected plan;
+* Paystack plan code;
+* relevant provider status.
+
+The recovered relationship must belong to the same effective Simple Slips billing owner.
+
+---
+
+# 4. Ambiguous provider relationships
+
+If Paystack returns:
+
+* multiple plausible active subscriptions;
+* conflicting customer codes;
+* mismatched plans;
+* stale subscription identities;
+* subscriptions belonging to another billing owner;
+* insufficient evidence to prove ownership;
+
+then:
+
+**DO NOT GUESS.**
+
+Do not automatically attach any `SUB_*`.
+
+Do not automatically create another subscription.
+
+Record an appropriate billing/manual-review event and keep the customer in a safe recovery state.
+
+---
+
+# 5. Identity recovery must not create a charge
+
+Recovering an existing Paystack subscription identity is an identity/state-repair operation.
+
+It must not:
+
+* initialise checkout;
+* charge an authorization;
+* debit a card;
+* create another Paystack subscription;
+* extend entitlement merely because an identity was discovered.
+
+Entitlement/payment state must continue to depend on the existing verified settlement rules.
+
+---
+
+# 6. Recovery checkout
+
+Only allow a customer-initiated recovery checkout when the application has established that there is **no safe existing recurring Paystack relationship to recover**.
+
+This is critical.
+
+Before creating recovery checkout:
+
+1. Resolve effective billing owner.
+2. Acquire the existing billing-owner lock.
+3. Re-read current subscription state.
+4. Re-read current trusted Paystack identity state.
+5. Check whether provider reconciliation/recovery has since found an existing relationship.
+6. Check for an existing pending checkout attempt.
+7. Only if recovery checkout is still required:
+
+   * create or reuse the existing server-owned checkout attempt using the hardened checkout architecture.
+
+Do not introduce a separate unsafe recovery-checkout implementation.
+
+Use the existing:
+
+* server-owned reference;
+* immutable terms;
+* one-pending-owner constraint;
+* checkout locks;
+* settlement validation;
+* workspace billing-owner protections.
+
+---
+
+# 7. Concurrent recovery safety
+
+Two recovery requests must not be able to conclude independently that no relationship exists and then create two checkout opportunities.
+
+Test:
+
+`Recovery request A`
+
+and:
+
+`Recovery request B`
+
+arrive simultaneously.
+
+Expected:
+
+* one billing-owner decision boundary;
+* at most one pending checkout attempt;
+* one server-owned reference;
+* second request safely reuses or receives the resolved state.
+
+Also test this race:
+
+`Recovery begins`
+
+`→ provider identity is discovered/recovered`
+
+`→ recovery checkout request continues`
+
+Expected:
+
+checkout re-checks current identity state under the lock and **does not create a new checkout**.
+
+---
+
+# 8. Workspace ownership
+
+All recovery behaviour must use the canonical effective billing owner.
+
+A covered editor/viewer must not be able to:
+
+* recover a Paystack subscription into their personal account;
+* create personal recovery checkout;
+* attach the owner's `SUB_*` to themselves;
+* bypass owner-managed billing.
+
+Recovery must respect the existing:
+
+`workspace member → workspace billing owner`
+
+boundary.
+
+---
+
+# 9. Customer-facing status
+
+Update the subscription/billing UI so the customer can understand what actually happened.
+
+Do not expose internal Paystack terminology such as `SUB_*`.
+
+The UI should distinguish:
+
+## Renewal still being checked
+
+Meaning:
+
+We are confirming the renewal status.
+
+Do not immediately prompt for another payment.
+
+## Payment was actually unsuccessful
+
+Meaning:
+
+Paystack/provider evidence confirms an attempted renewal failed.
+
+Offer the existing appropriate payment recovery action.
+
+## Automatic renewal needs to be restored
+
+Meaning:
+
+No verified recurring relationship exists and no automatic debit could safely occur.
+
+Provide a clear customer-initiated recovery action.
+
+Suggested meaning:
+
+> Automatic renewal needs to be set up again. No new payment has been attempted yet.
+
+Use wording consistent with Simple Slips' existing interface.
+
+Do not tell the customer their card was declined unless authoritative provider evidence says so.
+
+---
+
+# 10. Recovery CTA safety
+
+The recovery action must clearly communicate if continuing will open a new Paystack checkout.
+
+Do not automatically launch checkout merely because the subscription page loads.
+
+The customer must deliberately initiate the recovery action.
+
+Before Paystack can open, the server must still perform the complete recovery eligibility check.
+
+---
+
+# 11. Reconciliation behaviour
+
+Update scheduled reconciliation so it distinguishes:
+
+### Known active provider identity
+
+Continue normal renewal reconciliation.
+
+### Actual failed provider invoice
+
+Use the existing failed-renewal path.
+
+### No trusted recurring provider identity
+
+Do not fabricate a failed invoice/payment state.
+
+Attempt safe provider identity recovery.
+
+If recovery succeeds unambiguously:
+
+record/recover the identity safely.
+
+If recovery cannot be proven:
+
+mark/derive the subscription as requiring renewal setup/recovery.
+
+Do not charge the customer.
+
+---
+
+# 12. Existing successful payment
+
+A previous successful Paystack payment must remain historically valid.
+
+Do not:
+
+* remove it;
+* duplicate it;
+* convert it to failed;
+* create another ledger record for the same reference;
+* change its historical meaning merely because recurring identity is missing.
+
+Payment ledger idempotency must remain intact.
+
+---
+
+# 13. Access behaviour
+
+Be explicit about what happens to customer access while renewal recovery is required.
+
+Do not introduce a new cancellation/grace-period policy as part of Task #46.
+
+Preserve the existing entitlement/grace behaviour unless a change is strictly necessary to correctly distinguish the renewal state.
+
+If the existing policy is ambiguous, report it rather than inventing a new one.
+
+---
+
+# 14. Required tests
+
+Add focused tests for at least:
+
+### Test A — paid but untracked monthly subscriber
+
+Customer has:
+
+* previous successful Paystack payment;
+* local paid subscription;
+* Paystack customer;
+* no active trusted `SUB_*`;
+* renewal boundary reached.
+
+Expected:
+
+`renewal_setup_required`
+
+or equivalent safe derived state.
+
+Not:
+
+`payment_failed`
+
+No automatic charge.
+
+---
+
+### Test B — actual declined renewal
+
+Authoritative Paystack invoice shows attempted renewal failure.
+
+Expected:
+
+actual failed-payment state.
+
+This must remain distinguishable from Test A.
+
+---
+
+### Test C — reconciliation pending
+
+Provider state is not yet conclusively resolved.
+
+Expected:
+
+processing/reconciling state.
+
+No premature checkout.
+
+No false failure message.
+
+---
+
+### Test D — unambiguous identity recovery
+
+Exactly one valid provider subscription matches:
+
+* customer;
+* billing owner;
+* plan;
+* provider status.
+
+Expected:
+
+identity safely recovered.
+
+No charge created.
+
+No new checkout created.
+
+---
+
+### Test E — ambiguous provider subscriptions
+
+Two plausible subscriptions exist.
+
+Expected:
+
+no identity automatically selected.
+
+No checkout automatically created.
+
+Manual-review/recovery state.
+
+---
+
+### Test F — customer mismatch
+
+Provider `SUB_*` belongs to another Paystack customer.
+
+Expected:
+
+rejected.
+
+No identity attachment.
+
+No entitlement change.
+
+---
+
+### Test G — plan mismatch
+
+Customer matches but provider subscription belongs to another plan.
+
+Expected:
+
+do not silently recover it.
+
+No automatic new charge.
+
+Review/recovery state.
+
+---
+
+### Test H — recovery checkout
+
+No valid recurring relationship exists.
+
+Customer deliberately chooses recovery.
+
+Expected:
+
+existing hardened server-owned checkout system creates one recovery attempt.
+
+---
+
+### Test I — concurrent recovery checkout
+
+Five simultaneous recovery requests.
+
+Expected:
+
+at most:
+
+**1 created**
+
+**4 reused/resolved**
+
+Never five references.
+
+Never five Paystack opportunities.
+
+---
+
+### Test J — identity recovered during checkout decision
+
+Recovery request begins.
+
+Another process successfully recovers the legitimate existing provider identity before checkout creation.
+
+Expected:
+
+checkout re-checks under billing-owner lock.
+
+No new checkout attempt created.
+
+---
+
+### Test K — workspace member
+
+Covered editor/viewer reaches renewal recovery state.
+
+Expected:
+
+billing remains owner-managed.
+
+Member cannot create personal recovery checkout or attach provider identity to themselves.
+
+---
+
+### Test L — duplicate reconciliation
+
+Same untracked customer processed repeatedly by scheduled reconciliation.
+
+Expected:
+
+idempotent recovery state.
+
+No duplicate identity.
+
+No duplicate checkout.
+
+No repeated payment mutation.
+
+---
+
+# 15. Preserve existing Paystack protections
+
+Explicitly confirm Task #46 does not weaken:
+
+* server-owned checkout references;
+* immutable checkout terms;
+* amount verification;
+* currency verification;
+* Paystack plan-code verification;
+* billing-owner email verification;
+* checkout-attempt uniqueness;
+* one-pending-owner constraint;
+* billing-owner advisory locks;
+* settlement row locking;
+* payment-ledger uniqueness;
+* exact active `SUB_*` renewal matching;
+* stale lifecycle rejection;
+* workspace billing-owner enforcement;
+* untracked initial-charge rejection;
+* webhook schema deferral/replay;
+* reconciliation's inability to initiate charges.
+
+---
+
+# 16. Validation
+
+Run:
+
+* TypeScript;
+* production build;
+* existing Paystack focused suite;
+* Task #46 renewal-recovery tests;
+* concurrency tests;
+* reconciliation tests;
+* full Vitest suite.
+
+The two previously known obsolete invite-flow failures may remain.
+
+No additional failures should be introduced.
+
+---
+
+# STOP BEFORE DEPLOYMENT
+
+Do not Publish.
+
+Do not mutate production customer records.
+
+Do not perform a real Paystack charge.
+
+When complete, return:
+
+## A. Original failure path
+
+Explain why the affected customer could reach their renewal date without a debit attempt.
+
+## B. Renewal state decision tree
+
+Show exactly how the system distinguishes:
+
+* active/not due;
+* reconciling;
+* actual failed payment;
+* renewal setup/recovery required.
+
+## C. Identity recovery
+
+Explain exactly what provider evidence is required before a `SUB_*` relationship can be recovered.
+
+## D. Ambiguity handling
+
+Explain what happens when recovery cannot prove one correct provider subscription.
+
+## E. Recovery checkout
+
+Explain exactly when a new checkout becomes permissible.
+
+## F. Duplicate-charge protection
+
+Explain how concurrent recovery requests cannot create multiple checkout opportunities.
+
+## G. Workspace handling
+
+Explain owner/member behaviour.
+
+## H. Customer-facing changes
+
+Show the exact new status/message/CTA behaviour.
+
+## I. Access behaviour
+
+Confirm whether any existing grace/access rules changed.
+
+## J. Files changed
+
+Exact list.
+
+## K. Test results
+
+Complete results.
+
+## L. Existing protections
+
+Confirm the previously deployed Paystack protections remain intact.
+
+## M. Production data remediation
+
+If the originally affected customer still requires a one-time production repair after this code is deployed, describe exactly what needs manual verification/repair.
+
+Do **not perform that repair automatically.**
+
+## N. Final recommendation
+
+End with exactly:
+
+`READY FOR REVIEW — DO NOT DEPLOY`
+
+or:
+
+`NOT READY — [remaining blocker]`

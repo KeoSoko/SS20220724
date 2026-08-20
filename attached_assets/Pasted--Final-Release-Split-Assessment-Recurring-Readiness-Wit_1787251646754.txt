@@ -1,0 +1,162 @@
+# Final Release Split Assessment — Recurring Readiness Without Unverified Management Link
+
+Task #48 is complete, but the release remains blocked by:
+
+1. No completed post-migration reconciliation cycle has yet been observed.
+2. The hosted Paystack subscription-management-link behavior has not been safely validated against a non-customer Paystack subscription.
+
+Do not deploy.
+
+Do not charge customers.
+
+Do not mutate production subscriptions.
+
+Assess whether the recurring-readiness release can be safely split so that the verified protections can ship while the unverified hosted-management-link feature remains disabled.
+
+## 1. Wait for normal reconciliation
+
+Do not force reconciliation against live customer Paystack records.
+
+Wait for the normal scheduled development reconciliation cycle.
+
+After it runs, confirm:
+
+* no `recurring_readiness does not exist` error;
+* no missing-column/schema error;
+* reconciliation starts and completes normally;
+* no unexpected customer mutation;
+* no charge path is invoked;
+* no historical collection is attempted.
+
+Return the relevant logs.
+
+---
+
+## 2. Management-link feature gate
+
+Determine whether the hosted Paystack management-link path can be disabled safely in production until its live provider contract is verified.
+
+If disabled:
+
+* customers with `payment_method_needs_attention` must not receive a broken management-link CTA;
+* no generic checkout fallback may appear merely because the management-link feature is unavailable;
+* existing trusted `SUB_*` relationships must remain intact;
+* paid access/grace behavior must remain unchanged;
+* affected customers should receive a controlled support/manual-review message;
+* no new subscription should be created.
+
+Conceptually:
+
+`trusted SUB_* + payment method needs attention + management-link unverified`
+
+→ `manual/support recovery required`
+
+NOT:
+
+→ new checkout
+
+---
+
+## 3. Confirm what can safely ship without the link
+
+Explicitly confirm whether these protections remain independently safe:
+
+* successful payment separated from recurring readiness;
+* provider authorization evidence persisted;
+* `authorization.reusable === true` required for recurring readiness;
+* provider channel recorded accurately for new transactions;
+* multiple provider subscriptions fail closed;
+* no third checkout for ambiguous relationships;
+* no historical back-charging;
+* no automatic stored-authorization charge;
+* recovery checkout allowed only after complete provider inspection proves no viable subscription exists;
+* workspace billing-owner protections;
+* duplicate-checkout/idempotency protections;
+* diagnostics for legacy candidates.
+
+If any of these depend technically on the hosted-management-link path, explain exactly how.
+
+---
+
+## 4. Customer-facing behavior while link is disabled
+
+Provide the exact UX state for:
+
+### Automatic renewal active
+
+No action.
+
+### Payment method needs attention
+
+Do not show an unverified Paystack management link.
+
+Show a controlled message such as:
+
+> Your payment method needs attention. Please contact support while we confirm the safest way to update your automatic renewal.
+
+No checkout CTA.
+
+### Automatic renewal not fully configured
+
+Continue guarded provider inspection.
+
+### Multiple provider subscriptions
+
+Manual review only.
+
+### No provider subscription
+
+Existing hardened prospective recovery checkout may remain available only if its provider-inspection criteria are fully satisfied.
+
+---
+
+## 5. Feature flag / configuration
+
+If necessary, introduce the smallest possible feature gate for hosted management links.
+
+Example concept:
+
+`PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED=false`
+
+Requirements:
+
+* default must be safe;
+* disabled state must not create checkout fallback;
+* enabling later must not require schema changes;
+* no customer data migration required;
+* do not log sensitive management URLs.
+
+Do not add unnecessary architecture if a simpler existing configuration mechanism is available.
+
+---
+
+## 6. Tests
+
+Add/confirm tests for:
+
+1. Management-link feature disabled.
+2. `payment_method_needs_attention` returns safe manual/support state.
+3. No hosted link requested from Paystack.
+4. No generic checkout created as fallback.
+5. Existing subscription remains unchanged.
+6. Multiple provider subscriptions still block checkout.
+7. No historical back-charge.
+8. No stored-authorization charge.
+9. Normal recovery checkout still works only when no provider subscription exists.
+10. All existing recurring-readiness and Paystack safety tests remain green.
+
+---
+
+## 7. Release recommendation
+
+After the normal reconciliation cycle has completed, return one of:
+
+`SAFE TO DEPLOY WITH MANAGEMENT LINK DISABLED`
+
+or
+
+`DO NOT DEPLOY — [remaining blocker]`
+
+If safe to deploy with the link disabled, provide the exact production configuration and customer-facing behavior.
+
+Do not deploy.

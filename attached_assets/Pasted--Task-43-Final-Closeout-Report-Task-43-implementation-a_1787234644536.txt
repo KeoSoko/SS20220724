@@ -1,0 +1,138 @@
+# Task 43 Final Closeout Report
+
+Task 43 implementation appears complete.
+
+Before I approve Publish, give me the final closeout report only.
+
+Do not make further code changes unless you discover a genuine unresolved blocker.
+
+Do not publish.
+
+Include:
+
+## A. Files changed
+
+Exact production and test files changed.
+
+## B. Runtime DDL removal
+
+Show exactly what startup-time schema creation was removed.
+
+Confirm normal application startup performs no `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`, or migration execution for the Paystack billing schema.
+
+## C. Billing schema readiness
+
+Explain:
+
+* how readiness is checked;
+* which tables/indexes/constraints are required;
+* how long readiness is cached;
+* how it recovers automatically when the schema becomes available;
+* confirmation that the check is read-only.
+
+## D. Checkout during schema transition
+
+Confirm that while billing schema is unavailable:
+
+* checkout returns controlled `503`;
+* no Paystack popup/initialisation can occur;
+* no server reference is generated;
+* no legacy checkout fallback exists;
+* no payment/subscription mutation occurs.
+
+## E. Webhook deferral
+
+Explain exactly what happens when a valid signed Paystack webhook arrives while billing schema is unavailable.
+
+Include:
+
+* where the event is persisted;
+* how it is identified as deferred;
+* whether the original provider payload/reference is retained;
+* confirmation that no entitlement mutation occurs while schema is unavailable.
+
+## F. Deferred-event replay
+
+Explain:
+
+* what triggers replay;
+* how readiness is rechecked;
+* how deferred events are selected;
+* locking/concurrency behaviour;
+* idempotency behaviour;
+* when an event is marked complete;
+* retry/backoff behaviour;
+* what happens to malformed events;
+* why one failing event cannot starve later events;
+* confirmation that replay uses the same trusted event handlers and security checks as live processing.
+
+## G. Existing-user availability
+
+Confirm users can still:
+
+* sign in;
+* use non-billing application functionality;
+* retain existing valid access where safe;
+
+while billing schema readiness is false.
+
+## H. Test results
+
+Give exact final results for:
+
+* TypeScript;
+* production build;
+* focused Paystack/readiness suite;
+* deployment-transition tests;
+* full Vitest suite;
+* browser/running-app smoke test.
+
+List any remaining failed tests and confirm whether they pre-date this work.
+
+## I. Production schema diff
+
+Reconfirm the Publish schema diff is additive only and contains:
+
+* `paystack_subscription_identities`;
+* `paystack_checkout_attempts`;
+* all required foreign keys;
+* unique subscription code;
+* unique checkout reference;
+* one-pending-owner partial unique index;
+* status check;
+* status/expiry index.
+
+Confirm:
+
+* no table drops;
+* no column drops;
+* no truncation;
+* no structural data loss;
+* no unexpected rename.
+
+## J. Production Publish sequence
+
+Give me the exact steps I should follow in Replit Publish, including:
+
+1. what I should inspect before confirming;
+2. what schema objects must appear;
+3. what warnings would cause me to stop;
+4. what I should verify immediately after Publish;
+5. the payment-free smoke test;
+6. the first-hour monitoring checks.
+
+## K. Deferred-event operational check
+
+Provide a read-only way to verify after deployment whether any Paystack webhook events were deferred during the rollout and whether they were later replayed successfully.
+
+## L. Final recommendation
+
+End with exactly one:
+
+`SAFE TO PUBLISH`
+
+or
+
+`DO NOT PUBLISH — [remaining blocker]`
+
+Do not deploy.

@@ -1,0 +1,229 @@
+# Task — Safe Local Paystack Identity Repair for Manually Verified Provider Relationships
+
+We have completed manual provider review for:
+
+`junocars@gmail.com`
+
+The Paystack-side duplicate has already been manually resolved.
+
+The surviving canonical provider relationship is:
+
+* Billing owner: `167`
+* Paystack customer: `CUS_w9r4rwwmzjnt0nr`
+* Paystack plan: `PLN_8l8p7v1mergg804`
+* Canonical subscription: `SUB_eehaegvz7vf3jju`
+* Duplicate provider subscription `SUB_c0uarpyy6cw5jyz` has already been disabled manually in Paystack
+
+Simple Slips currently has **no local Paystack subscription identity** for this customer.
+
+Do not bypass production safety controls.
+
+Build a **narrow authenticated admin-only local identity repair mechanism** suitable for manually verified provider relationships.
+
+Do not deploy or execute the repair yet.
+
+## Critical rule
+
+This mechanism is for:
+
+**recording an already manually verified provider identity locally**
+
+It must NOT:
+
+* call Paystack;
+* charge a customer;
+* create checkout;
+* create a subscription;
+* cancel a subscription;
+* refund;
+* alter historical payments;
+* change entitlement;
+* change next billing date;
+* back-charge missed months.
+
+---
+
+## Required authorization
+
+The repair action must:
+
+* require an authenticated Simple Slips admin;
+* not be callable by normal owners, editors, or viewers;
+* require explicit confirmation;
+* accept only the exact local identity data needed;
+* reject arbitrary customer-to-subscription reassignment without validation.
+
+Do not create a public unauthenticated endpoint.
+
+---
+
+## Required local validation
+
+Before inserting or activating a local identity, validate:
+
+1. billing owner exists;
+2. local subscription exists;
+3. local subscription belongs to that billing owner;
+4. local subscription is the expected plan;
+5. stored Paystack customer code matches the manually verified customer code;
+6. no other active local identity exists for the billing owner;
+7. subscription code is not already trusted by another user;
+8. plan code matches the current local plan;
+9. no conflicting pending checkout exists that would make repair unsafe.
+
+If any check fails:
+
+**stop and require manual review.**
+
+---
+
+## Repair behavior
+
+For the Junocars case, the intended local result is one identity equivalent to:
+
+* user/billing owner: `167`
+* subscription code: `SUB_eehaegvz7vf3jju`
+* customer code: `CUS_w9r4rwwmzjnt0nr`
+* plan code: `PLN_8l8p7v1mergg804`
+* status: active
+* recurring readiness: `unknown`
+
+Do not populate:
+
+* `authorization_reusable`
+* authorization channel
+* authorization signature
+* provider verification timestamp
+
+unless authoritative provider evidence is available.
+
+Unknown must remain unknown.
+
+---
+
+## Existing subscription
+
+Do not create another `user_subscriptions` row.
+
+Do not change:
+
+* subscription start date;
+* next billing date;
+* subscription status;
+* historical payment records;
+* entitlement dates.
+
+This task repairs only the missing trusted provider identity.
+
+---
+
+## Audit trail
+
+Every manual identity repair must create a billing/audit event containing:
+
+* admin user ID;
+* affected billing owner ID;
+* local subscription ID;
+* subscription code;
+* customer code;
+* plan code;
+* reason: manually verified provider reconciliation;
+* timestamp;
+* recurring-readiness value;
+* confirmation that no provider mutation occurred.
+
+Do not log card details, secret keys, or authorization credentials.
+
+---
+
+## Preview before execution
+
+The admin action must support a preview/dry-run mode showing:
+
+* current local state;
+* proposed identity;
+* validation results;
+* fields that would change;
+* fields that would remain unchanged.
+
+No write in preview mode.
+
+Execution should require an explicit second confirmation.
+
+---
+
+## Idempotency
+
+Running the same repair twice must not create duplicate identities.
+
+If the same canonical identity already exists correctly:
+
+return:
+
+`already_reconciled`
+
+with no mutation.
+
+---
+
+## Tests
+
+Add tests for:
+
+1. valid admin repair;
+2. non-admin rejected;
+3. wrong customer code rejected;
+4. wrong plan rejected;
+5. `SUB_*` already belongs to another user rejected;
+6. conflicting active local identity rejected;
+7. duplicate execution is idempotent;
+8. recurring readiness remains `unknown` without reusable-authorization evidence;
+9. no entitlement changes;
+10. no next-billing-date changes;
+11. no payment rows changed;
+12. no Paystack request made;
+13. no checkout created;
+14. audit event created;
+15. preview mode performs zero writes.
+
+---
+
+# STOP BEFORE PRODUCTION EXECUTION
+
+Implement and test the safe repair mechanism.
+
+Do not use it on Junocars yet.
+
+Return:
+
+## A. Admin authorization model
+
+## B. Validation rules
+
+## C. Preview behavior
+
+## D. Exact local mutation performed
+
+## E. Audit event
+
+## F. Idempotency behavior
+
+## G. Test results
+
+## H. Files changed
+
+## I. Proposed Junocars dry-run result
+
+Using:
+
+`SUB_eehaegvz7vf3jju`
+
+but without committing it.
+
+End with exactly:
+
+`READY FOR JUNOCARS DRY RUN — DO NOT EXECUTE`
+
+or:
+
+`NOT READY — [reason]`

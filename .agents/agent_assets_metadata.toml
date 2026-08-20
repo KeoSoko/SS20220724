@@ -1,0 +1,9 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "l0UwXuDyZouhkeUzunFu8"
+uri = "file://.agents/outputs/legacy-paystack-classification-2026-08-20.csv"
+type = "table"
+title = "Legacy Paystack classification report"
+description = "Internal, read-only Task #50 classification CSV. Contains local billing evidence and fail-closed classifications; no card data, authorization credentials, or provider mutations."

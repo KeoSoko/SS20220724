@@ -1,0 +1,388 @@
+# Task 43 — Make Paystack Release Deployment-Safe
+
+The final production deployment gate identified two operational release blockers.
+
+Fix only these deployment-safety issues.
+
+Do not redesign Paystack billing.
+
+Do not change the Task 41/42 settlement, idempotency, workspace ownership, renewal identity, or reconciliation rules unless strictly required for deployment compatibility.
+
+Do not deploy or publish.
+
+---
+
+# 1. Remove startup-time schema mutation
+
+Current issue:
+
+`server/subscription-plans-seeder.ts`
+
+contains startup behaviour through:
+
+`ensurePaystackSubscriptionIdentitySchema()`
+
+that executes runtime DDL such as:
+
+`CREATE TABLE IF NOT EXISTS paystack_subscription_identities ...`
+
+and:
+
+`CREATE INDEX IF NOT EXISTS ...`
+
+Remove application-owned production schema mutation.
+
+Normal application startup must never create, alter, drop, migrate, or repair billing tables.
+
+Schema ownership belongs to the Replit Publish/schema-diff process.
+
+If startup needs to verify schema availability, replace the mutating function with a **read-only validation check**.
+
+For example, startup may determine whether required billing schema exists, but it must not create it.
+
+---
+
+# 2. Make deployment safe across old-schema/new-code overlap
+
+The current production database does not yet contain:
+
+* `paystack_subscription_identities`
+* `paystack_checkout_attempts`
+
+Replit Publish will add them through an additive schema diff.
+
+However, we do not have a documented guarantee that the schema update completes before any request reaches the newly deployed application.
+
+Therefore the application must fail **safely**, not crash or fall back to unsafe billing behaviour, if a new server instance briefly starts before the new billing schema is available.
+
+## Critical principle
+
+Missing billing safety schema must result in:
+
+**billing temporarily unavailable**
+
+NOT:
+
+**billing falls back to the old unsafe path**
+
+and NOT:
+
+**application startup failure for the entire Simple Slips application unless technically unavoidable.**
+
+---
+
+# 3. Add read-only billing schema readiness
+
+Implement a read-only billing schema readiness check for the required production objects.
+
+At minimum verify availability of:
+
+`paystack_subscription_identities`
+
+and:
+
+`paystack_checkout_attempts`
+
+Also verify the critical database guarantees required by the billing architecture where practical:
+
+* unique subscription code;
+* unique checkout reference;
+* one-pending-attempt-per-billing-owner partial unique index.
+
+Do not create them.
+
+Expose the result internally as something conceptually like:
+
+`billingSchemaReady = true/false`
+
+Use naming appropriate to the codebase.
+
+---
+
+# 4. Fail closed on checkout while schema is unavailable
+
+If:
+
+`billingSchemaReady === false`
+
+then:
+
+`POST /api/billing/paystack/checkout`
+
+must not attempt to use the old checkout path.
+
+It must not create a client-owned reference.
+
+It must not open Paystack.
+
+It must not fall back to a legacy billing mechanism.
+
+Return a controlled temporary-unavailability response, preferably:
+
+HTTP `503`
+
+with a stable machine-readable code such as:
+
+`billing_temporarily_unavailable`
+
+The frontend should show a neutral temporary message rather than a broken payment flow.
+
+Example meaning:
+
+> Billing is temporarily unavailable. Please try again shortly.
+
+Do not tell users about database migrations or internal infrastructure.
+
+---
+
+# 5. Fail closed on unsafe billing mutations
+
+Determine which Paystack operations require the new schema for safety.
+
+Any operation that cannot be processed safely while the required schema is missing must:
+
+* fail closed;
+* avoid entitlement mutation;
+* avoid initiating payment;
+* preserve the provider event for retry/manual recovery where applicable;
+* log a structured operational event.
+
+Pay particular attention to:
+
+* initial checkout;
+* initial settlement;
+* webhook processing;
+* subscription identity establishment;
+* renewal settlement;
+* cancellation/not-renew lifecycle processing;
+* reconciliation.
+
+Do not reject or lose a legitimate successful Paystack payment merely because the application started during schema transition.
+
+For provider-originated events, prefer retry/deferred processing or durable/manual-review behaviour over silently discarding them.
+
+---
+
+# 6. Preserve non-billing application availability
+
+A temporary missing billing schema during deployment should not unnecessarily prevent users from:
+
+* signing in;
+* viewing existing receipts;
+* uploading/working with receipts where unrelated;
+* using normal non-billing Simple Slips functionality;
+* accessing an already-valid entitlement if that access can be determined safely from existing production subscription data.
+
+Do not introduce a global application outage merely to solve billing schema readiness.
+
+Billing should be isolated where possible.
+
+---
+
+# 7. Schema becomes available
+
+Once Replit's Publish schema diff has created the required objects:
+
+* readiness should become true without manual data modification;
+* normal checkout should resume;
+* no server restart should be required if reasonably achievable.
+
+If readiness is cached, use a safe short-lived cache or invalidation strategy.
+
+Do not permanently cache a failed schema check for the lifetime of the server.
+
+---
+
+# 8. Logging
+
+Add structured logs for:
+
+`billing_schema_not_ready`
+
+and:
+
+`billing_schema_ready`
+
+Include safe information such as:
+
+* missing table/object;
+* operation that was blocked;
+* timestamp;
+* deployment/runtime context where already available.
+
+Do not log secrets or payment credentials.
+
+I need to distinguish a temporary deployment-schema condition from an actual Paystack outage.
+
+---
+
+# 9. Tests
+
+Add tests for:
+
+## A. Startup with old production schema
+
+Both new billing tables absent.
+
+Expected:
+
+* application can start if technically feasible;
+* no CREATE/ALTER/DROP DDL executed;
+* billing readiness false;
+* normal non-billing application remains available.
+
+## B. Checkout during schema transition
+
+Schema absent.
+
+Expected:
+
+* controlled 503;
+* Paystack not called/opened;
+* no reference generated;
+* no subscription/payment mutation.
+
+## C. Schema becomes available
+
+Initial readiness false.
+
+Required schema then becomes available.
+
+Expected:
+
+* readiness transitions to true;
+* normal server-owned checkout works;
+* no unsafe legacy fallback.
+
+## D. Settlement during schema transition
+
+Successful provider event arrives while required schema is unavailable.
+
+Expected:
+
+* no unsafe entitlement grant;
+* event is not silently lost;
+* appropriate retry/review behaviour.
+
+## E. Renewal during schema transition
+
+Expected:
+
+* no unsafe identity guessing;
+* no duplicate entitlement;
+* safe deferred/review behaviour.
+
+## F. Existing subscriber
+
+Existing paid user accesses Simple Slips while billing schema is temporarily unavailable.
+
+Expected:
+
+existing safe access is preserved where possible.
+
+## G. Runtime DDL invariant
+
+Test/source invariant proving normal application startup contains no:
+
+* `CREATE TABLE`
+* `ALTER TABLE`
+* `DROP TABLE`
+* schema migration execution
+
+for these Paystack billing tables.
+
+---
+
+# 10. Re-run validation
+
+Run:
+
+* TypeScript;
+* production build;
+* Paystack-focused suite;
+* deployment-transition tests;
+* full Vitest suite.
+
+The two known obsolete invite-flow tests may remain.
+
+No new failures.
+
+---
+
+# 11. Re-run production deployment gate
+
+After implementation, repeat the read-only production/deployment assessment.
+
+Production is expected to remain without the two new tables until Publish.
+
+That is acceptable **only if the new build is proven to fail closed for billing during the transition.**
+
+The eventual target state after Publish remains:
+
+`paystack_subscription_identities`
+
+plus:
+
+`paystack_checkout_attempts`
+
+with all Task 41/42 constraints and indexes.
+
+---
+
+# STOP
+
+Do not Publish.
+
+Do not apply production migrations.
+
+Do not perform a Paystack charge.
+
+Return:
+
+## A. Startup DDL removed
+
+Show exactly what was removed.
+
+## B. Schema readiness implementation
+
+Explain how readiness is detected without mutation.
+
+## C. Old-schema behaviour
+
+Explain exactly what happens if new application code receives traffic before schema creation.
+
+## D. Checkout behaviour
+
+Confirm Paystack cannot be opened/initialized while billing schema is unavailable.
+
+## E. Provider-event behaviour
+
+Explain how successful payment/webhook events are protected from being lost during transition.
+
+## F. Existing-user behaviour
+
+Explain whether existing customers retain normal application access.
+
+## G. Tests
+
+Provide complete results.
+
+## H. Final schema
+
+Reconfirm required production objects.
+
+## I. Deployment sequence
+
+Give the exact safe Replit Publish sequence.
+
+## J. Final recommendation
+
+End with exactly:
+
+`SAFE TO PUBLISH`
+
+or:
+
+`DO NOT PUBLISH — [remaining blocker]`
+
+Do not deploy.

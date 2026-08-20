@@ -1,0 +1,489 @@
+# Post-Publish Production Verification — Paystack Recurring Readiness
+
+The recurring-readiness release has now been published.
+
+Perform a **READ-ONLY production verification**.
+
+This is a verification task only.
+
+## STRICT SAFETY RULES
+
+Do NOT:
+
+* modify production customer data;
+* repair any customer;
+* recover any `SUB_*`;
+* create checkout;
+* open Paystack checkout;
+* charge an authorization;
+* create a Paystack subscription;
+* cancel a Paystack subscription;
+* issue a refund;
+* generate a hosted management link;
+* change subscription dates;
+* change entitlements;
+* back-charge historical missed payments;
+* run UPDATE/DELETE/INSERT SQL against customer billing records;
+* remediate the previously identified legacy customers.
+
+Do not use Antebellum or any other customer for a live payment test.
+
+Read-only provider/API inspection is permitted only where necessary and where it cannot mutate provider state.
+
+---
+
+# 1. Production migration verification
+
+Using read-only PostgreSQL catalog/schema queries, confirm the production database now contains all fields from:
+
+`0004_add_paystack_recurring_readiness`
+
+## `payment_transactions`
+
+Confirm:
+
+* `provider_transaction_id`
+* `provider_channel`
+* `provider_authorization_code`
+* `provider_authorization_channel`
+* `provider_authorization_signature`
+* `provider_authorization_reusable`
+* `provider_verified_at`
+* `recurring_readiness`
+
+Confirm:
+
+`recurring_readiness`
+
+is:
+
+`text NOT NULL DEFAULT 'unknown'`
+
+## `paystack_subscription_identities`
+
+Confirm:
+
+* `recurring_readiness`
+* `authorization_code`
+* `authorization_channel`
+* `authorization_signature`
+* `authorization_reusable`
+* `provider_verified_at`
+
+Confirm:
+
+`recurring_readiness`
+
+is:
+
+`text NOT NULL DEFAULT 'unknown'`
+
+## Index
+
+Confirm:
+
+`payment_transactions_provider_transaction_idx`
+
+exists on:
+
+`payment_transactions(platform, provider_transaction_id)`
+
+Do not modify schema.
+
+---
+
+# 2. Existing Paystack safety schema
+
+Confirm the previously deployed safety schema remains intact.
+
+Verify:
+
+* `paystack_checkout_attempts` exists;
+* `paystack_subscription_identities` exists;
+* unique `paystack_reference`;
+* unique `subscription_code`;
+* one-pending-checkout-per-billing-owner partial unique index;
+* checkout status constraint;
+* checkout status/expiry index;
+* subscription identity user/status index;
+* required foreign keys.
+
+Report any unexpected difference.
+
+---
+
+# 3. Application startup
+
+Inspect the newly deployed production logs.
+
+Confirm:
+
+* application started successfully;
+* application is serving normally;
+* no migration failure;
+* no missing-column error;
+* no missing-table error;
+* no recurring-readiness initialization error;
+* no Paystack billing initialization failure.
+
+Specifically search for errors involving:
+
+* `recurring_readiness`
+* `provider_transaction_id`
+* `provider_channel`
+* `authorization_reusable`
+* `paystack_subscription_identities`
+* `paystack_checkout_attempts`
+
+---
+
+# 4. Billing schema readiness
+
+Confirm the deployed application reaches:
+
+`billing_schema_ready`
+
+or the equivalent structured ready state.
+
+Confirm:
+
+`missing: []`
+
+or equivalent.
+
+There must not be a persistent:
+
+`billing_schema_not_ready`
+
+state.
+
+If there was a temporary readiness failure during deployment transition, report it separately and confirm whether readiness subsequently recovered.
+
+---
+
+# 5. Production feature flag
+
+Confirm the deployed production application sees:
+
+`PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED=false`
+
+Do not expose unrelated production secrets.
+
+Confirm the application interprets this as:
+
+`management links disabled`
+
+Do not change the environment variable.
+
+---
+
+# 6. Management-link isolation
+
+Verify from configuration/runtime/code path without generating a real link that:
+
+`POST /api/billing/paystack/subscription/manage-link`
+
+is disabled in production.
+
+Expected:
+
+* feature unavailable;
+* controlled `503`;
+* code `paystack_management_link_disabled`;
+* no Paystack provider call;
+* no management URL generated;
+* no checkout fallback;
+* no charge;
+* no subscription creation;
+* no subscription cancellation.
+
+Do not invoke the route in a way that mutates customer/provider state.
+
+---
+
+# 7. Customer-facing feature state
+
+Verify safely that when:
+
+`payment_method_needs_attention`
+
+is returned while management links are disabled:
+
+`managementLinkEligible = false`
+
+and the intended UI behavior is:
+
+> Your payment method needs attention. Please contact support while we confirm the safest way to update your automatic renewal.
+
+Confirm:
+
+* no `Update payment method` CTA;
+* no generic `Subscribe` fallback;
+* no `Restore automatic renewal` fallback;
+* no automatic Paystack popup.
+
+Do not impersonate or modify a production customer merely to perform this test.
+
+Use existing safe runtime evidence, server response logic, or non-mutating verification.
+
+---
+
+# 8. Reconciliation health
+
+Inspect production reconciliation logs after deployment.
+
+If a normal scheduled reconciliation cycle has already occurred, confirm:
+
+* cycle starts normally;
+* no recurring-readiness schema error;
+* no missing-column error;
+* no unhandled failure;
+* no checkout creation;
+* no stored-authorization charge;
+* no subscription creation;
+* no historical collection.
+
+If the next normal production reconciliation cycle has not yet occurred:
+
+**do not force it.**
+
+Report:
+
+`AWAITING NORMAL PRODUCTION RECONCILIATION CYCLE`
+
+This alone should not trigger customer mutation or manual billing activity.
+
+---
+
+# 9. Historical back-charge invariant
+
+Verify that the deployed production code still enforces:
+
+> Simple Slips will not automatically collect historical missed subscription payments discovered during billing reconciliation or recovery. Recovery establishes correct billing prospectively from the appropriate next billing date.
+
+Confirm there is no production code path from:
+
+* reconciliation;
+* historical-gap detection;
+* recurring-readiness classification;
+* identity recovery;
+* payment-method attention;
+* multiple-subscription detection;
+
+to:
+
+* `transaction.charge`;
+* historical catch-up checkout;
+* missed-month aggregation;
+* arrears collection;
+* automatic subscription creation.
+
+Specifically confirm there is no logic equivalent to:
+
+`missed months × subscription price`
+
+for automatic collection.
+
+---
+
+# 10. Stored-authorization charging
+
+Confirm the legacy stored-authorization charging path remains hard-disabled.
+
+No recovery, reconciliation, upgrade, or recurring-readiness process should silently debit:
+
+`AUTH_*`
+
+Confirm no newly deployed code re-enabled this path.
+
+---
+
+# 11. Production integrity checks
+
+Run READ-ONLY integrity queries.
+
+Report counts/results for:
+
+### A. Duplicate pending checkouts
+
+Find billing owners with:
+
+`COUNT(pending checkout attempts) > 1`
+
+Expected:
+
+`0`
+
+### B. Duplicate checkout references
+
+Find duplicate:
+
+`paystack_reference`
+
+Expected:
+
+`0`
+
+### C. Duplicate trusted subscription identities
+
+Find duplicate:
+
+`subscription_code`
+
+Expected:
+
+`0`
+
+### D. Deferred billing events
+
+Count deferred Paystack/billing events still waiting for processing/replay.
+
+Report actual count.
+
+Do not replay them manually.
+
+### E. Invalid recurring-readiness values
+
+Check both:
+
+`payment_transactions.recurring_readiness`
+
+and:
+
+`paystack_subscription_identities.recurring_readiness`
+
+for values outside the application's allowed state set.
+
+Report actual results.
+
+Do not normalize or repair anything.
+
+---
+
+# 12. Legacy customer population
+
+Do NOT remediate them.
+
+Perform only the safest available read-only diagnostic and report the current number of accounts that potentially require recurring-billing review.
+
+Where possible, classify locally into broad candidate groups such as:
+
+* recurring readiness already known/healthy;
+* recurring readiness unknown;
+* successful payment but no active trusted `SUB_*`;
+* payment method potentially needs attention;
+* provider relationship requires further inspection.
+
+Do not claim a customer has:
+
+* Apple Pay;
+* multiple provider subscriptions;
+* reusable/non-reusable authorization;
+* no provider subscription;
+
+unless authoritative evidence actually establishes it.
+
+Unknown must remain:
+
+`unknown`
+
+This section is diagnostic only.
+
+---
+
+# 13. Antebellum
+
+Do NOT repair Antebellum.
+
+Do NOT:
+
+* choose between their two Paystack subscriptions;
+* cancel either subscription;
+* recover either identity;
+* generate a management link;
+* create checkout;
+* charge them.
+
+Simply confirm that the newly deployed logic would fail closed when more than one viable provider subscription exists.
+
+Expected conceptual outcome:
+
+`manual_review_required`
+
+with:
+
+* zero new checkout attempts;
+* zero automatic identity selection;
+* zero historical back-charge.
+
+---
+
+# 14. Deployment regression check
+
+Review production logs since deployment for new billing-related errors.
+
+Report any new:
+
+* HTTP 500s;
+* Paystack API failures;
+* reconciliation failures;
+* database errors;
+* schema errors;
+* checkout errors;
+* settlement errors;
+* webhook failures;
+* recurring-readiness errors.
+
+Separate:
+
+* deployment-related/transient events;
+* existing known events;
+* genuinely new regressions.
+
+Do not fix anything automatically.
+
+---
+
+# 15. Final report
+
+Return:
+
+## A. Production migration status
+
+## B. Existing Paystack safety schema
+
+## C. Application startup
+
+## D. Billing schema readiness
+
+## E. Management-link production configuration
+
+## F. Management-link isolation
+
+## G. Customer-facing disabled state
+
+## H. Production reconciliation status
+
+## I. Historical back-charge protection
+
+## J. Stored-authorization charge protection
+
+## K. Production integrity results
+
+## L. Legacy-customer diagnostic
+
+## M. Antebellum fail-closed confirmation
+
+## N. New production errors/regressions
+
+## O. Recommended next step
+
+Do not perform remediation.
+
+End with exactly one of:
+
+`POST-PUBLISH VERIFICATION PASSED — SAFE TO BEGIN CONTROLLED LEGACY CUSTOMER REVIEW`
+
+or:
+
+`POST-PUBLISH ISSUE FOUND — [exact blocker]`

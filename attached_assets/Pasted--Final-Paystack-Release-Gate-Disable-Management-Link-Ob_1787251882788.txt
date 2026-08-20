@@ -1,0 +1,286 @@
+# Final Paystack Release Gate — Disable Management Link + Observe Reconciliation
+
+Implement the final two release requirements only.
+
+Do not redesign the Paystack architecture.
+
+Do not deploy.
+
+Do not charge customers.
+
+Do not mutate production subscriptions.
+
+Do not cancel, refund, or back-charge anyone.
+
+---
+
+# 1. Add explicit management-link feature gate
+
+Add:
+
+`PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED`
+
+Required behavior:
+
+* Missing environment variable = disabled.
+* `false` = disabled.
+* Only explicit `true` enables the hosted Paystack management-link feature.
+
+The default must be safe.
+
+---
+
+# 2. Gate the server route
+
+Apply the feature gate to:
+
+`/api/billing/paystack/subscription/manage-link`
+
+When disabled:
+
+* return a controlled response;
+* do not call Paystack;
+* do not generate a management link;
+* do not create checkout;
+* do not charge an authorization;
+* do not create a subscription;
+* do not cancel anything;
+* do not issue refunds;
+* do not collect historical missed payments.
+
+Use an appropriate status such as `503` or existing controlled feature-unavailable response.
+
+Include a stable machine-readable code such as:
+
+`paystack_management_link_disabled`
+
+Do not expose internal configuration details unnecessarily.
+
+---
+
+# 3. Gate server-derived eligibility
+
+When the management-link feature is disabled:
+
+`getPaystackRenewalStatus()`
+
+must not tell the frontend that hosted management is available.
+
+Specifically:
+
+`managementLinkEligible = false`
+
+or equivalent.
+
+The frontend must never be able to infer or construct the provider management flow on its own.
+
+---
+
+# 4. Remove/hide customer CTAs while disabled
+
+Hide both existing:
+
+`Update payment method`
+
+CTAs when the feature is disabled.
+
+For:
+
+`payment_method_needs_attention`
+
+show controlled support messaging instead:
+
+> Your payment method needs attention. Please contact support while we confirm the safest way to update your automatic renewal.
+
+Do not show:
+
+* generic Subscribe;
+* Restore automatic renewal;
+* recovery checkout;
+
+merely because the management-link feature is disabled.
+
+Existing recovery checkout may remain available only in the separate state where complete provider inspection proves that no viable Paystack subscription exists.
+
+---
+
+# 5. Preserve prospective-only billing policy
+
+Explicitly preserve this invariant:
+
+> Simple Slips will not automatically collect historical missed subscription payments discovered during billing reconciliation or recovery. Recovery establishes correct billing prospectively from the appropriate next billing date.
+
+The management-link-disabled state must not introduce any alternate catch-up path.
+
+No historical aggregation.
+
+No arrears collection.
+
+No stored authorization charging.
+
+---
+
+# 6. Preserve all existing recurring-readiness protections
+
+Confirm the feature gate does not weaken:
+
+* successful payment vs recurring-readiness distinction;
+* exact `authorization.reusable === true` requirement;
+* normalized provider evidence;
+* multiple-subscription ambiguity handling;
+* no-third-checkout rule;
+* provider inspection before recovery checkout;
+* workspace billing-owner protection;
+* checkout idempotency;
+* payment-ledger uniqueness;
+* billing-owner advisory locking;
+* exact `SUB_*` identity matching;
+* reconciliation inability to charge;
+* webhook deferral/replay;
+* no historical back-charging.
+
+---
+
+# 7. Tests
+
+Add/confirm tests for:
+
+1. Feature variable missing.
+
+   * management links disabled.
+
+2. Feature variable explicitly false.
+
+   * management links disabled.
+
+3. Feature variable explicitly true.
+
+   * existing guarded management-link flow is available.
+
+4. Disabled route:
+
+   * does not call Paystack.
+
+5. Disabled route:
+
+   * does not create checkout.
+
+6. Disabled route:
+
+   * does not charge.
+
+7. Disabled route:
+
+   * does not mutate subscription.
+
+8. `payment_method_needs_attention` while disabled:
+
+   * `managementLinkEligible = false`.
+
+9. Frontend:
+
+   * no Update payment method CTA.
+
+10. Frontend:
+
+* controlled support message rendered.
+
+11. No generic checkout fallback.
+
+12. Multiple provider subscriptions:
+
+* still manual review.
+
+13. No provider subscription:
+
+* existing prospective Task #46 recovery checkout remains governed by provider inspection.
+
+14. Historical missed payments:
+
+* still never aggregated or charged.
+
+15. All existing Paystack safety and recurring-readiness tests remain green.
+
+---
+
+# 8. Normal reconciliation verification
+
+Do not force reconciliation.
+
+Allow the normal scheduled development reconciliation cycle to run after migration `0004`.
+
+Capture the next completed cycle.
+
+Confirm:
+
+* no `recurring_readiness does not exist` error;
+* no missing-column error;
+* no schema failure;
+* reconciliation starts;
+* reconciliation completes without an unhandled failure;
+* no charge path invoked;
+* no checkout created by reconciliation;
+* no historical payment collection;
+* no unexpected subscription mutation caused merely by schema migration.
+
+Do not artificially trigger live customer charging behavior.
+
+---
+
+# 9. Validation
+
+Run:
+
+* TypeScript;
+* production build;
+* focused Paystack suite;
+* feature-gate tests;
+* recurring-readiness tests;
+* reconciliation tests;
+* full Vitest suite.
+
+The two existing obsolete invite-flow failures may remain if still unrelated.
+
+No new failures.
+
+---
+
+# STOP BEFORE DEPLOYMENT
+
+Return:
+
+## A. Feature gate implementation
+
+## B. Server disabled behavior
+
+## C. Customer-facing disabled behavior
+
+## D. Confirmation no checkout fallback exists
+
+## E. Prospective-only billing invariant
+
+## F. Reconciliation-cycle evidence
+
+Include the relevant post-migration logs.
+
+## G. Test results
+
+## H. Files changed
+
+## I. Production configuration
+
+State exactly what production should use:
+
+`PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED=false`
+
+## J. Final recommendation
+
+End with exactly:
+
+`SAFE TO DEPLOY WITH MANAGEMENT LINK DISABLED`
+
+or:
+
+`DO NOT DEPLOY — [remaining blocker]`
+
+Do not deploy.

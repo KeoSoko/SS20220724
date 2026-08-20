@@ -243,6 +243,40 @@ describe("server-owned Paystack checkout attempts", () => {
     expect(state.inserts).toBe(1);
   });
 
+  it("keeps a recovery checkout prospective even after several missed billing dates", async () => {
+    state.subscription = {
+      id: 99,
+      userId: 10,
+      planId: 2,
+      status: "active",
+      paystackCustomerCode: "CUS_owner",
+      nextBillingDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
+      cancelledAt: null,
+    };
+    const service = new BillingService();
+    (service as any).paystack = {
+      customer: { get: vi.fn().mockResolvedValue({ status: true, data: { id: 101 } }) },
+      subscription: {
+        list: vi.fn().mockResolvedValue({
+          status: true,
+          data: [],
+          meta: { total: 0, page: 1, pageCount: 1 },
+        }),
+      },
+    };
+
+    const result = await service.createOrReusePaystackCheckoutAttempt({
+      ...checkoutInput(),
+      amount: 4_900,
+      allowRenewalSetupRecovery: true,
+    });
+
+    expect(result.outcome).toBe("created");
+    expect((result as any).attempt.amount).toBe(4_900);
+    expect((result as any).attempt.amount).not.toBe(14_700);
+    expect(state.inserts).toBe(1);
+  });
+
   it("fails closed when the locked provider reinspection finds a subscription", async () => {
     state.subscription = {
       id: 99,

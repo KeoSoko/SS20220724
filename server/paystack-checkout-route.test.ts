@@ -94,6 +94,23 @@ describe("Paystack route safety invariants", () => {
     expect(method).not.toContain("transaction.charge");
   });
 
+  it("keeps reconciliation observational and unable to create a historical collection", () => {
+    const billingService = readFileSync(
+      new URL("./billing-service.ts", import.meta.url),
+      "utf8",
+    );
+    const reconciliationStart = billingService.indexOf("async reconcilePaystackSubscriptionForUser");
+    const reconciliationEnd = billingService.indexOf("async hasActiveSubscription", reconciliationStart);
+    const reconciliation = billingService.slice(reconciliationStart, reconciliationEnd);
+
+    expect(reconciliation).toContain('source: "reconciliation"');
+    expect(reconciliation).not.toContain("transaction.charge");
+    expect(reconciliation).not.toContain("subscription.create");
+    expect(reconciliation).not.toContain("createOrReusePaystackCheckoutAttempt");
+    expect(reconciliation).not.toContain("missedMonths");
+    expect(reconciliation).not.toContain("* 3");
+  });
+
   it("never trusts recurring-looking metadata for an untracked charge", () => {
     const renewal = readFileSync(
       new URL("./paystack-renewal.ts", import.meta.url),

@@ -123,6 +123,18 @@ export type PaystackManagementLinkResult =
   | { outcome: "manual_review_required"; reason: string }
   | { outcome: "reconciling"; reason: string };
 
+function isPaystackHostedManagementLink(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:"
+      && parsed.hostname === "paystack.com"
+      && parsed.pathname.startsWith("/manage/subscriptions/");
+  } catch {
+    return false;
+  }
+}
+
 export type PaystackRenewalIdentityRecoveryResult =
   | { outcome: "relationship_available"; subscriptionCode: string }
   | { outcome: "recovered"; subscriptionCode: string }
@@ -1554,6 +1566,33 @@ export class BillingService {
         return { outcome: "manual_review_required", reason: "provider_subscription_customer_or_plan_mismatch" };
       }
 
+      // The local identity proves which SUB_* was previously canonical, but a
+      // hosted payment-method link must not be issued while the provider shows
+      // another viable subscription for the same customer and plan. Re-list
+      // under the owner lock immediately before returning the link.
+      let inspection: Awaited<ReturnType<BillingService["loadPaystackSubscriptionCandidates"]>>;
+      try {
+        inspection = await this.loadPaystackSubscriptionCandidates(userId);
+      } catch {
+        return { outcome: "reconciling", reason: "paystack_subscription_list_unavailable" };
+      }
+      if (!inspection.available) {
+        return { outcome: "reconciling", reason: inspection.reason };
+      }
+      const canonicalCandidate = inspection.candidates.find(
+        (candidate) => candidate.subscriptionCode === identity.subscriptionCode,
+      );
+      if (
+        inspection.candidates.length !== 1
+        || !canonicalCandidate
+        || canonicalCandidate.providerLookupFailed
+      ) {
+        return {
+          outcome: "manual_review_required",
+          reason: "provider_subscription_relationship_ambiguous",
+        };
+      }
+
       if (hasExactPaystackRecurringRelationship(
         evidence,
         subscription.paystackCustomerCode,
@@ -1582,8 +1621,8 @@ export class BillingService {
         return { outcome: "reconciling", reason: "paystack_management_link_unavailable" };
       }
       const body = await response.json().catch(() => null);
-      const url = body?.data?.link ?? body?.data?.url ?? body?.data;
-      if (typeof url !== "string" || !/^https:\/\/[^ ]+$/i.test(url)) {
+      const url = body?.status === true ? body?.data?.link : null;
+      if (!isPaystackHostedManagementLink(url)) {
         return { outcome: "reconciling", reason: "paystack_management_link_invalid" };
       }
 

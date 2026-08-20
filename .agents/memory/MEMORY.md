@@ -6,3 +6,4 @@
 - [Paystack renewal identity](paystack-renewal-identity.md) — subscription listing needs numeric customer ID; use invoice history for recovery and never guess between multiple attention subscriptions.
 - [Paystack checkout safety](paystack-checkout-safety.md) — covered workspace membership outranks private-workspace ownership; checkout terms are immutable and renewal overlap fails closed.
 - [Paystack schema rollout](paystack-schema-rollout.md) — missing billing tables require read-only fail-closed checks plus durable deferred-event replay with poison-event backoff.
+- [Paystack management links](paystack-management-links.md) — provider contract is documented; live link lifetime and single-use behavior remain unverified without a safe test subscription.

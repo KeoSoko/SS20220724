@@ -1,0 +1,615 @@
+# Task #50 — Read-Only Classification of Legacy Paystack Customers
+
+The recurring-readiness release is now deployed and post-publish production verification passed.
+
+We are moving into **controlled legacy-customer review**.
+
+This task is CLASSIFICATION ONLY.
+
+Do not remediate any customer.
+
+Do not deploy application changes unless required solely to produce a read-only diagnostic, and stop for review before any deployment.
+
+---
+
+# OBJECTIVE
+
+We currently have an aggregate potential-review population of approximately:
+
+* 39 accounts with successful Paystack payments but no active trusted subscription identity;
+* 12 subscription-identity rows with `recurring_readiness = unknown`;
+* 51 aggregate potential-review accounts before deduplication/overlap analysis.
+
+These figures do NOT prove that 51 customers are broken.
+
+They also do NOT prove:
+
+* Apple Pay usage;
+* failed automatic renewal;
+* missing Paystack subscriptions;
+* non-reusable authorizations;
+* duplicate Paystack subscriptions.
+
+We now need authoritative, read-only classification.
+
+Produce a customer-by-customer review schedule based on local Simple Slips evidence and, where safely available, read-only Paystack provider evidence.
+
+---
+
+# CRITICAL SAFETY BOUNDARY
+
+This task must perform ZERO billing remediation.
+
+Do NOT:
+
+* charge any customer;
+* call `transaction.charge`;
+* create checkout;
+* create a Paystack subscription;
+* cancel a Paystack subscription;
+* refund anything;
+* generate a hosted management link;
+* recover/attach a `SUB_*`;
+* change a customer's subscription;
+* change next billing date;
+* change entitlement;
+* change recurring-readiness;
+* modify payment transactions;
+* modify billing events;
+* send customer emails;
+* send payment reminders;
+* automatically contact customers;
+* back-charge historical missed subscriptions;
+* modify production billing records.
+
+Database access must be read-only.
+
+Provider inspection must use read-only Paystack operations only.
+
+If an operation's mutability is uncertain:
+
+**DO NOT CALL IT.**
+
+---
+
+# BILLING POLICY
+
+Preserve this invariant throughout the analysis:
+
+> Simple Slips will not automatically collect historical missed subscription payments discovered during billing reconciliation or recovery. Recovery establishes correct billing prospectively from the appropriate next billing date.
+
+Historical missed R49 payments are not part of this classification exercise.
+
+Do not calculate customer arrears.
+
+Do not calculate amounts "owed".
+
+Do not produce a catch-up billing schedule.
+
+---
+
+# 1. Establish the exact review population
+
+First deduplicate the current aggregate candidate population.
+
+Identify the exact number of distinct billing owners/accounts requiring review.
+
+For each candidate record:
+
+* Simple Slips user ID;
+* billing owner ID;
+* workspace ID where applicable;
+* account email;
+* current Simple Slips subscription plan;
+* current subscription status;
+* local next billing date;
+* local subscription start/current-period information where available;
+* Paystack customer code;
+* number of successful local Paystack payment transactions;
+* date/reference of most recent successful local Paystack payment;
+* active trusted local `SUB_*` count;
+* recurring-readiness state;
+* stored provider authorization evidence where available.
+
+Do not expose full sensitive payment/card information.
+
+---
+
+# 2. Read-only Paystack provider inspection
+
+Where safe provider access is available, inspect each candidate using READ-ONLY Paystack operations.
+
+For each billing owner, determine where authoritative evidence allows:
+
+### Customer
+
+* exact Paystack customer;
+* customer code;
+* whether ownership matches the Simple Slips billing owner.
+
+### Provider subscriptions
+
+Identify every Paystack `SUB_*` associated with that exact customer and relevant Simple Slips plan.
+
+For each relevant provider subscription capture:
+
+* subscription code;
+* plan code;
+* provider status;
+* creation date;
+* next payment date where available;
+* authorization code where safely available;
+* authorization channel;
+* `authorization.reusable`;
+* whether latest renewal/payment attempt succeeded, failed, was abandoned, or remains unresolved;
+* last successful payment date where available.
+
+Do not mutate provider state.
+
+Do not generate management links.
+
+Do not disable/cancel subscriptions.
+
+---
+
+# 3. Pagination completeness
+
+Provider classification must be based on complete evidence.
+
+If Paystack subscription listing is paginated:
+
+* inspect all required pages safely;
+* prove pagination is complete before classifying a customer as having zero or one provider subscription.
+
+If provider pagination cannot be completed:
+
+classify:
+
+`PROVIDER_EVIDENCE_INCOMPLETE`
+
+Do NOT classify as:
+
+`NO_PROVIDER_SUBSCRIPTION`
+
+Incomplete evidence must fail closed.
+
+---
+
+# 4. Classification buckets
+
+Place each distinct billing owner into exactly ONE primary classification.
+
+## A — HEALTHY_RECURRING
+
+Requirements:
+
+* exactly one canonical trusted/recoverable provider subscription;
+* customer ownership matches;
+* plan ownership matches;
+* recurring authorization relationship is authoritative;
+* `authorization.reusable === true`;
+* no conflicting provider subscription exists;
+* no unresolved billing ambiguity.
+
+Recommended future action:
+
+`NO ACTION`
+
+---
+
+## B — IDENTITY_RECOVERABLE
+
+Requirements:
+
+* local trusted `SUB_*` is missing or incomplete;
+* complete provider inspection finds exactly ONE viable subscription;
+* exact customer matches;
+* exact plan matches;
+* no competing viable provider subscription exists;
+* ownership is unambiguous.
+
+This does NOT authorize recovery during this task.
+
+Recommended future action:
+
+`SAFE IDENTITY RECOVERY CANDIDATE`
+
+No mutation now.
+
+---
+
+## C — PAYMENT_METHOD_ATTENTION
+
+Requirements:
+
+* exactly one canonical provider subscription can be established;
+* provider relationship belongs unambiguously to the billing owner and plan;
+* recurring authorization/payment instrument is non-reusable, failing, or otherwise requires customer action;
+* no competing viable provider subscription exists.
+
+Recommended future action:
+
+`CUSTOMER PAYMENT-METHOD RECOVERY`
+
+Because:
+
+`PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED=false`
+
+do not generate a management link.
+
+No checkout should be created merely because the payment method needs attention.
+
+---
+
+## D — MULTIPLE_PROVIDER_SUBSCRIPTIONS
+
+Requirements:
+
+* more than one viable/relevant Paystack subscription exists for the same billing owner/customer/plan;
+* automatic canonical selection is unsafe.
+
+This includes patterns like the confirmed Antebellum case.
+
+Recommended future action:
+
+`MANUAL PROVIDER REVIEW`
+
+Do not:
+
+* select newest;
+* select oldest;
+* select based on billing date;
+* cancel either;
+* recover either;
+* create checkout.
+
+---
+
+## E — NO_PROVIDER_SUBSCRIPTION
+
+Requirements:
+
+Complete authoritative Paystack inspection proves:
+
+* correct customer was inspected;
+* relevant plan was inspected;
+* pagination is complete;
+* zero viable provider subscriptions exist.
+
+Recommended future action:
+
+`PROSPECTIVE RECOVERY CHECKOUT CANDIDATE`
+
+Do NOT create checkout during this task.
+
+---
+
+## F — PROVIDER_EVIDENCE_INCOMPLETE
+
+Use when:
+
+* Paystack unavailable;
+* provider timeout;
+* pagination incomplete;
+* provider response malformed;
+* customer mapping cannot be proven;
+* ownership unclear;
+* provider evidence conflicts;
+* required authorization evidence unavailable.
+
+Recommended future action:
+
+`REVIEW / RETRY LATER`
+
+Do not guess.
+
+---
+
+## G — LOCAL_DATA_ANOMALY
+
+Use when the Simple Slips data itself is contradictory enough that provider classification cannot safely resolve the account.
+
+Examples:
+
+* multiple local active subscriptions unexpectedly;
+* conflicting billing owners;
+* impossible plan relationships;
+* duplicate historical relationships requiring investigation;
+* local payment/subscription state contradicts trusted provider evidence in a way that requires engineering review.
+
+Recommended future action:
+
+`ENGINEERING REVIEW`
+
+No mutation.
+
+---
+
+# 5. Secondary flags
+
+In addition to ONE primary classification, add non-mutating secondary flags where supported by evidence.
+
+Examples:
+
+* `APPLE_PAY_ORIGIN_CONFIRMED`
+* `CARD_ORIGIN_CONFIRMED`
+* `NON_REUSABLE_AUTHORIZATION`
+* `FAILED_RENEWAL_CONFIRMED`
+* `ABANDONED_RENEWAL_CONFIRMED`
+* `MULTIPLE_SUBSCRIPTIONS`
+* `LOCAL_IDENTITY_MISSING`
+* `LOCAL_IDENTITY_UNKNOWN_READINESS`
+* `BILLING_DATE_MISMATCH`
+* `RECENT_SUCCESSFUL_PAYMENT`
+* `PROVIDER_CUSTOMER_MISMATCH`
+
+Do not infer Apple Pay from local `payment_method` fields that were historically hardcoded as Card.
+
+Only set:
+
+`APPLE_PAY_ORIGIN_CONFIRMED`
+
+when authoritative provider evidence establishes Apple Pay.
+
+---
+
+# 6. Antebellum
+
+Include Antebellum in the classification report if it belongs to the candidate population.
+
+Do not treat the known screenshots as sufficient for automated remediation.
+
+Provider evidence should classify the account according to the same rules as everyone else.
+
+Expected based on our already confirmed evidence is likely:
+
+`MULTIPLE_PROVIDER_SUBSCRIPTIONS`
+
+but do not force that result if the current authoritative provider state differs.
+
+Do not modify the account.
+
+---
+
+# 7. Historical payment gaps
+
+You may report historical payment gaps as informational evidence.
+
+For example:
+
+`successful payment → failed renewal → customer-initiated successful payment`
+
+But do NOT calculate:
+
+* arrears;
+* debt;
+* missed subscription amount;
+* catch-up charge;
+* amount customer should now pay.
+
+Historical gaps are not automatically collectible.
+
+---
+
+# 8. Produce summary counts
+
+Return a deduplicated summary:
+
+| Classification                    | Customers |
+| --------------------------------- | --------: |
+| HEALTHY_RECURRING                 |         X |
+| IDENTITY_RECOVERABLE              |         X |
+| PAYMENT_METHOD_ATTENTION          |         X |
+| MULTIPLE_PROVIDER_SUBSCRIPTIONS   |         X |
+| NO_PROVIDER_SUBSCRIPTION          |         X |
+| PROVIDER_EVIDENCE_INCOMPLETE      |         X |
+| LOCAL_DATA_ANOMALY                |         X |
+| **TOTAL DISTINCT BILLING OWNERS** |     **X** |
+
+The classification counts must reconcile exactly to the total distinct billing owners.
+
+---
+
+# 9. Apple Pay impact analysis
+
+Now that authoritative provider channels are available where possible, report separately:
+
+### Confirmed Apple Pay-originated candidates
+
+Count customers where provider evidence proves the initial/relevant successful subscription payment used Apple Pay.
+
+For these customers report aggregate counts by:
+
+* HEALTHY_RECURRING;
+* IDENTITY_RECOVERABLE;
+* PAYMENT_METHOD_ATTENTION;
+* MULTIPLE_PROVIDER_SUBSCRIPTIONS;
+* NO_PROVIDER_SUBSCRIPTION;
+* PROVIDER_EVIDENCE_INCOMPLETE;
+* LOCAL_DATA_ANOMALY.
+
+Do not expose card details.
+
+Then answer:
+
+**Does the production evidence support a systemic relationship between Apple Pay-originated subscriptions and recurring-renewal problems?**
+
+Use actual observed evidence.
+
+Do not assume causation merely from correlation.
+
+---
+
+# 10. Duplicate-provider-subscription analysis
+
+Report:
+
+* number of customers with >1 relevant provider `SUB_*`;
+* maximum relevant `SUB_*` count for one customer;
+* whether duplicate subscriptions appear associated with repeated customer-initiated recovery checkout;
+* whether multiple subscriptions have overlapping future billing dates;
+* whether any duplicate-subscription customer currently has a trusted local identity pointing to one of them.
+
+Do not cancel anything.
+
+---
+
+# 11. Payment-method-attention analysis
+
+For customers classified:
+
+`PAYMENT_METHOD_ATTENTION`
+
+report aggregate reasons:
+
+* authorization `reusable = false`;
+* recurring attempt failed;
+* recurring attempt abandoned;
+* authorization missing;
+* other authoritative provider reason.
+
+A customer may have more than one secondary reason, but still receives one primary classification.
+
+Do not contact them yet.
+
+---
+
+# 12. Recovery priority schedule
+
+Create a proposed review schedule WITHOUT performing remediation.
+
+### Priority 1 — Duplicate-charge risk
+
+`MULTIPLE_PROVIDER_SUBSCRIPTIONS`
+
+These customers should be reviewed first because multiple live provider relationships may create future duplicate-charge risk.
+
+### Priority 2 — Paid customers unable to renew
+
+`PAYMENT_METHOD_ATTENTION`
+
+These customers have an identifiable relationship but need future billing repaired.
+
+### Priority 3 — Safe identity recovery candidates
+
+`IDENTITY_RECOVERABLE`
+
+These may eventually be repaired without a new payment.
+
+### Priority 4 — No provider relationship
+
+`NO_PROVIDER_SUBSCRIPTION`
+
+These may eventually need the hardened prospective recovery checkout.
+
+### Priority 5 — Inconclusive/anomalous
+
+`PROVIDER_EVIDENCE_INCOMPLETE`
+
+and:
+
+`LOCAL_DATA_ANOMALY`
+
+Require additional review.
+
+### Healthy
+
+`HEALTHY_RECURRING`
+
+No remediation.
+
+---
+
+# 13. Produce review artifact
+
+Create a secure internal diagnostic output suitable for review.
+
+Do not put full payment credentials or card data in it.
+
+Suggested columns:
+
+* User ID
+* Billing owner ID
+* Email
+* Workspace
+* Plan
+* Local subscription status
+* Local next billing date
+* Paystack customer code
+* Local trusted SUB
+* Provider SUB count
+* Provider SUB codes
+* Provider subscription statuses
+* Authorization reusable
+* Confirmed provider channel
+* Last successful payment
+* Latest renewal attempt/result
+* Primary classification
+* Secondary flags
+* Proposed next action
+* Notes/evidence quality
+
+If exporting CSV, store it only in the development/internal workspace and report its location.
+
+Do not email or upload the report externally.
+
+---
+
+# 14. No remediation
+
+At the end of the task explicitly confirm:
+
+* Customers charged: `0`
+* Historical payments collected: `0`
+* Checkouts created: `0`
+* Paystack subscriptions created: `0`
+* Paystack subscriptions cancelled: `0`
+* Refunds issued: `0`
+* `SUB_*` identities recovered: `0`
+* Entitlements changed: `0`
+* Customer emails sent: `0`
+* Production billing rows mutated: `0`
+
+---
+
+# STOP AFTER CLASSIFICATION
+
+Do not fix anything.
+
+Do not create follow-up customer actions automatically.
+
+Return:
+
+## A. Exact deduplicated population
+
+## B. Classification summary
+
+## C. Apple Pay impact
+
+## D. Multiple-subscription findings
+
+## E. Payment-method-attention findings
+
+## F. Identity-recovery candidates
+
+## G. No-provider-subscription candidates
+
+## H. Incomplete/anomalous accounts
+
+## I. Antebellum classification
+
+## J. Proposed remediation priority
+
+## K. Diagnostic artifact location
+
+## L. Zero-mutation confirmation
+
+## M. Recommended next task
+
+End with exactly:
+
+`LEGACY PAYSTACK CLASSIFICATION COMPLETE — NO REMEDIATION PERFORMED`
+
+or:
+
+`CLASSIFICATION INCOMPLETE — [reason]`

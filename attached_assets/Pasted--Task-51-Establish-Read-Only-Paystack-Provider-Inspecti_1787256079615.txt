@@ -1,0 +1,497 @@
+# Task #51 — Establish Read-Only Paystack Provider Inspection and Reclassify Legacy Billing Owners
+
+Task #50 completed safely.
+
+We have:
+
+* 49 distinct billing owners requiring provider-level review;
+* 37 owners with no active trusted local `SUB_*`;
+* 12 owners with local identity readiness `unknown`;
+* all 49 currently classified `PROVIDER_EVIDENCE_INCOMPLETE`;
+* zero remediation performed.
+
+The next objective is to obtain authoritative Paystack evidence **without changing anything at Paystack or in Simple Slips**.
+
+This task is PROVIDER INSPECTION + CLASSIFICATION ONLY.
+
+Do not remediate customers.
+
+Do not deploy application functionality for customers.
+
+---
+
+# CRITICAL PROVIDER SAFETY BOUNDARY
+
+Paystack access for this task must be strictly read-only.
+
+Permitted provider operations are limited to documented Paystack retrieval/listing operations required to inspect:
+
+* customers;
+* transactions;
+* subscriptions;
+* plans where necessary;
+* invoices/transaction history where necessary to establish renewal results.
+
+Before making any provider request, identify the exact Paystack endpoint and HTTP method.
+
+Only provider operations that are demonstrably read-only may be used.
+
+## Forbidden Paystack operations
+
+Do NOT call any endpoint or SDK operation that can:
+
+* initialize a transaction;
+* charge an authorization;
+* create a subscription;
+* enable a subscription;
+* disable a subscription;
+* cancel a subscription;
+* update a subscription;
+* update a payment method;
+* generate a management link;
+* generate an update-subscription link;
+* create a customer;
+* update a customer;
+* create/update a plan;
+* refund a transaction;
+* resend an invoice;
+* retry a charge;
+* debit an authorization;
+* modify provider metadata.
+
+No POST/PUT/PATCH/DELETE provider request is authorized unless you first prove that Paystack's documented contract treats that exact operation as read-only AND stop for review before calling it.
+
+For this task, prefer GET-only provider access.
+
+If an endpoint's side effects are uncertain:
+
+**DO NOT CALL IT.**
+
+---
+
+# 1. Establish provider-access method
+
+Determine how the production Simple Slips application currently authenticates to Paystack.
+
+Do not display or log the production secret.
+
+Confirm only:
+
+* whether an authorized production Paystack secret is available to the deployed backend;
+* where the existing Paystack client obtains it conceptually;
+* whether it can be used from a controlled server-side diagnostic;
+* whether the diagnostic can restrict itself to GET/read operations.
+
+Do not copy the secret into:
+
+* source code;
+* logs;
+* CSV output;
+* agent memory;
+* browser/frontend;
+* diagnostic artifacts.
+
+Do not ask me to paste the production Paystack secret into chat.
+
+If safe provider authentication cannot be established, stop and return:
+
+`PROVIDER ACCESS NOT SAFELY AVAILABLE`
+
+---
+
+# 2. Build a temporary/internal read-only diagnostic
+
+Prefer a server-side diagnostic script or equivalent internal tool that:
+
+* is not exposed publicly;
+* performs no database writes;
+* performs no Paystack writes;
+* uses existing secure server-side Paystack credentials;
+* issues only approved read operations;
+* processes one billing owner at a time;
+* rate-limits requests appropriately;
+* handles provider errors without changing classification incorrectly.
+
+Do not add a customer-facing API.
+
+Do not create a permanent admin endpoint unless absolutely necessary.
+
+---
+
+# 3. Start with a very small validation sample
+
+Before inspecting all 49 owners, validate the diagnostic against a maximum of:
+
+**3 billing owners**
+
+Use candidates from the Task #50 artifact.
+
+The sample should preferably include:
+
+* one owner with no trusted local identity;
+* one owner with identity readiness `unknown`;
+* Antebellum if safe and identifiable.
+
+READ ONLY.
+
+For these three, establish whether the diagnostic can retrieve complete provider evidence without mutation.
+
+After the sample succeeds technically, continue with the remaining owners only if all requests used demonstrably read-only provider operations.
+
+---
+
+# 4. Resolve exact Paystack customer
+
+For every billing owner:
+
+Start from authoritative local customer evidence where available.
+
+Retrieve the corresponding Paystack customer.
+
+Verify:
+
+* exact customer code;
+* expected email/ownership;
+* no conflicting customer relationship.
+
+Do not rely solely on email if a trusted Paystack customer code exists.
+
+If customer ownership cannot be established:
+
+`PROVIDER_EVIDENCE_INCOMPLETE`
+
+Do not continue into automatic conclusions.
+
+---
+
+# 5. Retrieve complete provider subscription population
+
+For the exact Paystack customer, retrieve all relevant subscriptions.
+
+Pagination must be complete.
+
+For every relevant provider subscription capture:
+
+* exact `SUB_*`;
+* provider subscription status;
+* plan code;
+* amount/interval where safely available;
+* creation date;
+* next payment date where available;
+* customer code;
+* authorization evidence;
+* authorization channel;
+* exact `authorization.reusable` value where returned.
+
+Relevant subscription matching must use the expected Simple Slips Paystack plan.
+
+Do not treat an unrelated Paystack plan as a competing Simple Slips subscription.
+
+---
+
+# 6. Retrieve supporting transaction/renewal evidence
+
+Using read-only provider operations, retrieve enough transaction/invoice evidence to determine where possible:
+
+* initial successful subscription payment;
+* payment channel;
+* subsequent successful renewal;
+* failed renewal;
+* abandoned transaction;
+* most recent successful provider payment;
+* relationship between transaction, customer, plan and `SUB_*`.
+
+Do not retry failed transactions.
+
+Do not resend invoices.
+
+Do not initiate collection.
+
+---
+
+# 7. Authorization evidence
+
+For each relevant subscription determine from authoritative provider evidence where possible:
+
+* authorization code exists;
+* authorization channel;
+* `authorization.reusable === true`;
+* `authorization.reusable === false`;
+* authorization unavailable/unknown.
+
+Do not infer reusability from:
+
+* successful payment;
+* `AUTH_*` existence;
+* Card;
+* Apple Pay;
+* previous successful renewal.
+
+If Paystack does not return the evidence:
+
+`unknown`
+
+---
+
+# 8. Reclassify the 49 owners
+
+Use the exact Task #50 classification rules.
+
+Each owner must receive exactly one primary classification:
+
+* `HEALTHY_RECURRING`
+* `IDENTITY_RECOVERABLE`
+* `PAYMENT_METHOD_ATTENTION`
+* `MULTIPLE_PROVIDER_SUBSCRIPTIONS`
+* `NO_PROVIDER_SUBSCRIPTION`
+* `PROVIDER_EVIDENCE_INCOMPLETE`
+* `LOCAL_DATA_ANOMALY`
+
+Do not loosen the criteria merely to reduce the incomplete bucket.
+
+---
+
+# 9. Multiple subscription safety
+
+If more than one viable relevant `SUB_*` exists for the same customer and Simple Slips plan:
+
+classify:
+
+`MULTIPLE_PROVIDER_SUBSCRIPTIONS`
+
+Do not attempt to determine the canonical subscription automatically.
+
+Do not:
+
+* choose newest;
+* choose oldest;
+* choose the one matching local next billing date;
+* choose the one with most payments;
+* cancel anything;
+* recover an identity;
+* create checkout.
+
+Capture the evidence for later manual review.
+
+---
+
+# 10. Apple Pay analysis
+
+Now use authoritative Paystack transaction/channel evidence.
+
+For each owner where possible determine:
+
+* confirmed Apple Pay;
+* confirmed Card;
+* other provider channel;
+* unknown.
+
+Do not use historical Simple Slips `payment_method = card` as evidence because this field was previously hardcoded.
+
+Produce:
+
+| Origin                  | Owners |
+| ----------------------- | -----: |
+| Confirmed Apple Pay     |      X |
+| Confirmed Card          |      X |
+| Other confirmed channel |      X |
+| Unknown                 |      X |
+
+Then cross-tab confirmed Apple Pay customers against primary classification.
+
+Answer:
+
+**Does authoritative production evidence show that Apple Pay-originated subscriptions are disproportionately associated with recurring-readiness problems?**
+
+Report the observed data.
+
+Do not claim causation unless the evidence supports it.
+
+---
+
+# 11. Antebellum
+
+Inspect Antebellum read-only if the billing owner can be safely identified.
+
+Determine current provider evidence for:
+
+* Paystack customer;
+* relevant `SUB_*` count;
+* each subscription's status;
+* creation date;
+* plan;
+* next billing date;
+* authorization channel/reusability;
+* recent payment/renewal results.
+
+If two viable subscriptions are still present:
+
+classify:
+
+`MULTIPLE_PROVIDER_SUBSCRIPTIONS`
+
+Do not choose between them.
+
+Do not cancel either.
+
+Do not generate checkout.
+
+Do not charge.
+
+Do not alter the local identity.
+
+---
+
+# 12. Produce final classification report
+
+Produce a deduplicated summary:
+
+| Classification                  | Owners |
+| ------------------------------- | -----: |
+| HEALTHY_RECURRING               |      X |
+| IDENTITY_RECOVERABLE            |      X |
+| PAYMENT_METHOD_ATTENTION        |      X |
+| MULTIPLE_PROVIDER_SUBSCRIPTIONS |      X |
+| NO_PROVIDER_SUBSCRIPTION        |      X |
+| PROVIDER_EVIDENCE_INCOMPLETE    |      X |
+| LOCAL_DATA_ANOMALY              |      X |
+| **TOTAL**                       | **49** |
+
+The total must reconcile exactly to 49.
+
+If some candidates cease to qualify because provider evidence proves they are healthy, they remain in this report as:
+
+`HEALTHY_RECURRING`
+
+so the total still reconciles.
+
+---
+
+# 13. Internal review artifact
+
+Create a NEW internal report rather than overwriting Task #50.
+
+Suggested location:
+
+`.agents/outputs/legacy-paystack-provider-classification-2026-08-20.csv`
+
+Include:
+
+* billing owner ID;
+* email;
+* Simple Slips plan;
+* local subscription status;
+* local next billing date;
+* Paystack customer code;
+* relevant provider SUB count;
+* provider SUB codes;
+* provider statuses;
+* provider creation dates;
+* provider next charge dates;
+* authorization reusable state;
+* confirmed provider channel;
+* latest provider payment result/date;
+* primary classification;
+* secondary flags;
+* evidence completeness;
+* proposed future remediation category.
+
+Do NOT include:
+
+* card number;
+* expiry;
+* CVV;
+* full authorization credentials;
+* Paystack secret;
+* management URLs.
+
+---
+
+# 14. Zero-mutation proof
+
+At completion explicitly report:
+
+### Simple Slips
+
+* Production rows inserted: `0`
+* Production rows updated: `0`
+* Production rows deleted: `0`
+* Entitlements changed: `0`
+* Local identities recovered: `0`
+* Checkouts created: `0`
+
+### Paystack
+
+* Transactions initialized: `0`
+* Authorizations charged: `0`
+* Subscriptions created: `0`
+* Subscriptions updated: `0`
+* Subscriptions enabled: `0`
+* Subscriptions disabled/cancelled: `0`
+* Refunds created: `0`
+* Management links generated: `0`
+* Provider-mutating requests: `0`
+
+### Customers
+
+* Emails sent: `0`
+* Customers contacted: `0`
+* Historical missed payments collected: `0`
+
+---
+
+# 15. Historical billing remains out of scope
+
+Do not calculate historical amounts owed.
+
+Do not recommend catch-up charging.
+
+The permanent policy remains:
+
+> Simple Slips will not automatically collect historical missed subscription payments discovered during billing reconciliation or recovery. Recovery establishes correct billing prospectively from the appropriate next billing date.
+
+---
+
+# STOP AFTER PROVIDER CLASSIFICATION
+
+Do not remediate any account.
+
+Return:
+
+## A. Provider access method and safety
+
+## B. Read-only endpoints used
+
+List every Paystack endpoint and HTTP method actually called.
+
+## C. Three-owner validation sample
+
+## D. Final 49-owner classification
+
+## E. Apple Pay findings
+
+## F. Duplicate subscription findings
+
+## G. Payment-method-attention findings
+
+## H. Identity-recovery candidates
+
+## I. No-provider-subscription candidates
+
+## J. Remaining incomplete cases
+
+## K. Antebellum provider findings
+
+## L. Diagnostic artifact location
+
+## M. Zero-mutation proof
+
+## N. Recommended remediation sequence
+
+End with exactly:
+
+`PROVIDER CLASSIFICATION COMPLETE — ZERO BILLING MUTATIONS`
+
+or:
+
+`PROVIDER CLASSIFICATION BLOCKED — [reason]`

@@ -1,0 +1,637 @@
+# Implement Apple Pay / Paystack Recurring-Readiness Fix
+
+The Apple Pay / Paystack recurring-readiness audit is approved for implementation.
+
+Proceed in Build mode.
+
+Do not deploy or publish.
+
+Do not modify existing production customer records.
+
+Do not automatically cancel duplicate Paystack subscriptions.
+
+Do not refund customers.
+
+Do not charge stored authorizations.
+
+Do not introduce a legacy one-click charge mechanism.
+
+Preserve all Task #41, #42 and #46 Paystack protections.
+
+---
+
+# 1. Core model
+
+Implement the distinction established by the audit:
+
+**Payment successful ≠ automatic renewal ready**
+
+A successful verified Paystack transaction may activate the customer's paid entitlement according to the existing settlement rules.
+
+It must not automatically establish that unattended recurring billing is safely configured.
+
+Recurring readiness must be derived from authoritative provider evidence.
+
+---
+
+# 2. Recurring-readiness requirements
+
+A recurring relationship may be considered ready only when authoritative provider evidence establishes:
+
+* successful transaction where relevant;
+* correct effective billing owner;
+* correct Paystack customer;
+* correct Simple Slips plan;
+* correct Paystack plan;
+* exact provider `SUB_*`;
+* subscription belongs to the expected customer;
+* subscription belongs to the expected plan;
+* associated provider authorization exists;
+* `authorization.reusable === true` exactly;
+* authorization belongs to the selected subscription relationship.
+
+Do not use truthiness for the reusable flag.
+
+Do not infer recurring readiness merely from:
+
+* successful payment;
+* existence of `AUTH_*`;
+* existence of `SUB_*`;
+* metadata;
+* plan code;
+* Apple Pay;
+* Card;
+* locally stored payment method.
+
+---
+
+# 3. Preserve normalized provider evidence
+
+For newly verified Paystack transactions/relationships, safely persist the provider evidence required to understand future billing behaviour.
+
+At minimum preserve where authoritative and available:
+
+* Paystack transaction reference;
+* Paystack transaction ID;
+* transaction channel;
+* customer code;
+* plan code;
+* subscription code;
+* authorization code;
+* authorization channel;
+* authorization signature where appropriate;
+* authorization reusable flag;
+* provider verification timestamp.
+
+Do not store sensitive card information.
+
+Do not rewrite historical provider facts that cannot be established.
+
+For legacy rows where these values are unavailable:
+
+**unknown must remain unknown.**
+
+Do not infer `card` or Apple Pay.
+
+---
+
+# 4. Fix payment-method recording
+
+Remove the current behaviour that records every successful Paystack settlement as:
+
+`payment_method = card`
+
+when the authoritative provider channel is something else.
+
+For new transactions, record the verified provider channel accurately.
+
+Do not mass-rewrite historical production rows.
+
+Historical records that cannot be proven should remain unchanged or explicitly unknown according to the safest schema design.
+
+---
+
+# 5. Entitlement settlement
+
+Preserve the existing secure payment-settlement path.
+
+If an initial payment is verified successfully but recurring readiness is false or unknown:
+
+* record the successful payment exactly once;
+* activate/extend paid entitlement according to existing rules;
+* preserve payment ledger idempotency;
+* do not label the payment failed;
+* do not claim automatic renewal is active;
+* do not create another checkout automatically.
+
+The customer may therefore legitimately have:
+
+`paid entitlement = active`
+
+while:
+
+`automatic renewal = needs setup`
+
+These states must coexist safely.
+
+---
+
+# 6. Existing trusted subscription + reusable authorization
+
+If the billing owner has:
+
+* exact trusted active `SUB_*`;
+* verified provider customer/plan ownership;
+* verified reusable authorization;
+
+then:
+
+`automatic renewal = active`
+
+Continue normal renewal/reconciliation behaviour.
+
+No customer action required.
+
+---
+
+# 7. Existing subscription + payment method needs attention
+
+If an exact trusted `SUB_*` exists and belongs unambiguously to the billing owner and plan, but its authorization/payment method requires customer action:
+
+Do NOT create another subscription checkout.
+
+Instead use Paystack's hosted subscription-management mechanism.
+
+Implement an owner-scoped endpoint conceptually equivalent to:
+
+`POST /api/billing/paystack/subscription/manage-link`
+
+Before requesting the hosted link:
+
+1. Resolve effective billing owner.
+2. Acquire the appropriate billing-owner protection.
+3. Reject covered workspace members from personal billing management.
+4. Re-read local trusted identity.
+5. Verify the provider subscription exists.
+6. Verify exact customer ownership.
+7. Verify exact plan ownership.
+8. Verify the subscription is still appropriate for management.
+9. Only then request the hosted management link from Paystack.
+
+Return the hosted link only to the authorized billing owner.
+
+Do not log the full management URL.
+
+Do not persist it longer than necessary.
+
+Do not assume an SDK wrapper exists. Verify the installed Paystack integration/API contract.
+
+---
+
+# 8. Missing local identity + one provider subscription
+
+If there is no trusted local `SUB_*`, but complete authoritative provider inspection finds exactly one viable subscription for:
+
+`billing owner + customer + plan`
+
+then:
+
+* recover the identity using the existing Task #46 guarded identity-recovery path;
+* do not charge;
+* do not create another subscription;
+* inspect recurring readiness;
+* if authorization requires attention, offer the hosted management link for that recovered subscription.
+
+Identity recovery itself must not extend entitlement.
+
+---
+
+# 9. Multiple provider subscriptions
+
+If complete provider inspection finds more than one viable `SUB_*` for the same billing owner/customer/plan:
+
+**FAIL CLOSED.**
+
+Do not:
+
+* select the newest;
+* select the oldest;
+* select the subscription matching the local billing date;
+* select the subscription with the latest successful payment;
+* automatically cancel either subscription;
+* recover either identity;
+* generate a hosted management link;
+* create another checkout.
+
+Return:
+
+`manual_review_required`
+
+or the existing equivalent state.
+
+The customer must not be exposed to another subscription-creation opportunity.
+
+---
+
+# 10. Antebellum regression
+
+Create an explicit regression fixture based on the confirmed production pattern.
+
+Same customer.
+
+Same R49 monthly plan.
+
+Provider:
+
+`SUB_A`
+
+* created 26 April 2026
+* monthly cycle on 26th
+* later payment attempts fail
+
+`SUB_B`
+
+* created 2 July 2026
+* monthly cycle on 2nd
+* later payment attempt fails
+
+Local:
+
+* successful April payment;
+* successful July payment;
+* active local subscription;
+* no trusted active local `SUB_*`.
+
+Expected:
+
+`manual_review_required`
+
+and:
+
+* no automatic identity selection;
+* no hosted management link;
+* no recovery checkout;
+* no third Paystack subscription;
+* no automatic cancellation;
+* no entitlement mutation merely from detecting duplicates.
+
+This behaviour must remain true under concurrent requests.
+
+---
+
+# 11. No provider subscription exists
+
+Only after a **complete authoritative provider listing** proves there is no viable existing subscription for the billing owner/customer/plan may Task #46's hardened recovery checkout become available.
+
+Preserve:
+
+* server-owned reference;
+* immutable terms;
+* one-pending-owner unique constraint;
+* billing-owner lock;
+* provider re-check;
+* checkout idempotency;
+* workspace billing ownership.
+
+Provider lookup failure or incomplete pagination must never be interpreted as:
+
+`no subscriptions exist`
+
+It must result in:
+
+`reconciling`
+
+or equivalent fail-closed state.
+
+---
+
+# 12. Customer-facing states
+
+Implement clear server-derived states.
+
+## Automatic renewal active
+
+Meaning:
+
+Trusted recurring relationship and provider authorization are ready.
+
+No CTA.
+
+## Payment method needs attention
+
+Meaning:
+
+Existing trusted subscription remains the canonical relationship but Paystack requires customer action for future renewal.
+
+Suggested message:
+
+> We couldn't complete your automatic renewal. Update your payment method securely with Paystack.
+
+CTA:
+
+`Update payment method`
+
+This must use the hosted management link for the existing `SUB_*`.
+
+## Automatic renewal needs setup
+
+Meaning:
+
+Payment/entitlement may be valid, but unattended renewal has not been safely established.
+
+Do not claim the customer's payment failed.
+
+CTA must depend on provider inspection.
+
+Do not blindly open checkout.
+
+## Manual review required
+
+Meaning:
+
+Provider relationship is ambiguous, including multiple viable subscriptions.
+
+Do not expose checkout.
+
+Use neutral support wording.
+
+## Reconciling
+
+Provider information cannot currently be established conclusively.
+
+Do not expose checkout.
+
+---
+
+# 13. Do not hardcode Apple Pay as unsupported
+
+Do not implement:
+
+`if channel === apple_pay => recurring not supported`
+
+unless authoritative Paystack behaviour requires that.
+
+The application should use provider evidence.
+
+If Paystack returns a valid exact subscription relationship with:
+
+`authorization.reusable === true`
+
+then evaluate it normally regardless of initial payment channel.
+
+If Paystack returns:
+
+`authorization.reusable === false`
+
+or does not provide sufficient authorization evidence:
+
+automatic renewal is not ready.
+
+---
+
+# 14. Read-only production diagnostic
+
+Add a support diagnostic that can identify candidate legacy accounts without changing them.
+
+At minimum report:
+
+* billing owner;
+* local subscription plan/status;
+* next billing date;
+* Paystack customer code;
+* active local identity count;
+* successful Paystack references;
+* stored authorization code where already present;
+* local renewal/failure/reconciliation signals;
+* whether provider evidence is known or unknown.
+
+Where local history cannot establish:
+
+* Apple Pay;
+* provider subscription count;
+* authorization reusability;
+* invoice relationship;
+
+report:
+
+`unknown`
+
+Do not infer.
+
+The diagnostic must be read-only.
+
+---
+
+# 15. Existing 37-customer population
+
+Do not automatically remediate the 37 production candidates identified by the audit.
+
+No batch:
+
+* identity recovery;
+* subscription cancellation;
+* checkout creation;
+* management-link generation;
+* refund;
+* entitlement modification.
+
+After implementation, provide a read-only classification plan so we can safely determine which customers fall into:
+
+A. recurring ready;
+
+B. one recoverable provider subscription;
+
+C. payment method needs attention;
+
+D. multiple provider subscriptions/manual review;
+
+E. no provider subscription/recovery checkout eligible;
+
+F. provider evidence unavailable/reconciling.
+
+Production remediation will be separately reviewed.
+
+---
+
+# 16. Workspace safety
+
+Preserve canonical billing ownership.
+
+Covered editors/viewers must not:
+
+* retrieve owner's management link through their own billing identity;
+* recover owner's `SUB_*` into themselves;
+* create personal recovery checkout;
+* manage provider subscription belonging to the workspace owner.
+
+Owner-managed billing remains owner-managed.
+
+---
+
+# 17. Required tests
+
+Implement the audit test plan plus the following explicit assertions:
+
+### Apple Pay / authorization
+
+1. Apple Pay success + `reusable = false`
+
+   * payment succeeds;
+   * entitlement succeeds;
+   * recurring readiness false;
+   * no automatic new checkout.
+
+2. Apple Pay success + missing authorization
+
+   * payment succeeds;
+   * recurring readiness unknown/not ready;
+   * no false recurring claim.
+
+3. Apple Pay success + exact `SUB_*` + reusable authorization
+
+   * recurring readiness may become active if all ownership checks pass.
+
+4. Card success + `reusable = false`
+
+   * same not-ready result.
+
+This proves readiness is based on provider evidence rather than channel.
+
+### Existing subscription
+
+5. Trusted `SUB_*` + authorization issue
+
+   * management-link path;
+   * no checkout.
+
+6. Management link requested for another customer's `SUB_*`
+
+   * rejected.
+
+7. Covered workspace member requests owner management link
+
+   * rejected.
+
+### Identity recovery
+
+8. No local identity + exactly one viable provider `SUB_*`
+
+   * recover identity;
+   * no checkout.
+
+9. No local identity + two viable provider `SUB_*`
+
+   * manual review;
+   * no identity selected;
+   * no link;
+   * no checkout.
+
+10. Provider listing incomplete
+
+    * reconciling;
+    * no checkout.
+
+### Duplicate prevention
+
+11. Antebellum two-subscription regression.
+
+12. Five concurrent recovery requests against multiple provider subscriptions.
+
+    * zero checkout attempts created.
+
+13. Five concurrent management-link requests.
+
+    * no subscription creation;
+    * safe serialized/idempotent behaviour.
+
+14. Failed/abandoned recurring attempt.
+
+    * never automatically creates another subscription.
+
+### Existing protections
+
+15. Existing checkout concurrency tests remain green.
+
+16. Existing payment-ledger idempotency tests remain green.
+
+17. Existing renewal exact-identity tests remain green.
+
+18. Existing webhook deferral/replay tests remain green.
+
+19. Existing Task #46 tests remain green.
+
+---
+
+# 18. Validation
+
+Run:
+
+* TypeScript;
+* production build;
+* Paystack-focused suite;
+* recurring-readiness tests;
+* management-link tests;
+* duplicate-provider-subscription tests;
+* concurrency tests;
+* reconciliation tests;
+* full Vitest suite.
+
+The two previously known obsolete invite-flow failures may remain if still genuinely unrelated.
+
+No new failures.
+
+---
+
+# STOP BEFORE DEPLOYMENT
+
+Do not Publish.
+
+Do not modify production customers.
+
+Do not cancel Antebellum's subscriptions.
+
+Do not batch-repair the 37 candidates.
+
+Do not perform a real charge.
+
+When implementation is complete, return:
+
+## A. Root cause fixed
+
+## B. Recurring-readiness model
+
+## C. Provider evidence persisted
+
+## D. Apple Pay handling
+
+## E. Hosted management-link implementation
+
+## F. Identity recovery behaviour
+
+## G. Multiple-subscription behaviour
+
+## H. Antebellum regression result
+
+## I. Customer-facing UX
+
+## J. Read-only production diagnostic
+
+## K. Files changed
+
+## L. Database migration
+
+## M. Complete test results
+
+## N. Confirmation all Task #41/#42/#46 protections remain intact
+
+## O. Production remediation plan
+
+Explain how we can safely classify and repair the existing candidate population after deployment without mass charging, cancelling, or guessing.
+
+End with exactly:
+
+`READY FOR FINAL REVIEW — DO NOT DEPLOY`
+
+or:
+
+`NOT READY — [remaining blocker]`

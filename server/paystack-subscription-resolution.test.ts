@@ -258,6 +258,7 @@ describe("automatic legacy renewal relationship recovery", () => {
     await expect(service.getPaystackRenewalStatus(42)).resolves.toEqual({
       state: "renewal_setup_required",
       recoveryCheckoutEligible: true,
+      managementLinkEligible: false,
     });
 
     vi.mocked(storage.getUserSubscription).mockResolvedValue({
@@ -267,6 +268,7 @@ describe("automatic legacy renewal relationship recovery", () => {
     await expect(service.getPaystackRenewalStatus(42)).resolves.toEqual({
       state: "payment_failed",
       recoveryCheckoutEligible: false,
+      managementLinkEligible: false,
     });
   });
 

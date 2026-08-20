@@ -170,7 +170,7 @@ describe('billingService.upgradeToPlanWithStoredAuth', () => {
   const soloPlan = { id: 2, name: 'premium_monthly', displayName: 'Solo', price: 4900, billingPeriod: 'monthly', maxSeats: 1, isActive: true, paystackPlanCode: 'PLN_solo' };
   const teamS = { id: 4, name: 'team_s', displayName: 'Team S', price: 29900, billingPeriod: 'monthly', maxSeats: 5, isActive: true, paystackPlanCode: 'PLN_team_s' };
 
-  it('charges the stored authorization and increases capacity on success', async () => {
+  it('never charges a stored authorization for an upgrade', async () => {
     getSubscriptionPlan.mockImplementation(async (id: number) => (id === 4 ? teamS : id === 2 ? soloPlan : null));
     getUser.mockResolvedValue({ id: 1, email: 'owner@x.com', workspaceId: 100 });
 
@@ -186,20 +186,15 @@ describe('billingService.upgradeToPlanWithStoredAuth', () => {
     });
     (billingService as any).paystack = { transaction: { charge } };
 
-    // db.transaction returning: userSubscriptions update .returning() -> [row]
-    selectQueue = [[{ id: 9, userId: 1, planId: 4, status: 'active' }]];
-
     const result = await billingService.upgradeToPlanWithStoredAuth(1, 4);
 
-    expect(charge).toHaveBeenCalledWith(expect.objectContaining({
-      authorization_code: 'AUTH_abc',
-      email: 'owner@x.com',
-      amount: 29900,
-    }));
-    expect(result.success).toBe(true);
-    expect(result.plan?.maxSeats).toBe(5);
-    // Plan switched locally to the higher-capacity tier.
-    expect(updatedSets).toContainEqual(expect.objectContaining({ planId: 4 }));
+    expect(charge).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: false,
+      needsCheckout: true,
+      reason: 'stored_authorization_charges_disabled',
+    });
+    expect(updatedSets).not.toContainEqual(expect.objectContaining({ planId: 4 }));
   });
 
   it('refuses a non-upgrade (target seats <= current capacity)', async () => {

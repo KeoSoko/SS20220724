@@ -454,6 +454,12 @@ export const paystackSubscriptionIdentities = pgTable("paystack_subscription_ide
   customerCode: text("customer_code"),
   planCode: text("plan_code"),
   status: text("status").notNull().default("active"), // "active", "retired", "unresolved"
+  recurringReadiness: text("recurring_readiness").notNull().default("unknown"), // "ready", "not_ready", "unknown"
+  authorizationCode: text("authorization_code"),
+  authorizationChannel: text("authorization_channel"),
+  authorizationSignature: text("authorization_signature"),
+  authorizationReusable: boolean("authorization_reusable"),
+  providerVerifiedAt: timestamp("provider_verified_at"),
   providerCreatedAt: timestamp("provider_created_at"),
   retiredAt: timestamp("retired_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -496,6 +502,14 @@ export const paymentTransactions = pgTable("payment_transactions", {
   platformTransactionId: text("platform_transaction_id"), // Google Play purchase token, Paystack reference, etc.
   platformOrderId: text("platform_order_id"), // Platform order ID
   platformSubscriptionId: text("platform_subscription_id"), // Platform subscription ID
+  providerTransactionId: text("provider_transaction_id"),
+  providerChannel: text("provider_channel"),
+  providerAuthorizationCode: text("provider_authorization_code"),
+  providerAuthorizationChannel: text("provider_authorization_channel"),
+  providerAuthorizationSignature: text("provider_authorization_signature"),
+  providerAuthorizationReusable: boolean("provider_authorization_reusable"),
+  providerVerifiedAt: timestamp("provider_verified_at"),
+  recurringReadiness: text("recurring_readiness").notNull().default("unknown"),
   
   // Metadata for all platforms
   metadata: jsonb("metadata"), // Platform-specific data

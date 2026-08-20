@@ -166,8 +166,9 @@ export function SubscriptionPage() {
     paymentRecoveryRecommended?: boolean;
     renewalDueDate?: string;
     recoveryPath?: string;
-    renewalState?: 'not_due' | 'reconciling' | 'payment_failed' | 'renewal_setup_required';
+    renewalState?: 'not_due' | 'reconciling' | 'payment_failed' | 'renewal_setup_required' | 'automatic_renewal_active' | 'payment_method_needs_attention' | 'manual_review_required';
     renewalRecoveryCheckoutEligible?: boolean;
+    renewalManagementLinkEligible?: boolean;
     workspaceContext: {
       isOwner: boolean;
       workspaceName?: string;
@@ -229,12 +230,14 @@ export function SubscriptionPage() {
   const transactions: PaymentTransaction[] = (transactionsData as any)?.transactions || [];
   const renewalSetupRequired = statusData?.renewalState === 'renewal_setup_required';
   const renewalReconciling = statusData?.renewalState === 'reconciling';
+  const paymentMethodNeedsAttention = statusData?.renewalState === 'payment_method_needs_attention';
+  const manualReviewRequired = statusData?.renewalState === 'manual_review_required';
   const paymentActuallyFailed = !!(
     statusData?.renewalState === 'payment_failed'
     || statusData?.paymentRequired
     || subscription?.status === 'paused'
   );
-  const needsPaymentRecovery = paymentActuallyFailed || renewalSetupRequired;
+  const needsPaymentRecovery = paymentActuallyFailed || renewalSetupRequired || paymentMethodNeedsAttention;
   const recoveryCheckoutEligible = renewalSetupRequired
     && statusData?.renewalRecoveryCheckoutEligible === true;
 
@@ -258,7 +261,10 @@ export function SubscriptionPage() {
   const getSubscriptionStatus = () => {
     if (!subscription) return 'No subscription';
     if (paymentActuallyFailed) return 'Payment required';
+    if (paymentMethodNeedsAttention) return 'Payment method needs attention';
+    if (manualReviewRequired) return 'Automatic renewal needs review';
     if (renewalSetupRequired) return 'Automatic renewal needs setup';
+    if (statusData?.renewalState === 'automatic_renewal_active') return 'Automatic renewal active';
     if (renewalReconciling) return 'Renewal being checked';
     
     if (subscription.isTrialActive) {
@@ -448,11 +454,13 @@ export function SubscriptionPage() {
 
   // Process Paystack subscription mutation
   const processPaystackMutation = useMutation({
-    mutationFn: (reference: string) => apiRequest('POST', '/api/billing/paystack/subscription', { reference }),
-    onSuccess: () => {
+    mutationFn: async (reference: string) => (await apiRequest('POST', '/api/billing/paystack/subscription', { reference })).json(),
+    onSuccess: (result: any) => {
       toast({
-        title: "Subscription Activated",
-        description: "Your premium subscription is now active!",
+        title: "Payment verified",
+        description: result?.renewalState === 'automatic_renewal_active'
+          ? "Your paid access and automatic renewal are active."
+          : "Your paid access is active. We’ll confirm automatic renewal separately with Paystack.",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
       queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
@@ -462,6 +470,23 @@ export function SubscriptionPage() {
       toast({
         title: "Subscription Failed",
         description: error.message || "Failed to activate subscription",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const managePaymentMethodMutation = useMutation({
+    mutationFn: async () => (await apiRequest(
+      'POST',
+      '/api/billing/paystack/subscription/manage-link',
+    )).json() as Promise<{ url: string }>,
+    onSuccess: ({ url }) => {
+      window.location.assign(url);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Unable to open Paystack",
+        description: error?.message || "We’re still confirming your renewal status. Please try again shortly.",
         variant: "destructive",
       });
     },
@@ -547,7 +572,7 @@ export function SubscriptionPage() {
                   <Alert className="border-amber-300 bg-amber-50">
                     <AlertCircle className="h-4 w-4 text-amber-700" />
                     <AlertDescription className="text-amber-900">
-                      {paymentActuallyFailed
+                      {paymentMethodNeedsAttention || paymentActuallyFailed
                         ? 'We couldn’t process your latest renewal payment. Update your payment method securely with Paystack to continue your subscription.'
                         : recoveryCheckoutEligible
                           ? 'Automatic renewal needs to be set up again. No new payment has been attempted yet. Continue below to deliberately open a new secure Paystack checkout.'
@@ -595,6 +620,19 @@ export function SubscriptionPage() {
                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
                         )}
                         Cancel Subscription
+                      </Button>
+                    )}
+                    {paymentMethodNeedsAttention && statusData?.renewalManagementLinkEligible && (
+                      <Button
+                        size="sm"
+                        onClick={() => managePaymentMethodMutation.mutate()}
+                        disabled={managePaymentMethodMutation.isPending}
+                        data-testid="button-update-paystack-payment-method"
+                      >
+                        {managePaymentMethodMutation.isPending && (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        )}
+                        Update payment method
                       </Button>
                     )}
                   </div>
@@ -687,10 +725,22 @@ export function SubscriptionPage() {
                     </ul>
                   </CardContent>
                   <CardFooter>
-                    {renewalReconciling ? (
+                     {renewalReconciling || manualReviewRequired ? (
                       <Badge variant="secondary" className="w-full justify-center py-2">
-                        Renewal being checked
+                         {manualReviewRequired ? 'Renewal needs review' : 'Renewal being checked'}
                       </Badge>
+                     ) : paymentMethodNeedsAttention ? (
+                       <Button
+                         className="w-full"
+                         onClick={() => managePaymentMethodMutation.mutate()}
+                         disabled={managePaymentMethodMutation.isPending || !statusData?.renewalManagementLinkEligible}
+                         data-testid="button-update-paystack-payment-method-plan"
+                       >
+                         {managePaymentMethodMutation.isPending && (
+                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                         )}
+                         Update payment method
+                       </Button>
                     ) : subscription?.planId === selectedBillingPlan.id
                     && subscription?.status === 'active'
                     && !needsPaymentRecovery ? (

@@ -9,7 +9,12 @@ const state = vi.hoisted(() => ({
   nextId: 1,
 }));
 
-vi.mock("./storage", () => ({ storage: {} }));
+vi.mock("./storage", () => ({
+  storage: {
+    getUserSubscription: vi.fn(),
+    getSubscriptionPlan: vi.fn(),
+  },
+}));
 vi.mock("./vite", () => ({ log: vi.fn() }));
 vi.mock("./email-service", () => ({ emailService: null }));
 vi.mock("./paystack-billing-schema", () => ({
@@ -75,6 +80,15 @@ vi.mock("./db", () => {
 
   return {
     db: {
+      select: () => {
+        const chain: any = {
+          from: () => chain,
+          where: () => chain,
+          orderBy: () => chain,
+          limit: async () => state.activeIdentity ? [state.activeIdentity] : [],
+        };
+        return chain;
+      },
       transaction: async (callback: (tx: any) => Promise<any>) => {
         const previous = state.queue;
         let release!: () => void;
@@ -110,6 +124,7 @@ vi.mock("./db", () => {
 });
 
 import { BillingService } from "./billing-service";
+import { storage } from "./storage";
 
 const checkoutInput = (planId = 2) => ({
   billingOwnerUserId: 10,
@@ -128,6 +143,11 @@ beforeEach(() => {
   state.activeIdentity = null;
   state.queue = Promise.resolve();
   state.nextId = 1;
+  vi.mocked(storage.getUserSubscription).mockImplementation(async () => state.subscription);
+  vi.mocked(storage.getSubscriptionPlan).mockResolvedValue({
+    id: 2,
+    paystackPlanCode: "PLN_monthly",
+  } as any);
 });
 
 describe("server-owned Paystack checkout attempts", () => {
@@ -196,10 +216,21 @@ describe("server-owned Paystack checkout attempts", () => {
       userId: 10,
       planId: 2,
       status: "active",
+      paystackCustomerCode: "CUS_owner",
       nextBillingDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
       cancelledAt: null,
     };
     const service = new BillingService();
+    (service as any).paystack = {
+      customer: { get: vi.fn().mockResolvedValue({ status: true, data: { id: 101 } }) },
+      subscription: {
+        list: vi.fn().mockResolvedValue({
+          status: true,
+          data: [],
+          meta: { total: 0, page: 1, pageCount: 1 },
+        }),
+      },
+    };
     const results = await Promise.all(
       Array.from({ length: 8 }, () => service.createOrReusePaystackCheckoutAttempt({
         ...checkoutInput(),
@@ -210,6 +241,42 @@ describe("server-owned Paystack checkout attempts", () => {
     expect(results.filter((result) => result.outcome === "created")).toHaveLength(1);
     expect(results.filter((result) => result.outcome === "reused")).toHaveLength(7);
     expect(state.inserts).toBe(1);
+  });
+
+  it("fails closed when the locked provider reinspection finds a subscription", async () => {
+    state.subscription = {
+      id: 99,
+      userId: 10,
+      planId: 2,
+      status: "active",
+      paystackCustomerCode: "CUS_owner",
+      nextBillingDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      cancelledAt: null,
+    };
+    const list = vi.fn().mockResolvedValue({
+      status: true,
+      data: [{
+        subscription_code: "SUB_provider",
+        status: "active",
+        customer: { customer_code: "CUS_owner" },
+        plan: { plan_code: "PLN_monthly" },
+      }],
+      meta: { total: 1, page: 1, pageCount: 1 },
+    });
+    const service = new BillingService();
+    (service as any).paystack = {
+      customer: { get: vi.fn().mockResolvedValue({ status: true, data: { id: 101 } }) },
+      subscription: { list, get: vi.fn().mockResolvedValue({ status: true, data: {} }) },
+    };
+
+    const result = await service.createOrReusePaystackCheckoutAttempt({
+      ...checkoutInput(),
+      allowRenewalSetupRecovery: true,
+    });
+
+    expect(list).toHaveBeenCalledOnce();
+    expect(result.outcome).toBe("checkout_blocked");
+    expect(state.inserts).toBe(0);
   });
 
   it("rechecks the identity under the owner lock before recovery checkout", async () => {

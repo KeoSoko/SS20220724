@@ -26,8 +26,10 @@ import {
   checkPaystackTransactionOwnership,
   classifyPaystackInvoice,
   extractPaystackCustomerCode,
+  extractPaystackAuthorizationEvidence,
   extractPaystackSubscriptionCode,
   getMostRecentPaystackInvoice,
+  hasExactPaystackRecurringRelationship,
   isViablePaystackSubscriptionCandidate,
   parsePaystackDate,
   PaystackSubscriptionCandidateSummary,
@@ -104,12 +106,22 @@ export type PaystackRenewalState =
   | "not_due"
   | "reconciling"
   | "payment_failed"
-  | "renewal_setup_required";
+  | "renewal_setup_required"
+  | "automatic_renewal_active"
+  | "payment_method_needs_attention"
+  | "manual_review_required";
 
 export interface PaystackRenewalStatus {
   state: PaystackRenewalState;
   recoveryCheckoutEligible: boolean;
+  managementLinkEligible: boolean;
 }
+
+export type PaystackManagementLinkResult =
+  | { outcome: "ready"; url: string }
+  | { outcome: "automatic_renewal_active" }
+  | { outcome: "manual_review_required"; reason: string }
+  | { outcome: "reconciling"; reason: string };
 
 export type PaystackRenewalIdentityRecoveryResult =
   | { outcome: "relationship_available"; subscriptionCode: string }
@@ -321,6 +333,12 @@ export class BillingService {
 
   private async requirePaystackBillingSchema(): Promise<void> {
     await requirePaystackBillingSchema();
+  }
+
+  private legacyStoredAuthorizationChargesEnabled(): boolean {
+    // Deliberately hard-disabled: no request path may create a one-click
+    // Paystack charge from a stored authorization.
+    return false;
   }
   
   /**
@@ -901,6 +919,17 @@ export class BillingService {
       return { success: false, needsCheckout: true, reason: 'no_stored_authorization' };
     }
 
+    // This legacy method intentionally cannot charge a stored authorization.
+    // Keep the safe result for callers/tests that still reference it, but never
+    // allow an accidental future route to reactivate the one-click path.
+    if (!this.legacyStoredAuthorizationChargesEnabled()) {
+      return {
+        success: false,
+        needsCheckout: true,
+        reason: "stored_authorization_charges_disabled",
+      };
+    }
+
     const reference = `upg_${userId}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
     let chargeData: any;
     try {
@@ -975,7 +1004,7 @@ export class BillingService {
           currency: 'ZAR',
           status: 'completed',
           platform: 'paystack',
-          paymentMethod: 'card',
+          paymentMethod: chargeData?.channel ?? 'other',
           platformTransactionId: reference,
           platformOrderId: chargeData?.reference || reference,
           platformSubscriptionId: targetPlan.paystackPlanCode || 'unknown',
@@ -1432,6 +1461,9 @@ export class BillingService {
           allowNewActive: true,
           preserveExistingActive: true,
           auditSource: "automatic_legacy_renewal_recovery",
+          expectedCustomerCode: inspection.customerCode,
+          expectedPlanCode: inspection.expectedPlanCode,
+          authorizationBoundToSubscription: true,
         },
       );
       if (recorded.status !== "active") {
@@ -1453,6 +1485,120 @@ export class BillingService {
       });
       return { outcome: "manual_review_required", reason: "identity_recording_failed" };
     }
+  }
+
+  /**
+   * Return Paystack's hosted subscription-management URL only for an already
+   * trusted canonical relationship. This endpoint never creates a checkout,
+   * charges an authorization, cancels a subscription, or persists the URL.
+   */
+  async createPaystackSubscriptionManagementLink(
+    userId: number,
+  ): Promise<PaystackManagementLinkResult> {
+    await this.requirePaystackBillingSchema();
+    if (!this.paystack || !process.env.PAYSTACK_SECRET_KEY) {
+      return { outcome: "reconciling", reason: "paystack_unavailable" };
+    }
+
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+      const subscription = await this.getUserSubscription(userId);
+      if (!subscription?.paystackCustomerCode) {
+        return { outcome: "reconciling", reason: "missing_paystack_customer_code" };
+      }
+      const plan = storage.getSubscriptionPlan
+        ? await storage.getSubscriptionPlan(subscription.planId)
+        : null;
+      if (!plan?.paystackPlanCode) {
+        return { outcome: "reconciling", reason: "missing_paystack_plan_code" };
+      }
+
+      const [identity] = await tx
+        .select()
+        .from(paystackSubscriptionIdentities)
+        .where(and(
+          eq(paystackSubscriptionIdentities.userId, userId),
+          eq(paystackSubscriptionIdentities.status, "active"),
+        ))
+        .orderBy(desc(paystackSubscriptionIdentities.providerCreatedAt), desc(paystackSubscriptionIdentities.createdAt))
+        .limit(1)
+        .for("update");
+      if (!identity) {
+        return { outcome: "manual_review_required", reason: "missing_trusted_subscription_identity" };
+      }
+      if (
+        identity.customerCode !== subscription.paystackCustomerCode
+        || identity.planCode !== plan.paystackPlanCode
+      ) {
+        return { outcome: "manual_review_required", reason: "local_subscription_identity_mismatch" };
+      }
+
+      let providerData: any;
+      try {
+        const detail = await this.paystack.subscription.get(identity.subscriptionCode);
+        providerData = detail?.status ? detail.data : null;
+      } catch {
+        return { outcome: "reconciling", reason: "paystack_subscription_detail_unavailable" };
+      }
+      const evidence = extractPaystackAuthorizationEvidence(providerData, new Date(), {
+        authorizationBoundToSubscription: true,
+      });
+      const providerStatus = String(providerData?.status ?? "").toLowerCase();
+      if (
+        !providerData
+        || ["complete", "cancelled", "disabled", "inactive"].includes(providerStatus)
+        || evidence.subscriptionCode !== identity.subscriptionCode
+        || evidence.customerCode !== subscription.paystackCustomerCode
+        || evidence.planCode !== plan.paystackPlanCode
+      ) {
+        return { outcome: "manual_review_required", reason: "provider_subscription_customer_or_plan_mismatch" };
+      }
+
+      if (hasExactPaystackRecurringRelationship(
+        evidence,
+        subscription.paystackCustomerCode,
+        plan.paystackPlanCode,
+        identity.subscriptionCode,
+      )) {
+        return { outcome: "automatic_renewal_active" };
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(
+          `https://api.paystack.co/subscription/${encodeURIComponent(identity.subscriptionCode)}/manage/link`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+              Accept: "application/json",
+            },
+          },
+        );
+      } catch {
+        return { outcome: "reconciling", reason: "paystack_management_link_unavailable" };
+      }
+      if (!response.ok) {
+        return { outcome: "reconciling", reason: "paystack_management_link_unavailable" };
+      }
+      const body = await response.json().catch(() => null);
+      const url = body?.data?.link ?? body?.data?.url ?? body?.data;
+      if (typeof url !== "string" || !/^https:\/\/[^ ]+$/i.test(url)) {
+        return { outcome: "reconciling", reason: "paystack_management_link_invalid" };
+      }
+
+      await tx.insert(billingEvents).values({
+        userId,
+        eventType: "paystack_subscription_management_link_requested",
+        eventData: {
+          subscriptionCode: identity.subscriptionCode,
+          providerStatus,
+          recurringReadiness: evidence.authorizationReusable === false ? "not_ready" : "unknown",
+        },
+        processed: true,
+      });
+      return { outcome: "ready", url };
+    });
   }
 
   async resolvePaystackSubscriptionIdentity(
@@ -1509,6 +1655,9 @@ export class BillingService {
           supersedeExisting: true,
           auditSource: "support_duplicate_resolution",
           adminUserId: options.adminUserId,
+          expectedCustomerCode: inspection.customerCode,
+          expectedPlanCode: inspection.expectedPlanCode,
+          authorizationBoundToSubscription: true,
         },
       );
     } catch {
@@ -1561,6 +1710,9 @@ export class BillingService {
       preserveExistingActive?: boolean;
       auditSource?: string;
       adminUserId?: number;
+      expectedCustomerCode?: string | null;
+      expectedPlanCode?: string | null;
+      authorizationBoundToSubscription?: boolean;
     } = {},
   ): Promise<{ subscriptionCode: string; status: string }> {
     const subscriptionCode = extractPaystackSubscriptionCode(data);
@@ -1576,6 +1728,19 @@ export class BillingService {
       data?.created_at ?? data?.createdAt ?? data?.created,
     );
     const now = new Date();
+    const providerEvidence = extractPaystackAuthorizationEvidence(data, now, {
+      authorizationBoundToSubscription: options.authorizationBoundToSubscription,
+    });
+    const recurringReadiness = hasExactPaystackRecurringRelationship(
+      providerEvidence,
+      options.expectedCustomerCode,
+      options.expectedPlanCode,
+      subscriptionCode,
+    )
+      ? "ready"
+      : providerEvidence.authorizationReusable === false
+        ? "not_ready"
+        : "unknown";
 
     const [existingCode] = await tx
       .select()
@@ -1639,6 +1804,12 @@ export class BillingService {
         customerCode,
         planCode,
         status: identityStatus,
+        recurringReadiness,
+        authorizationCode: providerEvidence.authorizationCode,
+        authorizationChannel: providerEvidence.authorizationChannel,
+        authorizationSignature: providerEvidence.authorizationSignature,
+        authorizationReusable: providerEvidence.authorizationReusable,
+        providerVerifiedAt: providerEvidence.providerVerifiedAt,
         providerCreatedAt,
         retiredAt: identityStatus === "retired" ? now : null,
         updatedAt: now,
@@ -1649,6 +1820,14 @@ export class BillingService {
           customerCode,
           planCode,
           status: identityStatus,
+          recurringReadiness: recurringReadiness === "unknown"
+            ? existingCode?.recurringReadiness ?? "unknown"
+            : recurringReadiness,
+          authorizationCode: providerEvidence.authorizationCode ?? existingCode?.authorizationCode ?? null,
+          authorizationChannel: providerEvidence.authorizationChannel ?? existingCode?.authorizationChannel ?? null,
+          authorizationSignature: providerEvidence.authorizationSignature ?? existingCode?.authorizationSignature ?? null,
+          authorizationReusable: providerEvidence.authorizationReusable ?? existingCode?.authorizationReusable ?? null,
+          providerVerifiedAt: providerEvidence.providerVerifiedAt ?? existingCode?.providerVerifiedAt ?? null,
           providerCreatedAt: providerCreatedAt ?? existingCode?.providerCreatedAt ?? null,
           retiredAt: identityStatus === "retired" ? now : null,
           updatedAt: now,
@@ -1664,6 +1843,7 @@ export class BillingService {
         customerCode,
         planCode,
         status: identity?.status ?? identityStatus,
+        recurringReadiness: identity?.recurringReadiness ?? recurringReadiness,
         source: options.auditSource ?? "provider",
         adminUserId: options.adminUserId ?? null,
       },
@@ -1685,6 +1865,9 @@ export class BillingService {
       preserveExistingActive?: boolean;
       auditSource?: string;
       adminUserId?: number;
+      expectedCustomerCode?: string | null;
+      expectedPlanCode?: string | null;
+      authorizationBoundToSubscription?: boolean;
     } = {},
   ): Promise<{ subscriptionCode: string; status: string }> {
     await this.requirePaystackBillingSchema();
@@ -1804,9 +1987,9 @@ export class BillingService {
           };
         }
 
-        // Provider inspection happens before this transaction. Re-read the
-        // trusted identity under the shared entitlement lock so an identity
-        // recovered by another request can never race into a second checkout.
+        // Re-read the trusted identity under the shared entitlement lock so an
+        // identity recovered by another request can never race into a second
+        // checkout.
         const [activeIdentity] = await tx
           .select()
           .from(paystackSubscriptionIdentities)
@@ -1820,6 +2003,34 @@ export class BillingService {
           return {
             outcome: "checkout_blocked",
             reason: "renewal_relationship_available",
+            subscription: existingSubscription,
+          };
+        }
+
+        // The route performs a first provider inspection to drive customer
+        // messaging. Repeat it only after lock 36 is held and immediately
+        // before minting a recovery reference. A failed or incomplete read is
+        // never treated as proof that no provider relationship exists.
+        let lockedInspection: Awaited<ReturnType<BillingService["loadPaystackSubscriptionCandidates"]>>;
+        try {
+          lockedInspection = await this.loadPaystackSubscriptionCandidates(input.billingOwnerUserId);
+        } catch {
+          return {
+            outcome: "checkout_blocked",
+            reason: "renewal_recovery_required",
+            subscription: existingSubscription,
+          };
+        }
+        if (
+          !lockedInspection.available
+          || lockedInspection.providerSubscriptionCount !== 0
+          || lockedInspection.candidates.length !== 0
+        ) {
+          return {
+            outcome: "checkout_blocked",
+            reason: lockedInspection.available && lockedInspection.candidates.length > 0
+              ? "renewal_relationship_available"
+              : "renewal_recovery_required",
             subscription: existingSubscription,
           };
         }
@@ -2081,7 +2292,18 @@ export class BillingService {
     const plan = resolution.plan;
     const isYearly = plan.billingPeriod === 'yearly';
     const subscriptionTier = isYearly ? 'yearly' : 'monthly';
-    const authorizationCode = transactionData.authorization?.authorization_code ?? undefined;
+    const providerEvidence = extractPaystackAuthorizationEvidence(transactionData);
+    const recurringReadiness = hasExactPaystackRecurringRelationship(
+      providerEvidence,
+      verifiedCustomerCode,
+      plan.paystackPlanCode,
+      effectiveSubscriptionCode,
+    )
+      ? "ready"
+      : providerEvidence.authorizationReusable === false
+        ? "not_ready"
+        : "unknown";
+    const authorizationCode = providerEvidence.authorizationCode ?? undefined;
     log(`Resolved plan ${plan.name} (id=${plan.id}, period=${plan.billingPeriod}) via ${resolution.source} for user ${userId}`, 'billing');
 
     const now = new Date();
@@ -2357,16 +2579,27 @@ export class BillingService {
             currency: 'ZAR',
             status: 'completed',
             platform: 'paystack',
-            paymentMethod: 'card',
+            paymentMethod: providerEvidence.transactionChannel ?? 'other',
             platformTransactionId: transactionReference,
             platformOrderId: transactionData.reference,
             platformSubscriptionId: transactionData.subscription?.subscription_code || transactionData.plan?.plan_code || plan.paystackPlanCode || 'unknown',
+            providerTransactionId: providerEvidence.transactionId,
+            providerChannel: providerEvidence.transactionChannel,
+            providerAuthorizationCode: providerEvidence.authorizationCode,
+            providerAuthorizationChannel: providerEvidence.authorizationChannel,
+            providerAuthorizationSignature: providerEvidence.authorizationSignature,
+            providerAuthorizationReusable: providerEvidence.authorizationReusable,
+            providerVerifiedAt: providerEvidence.providerVerifiedAt,
+            recurringReadiness,
             metadata: {
               customerCode: transactionData.customer?.customer_code,
-              authorizationCode: transactionData.authorization?.authorization_code,
+              authorizationCode: providerEvidence.authorizationCode,
               planCode: transactionData.plan?.plan_code,
               subscriptionCode: transactionData.subscription?.subscription_code,
-              recurring: true
+              transactionChannel: providerEvidence.transactionChannel,
+              authorizationChannel: providerEvidence.authorizationChannel,
+              authorizationReusable: providerEvidence.authorizationReusable,
+              recurringReadiness,
             },
             description: `${plan.displayName || plan.name} subscription`,
             failureReason: null,
@@ -2383,7 +2616,12 @@ export class BillingService {
                 ...transactionData,
                 subscription_code: effectiveSubscriptionCode,
               },
-              { supersedeExisting: true, allowNewActive: true },
+              {
+                supersedeExisting: true,
+                allowNewActive: true,
+                expectedCustomerCode: verifiedCustomerCode,
+                expectedPlanCode: plan.paystackPlanCode,
+              },
             );
           } else {
             // Do not leave an older SUB_* trusted during the gap before
@@ -2984,16 +3222,15 @@ export class BillingService {
   async getPaystackRenewalStatus(userId: number): Promise<PaystackRenewalStatus> {
     const subscription = await this.getUserSubscription(userId);
     if (!subscription || subscription.status === "cancelled" || !subscription.nextBillingDate) {
-      return { state: "not_due", recoveryCheckoutEligible: false };
+      return { state: "not_due", recoveryCheckoutEligible: false, managementLinkEligible: false };
     }
 
     if (subscription.status === "paused") {
-      return { state: "payment_failed", recoveryCheckoutEligible: false };
+      return { state: "payment_failed", recoveryCheckoutEligible: false, managementLinkEligible: false };
     }
 
-    if (subscription.status !== "active"
-      || new Date(subscription.nextBillingDate).getTime() > Date.now()) {
-      return { state: "not_due", recoveryCheckoutEligible: false };
+    if (subscription.status !== "active") {
+      return { state: "not_due", recoveryCheckoutEligible: false, managementLinkEligible: false };
     }
 
     // Other billing platforms own their own renewal lifecycle. Do not infer a
@@ -3004,20 +3241,59 @@ export class BillingService {
       || subscription.authorizationCode
     );
     if (!hasPaystackRelationship) {
-      return { state: "reconciling", recoveryCheckoutEligible: false };
+      return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
     }
 
     try {
       const readiness = await this.getPaystackBillingSchemaReadiness();
       if (!readiness.ready) {
-        return { state: "reconciling", recoveryCheckoutEligible: false };
+        return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
       }
       const identity = await this.getActivePaystackSubscriptionIdentity(userId);
       if (identity) {
-        return { state: "reconciling", recoveryCheckoutEligible: false };
+        if (identity.recurringReadiness === "ready") {
+          return { state: "automatic_renewal_active", recoveryCheckoutEligible: false, managementLinkEligible: false };
+        }
+        if (identity.recurringReadiness === "not_ready") {
+          return { state: "payment_method_needs_attention", recoveryCheckoutEligible: false, managementLinkEligible: true };
+        }
+        return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
       }
     } catch {
-      return { state: "reconciling", recoveryCheckoutEligible: false };
+      return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
+    }
+
+    // A successful initial payment without a trusted recurring identity must
+    // not be presented as automatic renewal, even during the paid period.
+    if (new Date(subscription.nextBillingDate).getTime() > Date.now()) {
+      return {
+        state: "renewal_setup_required",
+        recoveryCheckoutEligible: false,
+        managementLinkEligible: false,
+      };
+    }
+
+    // Provider inspection is deliberately initiated only by the customer's
+    // recovery action. Once that action has established ambiguity or an
+    // incomplete provider result, surface the durable server-derived outcome
+    // rather than exposing another checkout opportunity on page reload.
+    const [recentRecoverySignal] = await db
+      .select({ eventType: billingEvents.eventType })
+      .from(billingEvents)
+      .where(and(
+        eq(billingEvents.userId, userId),
+        inArray(billingEvents.eventType, [
+          "renewal_recovery_manual_review",
+          "renewal_reconciliation_pending",
+        ]),
+      ))
+      .orderBy(desc(billingEvents.createdAt))
+      .limit(1);
+    if (recentRecoverySignal?.eventType === "renewal_recovery_manual_review") {
+      return { state: "manual_review_required", recoveryCheckoutEligible: false, managementLinkEligible: false };
+    }
+    if (recentRecoverySignal?.eventType === "renewal_reconciliation_pending") {
+      return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
     }
 
     // The deliberate recovery action performs provider inspection before it
@@ -3025,6 +3301,7 @@ export class BillingService {
     return {
       state: "renewal_setup_required",
       recoveryCheckoutEligible: !!subscription.paystackCustomerCode,
+      managementLinkEligible: false,
     };
   }
 

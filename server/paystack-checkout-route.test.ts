@@ -72,6 +72,28 @@ describe("Paystack route safety invariants", () => {
     expect(billingService).toContain("renewal_setup_recovery_required");
   });
 
+  it("keeps hosted payment management owner-scoped and separate from checkout", () => {
+    const management = routeSource(
+      'app.post("/api/billing/paystack/subscription/manage-link"',
+      'app.post("/api/billing/paystack/verify"',
+    );
+    const billingService = readFileSync(
+      new URL("./billing-service.ts", import.meta.url),
+      "utf8",
+    );
+    expect(management).toContain("resolveBillingOwner(requestedByUserId)");
+    expect(management).toContain("workspace_member_billing_restricted");
+    expect(management).toContain("createPaystackSubscriptionManagementLink");
+    expect(management).not.toContain("createOrReusePaystackCheckoutAttempt");
+    const methodStart = billingService.indexOf("async createPaystackSubscriptionManagementLink");
+    const methodEnd = billingService.indexOf("async resolvePaystackSubscriptionIdentity", methodStart);
+    const method = billingService.slice(methodStart, methodEnd);
+    expect(method).toContain("pg_advisory_xact_lock(${userId}, 36)");
+    expect(method).toContain("/manage/link");
+    expect(method).not.toContain("subscription.create");
+    expect(method).not.toContain("transaction.charge");
+  });
+
   it("never trusts recurring-looking metadata for an untracked charge", () => {
     const renewal = readFileSync(
       new URL("./paystack-renewal.ts", import.meta.url),

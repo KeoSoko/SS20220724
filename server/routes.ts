@@ -1272,6 +1272,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         workspaceContext,
         renewalState: renewalStatus?.state,
         renewalRecoveryCheckoutEligible: renewalStatus?.recoveryCheckoutEligible ?? false,
+        renewalManagementLinkEligible: renewalStatus?.managementLinkEligible ?? false,
       });
     } catch (error) {
       log(`Error getting subscription status: ${error}`, "api");
@@ -4375,11 +4376,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get updated subscription status
       const updatedSubscription = await billingService.getUserSubscription(processingUserId);
+      const renewalStatus = await billingService.getPaystackRenewalStatus(processingUserId);
       
       res.json({ 
         verified: true,
         activated: activated,
         transactionStatus: verification.subscription?.status,
+        renewalState: renewalStatus.state,
         message: activated ? "Payment verified and subscription activated." : "Payment verified. Subscription is active.",
         currentSubscription: updatedSubscription ? {
           status: updatedSubscription.status,
@@ -4389,6 +4392,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       log(`Error in /api/billing/paystack/subscription: ${error.message}`, 'express');
       res.status(500).json({ error: "Failed to verify Paystack subscription" });
+    }
+  });
+
+  // Return Paystack's hosted management URL only after confirming the caller is
+  // the effective billing owner and the canonical provider relationship is safe.
+  app.post("/api/billing/paystack/subscription/manage-link", requireVerifiedEmail, async (req, res) => {
+    try {
+      if (!await requirePaystackBillingSchemaForRequest(res, "subscription_management_link")) return;
+
+      const requestedByUserId = getUserId(req);
+      const billingOwner = await resolveBillingOwner(requestedByUserId);
+      if (billingOwner.state === "unresolved") {
+        return res.status(409).json({
+          error: "Billing owner could not be resolved",
+          code: "billing_owner_unresolved",
+        });
+      }
+      if (!billingOwner.canManageBilling) {
+        return res.status(403).json({
+          error: "Billing is managed by your workspace owner",
+          code: "workspace_member_billing_restricted",
+        });
+      }
+
+      const result = await billingService.createPaystackSubscriptionManagementLink(
+        billingOwner.billingOwnerUserId,
+      );
+      if (result.outcome === "ready") {
+        return res.json({ url: result.url });
+      }
+      if (result.outcome === "automatic_renewal_active") {
+        return res.status(409).json({
+          error: "Your automatic renewal is already active. No payment update is required.",
+          code: "automatic_renewal_active",
+        });
+      }
+      if (result.outcome === "manual_review_required") {
+        return res.status(409).json({
+          error: "We need to confirm your automatic renewal before a payment method can be updated.",
+          code: "renewal_recovery_manual_review",
+        });
+      }
+      return res.status(409).json({
+        error: "We are still confirming your renewal status. Please try again shortly.",
+        code: "renewal_recovery_pending",
+      });
+    } catch (error: any) {
+      log(`Error creating Paystack subscription management link: ${error.message}`, "billing");
+      return res.status(500).json({ error: "Unable to open Paystack payment management right now" });
     }
   });
 

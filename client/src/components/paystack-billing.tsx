@@ -153,8 +153,8 @@ export function PaystackBilling({
         onSuccess: (transaction: any) => {
           setIsProcessing(false);
           toast({
-            title: "Subscription Activated",
-            description: `Your recurring subscription has been activated! You'll be charged ${priceDisplay}.`,
+            title: "Payment received",
+            description: `Your payment was received. We’ll confirm automatic-renewal readiness securely before making any future renewal claim.`,
           });
           onPaymentSuccess?.(transaction.reference);
         },
@@ -188,9 +188,9 @@ export function PaystackBilling({
   const isYearly = plan.billingPeriod === 'yearly';
   const priceAmount = `R${(plan.price / 100).toFixed(2)}`;
   const pricePeriod = isYearly ? '/year' : '/month';
-  const recurringDescription = isYearly 
-    ? `You'll be charged ${priceAmount} automatically every year.` 
-    : `You'll be charged ${priceAmount} automatically every month.`;
+  const recurringDescription = isYearly
+    ? `Your paid access starts after successful payment. Automatic yearly renewal is confirmed separately with Paystack.`
+    : `Your paid access starts after successful payment. Automatic monthly renewal is confirmed separately with Paystack.`;
 
   return (
     <Card className="border-primary/20">
@@ -247,8 +247,8 @@ export function PaystackBilling({
                </>
              ) : (
                <>
-                 <strong>Recurring Subscription:</strong> {recurringDescription}
-                 Your subscription will activate immediately after successful payment. You can cancel anytime from your account settings.
+                  <strong>Secure Paystack payment:</strong> {recurringDescription}
+                  You can cancel anytime from your account settings.
                </>
              )}
           </AlertDescription>

@@ -17,6 +17,111 @@ export interface PaystackRenewalEvidence {
   invoiceCode: string | null;
 }
 
+export type PaystackRecurringReadiness = "ready" | "not_ready" | "unknown";
+
+export interface PaystackAuthorizationEvidence {
+  transactionId: string | null;
+  transactionReference: string | null;
+  transactionChannel: string | null;
+  customerCode: string | null;
+  planCode: string | null;
+  subscriptionCode: string | null;
+  authorizationCode: string | null;
+  authorizationChannel: string | null;
+  authorizationSignature: string | null;
+  authorizationReusable: boolean | null;
+  providerVerifiedAt: Date | null;
+  recurringReadiness: PaystackRecurringReadiness;
+}
+
+function extractPaystackPlanCode(data: any): string | null {
+  return asNonEmptyString(
+    typeof data?.plan === "string"
+      ? data.plan
+      : data?.plan?.plan_code
+        ?? data?.plan_code
+        ?? data?.subscription?.plan?.plan_code
+        ?? data?.subscription?.plan_code,
+  );
+}
+
+export function extractPaystackAuthorizationEvidence(
+  data: any,
+  providerVerifiedAt: Date | null = new Date(),
+  options: { authorizationBoundToSubscription?: boolean } = {},
+): PaystackAuthorizationEvidence {
+  const authorization = data?.authorization ?? data?.transaction?.authorization ?? null;
+  const subscriptionCode = extractPaystackSubscriptionCode(data)
+    ?? extractPaystackSubscriptionCode(data?.transaction);
+  const customerCode = extractPaystackCustomerCode(data)
+    ?? extractPaystackCustomerCode(data?.transaction);
+  const transactionReference = extractPaystackTransactionReference(data)
+    ?? extractPaystackTransactionReference(data?.transaction);
+  const reusable = authorization?.reusable;
+  const authorizationReusable = typeof reusable === "boolean" ? reusable : null;
+  const authorizationSubscriptionCode = asNonEmptyString(
+    authorization?.subscription_code
+      ?? authorization?.subscriptionCode
+      ?? authorization?.subscription?.subscription_code,
+  );
+  const authorizationBoundToSubscription = !!(
+    authorization?.authorization_code
+    && subscriptionCode
+    && (
+      authorizationSubscriptionCode === subscriptionCode
+      || options.authorizationBoundToSubscription === true
+    )
+  );
+
+  let recurringReadiness: PaystackRecurringReadiness = "unknown";
+  if (
+    authorizationReusable === false
+    || (
+      !!authorizationSubscriptionCode
+      && !!subscriptionCode
+      && authorizationSubscriptionCode !== subscriptionCode
+    )
+  ) {
+    recurringReadiness = "not_ready";
+  } else if (authorizationReusable === true && customerCode && authorizationBoundToSubscription) {
+    recurringReadiness = "ready";
+  }
+
+  return {
+    transactionId: asNonEmptyString(data?.id ?? data?.transaction?.id),
+    transactionReference,
+    transactionChannel: asNonEmptyString(data?.channel ?? data?.transaction?.channel),
+    customerCode,
+    planCode: extractPaystackPlanCode(data),
+    subscriptionCode,
+    authorizationCode: asNonEmptyString(authorization?.authorization_code),
+    authorizationChannel: asNonEmptyString(
+      authorization?.channel ?? authorization?.authorization_channel,
+    ),
+    authorizationSignature: asNonEmptyString(
+      authorization?.signature ?? authorization?.authorization_signature,
+    ),
+    authorizationReusable,
+    providerVerifiedAt,
+    recurringReadiness,
+  };
+}
+
+export function hasExactPaystackRecurringRelationship(
+  evidence: PaystackAuthorizationEvidence,
+  expectedCustomerCode: string | null | undefined,
+  expectedPlanCode: string | null | undefined,
+  expectedSubscriptionCode?: string | null,
+): boolean {
+  return evidence.recurringReadiness === "ready"
+    && !!evidence.customerCode
+    && evidence.customerCode === expectedCustomerCode
+    && !!evidence.planCode
+    && (!expectedPlanCode || evidence.planCode === expectedPlanCode)
+    && !!evidence.subscriptionCode
+    && (!expectedSubscriptionCode || evidence.subscriptionCode === expectedSubscriptionCode);
+}
+
 export interface PaystackSubscriptionCandidateSummary {
   subscriptionCode: string;
   customerCode: string | null;

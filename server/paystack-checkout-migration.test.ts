@@ -25,11 +25,12 @@ describe("Paystack checkout migration safety", () => {
     expect(migration).not.toMatch(/^\s*(UPDATE\s+"?(user_subscriptions|payment_transactions)"?|DELETE FROM|ALTER TABLE\s+"?(user_subscriptions|payment_transactions)"?)/im);
   });
 
-  it("registers identity and checkout migrations in order", () => {
+  it("registers identity, checkout, and recurring-readiness migrations in order", () => {
     const parsed = JSON.parse(journal);
-    expect(parsed.entries.slice(-2).map((entry: any) => entry.tag)).toEqual([
+    expect(parsed.entries.slice(-3).map((entry: any) => entry.tag)).toEqual([
       "0002_add_paystack_subscription_identities",
       "0003_add_paystack_checkout_attempts",
+      "0004_add_paystack_recurring_readiness",
     ]);
   });
 });

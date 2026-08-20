@@ -37,6 +37,7 @@ function parseManualPaystackIdentityRepairInput(req: Request) {
     "subscriptionCode",
     "customerCode",
     "planCode",
+    "previouslyDisabledDuplicateSubscriptionCode",
     "confirmed",
   ]);
   if (
@@ -56,6 +57,9 @@ function parseManualPaystackIdentityRepairInput(req: Request) {
     subscriptionCode: body.subscriptionCode.trim(),
     customerCode: body.customerCode.trim(),
     planCode: body.planCode.trim(),
+    previouslyDisabledDuplicateSubscriptionCode: typeof body.previouslyDisabledDuplicateSubscriptionCode === "string"
+      ? body.previouslyDisabledDuplicateSubscriptionCode.trim()
+      : undefined,
   };
 }
 

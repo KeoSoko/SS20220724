@@ -8,4 +8,3 @@
 - [Paystack schema rollout](paystack-schema-rollout.md) — missing billing tables require read-only fail-closed checks plus durable deferred-event replay with poison-event backoff.
 - [Paystack management links](paystack-management-links.md) — provider contract is documented; live link lifetime and single-use behavior remain unverified without a safe test subscription.
 - [Durable diagnostic exports](durable-diagnostic-exports.md) — durable CodeExecution lacks common byte/clock globals; use SQL hex plus percent decoding for read-only export payloads.
-- [Direct ESM dry runs](tsx-direct-esm-runner.md) — project service previews need a temporary .mts runner; tsx eval mode is CommonJS and cannot load the Vite ESM config.

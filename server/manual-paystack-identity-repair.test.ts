@@ -251,6 +251,20 @@ describe("manual Paystack identity repair", () => {
     });
   });
 
+  it("carries a manually disabled duplicate code into the local audit record", async () => {
+    const { service, calls } = setup();
+    const approvedInput = {
+      ...input,
+      previouslyDisabledDuplicateSubscriptionCode: "SUB_c0uarpyy6cw5jyz",
+    };
+
+    await service.execute(approvedInput, 41);
+
+    expect(calls.audit).toHaveLength(1);
+    expect(calls.audit[0].input.previouslyDisabledDuplicateSubscriptionCode)
+      .toBe("SUB_c0uarpyy6cw5jyz");
+  });
+
   it("rejects a pending checkout conflict before writing", async () => {
     const snapshot = validSnapshot();
     snapshot.pendingCheckoutCount = 1;

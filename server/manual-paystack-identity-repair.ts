@@ -3,6 +3,7 @@ export interface ManualPaystackIdentityRepairInput {
   subscriptionCode: string;
   customerCode: string;
   planCode: string;
+  previouslyDisabledDuplicateSubscriptionCode?: string;
 }
 
 export interface ManualPaystackIdentityRepairSnapshot {
@@ -133,7 +134,14 @@ function hasExpectedFormat(input: ManualPaystackIdentityRepairInput): boolean {
     && input.billingOwnerUserId > 0
     && /^SUB_[A-Za-z0-9_-]+$/.test(input.subscriptionCode)
     && /^CUS_[A-Za-z0-9_-]+$/.test(input.customerCode)
-    && /^PLN_[A-Za-z0-9_-]+$/.test(input.planCode);
+    && /^PLN_[A-Za-z0-9_-]+$/.test(input.planCode)
+    && (
+      input.previouslyDisabledDuplicateSubscriptionCode === undefined
+      || (
+        /^SUB_[A-Za-z0-9_-]+$/.test(input.previouslyDisabledDuplicateSubscriptionCode)
+        && input.previouslyDisabledDuplicateSubscriptionCode !== input.subscriptionCode
+      )
+    );
 }
 
 function currentState(snapshot: ManualPaystackIdentityRepairSnapshot) {

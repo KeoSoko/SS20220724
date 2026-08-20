@@ -117,6 +117,10 @@ export interface PaystackRenewalStatus {
   managementLinkEligible: boolean;
 }
 
+export function isPaystackSubscriptionManagementLinkEnabled(): boolean {
+  return process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED === "true";
+}
+
 export type PaystackManagementLinkResult =
   | { outcome: "ready"; url: string }
   | { outcome: "automatic_renewal_active" }
@@ -3294,7 +3298,11 @@ export class BillingService {
           return { state: "automatic_renewal_active", recoveryCheckoutEligible: false, managementLinkEligible: false };
         }
         if (identity.recurringReadiness === "not_ready") {
-          return { state: "payment_method_needs_attention", recoveryCheckoutEligible: false, managementLinkEligible: true };
+          return {
+            state: "payment_method_needs_attention",
+            recoveryCheckoutEligible: false,
+            managementLinkEligible: isPaystackSubscriptionManagementLinkEnabled(),
+          };
         }
         return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
       }

@@ -83,6 +83,8 @@ describe("Paystack route safety invariants", () => {
     );
     expect(management).toContain("resolveBillingOwner(requestedByUserId)");
     expect(management).toContain("workspace_member_billing_restricted");
+    expect(management).toContain("isPaystackSubscriptionManagementLinkEnabled()");
+    expect(management).toContain("paystack_management_link_disabled");
     expect(management).toContain("createPaystackSubscriptionManagementLink");
     expect(management).not.toContain("createOrReusePaystackCheckoutAttempt");
     const methodStart = billingService.indexOf("async createPaystackSubscriptionManagementLink");

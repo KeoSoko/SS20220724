@@ -57,7 +57,10 @@ import { taxService } from "./tax-service";
 import { taxAIAssistant } from "./tax-ai-assistant";
 import { aiEmailAssistant } from "./ai-email-assistant";
 import { recurringExpenseService } from "./recurring-expense-service";
-import { billingService } from "./billing-service";
+import {
+  billingService,
+  isPaystackSubscriptionManagementLinkEnabled,
+} from "./billing-service";
 import { resolveUserForReconciliation } from "./reconcile-user-resolver";
 import { smartReminderService } from "./smart-reminder-service";
 import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategorization } from "./receipt-flow-utils";
@@ -4399,6 +4402,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // the effective billing owner and the canonical provider relationship is safe.
   app.post("/api/billing/paystack/subscription/manage-link", requireVerifiedEmail, async (req, res) => {
     try {
+      if (!isPaystackSubscriptionManagementLinkEnabled()) {
+        return res.status(503).json({
+          error: "Payment-method updates are temporarily unavailable. Please contact support.",
+          code: "paystack_management_link_disabled",
+        });
+      }
       if (!await requirePaystackBillingSchemaForRequest(res, "subscription_management_link")) return;
 
       const requestedByUserId = getUserId(req);

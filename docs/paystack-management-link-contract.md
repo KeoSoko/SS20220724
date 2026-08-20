@@ -16,6 +16,28 @@ Source: [Paystack Subscription API — Generate Update Subscription Link](https:
 
 Simple Slips accepts only the documented `status === true` and `data.link` response shape, and only an HTTPS URL hosted at `paystack.com` below `/manage/subscriptions/`. It does not expose the provider response or persist the URL.
 
+## Release gate
+
+Hosted management links are disabled unless
+`PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED=true` is explicitly configured.
+The production-safe configuration is:
+
+```text
+PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED=false
+```
+
+When disabled, the server returns a controlled `503` with
+`paystack_management_link_disabled` before checking billing data or contacting
+Paystack. Renewal status reports the link as unavailable, and the subscription
+page replaces both payment-method update CTAs with a support message. This
+state never falls back to checkout, stored-authorization charging, subscription
+creation, cancellation, refund, or historical collection.
+
+Simple Slips will not automatically collect historical missed subscription
+payments discovered during billing reconciliation or recovery. Recovery
+establishes correct billing prospectively from the appropriate next billing
+date.
+
 Before requesting the link, the server holds the billing-owner lock and verifies:
 
 1. effective billing ownership at the route boundary;

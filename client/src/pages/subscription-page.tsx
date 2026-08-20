@@ -572,8 +572,12 @@ export function SubscriptionPage() {
                   <Alert className="border-amber-300 bg-amber-50">
                     <AlertCircle className="h-4 w-4 text-amber-700" />
                     <AlertDescription className="text-amber-900">
-                      {paymentMethodNeedsAttention || paymentActuallyFailed
-                        ? 'We couldn’t process your latest renewal payment. Update your payment method securely with Paystack to continue your subscription.'
+                       {paymentMethodNeedsAttention
+                         ? statusData?.renewalManagementLinkEligible
+                           ? 'We couldn’t process your latest renewal payment. Update your payment method securely with Paystack to continue your subscription.'
+                           : 'Your payment method needs attention. Please contact support while we confirm the safest way to update your automatic renewal.'
+                         : paymentActuallyFailed
+                         ? 'We couldn’t process your latest renewal payment. Update your payment method securely with Paystack to continue your subscription.'
                         : recoveryCheckoutEligible
                           ? 'Automatic renewal needs to be set up again. No new payment has been attempted yet. Continue below to deliberately open a new secure Paystack checkout.'
                           : 'Automatic renewal needs to be set up again. We need to confirm the previous Paystack relationship before a new payment can be started.'}
@@ -730,17 +734,25 @@ export function SubscriptionPage() {
                          {manualReviewRequired ? 'Renewal needs review' : 'Renewal being checked'}
                       </Badge>
                      ) : paymentMethodNeedsAttention ? (
-                       <Button
-                         className="w-full"
-                         onClick={() => managePaymentMethodMutation.mutate()}
-                         disabled={managePaymentMethodMutation.isPending || !statusData?.renewalManagementLinkEligible}
-                         data-testid="button-update-paystack-payment-method-plan"
-                       >
-                         {managePaymentMethodMutation.isPending && (
-                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                         )}
-                         Update payment method
-                       </Button>
+                       statusData?.renewalManagementLinkEligible ? (
+                         <Button
+                           className="w-full"
+                           onClick={() => managePaymentMethodMutation.mutate()}
+                           disabled={managePaymentMethodMutation.isPending}
+                           data-testid="button-update-paystack-payment-method-plan"
+                         >
+                           {managePaymentMethodMutation.isPending && (
+                             <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                           )}
+                           Update payment method
+                         </Button>
+                       ) : (
+                         <Alert className="border-amber-300 bg-amber-50">
+                           <AlertDescription className="text-amber-900 text-sm">
+                             Your payment method needs attention. Please contact support while we confirm the safest way to update your automatic renewal.
+                           </AlertDescription>
+                         </Alert>
+                       )
                     ) : subscription?.planId === selectedBillingPlan.id
                     && subscription?.status === 'active'
                     && !needsPaymentRecovery ? (

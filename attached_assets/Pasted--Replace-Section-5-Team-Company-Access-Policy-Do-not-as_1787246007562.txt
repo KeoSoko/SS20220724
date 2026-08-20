@@ -1,0 +1,43 @@
+# Replace Section 5 — Team / Company Access Policy
+
+Do not assume that the historical `owner`, `editor`, and `viewer` workspace roles are still the authoritative Simple Slips product-access model.
+
+Before implementing Bank Statement permissions, inspect the current Simple Slips Team / Company account architecture and determine:
+
+* how Team / Company accounts are represented,
+* how users are attached to a Team / Company account,
+* whether `workspace_members` is still authoritative,
+* whether `owner`, `editor`, and `viewer` are actively used,
+* whether newer team/account roles or permissions have replaced them,
+* how the active company/workspace is selected,
+* who is permitted to upload, edit, view, and export shared business data elsewhere in the current app,
+* whether billing ownership is separate from operational permissions.
+
+Use the **current Simple Slips Team / Company permission model** as the source of truth.
+
+Do not create a new role system specifically for Bank Statements.
+
+Bank Statement access should follow the same permission conventions already used by the current Team / Company product wherever practical.
+
+At minimum, define and document which existing users may:
+
+* upload/import a statement,
+* view imported statements,
+* download exports,
+* edit or categorise transactions in future jobs.
+
+If the current Team / Company implementation does not yet contain sufficiently granular permissions, use the safest existing access rule and document the limitation rather than inventing a parallel permission model.
+
+The authenticated handoff must carry only server-validated access context derived from the current Team / Company model.
+
+Do not trust role or company/workspace information supplied by the browser.
+
+Before implementation, report:
+
+1. the current Team / Company data model,
+2. whether `workspace_members` is still actively authoritative,
+3. the current role/permission values,
+4. how other shared Team / Company features enforce access,
+5. the Bank Statement permission mapping you propose to reuse.
+
+Only implement after establishing the current source of truth from the codebase.

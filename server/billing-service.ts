@@ -95,10 +95,28 @@ export interface PaystackRenewalFailureResult {
 }
 
 export interface PaystackReconciliationResult {
-  outcome: "reconciled_paid" | "payment_required" | "current" | "unresolved";
+  outcome: "reconciled_paid" | "payment_required" | "current" | "renewal_setup_required" | "unresolved";
   reason: string;
   subscriptionCode?: string;
 }
+
+export type PaystackRenewalState =
+  | "not_due"
+  | "reconciling"
+  | "payment_failed"
+  | "renewal_setup_required";
+
+export interface PaystackRenewalStatus {
+  state: PaystackRenewalState;
+  recoveryCheckoutEligible: boolean;
+}
+
+export type PaystackRenewalIdentityRecoveryResult =
+  | { outcome: "relationship_available"; subscriptionCode: string }
+  | { outcome: "recovered"; subscriptionCode: string }
+  | { outcome: "no_verified_relationship" }
+  | { outcome: "manual_review_required"; reason: string }
+  | { outcome: "reconciling"; reason: string };
 
 export type PaystackSubscriptionCandidateInspection =
   | {
@@ -116,7 +134,8 @@ export type PaystackSubscriptionCandidateInspection =
         | "missing_paystack_plan_code"
         | "paystack_unavailable"
         | "paystack_customer_lookup_failed"
-        | "paystack_subscription_list_failed";
+        | "paystack_subscription_list_failed"
+        | "paystack_subscription_list_pagination_unresolved";
     };
 
 type PaystackSubscriptionCandidateInspectionUnavailableReason =
@@ -125,7 +144,8 @@ type PaystackSubscriptionCandidateInspectionUnavailableReason =
   | "missing_paystack_plan_code"
   | "paystack_unavailable"
   | "paystack_customer_lookup_failed"
-  | "paystack_subscription_list_failed";
+  | "paystack_subscription_list_failed"
+  | "paystack_subscription_list_pagination_unresolved";
 
 export type PaystackSubscriptionResolutionResult =
   | {
@@ -143,7 +163,12 @@ export type PaystackCheckoutAttemptResult =
   | { outcome: "created" | "reused"; attempt: PaystackCheckoutAttempt }
   | {
       outcome: "checkout_blocked";
-      reason: "active_paid_subscription" | "paid_grace_period" | "renewal_recovery_required";
+      reason:
+        | "active_paid_subscription"
+        | "paid_grace_period"
+        | "renewal_recovery_required"
+        | "renewal_relationship_available"
+        | "renewal_recovery_plan_mismatch";
       subscription: UserSubscription;
     };
 
@@ -1058,6 +1083,7 @@ export class BillingService {
         customerCode: string;
         expectedPlanCode: string | null;
         activeSubscriptionCode: string | null;
+        providerSubscriptionCount: number;
         candidates: Array<PaystackSubscriptionCandidateSummary & { providerData: any }>;
       }
     | { available: false; reason: PaystackSubscriptionCandidateInspectionUnavailableReason }
@@ -1086,15 +1112,130 @@ export class BillingService {
       return { available: false, reason: "paystack_customer_lookup_failed" };
     }
 
-    const response = await (this.paystack.subscription.list as any)({
-      customer: customerId,
-      perPage: 100,
-    });
-    if (!response?.status || !Array.isArray(response?.data)) {
-      return { available: false, reason: "paystack_subscription_list_failed" };
+    // An empty first page is proof only when the provider has not indicated
+    // more pages. Never infer "no relationship" from a partial listing: that
+    // would let a later-page recurring subscription be replaced by checkout.
+    const allProviderSubscriptions: any[] = [];
+    const pageSize = 100;
+    const maximumPages = 1_000;
+    let page = 1;
+    while (page <= maximumPages) {
+      const response = await (this.paystack.subscription.list as any)({
+        customer: customerId,
+        perPage: pageSize,
+        ...(page > 1 ? { page } : {}),
+      });
+      if (!response?.status || !Array.isArray(response?.data)) {
+        return { available: false, reason: "paystack_subscription_list_failed" };
+      }
+      allProviderSubscriptions.push(...response.data);
+
+      const meta = response.meta ?? {};
+      const rawPageCount = meta.pageCount ?? meta.page_count;
+      const rawTotal = meta.total;
+      const rawCurrentPage = meta.page ?? meta.currentPage ?? meta.current_page;
+      const hasPageCount = rawPageCount !== undefined && rawPageCount !== null;
+      const hasTotal = rawTotal !== undefined && rawTotal !== null;
+      const hasCurrentPage = rawCurrentPage !== undefined && rawCurrentPage !== null;
+      const pageCount = hasPageCount ? Number(rawPageCount) : null;
+      const total = hasTotal ? Number(rawTotal) : null;
+      const currentPage = hasCurrentPage ? Number(rawCurrentPage) : null;
+      const isWholeNumber = (value: number | null): value is number =>
+        value !== null && Number.isSafeInteger(value) && value >= 0;
+
+      if ((hasPageCount && !isWholeNumber(pageCount))
+        || (hasTotal && !isWholeNumber(total))
+        || (hasCurrentPage && (!isWholeNumber(currentPage) || currentPage !== page))) {
+        return {
+          available: false,
+          reason: "paystack_subscription_list_pagination_unresolved",
+        };
+      }
+
+      if (hasPageCount && hasTotal) {
+        const knownPageCount = pageCount!;
+        const knownTotal = total!;
+        const expectedPageCount = knownTotal === 0 ? 0 : Math.ceil(knownTotal / pageSize);
+        // Paystack may represent an empty list as zero pages or one empty page.
+        const emptyPageCountIsValid = knownTotal === 0
+          && (knownPageCount === 0 || knownPageCount === 1);
+        if ((!emptyPageCountIsValid && knownPageCount !== expectedPageCount)
+          || (knownTotal === 0 && response.data.length !== 0)
+          || (knownTotal > 0 && (knownPageCount === 0 || page > knownPageCount))) {
+          return {
+            available: false,
+            reason: "paystack_subscription_list_pagination_unresolved",
+          };
+        }
+        const expectedRowsThisPage = knownTotal === 0
+          ? 0
+          : Math.min(pageSize, knownTotal - ((page - 1) * pageSize));
+        if (response.data.length !== expectedRowsThisPage) {
+          return {
+            available: false,
+            reason: "paystack_subscription_list_pagination_unresolved",
+          };
+        }
+        if (knownTotal === 0 || page >= knownPageCount) break;
+        page += 1;
+        continue;
+      }
+
+      if (hasPageCount) {
+        const knownPageCount = pageCount!;
+        if (knownPageCount === 0) {
+          if (response.data.length !== 0) {
+            return {
+              available: false,
+              reason: "paystack_subscription_list_pagination_unresolved",
+            };
+          }
+          break;
+        }
+        if (page > knownPageCount || (page < knownPageCount && response.data.length !== pageSize)) {
+          return {
+            available: false,
+            reason: "paystack_subscription_list_pagination_unresolved",
+          };
+        }
+        if (page >= knownPageCount) break;
+        page += 1;
+        continue;
+      }
+
+      if (hasTotal) {
+        const knownTotal = total!;
+        const expectedRowsThisPage = Math.min(
+          pageSize,
+          Math.max(0, knownTotal - ((page - 1) * pageSize)),
+        );
+        if (response.data.length !== expectedRowsThisPage) {
+          return {
+            available: false,
+            reason: "paystack_subscription_list_pagination_unresolved",
+          };
+        }
+        if (allProviderSubscriptions.length >= knownTotal) break;
+        page += 1;
+        continue;
+      }
+
+      // Without pagination metadata, a short result is the provider's only
+      // complete-list signal. A full page remains deliberately unresolved.
+      if (response.data.length < pageSize) break;
+      return {
+        available: false,
+        reason: "paystack_subscription_list_pagination_unresolved",
+      };
+    }
+    if (page > maximumPages) {
+      return {
+        available: false,
+        reason: "paystack_subscription_list_pagination_unresolved",
+      };
     }
 
-    const viableCandidates = response.data.filter((candidate: any) =>
+    const viableCandidates = allProviderSubscriptions.filter((candidate: any) =>
       isViablePaystackSubscriptionCandidate(
         candidate,
         subscription.paystackCustomerCode!,
@@ -1180,6 +1321,7 @@ export class BillingService {
       customerCode: subscription.paystackCustomerCode,
       expectedPlanCode,
       activeSubscriptionCode: activeIdentity?.subscriptionCode ?? null,
+      providerSubscriptionCount: allProviderSubscriptions.length,
       candidates,
     };
   }
@@ -1196,6 +1338,121 @@ export class BillingService {
       activeSubscriptionCode: inspection.activeSubscriptionCode,
       candidates: inspection.candidates.map(({ providerData: _providerData, ...candidate }) => candidate),
     };
+  }
+
+  /**
+   * Read and, only when it is unambiguous, recover a legacy recurring
+   * relationship. This never opens checkout, charges a card, or changes the
+   * paid entitlement. It is deliberately stricter than support-assisted
+   * resolution: multiple plausible provider subscriptions remain manual review.
+   */
+  async recoverPaystackRenewalRelationship(
+    userId: number,
+  ): Promise<PaystackRenewalIdentityRecoveryResult> {
+    await this.requirePaystackBillingSchema();
+
+    const existingIdentity = await this.getActivePaystackSubscriptionIdentity(userId);
+    if (existingIdentity) {
+      return {
+        outcome: "relationship_available",
+        subscriptionCode: existingIdentity.subscriptionCode,
+      };
+    }
+
+    let inspection: Awaited<ReturnType<BillingService["loadPaystackSubscriptionCandidates"]>>;
+    try {
+      inspection = await this.loadPaystackSubscriptionCandidates(userId);
+    } catch {
+      await this.recordBillingEvent(userId, "renewal_reconciliation_pending", {
+        reason: "paystack_provider_lookup_failed",
+      });
+      return { outcome: "reconciling", reason: "paystack_provider_lookup_failed" };
+    }
+
+    if (!inspection.available) {
+      await this.recordBillingEvent(userId, "renewal_reconciliation_pending", {
+        reason: inspection.reason,
+      });
+      return { outcome: "reconciling", reason: inspection.reason };
+    }
+
+    if (inspection.candidates.length === 0) {
+      if (inspection.providerSubscriptionCount === 0) {
+        await this.recordBillingEvent(userId, "renewal_setup_recovery_required", {
+          reason: "no_verified_recurring_relationship",
+          customerCode: inspection.customerCode,
+          expectedPlanCode: inspection.expectedPlanCode,
+          providerSubscriptionCount: inspection.providerSubscriptionCount,
+        });
+        return { outcome: "no_verified_relationship" };
+      }
+
+      await this.recordBillingEvent(userId, "renewal_recovery_manual_review", {
+        reason: "provider_subscription_customer_or_plan_mismatch",
+        customerCode: inspection.customerCode,
+        expectedPlanCode: inspection.expectedPlanCode,
+        providerSubscriptionCount: inspection.providerSubscriptionCount,
+      });
+      return {
+        outcome: "manual_review_required",
+        reason: "provider_subscription_customer_or_plan_mismatch",
+      };
+    }
+
+    if (inspection.candidates.length !== 1) {
+      await this.recordBillingEvent(userId, "renewal_recovery_manual_review", {
+        reason: "multiple_plausible_paystack_subscriptions",
+        customerCode: inspection.customerCode,
+        expectedPlanCode: inspection.expectedPlanCode,
+        candidateCount: inspection.candidates.length,
+      });
+      return {
+        outcome: "manual_review_required",
+        reason: "multiple_plausible_paystack_subscriptions",
+      };
+    }
+
+    const candidate = inspection.candidates[0];
+    if (candidate.providerLookupFailed) {
+      await this.recordBillingEvent(userId, "renewal_recovery_manual_review", {
+        reason: "provider_subscription_detail_unavailable",
+        subscriptionCode: candidate.subscriptionCode,
+      });
+      return {
+        outcome: "manual_review_required",
+        reason: "provider_subscription_detail_unavailable",
+      };
+    }
+
+    try {
+      const recorded = await this.recordPaystackSubscriptionIdentity(
+        userId,
+        candidate.providerData,
+        {
+          allowNewActive: true,
+          preserveExistingActive: true,
+          auditSource: "automatic_legacy_renewal_recovery",
+        },
+      );
+      if (recorded.status !== "active") {
+        await this.recordBillingEvent(userId, "renewal_recovery_manual_review", {
+          reason: "active_identity_changed_during_recovery",
+          subscriptionCode: candidate.subscriptionCode,
+          recordedStatus: recorded.status,
+        });
+        return {
+          outcome: "manual_review_required",
+          reason: "active_identity_changed_during_recovery",
+        };
+      }
+      return { outcome: "recovered", subscriptionCode: recorded.subscriptionCode };
+    } catch {
+      await this.recordBillingEvent(userId, "renewal_recovery_manual_review", {
+        reason: "identity_recording_failed",
+        subscriptionCode: candidate.subscriptionCode,
+      });
+      return { outcome: "manual_review_required", reason: "identity_recording_failed" };
+    }
   }
 
   async resolvePaystackSubscriptionIdentity(
@@ -1301,6 +1558,7 @@ export class BillingService {
     options: {
       supersedeExisting?: boolean;
       allowNewActive?: boolean;
+      preserveExistingActive?: boolean;
       auditSource?: string;
       adminUserId?: number;
     } = {},
@@ -1345,7 +1603,11 @@ export class BillingService {
       const existingProviderTime = activeIdentity.providerCreatedAt?.getTime();
       const incomingProviderTime = providerCreatedAt?.getTime();
 
-      if (options.supersedeExisting) {
+      if (options.preserveExistingActive) {
+        // An identity found by background recovery must never replace an
+        // identity that appeared while its provider reads were in flight.
+        identityStatus = "unresolved";
+      } else if (options.supersedeExisting) {
         await tx
           .update(paystackSubscriptionIdentities)
           .set({ status: "retired", retiredAt: now, updatedAt: now })
@@ -1420,6 +1682,7 @@ export class BillingService {
     options: {
       allowNewActive?: boolean;
       supersedeExisting?: boolean;
+      preserveExistingActive?: boolean;
       auditSource?: string;
       adminUserId?: number;
     } = {},
@@ -1503,6 +1766,7 @@ export class BillingService {
     currency: string;
     paystackPlanCode: string;
     customerEmail: string;
+    allowRenewalSetupRecovery?: boolean;
   }): Promise<PaystackCheckoutAttemptResult> {
     await this.requirePaystackBillingSchema();
     return db.transaction(async (tx) => {
@@ -1519,11 +1783,46 @@ export class BillingService {
 
       const now = new Date();
       if (existingSubscription?.status === "active") {
-        return {
-          outcome: "checkout_blocked",
-          reason: "active_paid_subscription",
-          subscription: existingSubscription,
-        };
+        const renewalIsDue = !!existingSubscription.nextBillingDate
+          && new Date(existingSubscription.nextBillingDate).getTime() <= now.getTime();
+        const recoveryIsEligible = input.allowRenewalSetupRecovery
+          && renewalIsDue
+          && !existingSubscription.cancelledAt;
+
+        if (!recoveryIsEligible) {
+          return {
+            outcome: "checkout_blocked",
+            reason: "active_paid_subscription",
+            subscription: existingSubscription,
+          };
+        }
+        if (existingSubscription.planId !== input.planId) {
+          return {
+            outcome: "checkout_blocked",
+            reason: "renewal_recovery_plan_mismatch",
+            subscription: existingSubscription,
+          };
+        }
+
+        // Provider inspection happens before this transaction. Re-read the
+        // trusted identity under the shared entitlement lock so an identity
+        // recovered by another request can never race into a second checkout.
+        const [activeIdentity] = await tx
+          .select()
+          .from(paystackSubscriptionIdentities)
+          .where(and(
+            eq(paystackSubscriptionIdentities.userId, input.billingOwnerUserId),
+            eq(paystackSubscriptionIdentities.status, "active"),
+          ))
+          .orderBy(desc(paystackSubscriptionIdentities.providerCreatedAt), desc(paystackSubscriptionIdentities.createdAt))
+          .limit(1);
+        if (activeIdentity) {
+          return {
+            outcome: "checkout_blocked",
+            reason: "renewal_relationship_available",
+            subscription: existingSubscription,
+          };
+        }
       }
       if (
         existingSubscription?.status === "cancelled"
@@ -2415,13 +2714,32 @@ export class BillingService {
       ? await storage.getSubscriptionPlan(subscription.planId)
       : null;
     const existingIdentity = await this.getActivePaystackSubscriptionIdentity(userId);
-    const identity = existingIdentity ?? await this.recoverPaystackSubscriptionIdentity(
-        userId,
-        subscription.paystackCustomerCode,
-        plan?.paystackPlanCode ?? null,
-      );
+    const recovery = existingIdentity
+      ? {
+          outcome: "relationship_available" as const,
+          subscriptionCode: existingIdentity.subscriptionCode,
+        }
+      : await this.recoverPaystackRenewalRelationship(userId);
+    const identity = recovery.outcome === "relationship_available"
+      ? existingIdentity
+      : recovery.outcome === "recovered"
+        ? await this.getActivePaystackSubscriptionIdentity(userId)
+        : null;
     if (!identity) {
-      return { outcome: "unresolved", reason: "subscription_identity_unresolved" };
+      if (recovery.outcome === "no_verified_relationship") {
+        return {
+          outcome: "renewal_setup_required",
+          reason: "no_verified_recurring_relationship",
+        };
+      }
+      return {
+        outcome: "unresolved",
+        reason: recovery.outcome === "manual_review_required"
+          ? recovery.reason
+          : recovery.outcome === "reconciling"
+            ? recovery.reason
+            : "subscription_identity_unresolved",
+      };
     }
 
     const response = await this.paystack.subscription.get(identity.subscriptionCode);
@@ -2656,6 +2974,58 @@ export class BillingService {
         plan: null
       };
     }
+  }
+
+  /**
+   * Customer-facing renewal state. This is derived from the existing
+   * subscription and trusted identity data; it intentionally does not change
+   * entitlement, charge a card, or contact Paystack while a page is loading.
+   */
+  async getPaystackRenewalStatus(userId: number): Promise<PaystackRenewalStatus> {
+    const subscription = await this.getUserSubscription(userId);
+    if (!subscription || subscription.status === "cancelled" || !subscription.nextBillingDate) {
+      return { state: "not_due", recoveryCheckoutEligible: false };
+    }
+
+    if (subscription.status === "paused") {
+      return { state: "payment_failed", recoveryCheckoutEligible: false };
+    }
+
+    if (subscription.status !== "active"
+      || new Date(subscription.nextBillingDate).getTime() > Date.now()) {
+      return { state: "not_due", recoveryCheckoutEligible: false };
+    }
+
+    // Other billing platforms own their own renewal lifecycle. Do not infer a
+    // Paystack setup problem from an overdue App Store or Google Play plan.
+    const hasPaystackRelationship = !!(
+      subscription.paystackReference
+      || subscription.paystackCustomerCode
+      || subscription.authorizationCode
+    );
+    if (!hasPaystackRelationship) {
+      return { state: "reconciling", recoveryCheckoutEligible: false };
+    }
+
+    try {
+      const readiness = await this.getPaystackBillingSchemaReadiness();
+      if (!readiness.ready) {
+        return { state: "reconciling", recoveryCheckoutEligible: false };
+      }
+      const identity = await this.getActivePaystackSubscriptionIdentity(userId);
+      if (identity) {
+        return { state: "reconciling", recoveryCheckoutEligible: false };
+      }
+    } catch {
+      return { state: "reconciling", recoveryCheckoutEligible: false };
+    }
+
+    // The deliberate recovery action performs provider inspection before it
+    // can open checkout. A customer code is required for that inspection.
+    return {
+      state: "renewal_setup_required",
+      recoveryCheckoutEligible: !!subscription.paystackCustomerCode,
+    };
   }
 
   /**

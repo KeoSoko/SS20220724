@@ -13,6 +13,14 @@ vi.mock("./storage", () => ({
 }));
 vi.mock("./vite", () => ({ log: vi.fn() }));
 vi.mock("./email-service", () => ({ emailService: null }));
+vi.mock("./paystack-billing-schema", () => ({
+  getPaystackBillingSchemaReadiness: vi.fn(async () => ({
+    ready: true,
+    missing: [],
+    checkedAt: new Date(),
+  })),
+  requirePaystackBillingSchema: vi.fn(async () => undefined),
+}));
 vi.mock("./db", () => {
   const emptySelect = () => {
     const chain: any = {
@@ -241,5 +249,194 @@ describe("support Paystack subscription resolution", () => {
       reason: "selected_subscription_detail_unavailable",
     });
     expect(state.transactionInserts).toHaveLength(0);
+  });
+});
+
+describe("automatic legacy renewal relationship recovery", () => {
+  it("derives setup recovery separately from an authoritative failed payment", async () => {
+    const service = new BillingService();
+    await expect(service.getPaystackRenewalStatus(42)).resolves.toEqual({
+      state: "renewal_setup_required",
+      recoveryCheckoutEligible: true,
+    });
+
+    vi.mocked(storage.getUserSubscription).mockResolvedValue({
+      ...localSubscription,
+      status: "paused",
+    } as any);
+    await expect(service.getPaystackRenewalStatus(42)).resolves.toEqual({
+      state: "payment_failed",
+      recoveryCheckoutEligible: false,
+    });
+  });
+
+  it("records exactly one verified provider relationship without creating a charge or subscription", async () => {
+    const { provider, charge, create, disable } = setupProvider();
+    const service = new BillingService();
+    (service as any).paystack = provider;
+
+    await expect(service.recoverPaystackRenewalRelationship(42)).resolves.toEqual({
+      outcome: "recovered",
+      subscriptionCode: "SUB_attention",
+    });
+
+    expect(provider.customer.get).toHaveBeenCalledWith("CUS_customer");
+    expect(provider.subscription.list).toHaveBeenCalledWith({ customer: 123, perPage: 100 });
+    expect(provider.subscription.get).toHaveBeenCalledWith("SUB_attention");
+    expect(charge).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(disable).not.toHaveBeenCalled();
+    expect(state.transactionInserts).toContainEqual(expect.objectContaining({
+      eventType: "paystack_subscription_identified",
+      eventData: expect.objectContaining({
+        subscriptionCode: "SUB_attention",
+        source: "automatic_legacy_renewal_recovery",
+      }),
+    }));
+  });
+
+  it("permits a recovery checkout only when Paystack confirms there is no subscription at all", async () => {
+    const { provider, charge, create, disable } = setupProvider();
+    provider.subscription.list.mockResolvedValue({ status: true, data: [] });
+    const service = new BillingService();
+    (service as any).paystack = provider;
+
+    await expect(service.recoverPaystackRenewalRelationship(42)).resolves.toEqual({
+      outcome: "no_verified_relationship",
+    });
+
+    expect(charge).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(disable).not.toHaveBeenCalled();
+    expect(state.billingEventInserts).toContainEqual(expect.objectContaining({
+      eventType: "renewal_setup_recovery_required",
+      eventData: expect.objectContaining({
+        reason: "no_verified_recurring_relationship",
+      }),
+    }));
+  });
+
+  it("fails closed for multiple plausible subscriptions or a provider relationship mismatch", async () => {
+    const { provider, charge, create, disable } = setupProvider();
+    const candidates = [
+      providerCandidate,
+      { ...providerCandidate, subscription_code: "SUB_second" },
+    ];
+    provider.subscription.list.mockResolvedValue({
+      status: true,
+      data: candidates,
+    });
+    provider.subscription.get.mockImplementation(async (subscriptionCode: string) => ({
+      status: true,
+      data: candidates.find((candidate) => candidate.subscription_code === subscriptionCode),
+    }));
+    const service = new BillingService();
+    (service as any).paystack = provider;
+
+    await expect(service.recoverPaystackRenewalRelationship(42)).resolves.toEqual({
+      outcome: "manual_review_required",
+      reason: "multiple_plausible_paystack_subscriptions",
+    });
+    expect(charge).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(disable).not.toHaveBeenCalled();
+
+    provider.subscription.list.mockResolvedValue({
+      status: true,
+      data: [{
+        ...providerCandidate,
+        customer: { customer_code: "CUS_someone_else" },
+      }],
+    });
+    const mismatchService = new BillingService();
+    (mismatchService as any).paystack = provider;
+    await expect(mismatchService.recoverPaystackRenewalRelationship(42)).resolves.toEqual({
+      outcome: "manual_review_required",
+      reason: "provider_subscription_customer_or_plan_mismatch",
+    });
+  });
+
+  it("inspects later Paystack pages before deciding whether a relationship exists", async () => {
+    const { provider, charge, create, disable } = setupProvider();
+    const unrelatedSubscriptions = Array.from({ length: 100 }, (_, index) => ({
+      ...providerCandidate,
+      subscription_code: `SUB_other_${index}`,
+      customer: { customer_code: "CUS_other" },
+    }));
+    provider.subscription.list
+      .mockResolvedValueOnce({
+        status: true,
+        data: unrelatedSubscriptions,
+        meta: { page: 1, pageCount: 2 },
+      })
+      .mockResolvedValueOnce({
+        status: true,
+        data: [providerCandidate],
+        meta: { page: 2, pageCount: 2 },
+      });
+    const service = new BillingService();
+    (service as any).paystack = provider;
+
+    await expect(service.recoverPaystackRenewalRelationship(42)).resolves.toEqual({
+      outcome: "recovered",
+      subscriptionCode: "SUB_attention",
+    });
+    expect(provider.subscription.list).toHaveBeenNthCalledWith(1, {
+      customer: 123,
+      perPage: 100,
+    });
+    expect(provider.subscription.list).toHaveBeenNthCalledWith(2, {
+      customer: 123,
+      perPage: 100,
+      page: 2,
+    });
+    expect(charge).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(disable).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when Paystack returns a full page without pagination proof", async () => {
+    const { provider, charge, create, disable } = setupProvider();
+    provider.subscription.list.mockResolvedValue({
+      status: true,
+      data: Array.from({ length: 100 }, (_, index) => ({
+        ...providerCandidate,
+        subscription_code: `SUB_unknown_${index}`,
+        customer: { customer_code: "CUS_other" },
+      })),
+    });
+    const service = new BillingService();
+    (service as any).paystack = provider;
+
+    await expect(service.recoverPaystackRenewalRelationship(42)).resolves.toEqual({
+      outcome: "reconciling",
+      reason: "paystack_subscription_list_pagination_unresolved",
+    });
+    expect(charge).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(disable).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when Paystack pagination metadata contradicts its returned page", async () => {
+    const { provider, charge, create, disable } = setupProvider();
+    provider.subscription.list.mockResolvedValue({
+      status: true,
+      data: Array.from({ length: 100 }, (_, index) => ({
+        ...providerCandidate,
+        subscription_code: `SUB_unknown_${index}`,
+        customer: { customer_code: "CUS_other" },
+      })),
+      meta: { page: 1, pageCount: 1, total: 101 },
+    });
+    const service = new BillingService();
+    (service as any).paystack = provider;
+
+    await expect(service.recoverPaystackRenewalRelationship(42)).resolves.toEqual({
+      outcome: "reconciling",
+      reason: "paystack_subscription_list_pagination_unresolved",
+    });
+    expect(charge).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(disable).not.toHaveBeenCalled();
   });
 });

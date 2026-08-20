@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   attempts: [] as any[],
   subscription: null as any,
   inserts: 0,
+  activeIdentity: null as any,
   queue: Promise.resolve() as Promise<void>,
   nextId: 1,
 }));
@@ -27,14 +28,23 @@ vi.mock("./db", () => {
       execute: vi.fn().mockResolvedValue({}),
       select: () => {
         selectOrdinal += 1;
-        const rows = selectOrdinal === 1
-          ? (state.subscription ? [state.subscription] : [])
-          : state.attempts.filter((attempt) => attempt.status === "pending");
+        let fromTable: any;
         const chain: any = {
-          from: () => chain,
+          from: (table: any) => {
+            fromTable = table;
+            return chain;
+          },
           where: () => chain,
           orderBy: () => chain,
-          limit: async () => rows.slice(0, 1),
+          limit: async () => {
+            if (fromTable?.[Symbol.for("drizzle:Name")] === "paystack_subscription_identities") {
+              return state.activeIdentity ? [state.activeIdentity] : [];
+            }
+            const rows = selectOrdinal === 1
+              ? (state.subscription ? [state.subscription] : [])
+              : state.attempts.filter((attempt) => attempt.status === "pending");
+            return rows.slice(0, 1);
+          },
         };
         return chain;
       },
@@ -115,6 +125,7 @@ beforeEach(() => {
   state.attempts.length = 0;
   state.subscription = null;
   state.inserts = 0;
+  state.activeIdentity = null;
   state.queue = Promise.resolve();
   state.nextId = 1;
 });
@@ -175,6 +186,51 @@ describe("server-owned Paystack checkout attempts", () => {
     expect(result).toMatchObject({
       outcome: "checkout_blocked",
       reason: "active_paid_subscription",
+    });
+    expect(state.inserts).toBe(0);
+  });
+
+  it("allows one deliberate recovery checkout only for a due active plan without an identity", async () => {
+    state.subscription = {
+      id: 99,
+      userId: 10,
+      planId: 2,
+      status: "active",
+      nextBillingDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      cancelledAt: null,
+    };
+    const service = new BillingService();
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => service.createOrReusePaystackCheckoutAttempt({
+        ...checkoutInput(),
+        allowRenewalSetupRecovery: true,
+      })),
+    );
+
+    expect(results.filter((result) => result.outcome === "created")).toHaveLength(1);
+    expect(results.filter((result) => result.outcome === "reused")).toHaveLength(7);
+    expect(state.inserts).toBe(1);
+  });
+
+  it("rechecks the identity under the owner lock before recovery checkout", async () => {
+    state.subscription = {
+      id: 99,
+      userId: 10,
+      planId: 2,
+      status: "active",
+      nextBillingDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      cancelledAt: null,
+    };
+    state.activeIdentity = { id: 3, userId: 10, subscriptionCode: "SUB_recovered", status: "active" };
+    const service = new BillingService();
+    const result = await service.createOrReusePaystackCheckoutAttempt({
+      ...checkoutInput(),
+      allowRenewalSetupRecovery: true,
+    });
+
+    expect(result).toMatchObject({
+      outcome: "checkout_blocked",
+      reason: "renewal_relationship_available",
     });
     expect(state.inserts).toBe(0);
   });

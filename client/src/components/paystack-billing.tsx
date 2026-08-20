@@ -17,6 +17,7 @@ interface PaystackBillingProps {
     billingPeriod: string;
     paystackPlanCode?: string | null;
   };
+  renewalRecovery?: boolean;
   onPaymentSuccess?: (reference: string) => void;
   onPaymentError?: (error: any) => void;
 }
@@ -35,7 +36,12 @@ interface ServerCheckout {
   email: string;
 }
 
-export function PaystackBilling({ plan, onPaymentSuccess, onPaymentError }: PaystackBillingProps) {
+export function PaystackBilling({
+  plan,
+  renewalRecovery = false,
+  onPaymentSuccess,
+  onPaymentError,
+}: PaystackBillingProps) {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
   const [billingUnavailable, setBillingUnavailable] = useState(false);
@@ -58,6 +64,7 @@ export function PaystackBilling({ plan, onPaymentSuccess, onPaymentError }: Pays
     try {
       const response = await apiRequest('POST', '/api/billing/paystack/checkout', {
         planId: plan.id,
+        renewalRecovery,
       });
       const payload = await response.json();
       if (payload.status === 'completed') {
@@ -95,6 +102,21 @@ export function PaystackBilling({ plan, onPaymentSuccess, onPaymentError }: Pays
         toast({
           title: "Billing temporarily unavailable",
           description: "We’re completing a safe update. Please try again in a few minutes.",
+        });
+        return;
+      }
+      const recoveryCode = error?.responseData?.code;
+      if (recoveryCode === 'renewal_relationship_available' || recoveryCode === 'renewal_recovery_pending') {
+        toast({
+          title: "Renewal is being confirmed",
+          description: error?.responseData?.error || "We found an existing renewal relationship. No new payment has been started.",
+        });
+        return;
+      }
+      if (recoveryCode === 'renewal_recovery_manual_review') {
+        toast({
+          title: "Renewal needs review",
+          description: "We need to confirm your automatic renewal before a new payment can be started.",
         });
         return;
       }
@@ -178,9 +200,13 @@ export function PaystackBilling({ plan, onPaymentSuccess, onPaymentError }: Pays
           <Badge variant="secondary">Web Payment</Badge>
           {isYearly && <Badge variant="default" className="bg-green-600">Save 10%</Badge>}
         </div>
-        <CardTitle className="text-lg">Subscribe with Paystack</CardTitle>
+          <CardTitle className="text-lg">
+            {renewalRecovery ? 'Restore automatic renewal' : 'Subscribe with Paystack'}
+          </CardTitle>
         <CardDescription>
-          Secure payment processing for South African users
+            {renewalRecovery
+              ? 'Continue only when you are ready to open a new secure Paystack checkout.'
+              : 'Secure payment processing for South African users'}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -212,10 +238,19 @@ export function PaystackBilling({ plan, onPaymentSuccess, onPaymentError }: Pays
           </div>
         </div>
 
-        <Alert>
+          <Alert>
           <AlertDescription className="text-sm">
-            <strong>Recurring Subscription:</strong> {recurringDescription}
-            Your subscription will activate immediately after successful payment. You can cancel anytime from your account settings.
+             {renewalRecovery ? (
+               <>
+                 <strong>New checkout required:</strong> No new payment has been attempted.
+                 Continuing opens a secure Paystack checkout to set up automatic renewal again.
+               </>
+             ) : (
+               <>
+                 <strong>Recurring Subscription:</strong> {recurringDescription}
+                 Your subscription will activate immediately after successful payment. You can cancel anytime from your account settings.
+               </>
+             )}
           </AlertDescription>
         </Alert>
         {billingUnavailable && (
@@ -241,7 +276,7 @@ export function PaystackBilling({ plan, onPaymentSuccess, onPaymentError }: Pays
           ) : (
             <>
               <CreditCard className="h-4 w-4 mr-2" />
-              Pay {priceAmount} with Paystack
+              {renewalRecovery ? 'Continue to secure checkout' : `Pay ${priceAmount} with Paystack`}
             </>
           )}
         </Button>

@@ -212,12 +212,10 @@ export function selectPaystackSubscriptionIdentityCandidate(
     isViablePaystackSubscriptionCandidate(candidate, expectedCustomerCode, expectedPlanCode),
   );
 
-  if (matching.length === 1) return matching[0];
-
-  const active = matching.filter(
-    (candidate: any) => String(candidate?.status ?? "").toLowerCase() === "active",
-  );
-  return active.length === 1 ? active[0] : null;
+  // A recovery operation is allowed to establish trust only when Paystack
+  // gives us one unambiguous relationship. Selecting the sole "active" row
+  // from several plausible subscriptions would silently guess ownership.
+  return matching.length === 1 ? matching[0] : null;
 }
 
 /**

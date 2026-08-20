@@ -1263,7 +1263,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         workspaceContext = { isOwner: true };
       }
 
-      res.json({ ...subscriptionStatus, workspaceContext });
+      const renewalStatus = billingOwner.state === "resolved"
+        ? await billingService.getPaystackRenewalStatus(billingOwner.billingOwnerUserId)
+        : null;
+
+      res.json({
+        ...subscriptionStatus,
+        workspaceContext,
+        renewalState: renewalStatus?.state,
+        renewalRecoveryCheckoutEligible: renewalStatus?.recoveryCheckoutEligible ?? false,
+      });
     } catch (error) {
       log(`Error getting subscription status: ${error}`, "api");
       res.status(500).json({ error: "Failed to get subscription status" });
@@ -4065,6 +4074,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const requestedByUserId = getUserId(req);
       const planId = Number(req.body?.planId);
+      const renewalRecoveryRequested = req.body?.renewalRecovery === true;
       if (!Number.isInteger(planId) || planId <= 0) {
         return res.status(400).json({ error: "A valid subscription plan is required" });
       }
@@ -4097,6 +4107,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(409).json({ error: "Billing owner does not have a valid email address" });
       }
 
+      if (renewalRecoveryRequested) {
+        const existingSubscription = await billingService.getUserSubscription(
+          billingOwner.billingOwnerUserId,
+        );
+        const renewalIsDue = !!existingSubscription?.nextBillingDate
+          && new Date(existingSubscription.nextBillingDate).getTime() <= Date.now();
+        if (!existingSubscription
+          || existingSubscription.status !== "active"
+          || existingSubscription.cancelledAt
+          || !renewalIsDue) {
+          return res.status(409).json({
+            error: "Automatic renewal recovery is not currently required for this account",
+            code: "renewal_recovery_not_required",
+          });
+        }
+        if (existingSubscription.planId !== requestedPlan.id) {
+          return res.status(409).json({
+            error: "Restore automatic renewal using your current subscription plan",
+            code: "renewal_recovery_plan_mismatch",
+          });
+        }
+
+        // This does provider reads and may record one exact identity, but never
+        // charges a card or opens checkout. A new checkout is permitted only
+        // after Paystack confirms there is no viable relationship to recover.
+        const recovery = await billingService.recoverPaystackRenewalRelationship(
+          billingOwner.billingOwnerUserId,
+        );
+        if (recovery.outcome === "relationship_available" || recovery.outcome === "recovered") {
+          return res.status(409).json({
+            error: "We found an existing automatic renewal and are confirming its status. No new payment has been started.",
+            code: "renewal_relationship_available",
+          });
+        }
+        if (recovery.outcome === "manual_review_required") {
+          return res.status(409).json({
+            error: "We need to confirm your automatic renewal before a new payment can be started.",
+            code: "renewal_recovery_manual_review",
+          });
+        }
+        if (recovery.outcome === "reconciling") {
+          return res.status(409).json({
+            error: "We are still confirming your renewal status. Please try again shortly.",
+            code: "renewal_recovery_pending",
+          });
+        }
+      }
+
       let attemptResult = await billingService.createOrReusePaystackCheckoutAttempt({
         billingOwnerUserId: billingOwner.billingOwnerUserId,
         requestedByUserId,
@@ -4105,17 +4163,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         currency: requestedPlan.currency,
         paystackPlanCode: requestedPlan.paystackPlanCode,
         customerEmail: ownerUser.email,
+        allowRenewalSetupRecovery: renewalRecoveryRequested,
       });
 
       if (attemptResult.outcome === "checkout_blocked") {
         const isRenewalRecovery = attemptResult.reason === "renewal_recovery_required";
+        const relationshipAvailable = attemptResult.reason === "renewal_relationship_available";
+        const planMismatch = attemptResult.reason === "renewal_recovery_plan_mismatch";
         return res.status(409).json({
-          error: isRenewalRecovery
+          error: relationshipAvailable
+            ? "We found an existing automatic renewal and are confirming its status. No new payment has been started."
+            : planMismatch
+              ? "Restore automatic renewal using your current subscription plan"
+            : isRenewalRecovery
             ? "An existing subscription renewal must be resolved before starting a new checkout"
             : "This account already has paid access",
-          code: isRenewalRecovery
-            ? "existing_renewal_checkout_blocked"
-            : "active_subscription_checkout_blocked",
+          code: relationshipAvailable
+            ? "renewal_relationship_available"
+            : planMismatch
+              ? "renewal_recovery_plan_mismatch"
+              : isRenewalRecovery
+                ? "existing_renewal_checkout_blocked"
+                : "active_subscription_checkout_blocked",
           nextBillingDate: attemptResult.subscription.nextBillingDate,
         });
       }

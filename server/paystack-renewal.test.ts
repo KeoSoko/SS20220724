@@ -155,11 +155,11 @@ describe("Paystack subscription identity recovery", () => {
     plan: { plan_code: "PLN_monthly" },
   });
 
-  it("selects the one active identity among stale attention subscriptions", () => {
+  it("refuses to guess between an active and an attention subscription", () => {
     expect(selectPaystackSubscriptionIdentityCandidate([
       candidate("SUB_old", "attention"),
       candidate("SUB_current", "active"),
-    ], "CUS_current", "PLN_monthly")?.subscription_code).toBe("SUB_current");
+    ], "CUS_current", "PLN_monthly")).toBeNull();
   });
 
   it("refuses to guess between multiple attention subscriptions", () => {

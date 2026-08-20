@@ -52,6 +52,26 @@ describe("Paystack route safety invariants", () => {
     expect(routes).not.toContain("expirePaystackCheckoutAttemptAfterVerification");
   });
 
+  it("opens a recovery checkout only after a deliberate, provider-checked request", () => {
+    const checkout = routeSource(
+      'app.post("/api/billing/paystack/checkout"',
+      'app.post("/api/billing/paystack/subscription"',
+    );
+    const billingService = readFileSync(
+      new URL("./billing-service.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(checkout).toContain("renewalRecoveryRequested");
+    expect(checkout).toContain("recoverPaystackRenewalRelationship");
+    expect(checkout).toContain("allowRenewalSetupRecovery: renewalRecoveryRequested");
+    expect(checkout).toContain("renewal_recovery_manual_review");
+    expect(billingService).toContain('outcome: "no_verified_relationship"');
+    expect(billingService).toContain("multiple_plausible_paystack_subscriptions");
+    expect(billingService).toContain("provider_subscription_customer_or_plan_mismatch");
+    expect(billingService).toContain("renewal_setup_recovery_required");
+  });
+
   it("never trusts recurring-looking metadata for an untracked charge", () => {
     const renewal = readFileSync(
       new URL("./paystack-renewal.ts", import.meta.url),

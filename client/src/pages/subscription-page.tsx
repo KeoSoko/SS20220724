@@ -166,6 +166,8 @@ export function SubscriptionPage() {
     paymentRecoveryRecommended?: boolean;
     renewalDueDate?: string;
     recoveryPath?: string;
+    renewalState?: 'not_due' | 'reconciling' | 'payment_failed' | 'renewal_setup_required';
+    renewalRecoveryCheckoutEligible?: boolean;
     workspaceContext: {
       isOwner: boolean;
       workspaceName?: string;
@@ -225,11 +227,16 @@ export function SubscriptionPage() {
   const plans = allPlans.filter(plan => plan.name !== 'free_trial');
   const subscription: UserSubscription | null = (subscriptionData as any)?.subscription || null;
   const transactions: PaymentTransaction[] = (transactionsData as any)?.transactions || [];
-  const needsPaymentRecovery = !!(
-    statusData?.paymentRequired
-    || statusData?.paymentRecoveryRecommended
+  const renewalSetupRequired = statusData?.renewalState === 'renewal_setup_required';
+  const renewalReconciling = statusData?.renewalState === 'reconciling';
+  const paymentActuallyFailed = !!(
+    statusData?.renewalState === 'payment_failed'
+    || statusData?.paymentRequired
     || subscription?.status === 'paused'
   );
+  const needsPaymentRecovery = paymentActuallyFailed || renewalSetupRequired;
+  const recoveryCheckoutEligible = renewalSetupRequired
+    && statusData?.renewalRecoveryCheckoutEligible === true;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-ZA', {
@@ -250,8 +257,9 @@ export function SubscriptionPage() {
 
   const getSubscriptionStatus = () => {
     if (!subscription) return 'No subscription';
-    if (statusData?.paymentRequired || subscription.status === 'paused') return 'Payment required';
-    if (statusData?.paymentRecoveryRecommended) return 'Renewal needs attention';
+    if (paymentActuallyFailed) return 'Payment required';
+    if (renewalSetupRequired) return 'Automatic renewal needs setup';
+    if (renewalReconciling) return 'Renewal being checked';
     
     if (subscription.isTrialActive) {
       const trialEndDate = subscription.trialEndDate ? new Date(subscription.trialEndDate) : null;
@@ -539,10 +547,20 @@ export function SubscriptionPage() {
                   <Alert className="border-amber-300 bg-amber-50">
                     <AlertCircle className="h-4 w-4 text-amber-700" />
                     <AlertDescription className="text-amber-900">
-                      {statusData?.paymentRequired || subscription?.status === 'paused'
+                      {paymentActuallyFailed
                         ? 'We could not confirm your latest renewal payment. Complete secure Paystack checkout below to update your payment method and restore access.'
-                        : 'Your renewal needs attention, but your access remains available while we verify it. You can complete secure Paystack checkout below to update your payment method.'}
+                        : recoveryCheckoutEligible
+                          ? 'Automatic renewal needs to be set up again. No new payment has been attempted yet. Continue below to deliberately open a new secure Paystack checkout.'
+                          : 'Automatic renewal needs to be set up again. We need to confirm the previous Paystack relationship before a new payment can be started.'}
                       {' '}You will not be charged through a stored card.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {renewalReconciling && (
+                  <Alert className="border-blue-300 bg-blue-50">
+                    <AlertCircle className="h-4 w-4 text-blue-700" />
+                    <AlertDescription className="text-blue-900">
+                      We&apos;re confirming your renewal status. No new payment has been started, and you do not need to take action yet.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -631,7 +649,9 @@ export function SubscriptionPage() {
 
             {/* Display Selected Plan */}
             {(() => {
-              const selectedBillingPlan = plans.find(p => p.billingPeriod === billingPeriod);
+              const selectedBillingPlan = renewalSetupRequired && subscription?.planId
+                ? plans.find(p => p.id === subscription.planId)
+                : plans.find(p => p.billingPeriod === billingPeriod);
               if (!selectedBillingPlan) return null;
               
               return (
@@ -667,9 +687,13 @@ export function SubscriptionPage() {
                     </ul>
                   </CardContent>
                   <CardFooter>
-                    {subscription?.planId === selectedBillingPlan.id
+                    {renewalReconciling ? (
+                      <Badge variant="secondary" className="w-full justify-center py-2">
+                        Renewal being checked
+                      </Badge>
+                    ) : subscription?.planId === selectedBillingPlan.id
                     && subscription?.status === 'active'
-                    && !statusData?.paymentRecoveryRecommended ? (
+                    && !needsPaymentRecovery ? (
                       <Badge variant="default" className="w-full justify-center py-2">
                         Current Plan
                       </Badge>
@@ -677,9 +701,14 @@ export function SubscriptionPage() {
                       <Button
                         className="w-full"
                         onClick={() => handleSubscribe(selectedBillingPlan)}
+                        disabled={renewalSetupRequired && !recoveryCheckoutEligible}
                         data-testid="button-subscribe"
                       >
-                        {needsPaymentRecovery
+                        {renewalSetupRequired
+                          ? recoveryCheckoutEligible
+                            ? 'Restore automatic renewal'
+                            : 'Renewal needs review'
+                          : needsPaymentRecovery
                           ? 'Update payment method'
                           : subscription?.status === 'cancelled'
                             ? 'Resubscribe Now'
@@ -759,6 +788,7 @@ export function SubscriptionPage() {
                   {/* Paystack Payment Option */}
                   <PaystackBilling
                     plan={selectedPlan}
+                    renewalRecovery={renewalSetupRequired}
                     onPaymentSuccess={handlePaystackSuccess}
                     onPaymentError={(error) => {
                       toast({

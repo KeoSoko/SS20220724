@@ -1,0 +1,404 @@
+# Task #47 — Verify Paystack Hosted Subscription Management Link + Prospective-Only Recovery
+
+Task #47 is the final dependency before deploying the recurring-readiness release.
+
+Do not deploy.
+
+Do not charge a customer.
+
+Do not cancel, refund, or mutate production subscriptions.
+
+The purpose of this task is to verify that the hosted subscription-management-link integration used by Simple Slips matches Paystack's actual API contract, fails safely if it cannot be obtained, and preserves the prospective-only billing policy defined below.
+
+---
+
+# CRITICAL BILLING POLICY — NO HISTORICAL BACK-CHARGING
+
+This is now an explicit Simple Slips billing invariant:
+
+> **Simple Slips will not automatically collect historical missed subscription payments discovered during billing reconciliation or recovery. Recovery establishes correct billing prospectively from the appropriate next billing date.**
+
+This applies to:
+
+* legacy subscriptions;
+* Apple Pay-originated subscription problems;
+* missing `SUB_*` identities;
+* failed or abandoned historical renewals;
+* reconciliation discoveries;
+* payment-method recovery;
+* subscription-identity recovery;
+* duplicate-provider-subscription remediation;
+* customers affected by previous Simple Slips billing defects.
+
+A customer must never suddenly receive multiple charges because Simple Slips discovers that one or more historical subscription renewals were not collected.
+
+---
+
+# 1. Historical missed payments
+
+When reconciliation/recovery discovers historical periods for which no successful Paystack settlement exists:
+
+Do NOT:
+
+* charge the customer's stored authorization;
+* create catch-up transactions;
+* create one transaction covering accumulated arrears;
+* create multiple transactions for missed months;
+* create retrospective checkout attempts;
+* automatically shorten entitlement to compensate;
+* automatically create historical invoices intended for collection;
+* move the next billing date backwards to recover missed periods.
+
+Historical missed collections are not automatically recoverable subscription debt.
+
+Preserve the historical record accurately, but do not automatically collect it.
+
+---
+
+# 2. Prospective recovery
+
+Recovery must establish a safe billing relationship **going forward**.
+
+Once the canonical Paystack subscription/payment relationship has been established or repaired, determine the appropriate prospective next billing date according to the legitimate current subscription relationship.
+
+Do not derive a future charge amount by multiplying:
+
+`monthly price × missed months`
+
+For a standard R49 monthly Simple Slips subscription, recovery must not turn several missed R49 renewals into a larger automatic catch-up debit.
+
+Any future automatic debit must correspond to the legitimate prospective subscription cycle.
+
+If determining the correct next billing date is ambiguous:
+
+* do not guess;
+* do not charge;
+* surface the account for manual review.
+
+---
+
+# 3. Existing duplicate Paystack subscriptions
+
+For customers such as the confirmed Antebellum case, where multiple Paystack `SUB_*` relationships exist:
+
+Do not:
+
+* charge either subscription to recover historical periods;
+* allow both subscriptions to continue intentionally as a way of recovering arrears;
+* create another subscription;
+* automatically select a subscription;
+* automatically cancel a subscription as part of this task.
+
+The account remains manual review until the canonical provider relationship is established.
+
+Once resolved, billing should proceed prospectively through the canonical relationship.
+
+Historical missed payments remain uncollected.
+
+---
+
+# 4. Verify the Paystack management-link API contract
+
+Confirm from the actual Paystack API/client implementation used by this project:
+
+* exact endpoint;
+* HTTP method;
+* required identifier (`SUB_*`, subscription ID, or other);
+* authentication requirements;
+* exact response shape;
+* where the hosted management URL is returned;
+* expiry/validity behaviour if documented;
+* whether the URL is single-use or reusable;
+* whether generating the link mutates the subscription;
+* whether generating the link can trigger a charge.
+
+Do not assume an SDK wrapper exists.
+
+Use the actual integration/client contract.
+
+---
+
+# 5. Server implementation review
+
+Review the current owner-scoped management-link endpoint.
+
+Confirm it:
+
+* resolves the effective billing owner;
+* rejects workspace members;
+* requires an exact trusted or uniquely recovered `SUB_*`;
+* verifies provider customer ownership;
+* verifies provider plan ownership;
+* verifies the subscription is still the expected canonical relationship;
+* never accepts an arbitrary `SUB_*` from the client as sufficient authority;
+* never creates a checkout;
+* never charges a stored authorization;
+* never creates a new Paystack subscription;
+* never cancels an existing subscription;
+* never attempts to collect historical missed renewals.
+
+---
+
+# 6. Management-link behaviour
+
+The hosted management link exists to repair/update the payment method for the **existing canonical Paystack subscription**.
+
+It must not be treated as a mechanism for collecting historical arrears.
+
+Before returning a management link:
+
+1. Resolve effective billing owner.
+2. Acquire appropriate billing-owner protection.
+3. Re-read trusted/recovered subscription identity.
+4. Verify provider customer.
+5. Verify provider plan.
+6. Verify exact canonical `SUB_*`.
+7. Confirm relationship is not ambiguous.
+8. Only then request the Paystack management link.
+
+If multiple viable provider subscriptions exist:
+
+**no management link may be generated until the canonical relationship has been manually resolved.**
+
+---
+
+# 7. Response handling
+
+Confirm the server:
+
+* extracts only the hosted management URL from Paystack;
+* validates that a usable URL was returned;
+* returns a controlled error if the provider response is missing or malformed;
+* does not silently fall back to recovery checkout;
+* does not expose raw Paystack provider objects to the client;
+* does not log the full management URL;
+* does not initiate any historical collection.
+
+If Paystack's actual response differs from the current implementation, fix only this integration boundary.
+
+---
+
+# 8. Customer-facing failure behaviour
+
+If the management link cannot be generated:
+
+* do not create another subscription;
+* do not open generic checkout;
+* do not charge an existing authorization;
+* do not attempt to collect historical renewals;
+* do not mark payment failed unless authoritative provider evidence proves an attempted payment failed;
+* keep the customer in `payment_method_needs_attention`, `reconciling`, or equivalent safe state;
+* show a controlled support/retry message.
+
+Failure to generate a management link must not weaken duplicate-subscription protection.
+
+---
+
+# 9. Recovery checkout boundary
+
+A new recovery checkout remains permissible only when the hardened recurring-readiness flow proves through complete provider inspection that:
+
+* no viable existing Paystack subscription exists;
+* there is no ambiguous provider relationship;
+* there is no trusted/recoverable existing `SUB_*`.
+
+Even then, the recovery checkout establishes billing **prospectively**.
+
+It must not include historical missed subscription amounts.
+
+Example:
+
+If a R49/month customer missed three renewals because of the legacy billing problem, recovery must NOT create:
+
+`R147 catch-up charge + current subscription`
+
+or any equivalent automatic arrears collection.
+
+Recovery should establish the legitimate prospective subscription relationship only.
+
+---
+
+# 10. Reconciliation invariant
+
+Review reconciliation and confirm it remains incapable of initiating charges.
+
+Specifically confirm that reconciliation cannot:
+
+* charge an `AUTH_*`;
+* create a Paystack transaction;
+* open checkout;
+* create a catch-up invoice for automatic collection;
+* calculate arrears and debit them;
+* generate multiple future charges to compensate for missed historical periods.
+
+Reconciliation may:
+
+* identify historical gaps;
+* classify recurring readiness;
+* recover trusted identities where unambiguous;
+* identify payment-method attention;
+* identify ambiguity;
+* identify accounts requiring manual review.
+
+But it must not collect money.
+
+---
+
+# 11. Live-contract validation
+
+If possible without charging or mutating a production customer, verify the management-link endpoint against Paystack using a safe test/development subscription.
+
+Do not use Antebellum.
+
+Do not change production data.
+
+If no safe live provider validation is possible, clearly distinguish:
+
+* what has been verified from Paystack's authoritative API contract;
+* what remains untested against a live provider response.
+
+Do not fabricate confidence.
+
+---
+
+# 12. Tests
+
+Add/confirm tests for:
+
+### Management link
+
+1. Valid trusted `SUB_*` returns hosted management link.
+2. Another customer's `SUB_*` is rejected.
+3. Workspace member cannot retrieve owner's link.
+4. Unknown `SUB_*` is rejected.
+5. Ambiguous multiple-subscription account gets no link.
+6. Provider returns missing URL.
+7. Provider returns malformed response.
+8. Provider request fails/transient error.
+9. No recovery checkout is created on link failure.
+10. No Paystack charge occurs.
+11. No provider subscription creation occurs.
+
+### Historical billing protection
+
+12. Customer missed one historical monthly renewal.
+
+* recovery does not automatically collect it.
+
+13. Customer missed multiple historical renewals.
+
+* no accumulated/catch-up charge is created.
+
+14. R49 customer missed three months.
+
+* system must not generate an automatic R147 historical collection.
+
+15. Reconciliation discovers historical gaps.
+
+* records/classifies them;
+* performs zero provider charge calls.
+
+16. Identity recovery discovers missed historical billing periods.
+
+* identity may be safely recovered;
+* no historical charge occurs.
+
+17. Payment-method update succeeds.
+
+* future billing relationship can become healthy;
+* historical missed periods are not subsequently auto-collected.
+
+18. New recovery checkout after proving no provider subscription exists.
+
+* checkout is prospective only;
+* checkout amount contains no historical arrears.
+
+19. Multiple provider subscriptions.
+
+* no historical recovery charge;
+* no third checkout;
+* manual review.
+
+20. Concurrent recovery/reconciliation.
+
+* cannot accidentally generate catch-up payment opportunities.
+
+### Existing protections
+
+21. Existing recurring-readiness tests remain green.
+22. Existing duplicate-subscription tests remain green.
+23. Existing checkout idempotency tests remain green.
+24. Existing webhook/reconciliation tests remain green.
+
+---
+
+# 13. Existing legacy population
+
+The previously identified legacy candidate population must not be batch-charged after deployment.
+
+Future remediation must classify customers into safe recovery groups.
+
+For each affected customer we may determine:
+
+* recurring relationship already healthy;
+* identity recoverable;
+* payment method needs attention;
+* multiple provider subscriptions/manual review;
+* no provider subscription/recovery checkout required;
+* provider state unavailable/reconciling.
+
+But no classification may automatically trigger historical collection.
+
+---
+
+# 14. Final invariant review
+
+Explicitly confirm:
+
+> **Simple Slips will not automatically collect historical missed subscription payments discovered during billing reconciliation or recovery. Recovery establishes correct billing prospectively from the appropriate next billing date.**
+
+Then identify every code path capable of initiating a Paystack charge and confirm none can be invoked by reconciliation, identity recovery, recurring-readiness classification, or historical-gap detection.
+
+Also reconfirm that the legacy stored-authorization upgrade charge path remains hard-disabled.
+
+---
+
+# STOP BEFORE DEPLOYMENT
+
+Return:
+
+## A. Exact Paystack management-link contract
+
+## B. Current implementation match/mismatch
+
+## C. Prospective-only recovery implementation
+
+## D. Historical back-charge protections
+
+## E. Charge-capable code-path audit
+
+List every remaining application path capable of initiating a Paystack payment and what explicit customer action/security boundary permits it.
+
+## F. Management-link safe failure behaviour
+
+## G. Test results
+
+## H. Live-provider validation status
+
+## I. Legacy-customer remediation implications
+
+## J. Final recommendation
+
+End with exactly:
+
+`SAFE TO DEPLOY RECURRING-READINESS RELEASE`
+
+or:
+
+`DO NOT DEPLOY — [remaining blocker]`
+
+Do not deploy.
+
+Do not charge customers.
+
+Do not modify production subscriptions.

@@ -32,3 +32,9 @@ A provider-success renewal received after local cancellation intent must fail cl
 **Why:** Automatically reactivating extends entitlement against the user's recorded cancellation, while silently dropping a successful provider charge creates an untracked financial exception. Neither outcome is safe to guess.
 
 **How to apply:** Serialize cancellation and settlement on the owner lock; if cancellation wins, record a manual-review event without ledger or entitlement mutation. Keep the separate cancellation-grace policy task as the place to choose any future automated behavior.
+
+Manual Paystack identity reconciliation is also a billing-state mutation and must use the same owner-level transaction lock as checkout, webhook, and renewal processing.
+
+**Why:** A separate lock lets a repair validate “no pending checkout” or “no conflicting identity” while another billing action commits exactly that state, making the repair's snapshot stale before its write.
+
+**How to apply:** Acquire the shared owner-level billing lock before loading the repair snapshot, and hold it through revalidation, identity insertion, and audit logging. Do not introduce a repair-only lock namespace.

@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { resolveBillingOwner } from "./billing-owner";
 import {
   SubscriptionPlan,
   UserSubscription,
@@ -42,6 +43,10 @@ import {
   getPaystackBillingSchemaReadiness,
   requirePaystackBillingSchema,
 } from "./paystack-billing-schema";
+import {
+  createManualPaystackIdentityRepairService,
+  ManualPaystackIdentityRepairInput,
+} from "./manual-paystack-identity-repair";
 
 export interface GooglePlayPurchase {
   purchaseToken: string;
@@ -1737,6 +1742,142 @@ export class BillingService {
       previousSubscriptionCode,
       providerStatus: candidate.status,
     };
+  }
+
+  private manualPaystackIdentityRepairService(database: any) {
+    return createManualPaystackIdentityRepairService({
+      loadSnapshot: async (input: ManualPaystackIdentityRepairInput) => {
+        const [ownerResolution, [billingOwner], [localSubscription], activeIdentities, [identityForSubscriptionCode], pendingCheckouts] = await Promise.all([
+          resolveBillingOwner(input.billingOwnerUserId),
+          database
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.id, input.billingOwnerUserId))
+            .limit(1),
+          database
+            .select({
+              id: userSubscriptions.id,
+              userId: userSubscriptions.userId,
+              status: userSubscriptions.status,
+              paystackCustomerCode: userSubscriptions.paystackCustomerCode,
+              planCode: subscriptionPlans.paystackPlanCode,
+              subscriptionStartDate: userSubscriptions.subscriptionStartDate,
+              nextBillingDate: userSubscriptions.nextBillingDate,
+            })
+            .from(userSubscriptions)
+            .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+            .where(eq(userSubscriptions.userId, input.billingOwnerUserId))
+            .limit(1),
+          database
+            .select({
+              userId: paystackSubscriptionIdentities.userId,
+              subscriptionCode: paystackSubscriptionIdentities.subscriptionCode,
+              customerCode: paystackSubscriptionIdentities.customerCode,
+              planCode: paystackSubscriptionIdentities.planCode,
+              status: paystackSubscriptionIdentities.status,
+              recurringReadiness: paystackSubscriptionIdentities.recurringReadiness,
+            })
+            .from(paystackSubscriptionIdentities)
+            .where(and(
+              eq(paystackSubscriptionIdentities.userId, input.billingOwnerUserId),
+              eq(paystackSubscriptionIdentities.status, "active"),
+            )),
+          database
+            .select({
+              userId: paystackSubscriptionIdentities.userId,
+              subscriptionCode: paystackSubscriptionIdentities.subscriptionCode,
+              customerCode: paystackSubscriptionIdentities.customerCode,
+              planCode: paystackSubscriptionIdentities.planCode,
+              status: paystackSubscriptionIdentities.status,
+              recurringReadiness: paystackSubscriptionIdentities.recurringReadiness,
+            })
+            .from(paystackSubscriptionIdentities)
+            .where(eq(paystackSubscriptionIdentities.subscriptionCode, input.subscriptionCode))
+            .limit(1),
+          database
+            .select({ id: paystackCheckoutAttempts.id })
+            .from(paystackCheckoutAttempts)
+            .where(and(
+              eq(paystackCheckoutAttempts.billingOwnerUserId, input.billingOwnerUserId),
+              eq(paystackCheckoutAttempts.status, "pending"),
+            )),
+        ]);
+
+        return {
+          billingOwner: billingOwner
+            ? {
+                ...billingOwner,
+                isCanonicalBillingOwner: ownerResolution.state === "resolved"
+                  && ownerResolution.billingOwnerUserId === input.billingOwnerUserId,
+              }
+            : null,
+          localSubscription: localSubscription ?? null,
+          activeIdentities,
+          identityForSubscriptionCode: identityForSubscriptionCode ?? null,
+          pendingCheckoutCount: pendingCheckouts.length,
+        };
+      },
+      runWithBillingOwnerLock: async (billingOwnerUserId, callback) => {
+        // Share the existing Paystack billing-owner lock namespace so checkout,
+        // webhook, renewal, and manual-repair mutations cannot invalidate one
+        // another's validation snapshot mid-transaction.
+        await database.execute(sql`SELECT pg_advisory_xact_lock(${billingOwnerUserId}, 36)`);
+        return callback();
+      },
+      insertCanonicalIdentity: async (input) => {
+        await database.insert(paystackSubscriptionIdentities).values({
+          userId: input.billingOwnerUserId,
+          subscriptionCode: input.subscriptionCode,
+          customerCode: input.customerCode,
+          planCode: input.planCode,
+          status: "active",
+          recurringReadiness: "unknown",
+          authorizationCode: null,
+          authorizationChannel: null,
+          authorizationSignature: null,
+          authorizationReusable: null,
+          providerVerifiedAt: null,
+          providerCreatedAt: null,
+          retiredAt: null,
+          updatedAt: new Date(),
+        });
+      },
+      recordAuditEvent: async (input, adminUserId, localSubscriptionId) => {
+        await database.insert(billingEvents).values({
+          userId: input.billingOwnerUserId,
+          eventType: "paystack_manual_identity_reconciled",
+          eventData: {
+            adminUserId,
+            billingOwnerUserId: input.billingOwnerUserId,
+            localSubscriptionId,
+            subscriptionCode: input.subscriptionCode,
+            customerCode: input.customerCode,
+            planCode: input.planCode,
+            reason: "manually_verified_provider_reconciliation",
+            recurringReadiness: "unknown",
+            providerMutation: "none",
+            paystackRequest: "none",
+            recordedAt: new Date().toISOString(),
+          },
+          processed: true,
+        });
+      },
+    });
+  }
+
+  async previewManualPaystackIdentityRepair(input: ManualPaystackIdentityRepairInput) {
+    await this.requirePaystackBillingSchema();
+    return this.manualPaystackIdentityRepairService(db).preview(input);
+  }
+
+  async executeManualPaystackIdentityRepair(
+    input: ManualPaystackIdentityRepairInput,
+    adminUserId: number,
+  ) {
+    await this.requirePaystackBillingSchema();
+    return db.transaction(async (tx) => (
+      this.manualPaystackIdentityRepairService(tx).execute(input, adminUserId)
+    ));
   }
 
   /**

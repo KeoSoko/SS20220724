@@ -19,7 +19,7 @@ import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.user) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -27,6 +27,36 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
     return res.status(403).json({ error: "Forbidden - Admin access required" });
   }
   next();
+}
+
+function parseManualPaystackIdentityRepairInput(req: Request) {
+  const billingOwnerUserId = Number.parseInt(req.params.userId, 10);
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const allowedFields = new Set([
+    "billingOwnerUserId",
+    "subscriptionCode",
+    "customerCode",
+    "planCode",
+    "confirmed",
+  ]);
+  if (
+    !Number.isInteger(billingOwnerUserId)
+    || billingOwnerUserId <= 0
+    || Object.keys(body).some((key) => !allowedFields.has(key))
+    || (body.billingOwnerUserId !== undefined && body.billingOwnerUserId !== billingOwnerUserId)
+    || typeof body.subscriptionCode !== "string"
+    || typeof body.customerCode !== "string"
+    || typeof body.planCode !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    billingOwnerUserId,
+    subscriptionCode: body.subscriptionCode.trim(),
+    customerCode: body.customerCode.trim(),
+    planCode: body.planCode.trim(),
+  };
 }
 
 export function registerAdminRoutes(app: Express) {
@@ -794,6 +824,62 @@ export function registerAdminRoutes(app: Express) {
     } catch (error: any) {
       log(`Error resolving Paystack subscription identity: ${error.message}`, "admin");
       res.status(500).json({ error: "Failed to resolve Paystack subscription identity" });
+    }
+  });
+
+  // ========================================
+  // MANUALLY VERIFIED PAYSTACK IDENTITY REPAIR
+  // This records a support-verified local identity only. It never calls Paystack.
+  // ========================================
+  app.post("/api/admin/users/:userId/paystack-manual-identity-repair/preview", requireAdmin, async (req, res) => {
+    const input = parseManualPaystackIdentityRepairInput(req);
+    if (!input) {
+      return res.status(400).json({ error: "Invalid manual identity repair input" });
+    }
+
+    try {
+      const result = await billingService.previewManualPaystackIdentityRepair(input);
+      return res.json({
+        ...result,
+        providerMutation: "none",
+        paystackRequest: "none",
+      });
+    } catch (error: any) {
+      log(`Error previewing manual Paystack identity repair: ${error.message}`, "admin");
+      return res.status(500).json({ error: "Failed to preview manual identity repair" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/paystack-manual-identity-repair/execute", requireAdmin, async (req, res) => {
+    const input = parseManualPaystackIdentityRepairInput(req);
+    if (!input) {
+      return res.status(400).json({ error: "Invalid manual identity repair input" });
+    }
+    if (req.body?.confirmed !== true) {
+      return res.status(400).json({
+        error: "Explicit confirmation is required before recording a manual Paystack identity",
+      });
+    }
+
+    try {
+      const result = await billingService.executeManualPaystackIdentityRepair(input, req.user!.id);
+      if (result.outcome === "manual_review_required") {
+        return res.status(409).json({
+          error: "The manual identity repair could not be applied safely",
+          ...result,
+          providerMutation: "none",
+          paystackRequest: "none",
+        });
+      }
+
+      return res.json({
+        ...result,
+        providerMutation: "none",
+        paystackRequest: "none",
+      });
+    } catch (error: any) {
+      log(`Error executing manual Paystack identity repair: ${error.message}`, "admin");
+      return res.status(500).json({ error: "Failed to record manual identity repair" });
     }
   });
 

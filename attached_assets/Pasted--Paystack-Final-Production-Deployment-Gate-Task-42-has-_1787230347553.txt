@@ -1,0 +1,234 @@
+# Paystack Final Production Deployment Gate
+
+Task #42 has passed final implementation review.
+
+Do **not publish yet**.
+
+I now want the final production deployment gate focused specifically on safely applying the required database schema and then publishing the application.
+
+Do not make further Paystack architecture changes unless this assessment discovers a release blocker.
+
+## 1. Confirm exact production state
+
+Perform read-only production schema checks and confirm whether production currently contains:
+
+* `paystack_subscription_identities`
+* `paystack_checkout_attempts`
+
+For each table, confirm required columns, foreign keys, unique constraints and indexes.
+
+Do not assume anything from the development database.
+
+---
+
+## 2. Confirm migrations
+
+The expected required migrations are:
+
+`0002_add_paystack_subscription_identities.sql`
+
+followed by:
+
+`0003_add_paystack_checkout_attempts.sql`
+
+Confirm these are still the exact migrations required by the currently merged application.
+
+Confirm no later migration or schema change is missing.
+
+---
+
+## 3. Inspect the actual Replit Publish behaviour
+
+I need to know exactly how this project's production database schema will be updated when I press Publish.
+
+Determine from the current Replit project configuration:
+
+* whether Publish automatically applies these migrations;
+* whether it performs a schema diff;
+* whether I will receive a database-change confirmation screen;
+* whether the application can start before the schema update finishes;
+* whether any manual production migration command is required.
+
+Do not guess.
+
+Use the actual project/repository deployment configuration.
+
+---
+
+## 4. Validate migration safety
+
+Before recommending deployment, confirm production currently has **zero** `paystack_checkout_attempts` rows because the table does not yet exist.
+
+Therefore migration `0003` should create an empty table and should not require historical checkout-attempt backfill.
+
+Confirm:
+
+* no existing payments are modified;
+* no existing subscriptions are modified;
+* no Paystack customer IDs are modified;
+* no Paystack subscription codes are modified;
+* no Paystack transactions are initiated;
+* no customers are cancelled;
+* no refunds occur;
+* no entitlement dates are changed.
+
+Migration `0002` should similarly be additive.
+
+---
+
+## 5. Confirm application compatibility during deployment
+
+Check whether there is any period where:
+
+**new application code + old production schema**
+
+could receive traffic.
+
+If yes, this is a release blocker because the application depends on the two new tables.
+
+The production schema must exist before billing traffic reaches the new application.
+
+Explain how Replit's deployment process guarantees—or fails to guarantee—this ordering.
+
+---
+
+## 6. Production migration verification
+
+Give me the exact read-only checks that should run immediately after schema application to confirm:
+
+### Table existence
+
+* `paystack_subscription_identities`
+* `paystack_checkout_attempts`
+
+### Required checkout constraints
+
+* unique Paystack reference;
+* one pending checkout per billing owner;
+* valid status constraint;
+* foreign keys.
+
+### Required indexes
+
+* subscription identity user/status;
+* unique subscription code;
+* checkout reference;
+* partial unique pending-owner;
+* checkout status/expiry.
+
+Do not modify data with these checks.
+
+---
+
+## 7. Application smoke test
+
+After schema verification and application deployment, give me the exact smoke-test sequence.
+
+It should require **no real completed customer payment**.
+
+At minimum test:
+
+### Individual test account
+
+Subscription page loads.
+
+Checkout endpoint creates one server-owned attempt.
+
+Immutable terms are populated.
+
+Paystack reference is server-generated.
+
+Retrying checkout returns/reuses the same reference.
+
+### Workspace member
+
+Covered editor/viewer opens billing.
+
+Expected:
+
+owner-managed billing state.
+
+Checkout endpoint returns:
+
+`403 workspace_member_billing_restricted`
+
+No checkout attempt created.
+
+### Workspace owner
+
+Owner can create an owner-scoped checkout attempt.
+
+Second request reuses the existing attempt.
+
+Do not complete the Paystack payment.
+
+---
+
+## 8. Webhook/reconciliation startup
+
+After deployment confirm:
+
+* Paystack webhook route starts without schema errors;
+* reconciliation starts without schema errors;
+* subscription identity queries work;
+* checkout-attempt queries work;
+* no missing relation/column/index errors occur.
+
+Do not send a fake successful production payment.
+
+---
+
+## 9. Immediate production integrity checks
+
+After deployment provide read-only SQL to verify:
+
+* no billing owner has more than one pending checkout;
+* no duplicate Paystack payment ledger references exist;
+* no unexpected subscription identity duplicates exist;
+* no settlement mismatch events appeared during deployment;
+* no untracked Paystack charge was granted entitlement.
+
+---
+
+## 10. First 24-hour monitoring
+
+Give me a short monitoring checklist for:
+
+* checkout attempts created;
+* checkout attempts reused;
+* workspace member checkout blocks;
+* checkout term mismatches;
+* untracked charge rejections;
+* successful payments requiring manual review;
+* webhook failures;
+* reconciliation failures;
+* missing schema errors;
+* duplicate ledger attempts.
+
+Do not automatically repair anything found.
+
+Financial anomalies should be surfaced for manual review.
+
+---
+
+# Final release decision
+
+After completing this assessment, finish with exactly one:
+
+## SAFE TO PUBLISH
+
+Explain the exact Publish sequence I should follow.
+
+or
+
+## DO NOT PUBLISH
+
+List the unresolved blocker(s).
+
+Do not press Publish yourself.
+
+Do not apply production changes yourself.
+
+Do not charge a customer.
+
+Do not modify existing production payment/subscription records.

@@ -17,6 +17,17 @@ export interface PaystackRenewalEvidence {
   invoiceCode: string | null;
 }
 
+export interface PaystackSubscriptionCandidateSummary {
+  subscriptionCode: string;
+  customerCode: string | null;
+  planCode: string | null;
+  status: string;
+  providerCreatedAt: Date | null;
+  nextPaymentDate: Date | null;
+  recentInvoice: (ClassifiedPaystackInvoice & { createdAt: Date | null }) | null;
+  providerLookupFailed: boolean;
+}
+
 export type ActivePaystackRenewalRelationshipResult =
   | { valid: true }
   | {
@@ -172,22 +183,34 @@ export function validateActivePaystackRenewalRelationship(
   return { valid: true };
 }
 
+export function isViablePaystackSubscriptionCandidate(
+  candidate: any,
+  expectedCustomerCode: string,
+  expectedPlanCode: string | null | undefined,
+): boolean {
+  const terminalStatuses = new Set(["cancelled", "complete", "disabled"]);
+  const customerCode = extractPaystackCustomerCode(candidate)
+    ?? asNonEmptyString(candidate?.customer);
+  const planCode = asNonEmptyString(candidate?.plan?.plan_code)
+    ?? asNonEmptyString(candidate?.plan_code)
+    ?? (typeof candidate?.plan === "string" ? asNonEmptyString(candidate.plan) : null);
+  const status = String(candidate?.status ?? "").toLowerCase();
+  const subscriptionCode = extractPaystackSubscriptionCode(candidate);
+
+  return !!subscriptionCode
+    && customerCode === expectedCustomerCode
+    && (!expectedPlanCode || planCode === expectedPlanCode)
+    && !terminalStatuses.has(status);
+}
+
 export function selectPaystackSubscriptionIdentityCandidate(
   candidates: any[],
   expectedCustomerCode: string,
   expectedPlanCode: string | null | undefined,
 ): any | null {
-  const terminalStatuses = new Set(["cancelled", "complete", "disabled"]);
-  const matching = candidates.filter((candidate: any) => {
-    const customerCode = extractPaystackCustomerCode(candidate)
-      ?? asNonEmptyString(candidate?.customer);
-    const planCode = asNonEmptyString(candidate?.plan?.plan_code)
-      ?? asNonEmptyString(candidate?.plan_code);
-    const status = String(candidate?.status ?? "").toLowerCase();
-    return customerCode === expectedCustomerCode
-      && (!expectedPlanCode || planCode === expectedPlanCode)
-      && !terminalStatuses.has(status);
-  });
+  const matching = candidates.filter((candidate: any) =>
+    isViablePaystackSubscriptionCandidate(candidate, expectedCustomerCode, expectedPlanCode),
+  );
 
   if (matching.length === 1) return matching[0];
 
@@ -195,6 +218,29 @@ export function selectPaystackSubscriptionIdentityCandidate(
     (candidate: any) => String(candidate?.status ?? "").toLowerCase() === "active",
   );
   return active.length === 1 ? active[0] : null;
+}
+
+/**
+ * Provider subscription details place invoices in several shapes. Keep this
+ * extraction in one place so support sees the same "most recent" evidence
+ * used by renewal reconciliation.
+ */
+export function getMostRecentPaystackInvoice(subscription: any): any | null {
+  const invoices = [
+    ...(subscription?.most_recent_invoice ? [subscription.most_recent_invoice] : []),
+    ...(Array.isArray(subscription?.invoices_history) ? subscription.invoices_history : []),
+    ...(Array.isArray(subscription?.invoices) ? subscription.invoices : []),
+  ];
+  invoices.sort((left: any, right: any) => {
+    const leftDate = parsePaystackDate(
+      left?.created_at ?? left?.createdAt ?? left?.paid_at ?? left?.paidAt ?? left?.period_start,
+    )?.getTime() ?? 0;
+    const rightDate = parsePaystackDate(
+      right?.created_at ?? right?.createdAt ?? right?.paid_at ?? right?.paidAt ?? right?.period_start,
+    )?.getTime() ?? 0;
+    return rightDate - leftDate;
+  });
+  return invoices[0] ?? null;
 }
 
 export function paystackInvoiceFailureTransactionId(invoiceCode: string): string {

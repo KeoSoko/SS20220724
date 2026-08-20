@@ -27,7 +27,10 @@ import {
   classifyPaystackInvoice,
   extractPaystackCustomerCode,
   extractPaystackSubscriptionCode,
+  getMostRecentPaystackInvoice,
+  isViablePaystackSubscriptionCandidate,
   parsePaystackDate,
+  PaystackSubscriptionCandidateSummary,
   paystackInvoiceFailureTransactionId,
   selectPaystackSubscriptionIdentityCandidate,
   subscriptionIdentityMatches,
@@ -96,6 +99,45 @@ export interface PaystackReconciliationResult {
   reason: string;
   subscriptionCode?: string;
 }
+
+export type PaystackSubscriptionCandidateInspection =
+  | {
+      available: true;
+      customerCode: string;
+      expectedPlanCode: string | null;
+      activeSubscriptionCode: string | null;
+      candidates: PaystackSubscriptionCandidateSummary[];
+    }
+  | {
+      available: false;
+      reason:
+        | "missing_local_subscription"
+        | "missing_paystack_customer_code"
+        | "missing_paystack_plan_code"
+        | "paystack_unavailable"
+        | "paystack_customer_lookup_failed"
+        | "paystack_subscription_list_failed";
+    };
+
+type PaystackSubscriptionCandidateInspectionUnavailableReason =
+  | "missing_local_subscription"
+  | "missing_paystack_customer_code"
+  | "missing_paystack_plan_code"
+  | "paystack_unavailable"
+  | "paystack_customer_lookup_failed"
+  | "paystack_subscription_list_failed";
+
+export type PaystackSubscriptionResolutionResult =
+  | {
+      outcome: "resolved";
+      selectedSubscriptionCode: string;
+      previousSubscriptionCode: string | null;
+      providerStatus: string;
+    }
+  | {
+      outcome: "confirmation_required" | "unresolved";
+      reason: string;
+    };
 
 export type PaystackCheckoutAttemptResult =
   | { outcome: "created" | "reused"; attempt: PaystackCheckoutAttempt }
@@ -1010,6 +1052,244 @@ export class BillingService {
     return identity ?? null;
   }
 
+  private async loadPaystackSubscriptionCandidates(userId: number): Promise<
+    | {
+        available: true;
+        customerCode: string;
+        expectedPlanCode: string | null;
+        activeSubscriptionCode: string | null;
+        candidates: Array<PaystackSubscriptionCandidateSummary & { providerData: any }>;
+      }
+    | { available: false; reason: PaystackSubscriptionCandidateInspectionUnavailableReason }
+  > {
+    const subscription = await this.getUserSubscription(userId);
+    if (!subscription) {
+      return { available: false, reason: "missing_local_subscription" };
+    }
+    if (!subscription.paystackCustomerCode) {
+      return { available: false, reason: "missing_paystack_customer_code" };
+    }
+    if (!this.paystack) {
+      return { available: false, reason: "paystack_unavailable" };
+    }
+
+    const plan = storage.getSubscriptionPlan
+      ? await storage.getSubscriptionPlan(subscription.planId)
+      : null;
+    const expectedPlanCode = plan?.paystackPlanCode ?? null;
+    if (!expectedPlanCode) {
+      return { available: false, reason: "missing_paystack_plan_code" };
+    }
+    const customerResponse = await this.paystack.customer.get(subscription.paystackCustomerCode);
+    const customerId = customerResponse?.status ? customerResponse?.data?.id : null;
+    if (!customerId) {
+      return { available: false, reason: "paystack_customer_lookup_failed" };
+    }
+
+    const response = await (this.paystack.subscription.list as any)({
+      customer: customerId,
+      perPage: 100,
+    });
+    if (!response?.status || !Array.isArray(response?.data)) {
+      return { available: false, reason: "paystack_subscription_list_failed" };
+    }
+
+    const viableCandidates = response.data.filter((candidate: any) =>
+      isViablePaystackSubscriptionCandidate(
+        candidate,
+        subscription.paystackCustomerCode!,
+        expectedPlanCode,
+      ),
+    );
+    const activeIdentity = await this.getActivePaystackSubscriptionIdentity(userId);
+    const candidates = (await Promise.all(viableCandidates.map(async (candidate: any) => {
+      const subscriptionCode = extractPaystackSubscriptionCode(candidate)!;
+      let providerData = candidate;
+      let providerLookupFailed = false;
+      try {
+        const detail = await this.paystack.subscription.get(subscriptionCode);
+        if (detail?.status && detail?.data) {
+          // Detail responses occasionally omit relationship fields returned by
+          // the list endpoint. Preserve the list identity so a read-only
+          // inspection can never erase the customer/plan proof used to select
+          // this candidate.
+          providerData = {
+            ...candidate,
+            ...detail.data,
+            customer: detail.data.customer ?? candidate.customer,
+            plan: detail.data.plan ?? candidate.plan,
+            subscription_code: detail.data.subscription_code ?? candidate.subscription_code,
+          };
+        } else {
+          providerLookupFailed = true;
+        }
+      } catch {
+        providerLookupFailed = true;
+      }
+
+      const recentInvoice = getMostRecentPaystackInvoice(providerData);
+      const classifiedInvoice = recentInvoice
+        ? {
+            ...classifyPaystackInvoice(recentInvoice, subscription.nextBillingDate),
+            createdAt: parsePaystackDate(
+              recentInvoice.created_at
+                ?? recentInvoice.createdAt
+                ?? recentInvoice.paid_at
+                ?? recentInvoice.paidAt
+                ?? recentInvoice.period_start,
+            ),
+          }
+        : null;
+      const providerCreatedAt = parsePaystackDate(
+        providerData?.created_at ?? providerData?.createdAt ?? candidate?.created_at ?? candidate?.createdAt,
+      );
+
+      return {
+        subscriptionCode,
+        customerCode: extractPaystackCustomerCode(providerData)
+          ?? extractPaystackCustomerCode(candidate)
+          ?? (typeof candidate?.customer === "string" ? candidate.customer : null),
+        planCode: typeof providerData?.plan === "string"
+          ? providerData.plan
+          : providerData?.plan?.plan_code
+            ?? providerData?.plan_code
+            ?? candidate?.plan?.plan_code
+            ?? candidate?.plan_code
+            ?? null,
+        status: String(providerData?.status ?? candidate?.status ?? "unknown").toLowerCase(),
+        providerCreatedAt,
+        nextPaymentDate: parsePaystackDate(
+          providerData?.next_payment_date ?? providerData?.nextPaymentDate
+            ?? candidate?.next_payment_date ?? candidate?.nextPaymentDate,
+        ),
+        recentInvoice: classifiedInvoice,
+        providerLookupFailed,
+        providerData,
+      };
+    }))).filter((candidate) =>
+      extractPaystackSubscriptionCode(candidate.providerData) === candidate.subscriptionCode
+        && isViablePaystackSubscriptionCandidate(
+          candidate.providerData,
+          subscription.paystackCustomerCode!,
+          expectedPlanCode,
+        ),
+    );
+
+    return {
+      available: true,
+      customerCode: subscription.paystackCustomerCode,
+      expectedPlanCode,
+      activeSubscriptionCode: activeIdentity?.subscriptionCode ?? null,
+      candidates,
+    };
+  }
+
+  async inspectPaystackSubscriptionCandidates(
+    userId: number,
+  ): Promise<PaystackSubscriptionCandidateInspection> {
+    const inspection = await this.loadPaystackSubscriptionCandidates(userId);
+    if (!inspection.available) return inspection;
+    return {
+      available: true,
+      customerCode: inspection.customerCode,
+      expectedPlanCode: inspection.expectedPlanCode,
+      activeSubscriptionCode: inspection.activeSubscriptionCode,
+      candidates: inspection.candidates.map(({ providerData: _providerData, ...candidate }) => candidate),
+    };
+  }
+
+  async resolvePaystackSubscriptionIdentity(
+    userId: number,
+    selectedSubscriptionCode: string,
+    options: { confirmed: boolean; adminUserId: number },
+  ): Promise<PaystackSubscriptionResolutionResult> {
+    if (!options.confirmed) {
+      await this.recordBillingEvent(userId, "paystack_subscription_resolution_confirmation_required", {
+        adminUserId: options.adminUserId,
+        selectedSubscriptionCode,
+      });
+      return { outcome: "confirmation_required", reason: "explicit_confirmation_required" };
+    }
+
+    const inspection = await this.loadPaystackSubscriptionCandidates(userId);
+    if (!inspection.available) {
+      await this.recordBillingEvent(userId, "paystack_subscription_resolution_unresolved", {
+        adminUserId: options.adminUserId,
+        selectedSubscriptionCode,
+        reason: inspection.reason,
+      });
+      return { outcome: "unresolved", reason: inspection.reason };
+    }
+
+    const candidate = inspection.candidates.find(
+      (entry) => entry.subscriptionCode === selectedSubscriptionCode,
+    );
+    if (!candidate || candidate.providerLookupFailed) {
+      await this.recordBillingEvent(userId, "paystack_subscription_resolution_unresolved", {
+        adminUserId: options.adminUserId,
+        selectedSubscriptionCode,
+        reason: candidate
+          ? "selected_subscription_detail_unavailable"
+          : "selected_subscription_not_a_viable_candidate",
+        candidateCount: inspection.candidates.length,
+      });
+      return {
+        outcome: "unresolved",
+        reason: candidate
+          ? "selected_subscription_detail_unavailable"
+          : "selected_subscription_not_a_viable_candidate",
+      };
+    }
+
+    const previousSubscriptionCode = inspection.activeSubscriptionCode;
+    let recorded: { subscriptionCode: string; status: string };
+    try {
+      recorded = await this.recordPaystackSubscriptionIdentity(
+        userId,
+        candidate.providerData,
+        {
+          allowNewActive: true,
+          supersedeExisting: true,
+          auditSource: "support_duplicate_resolution",
+          adminUserId: options.adminUserId,
+        },
+      );
+    } catch {
+      await this.recordBillingEvent(userId, "paystack_subscription_resolution_unresolved", {
+        adminUserId: options.adminUserId,
+        selectedSubscriptionCode,
+        reason: "identity_recording_failed",
+      });
+      return { outcome: "unresolved", reason: "identity_recording_failed" };
+    }
+    if (recorded.status !== "active") {
+      await this.recordBillingEvent(userId, "paystack_subscription_resolution_unresolved", {
+        adminUserId: options.adminUserId,
+        selectedSubscriptionCode,
+        reason: "selected_subscription_not_activated",
+        identityStatus: recorded.status,
+      });
+      return { outcome: "unresolved", reason: "selected_subscription_not_activated" };
+    }
+
+    await this.recordBillingEvent(userId, "paystack_subscription_identity_resolved_by_support", {
+      adminUserId: options.adminUserId,
+      selectedSubscriptionCode,
+      previousSubscriptionCode,
+      providerStatus: candidate.status,
+      customerCode: inspection.customerCode,
+      expectedPlanCode: inspection.expectedPlanCode,
+      candidateCount: inspection.candidates.length,
+      providerMutation: "none",
+    });
+    return {
+      outcome: "resolved",
+      selectedSubscriptionCode,
+      previousSubscriptionCode,
+      providerStatus: candidate.status,
+    };
+  }
+
   /**
    * Persist a SUB_* identity without allowing a delayed old subscription.create
    * event to replace a newer active identity.
@@ -1018,7 +1298,12 @@ export class BillingService {
     tx: any,
     userId: number,
     data: any,
-    options: { supersedeExisting?: boolean; allowNewActive?: boolean } = {},
+    options: {
+      supersedeExisting?: boolean;
+      allowNewActive?: boolean;
+      auditSource?: string;
+      adminUserId?: number;
+    } = {},
   ): Promise<{ subscriptionCode: string; status: string }> {
     const subscriptionCode = extractPaystackSubscriptionCode(data);
     if (!subscriptionCode) {
@@ -1117,6 +1402,8 @@ export class BillingService {
         customerCode,
         planCode,
         status: identity?.status ?? identityStatus,
+        source: options.auditSource ?? "provider",
+        adminUserId: options.adminUserId ?? null,
       },
       processed: true,
     });
@@ -1130,7 +1417,12 @@ export class BillingService {
   async recordPaystackSubscriptionIdentity(
     userId: number,
     data: any,
-    options: { allowNewActive?: boolean } = {},
+    options: {
+      allowNewActive?: boolean;
+      supersedeExisting?: boolean;
+      auditSource?: string;
+      adminUserId?: number;
+    } = {},
   ): Promise<{ subscriptionCode: string; status: string }> {
     await this.requirePaystackBillingSchema();
     return db.transaction(async (tx) => {

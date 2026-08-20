@@ -5,6 +5,8 @@ import {
   classifyPaystackInvoice,
   extractPaystackRenewalEvidence,
   extractPaystackTransactionReference,
+  getMostRecentPaystackInvoice,
+  isViablePaystackSubscriptionCandidate,
   paystackInvoiceFailureTransactionId,
   selectPaystackSubscriptionIdentityCandidate,
   subscriptionIdentityMatches,
@@ -172,6 +174,37 @@ describe("Paystack subscription identity recovery", () => {
       candidate("SUB_old", "complete"),
       candidate("SUB_current", "attention"),
     ], "CUS_current", "PLN_monthly")?.subscription_code).toBe("SUB_current");
+  });
+
+  it("keeps only the expected customer and plan as support-resolvable candidates", () => {
+    expect(isViablePaystackSubscriptionCandidate(
+      candidate("SUB_current", "attention"),
+      "CUS_current",
+      "PLN_monthly",
+    )).toBe(true);
+    expect(isViablePaystackSubscriptionCandidate({
+      ...candidate("SUB_other_customer", "attention"),
+      customer: { customer_code: "CUS_other" },
+    }, "CUS_current", "PLN_monthly")).toBe(false);
+    expect(isViablePaystackSubscriptionCandidate({
+      ...candidate("SUB_other_plan", "attention"),
+      plan: { plan_code: "PLN_yearly" },
+    }, "CUS_current", "PLN_monthly")).toBe(false);
+    expect(isViablePaystackSubscriptionCandidate(
+      candidate("SUB_finished", "complete"),
+      "CUS_current",
+      "PLN_monthly",
+    )).toBe(false);
+  });
+
+  it("surfaces the latest provider invoice for support review", () => {
+    expect(getMostRecentPaystackInvoice({
+      invoices_history: [
+        { invoice_code: "INV_old", created_at: "2026-07-01T00:00:00.000Z" },
+        { invoice_code: "INV_new", created_at: "2026-08-01T00:00:00.000Z" },
+      ],
+      most_recent_invoice: { invoice_code: "INV_current", created_at: "2026-08-03T00:00:00.000Z" },
+    })).toMatchObject({ invoice_code: "INV_current" });
   });
 });
 

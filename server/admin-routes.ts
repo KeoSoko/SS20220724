@@ -710,6 +710,94 @@ export function registerAdminRoutes(app: Express) {
   });
 
   // ========================================
+  // PAYSTACK DUPLICATE SUBSCRIPTION RESOLUTION
+  // ========================================
+  app.get("/api/admin/users/:userId/paystack-subscription-candidates", requireAdmin, async (req, res) => {
+    try {
+      const userId = Number.parseInt(req.params.userId, 10);
+      if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).json({ error: "Invalid user ID" });
+      }
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const inspection = await billingService.inspectPaystackSubscriptionCandidates(userId);
+      if (!inspection.available) {
+        return res.status(409).json({
+          error: "Paystack subscription candidates are not available",
+          reason: inspection.reason,
+        });
+      }
+
+      res.json({
+        userId,
+        customerCode: inspection.customerCode,
+        expectedPlanCode: inspection.expectedPlanCode,
+        activeSubscriptionCode: inspection.activeSubscriptionCode,
+        candidates: inspection.candidates,
+      });
+    } catch (error: any) {
+      log(`Error loading Paystack subscription candidates: ${error.message}`, "admin");
+      res.status(500).json({ error: "Failed to load Paystack subscription candidates" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/paystack-subscription-resolution", requireAdmin, async (req, res) => {
+    try {
+      const userId = Number.parseInt(req.params.userId, 10);
+      const selectedSubscriptionCode = typeof req.body?.subscriptionCode === "string"
+        ? req.body.subscriptionCode.trim()
+        : "";
+      if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).json({ error: "Invalid user ID" });
+      }
+      if (!/^SUB_[A-Za-z0-9_-]+$/.test(selectedSubscriptionCode)) {
+        return res.status(400).json({ error: "A valid Paystack SUB_* code is required" });
+      }
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const resolution = await billingService.resolvePaystackSubscriptionIdentity(
+        userId,
+        selectedSubscriptionCode,
+        {
+          confirmed: req.body?.confirmed === true,
+          adminUserId: req.user!.id,
+        },
+      );
+      if (resolution.outcome === "confirmation_required") {
+        return res.status(400).json({
+          error: "Explicit confirmation is required before changing the active subscription identity",
+          reason: resolution.reason,
+        });
+      }
+      if (resolution.outcome === "unresolved") {
+        return res.status(409).json({
+          error: "The selected subscription could not be resolved safely",
+          reason: resolution.reason,
+        });
+      }
+
+      log(
+        `[ADMIN_ACTION] User ${req.user!.id} selected Paystack subscription ${selectedSubscriptionCode} for user ${userId}`,
+        "admin",
+      );
+      res.json({
+        success: true,
+        ...resolution,
+        providerMutation: "none",
+      });
+    } catch (error: any) {
+      log(`Error resolving Paystack subscription identity: ${error.message}`, "admin");
+      res.status(500).json({ error: "Failed to resolve Paystack subscription identity" });
+    }
+  });
+
+  // ========================================
   // ADMIN RECOVERY ACTIONS
   // ========================================
   app.post("/api/admin/users/:userId/actions", requireAdmin, async (req, res) => {

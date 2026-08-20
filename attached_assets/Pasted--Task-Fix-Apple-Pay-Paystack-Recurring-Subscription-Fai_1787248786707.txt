@@ -1,0 +1,417 @@
+# Task — Fix Apple Pay Paystack Recurring Subscription Failures
+
+We have identified a recurring billing issue affecting multiple Simple Slips customers who originally subscribed using Apple Pay.
+
+Do not deploy yet.
+
+Do not charge customers.
+
+Do not automatically cancel, refund, or modify production subscriptions.
+
+We need to investigate and safely repair the billing architecture for Apple Pay-originated Paystack subscriptions.
+
+## Confirmed production pattern
+
+Customers can successfully complete an initial Paystack subscription checkout using Apple Pay.
+
+Paystack creates a recurring monthly subscription.
+
+Subsequent automatic renewal attempts may then appear as Card transactions and fail or become abandoned.
+
+In at least one confirmed customer case:
+
+* Initial Apple Pay payment succeeded.
+* Paystack created a `SUB_*`.
+* Recurring Card attempts subsequently failed.
+* Customer later completed another Apple Pay checkout.
+* Paystack created a second `SUB_*`.
+* Simple Slips did not retain either trusted subscription identity locally.
+* Both Paystack subscriptions now exist simultaneously.
+
+This creates both a renewal-failure risk and a duplicate-provider-subscription risk.
+
+---
+
+# 1. Audit successful Apple Pay transactions
+
+Trace exactly how Simple Slips processes a successful Paystack transaction where the authoritative provider channel is Apple Pay.
+
+Determine what we currently store from the verified Paystack transaction, including:
+
+* transaction channel;
+* authorization code;
+* authorization channel;
+* `authorization.reusable`;
+* authorization signature;
+* customer code;
+* subscription code;
+* plan code.
+
+Identify whether Simple Slips currently treats:
+
+`successful transaction`
+
+as equivalent to:
+
+`safe recurring authorization`
+
+even when the provider authorization is not reusable.
+
+That must not happen.
+
+---
+
+# 2. Required recurring-readiness rule
+
+For any new Paystack monthly/annual subscription checkout, after successful server-side verification determine whether Paystack has created a recurring relationship that is actually capable of unattended renewal.
+
+Do not rely only on:
+
+* payment success;
+* plan metadata;
+* presence of an `AUTH_*`;
+* existence of a `SUB_*`.
+
+Inspect authoritative Paystack authorization properties.
+
+At minimum determine whether:
+
+`authorization.reusable === true`
+
+and whether the authorization is valid for the created Paystack subscription.
+
+A successful initial payment must not automatically mean:
+
+`automatic renewal configured`
+
+unless authoritative provider evidence supports it.
+
+---
+
+# 3. Distinguish payment success from recurring readiness
+
+Introduce/derive a clear internal distinction between:
+
+### Payment successful
+
+The initial subscription payment was successfully collected.
+
+### Recurring billing ready
+
+There is a verified Paystack subscription identity and an appropriate reusable authorization/provider relationship for future automatic renewal.
+
+These are not necessarily the same state.
+
+If initial payment succeeds but recurring billing is not safely configured:
+
+* preserve the successful payment;
+* activate the paid entitlement according to existing rules;
+* do not call it a failed payment;
+* do not silently claim automatic renewal is configured;
+* surface a payment-method setup action.
+
+Do not create another subscription automatically.
+
+---
+
+# 4. Apple Pay handling
+
+Determine from the actual Paystack verification response what is returned for Apple Pay transactions.
+
+Add tests based on realistic provider payloads where:
+
+* transaction channel is Apple Pay;
+* authorization exists but `reusable = false`;
+* authorization is absent;
+* provider returns a reusable underlying authorization;
+* subscription is created but subsequent recurring capability is uncertain.
+
+The application must fail closed when recurring capability is not authoritative.
+
+Do not hardcode:
+
+`Apple Pay = always bad`
+
+if Paystack can sometimes return a valid reusable authorization.
+
+Use provider evidence, particularly authorization reusability.
+
+---
+
+# 5. Existing Paystack subscription payment-method update flow
+
+Paystack supports generating a hosted management link for an existing subscription so that the customer can update the authorization/payment method.
+
+Investigate integration of the Paystack endpoint conceptually equivalent to:
+
+`GET /subscription/:code/manage/link`
+
+This should be the preferred recovery mechanism when:
+
+* a trusted existing `SUB_*` already exists;
+* the subscription belongs unambiguously to the billing owner and plan;
+* recurring payment is failing because the authorization/payment instrument needs attention.
+
+The customer should be sent to Paystack's hosted subscription management/update-payment-method page.
+
+Do NOT create another Paystack subscription in this state.
+
+---
+
+# 6. Recovery decision tree
+
+Implement or propose the following safe hierarchy:
+
+### Existing trusted `SUB_*` + healthy recurring authorization
+
+Continue normal subscription renewal.
+
+### Existing trusted `SUB_*` + payment/authorization issue
+
+Generate Paystack hosted subscription-management link.
+
+Customer updates payment authorization on the **existing subscription**.
+
+Do not create another `SUB_*`.
+
+### One unambiguously recoverable provider `SUB_*` but missing locally
+
+Recover its identity first.
+
+Then, if its authorization needs attention, use the hosted subscription-management link.
+
+Do not create another subscription checkout.
+
+### Multiple provider `SUB_*` candidates
+
+Do not choose automatically.
+
+Do not open new checkout.
+
+Manual review required.
+
+### No provider `SUB_*` exists
+
+Only then may the existing hardened Task #46 recovery checkout create a new subscription.
+
+---
+
+# 7. Prevent duplicate provider subscriptions
+
+Before any new Paystack subscription checkout is allowed for an existing Paystack customer:
+
+1. Resolve billing owner.
+2. Acquire billing-owner lock.
+3. Query/reconcile existing trusted provider subscription identities.
+4. Check provider subscriptions for this exact customer + plan.
+5. If one valid subscription exists:
+
+   * recover/use it;
+   * do not create a new subscription.
+6. If multiple valid candidates exist:
+
+   * manual review;
+   * no new checkout.
+7. Only if provider confirms no valid subscription exists:
+
+   * allow the hardened server-owned recovery checkout.
+
+This must preserve all Task #41/#42/#46 idempotency and concurrency protections.
+
+---
+
+# 8. Audit affected Apple Pay customers
+
+Create a READ-ONLY diagnostic/report that identifies potentially affected production users.
+
+Do not mutate anything.
+
+Identify customers with patterns such as:
+
+* successful Paystack transaction originating from Apple Pay;
+* monthly/annual Paystack subscription;
+* provider subscription identity missing locally;
+* recurring payment failures/abandoned attempts;
+* multiple Paystack subscriptions for same customer + plan;
+* repeated customer-initiated successful payments followed by failed automatic renewals.
+
+If direct provider API access is unavailable in development, create the safest local candidate report possible and clearly identify which provider fields still need to be checked.
+
+Do not infer provider facts that are unavailable locally.
+
+---
+
+# 9. Customer-facing UX
+
+Avoid telling customers:
+
+“Payment failed”
+
+when the real issue is that their recurring payment authorization needs to be updated.
+
+Suggested conceptual states:
+
+### Automatic renewal active
+
+No action required.
+
+### Payment method needs attention
+
+> We couldn't complete your automatic renewal. Update your payment method securely with Paystack.
+
+CTA:
+
+`Update payment method`
+
+This should use the existing `SUB_*` hosted management link.
+
+### Automatic renewal not fully configured
+
+> Your payment was successful, but automatic renewal needs to be completed.
+
+CTA:
+
+`Set up automatic renewal`
+
+The actual action must depend on whether an existing provider subscription exists.
+
+### Multiple subscription relationship / ambiguity
+
+Do not expose another checkout.
+
+Surface safe support/review messaging.
+
+---
+
+# 10. Antebellum regression case
+
+Add an explicit test/modelled regression for this real pattern:
+
+Provider customer:
+
+same customer + same monthly plan
+
+Provider contains:
+
+`SUB_A`
+
+* created April 26
+* monthly billing cycle on 26th
+* payment attempts later fail
+
+`SUB_B`
+
+* created July 2
+* monthly billing cycle on 2nd
+* payment attempt later fails
+
+Local Simple Slips:
+
+* successful April payment;
+* successful July payment;
+* active local subscription;
+* no trusted local `SUB_*`.
+
+Expected:
+
+* no automatic provider identity selected;
+* no third checkout;
+* state becomes manual review due to multiple provider subscriptions;
+* customer cannot accidentally create another Paystack subscription;
+* support can resolve which subscription is canonical.
+
+---
+
+# 11. Tests
+
+Add focused tests for:
+
+1. Apple Pay successful payment with `reusable = false`.
+2. Apple Pay successful payment with no reusable authorization.
+3. Successful provider payment with verified reusable authorization.
+4. Existing trusted subscription with failed recurring authorization.
+5. Hosted subscription management link generated for existing trusted `SUB_*`.
+6. Hosted link cannot be generated for another customer's `SUB_*`.
+7. Missing local identity + exactly one provider subscription.
+8. Missing local identity + multiple provider subscriptions.
+9. Multiple provider subscriptions → no new checkout.
+10. No provider subscriptions → recovery checkout allowed.
+11. Concurrent payment-method recovery requests.
+12. Workspace member cannot update owner's billing through personal identity.
+13. Existing duplicate-checkout protections remain.
+14. Failed/abandoned recurring attempt does not create another subscription automatically.
+
+---
+
+# 12. Preserve existing protections
+
+Do not weaken:
+
+* server-owned checkout references;
+* immutable checkout terms;
+* one pending checkout per billing owner;
+* advisory locks;
+* payment ledger uniqueness;
+* exact `SUB_*` identity matching;
+* workspace billing ownership;
+* stale event rejection;
+* untracked initial-charge rejection;
+* renewal reconciliation;
+* webhook deferral/replay;
+* Task #46 ambiguity protection.
+
+---
+
+# STOP BEFORE IMPLEMENTATION REVIEW
+
+If significant architectural changes are required, first return the audit and proposed implementation.
+
+Do not deploy.
+
+Do not mutate production customers.
+
+Do not cancel duplicate subscriptions.
+
+Do not issue refunds.
+
+Do not charge authorizations.
+
+Return:
+
+## A. Root cause
+
+Explain why Apple Pay-originated subscriptions are failing to renew.
+
+## B. Paystack authorization behavior
+
+Show what provider evidence determines recurring capability.
+
+## C. Existing customer impact
+
+Estimate/identify potentially affected accounts read-only.
+
+## D. Correct recovery architecture
+
+Explain when to:
+
+* keep existing subscription;
+* update authorization;
+* recover identity;
+* require manual review;
+* create a new subscription.
+
+## E. Duplicate-subscription prevention
+
+Explain how a third provider subscription is prevented.
+
+## F. Antebellum
+
+Explain how the new architecture handles the confirmed two-`SUB_*` case.
+
+## G. Files expected to change
+
+## H. Test plan
+
+End with:
+
+`READY FOR IMPLEMENTATION REVIEW — DO NOT DEPLOY`

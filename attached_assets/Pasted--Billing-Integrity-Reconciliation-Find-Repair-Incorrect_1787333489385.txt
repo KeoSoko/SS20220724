@@ -1,0 +1,607 @@
+# Billing Integrity Reconciliation — Find & Repair Incorrect Subscription Plan Assignments
+
+## What & Why
+
+A confirmed billing-integrity issue has been identified.
+
+Example: user 7 has:
+
+* a completed R530 Paystack annual subscription payment,
+* an active subscription through 2027-01-20,
+* `total_paid = 53000`,
+* but `user_subscriptions.plan_id = 1`, pointing to the free-trial plan instead of the annual paid plan.
+
+Rather than repairing one user manually, perform a controlled population-wide integrity review and repair **all subscription plan mismatches that can be proven unambiguously from existing local evidence**.
+
+This is a data-integrity repair.
+
+It is NOT:
+
+* a Paystack reconciliation,
+* a billing recovery,
+* a subscription creation exercise,
+* a historical collection process.
+
+No customer should be charged or contacted as part of this job.
+
+---
+
+# Core safety principle
+
+Automatically repair a subscription only when the intended plan can be established **uniquely and deterministically** from trusted local evidence.
+
+If evidence is ambiguous, contradictory, incomplete, or maps to multiple possible plans:
+
+**DO NOT MODIFY THAT CUSTOMER.**
+
+Flag the account for manual review.
+
+Never infer a paid plan merely because a user currently has access.
+
+---
+
+# Phase 1 — Read-only population scan
+
+Before making any changes, inspect the complete relevant subscription population.
+
+Focus on:
+
+* active subscriptions,
+* paid subscriptions,
+* historical successful Paystack payments,
+* subscriptions currently pointing to `free_trial`,
+* subscriptions whose current plan conflicts with successful payment evidence.
+
+Identify potential mismatches such as:
+
+### A. Paid but stored as trial
+
+```text
+subscription.plan = free_trial
+AND
+successful paid transaction exists
+```
+
+### B. Annual payment but wrong plan
+
+For example:
+
+```text
+successful amount = R530
+payment description/metadata = yearly
+current plan != premium_yearly
+```
+
+### C. Monthly payment but wrong plan
+
+Successful monthly payment evidence exists but the subscription points to:
+
+* trial,
+* annual,
+* another incompatible paid plan.
+
+### D. Billing-period conflict
+
+For example:
+
+```text
+nextBillingDate - subscriptionStartDate ≈ 1 year
+BUT
+stored plan = monthly/trial
+```
+
+This may be supporting evidence but must not be the sole basis for repair.
+
+### E. Payment description / plan metadata conflict
+
+Where a successful transaction contains explicit plan information contradicting the stored subscription plan.
+
+---
+
+# Phase 2 — Build an authoritative plan map
+
+Read the current `subscription_plans` table.
+
+For every available plan report:
+
+* plan ID
+* plan code
+* display name
+* price
+* billing period
+* Paystack plan code
+
+Do not hardcode historical assumptions such as:
+
+```text
+R530 always means plan 3
+```
+
+unless the production plan table confirms it.
+
+Build the repair logic against the actual current database values.
+
+---
+
+# Phase 3 — Define evidence hierarchy
+
+Use the strongest available local evidence in approximately this order:
+
+## Tier 1 — Explicit plan identity
+
+Strongest evidence includes:
+
+* trusted checkout attempt `plan_id`,
+* provider/checkout metadata containing the purchased plan ID,
+* trusted plan code,
+* completed checkout directly linked to a known subscription plan.
+
+If this evidence exists and is internally consistent, prefer it.
+
+## Tier 2 — Successful payment + unique plan amount + billing description
+
+A repair may be considered when:
+
+* successful completed payment exists,
+* payment belongs to the same user,
+* amount uniquely maps to exactly one current paid plan,
+* transaction description or metadata supports that plan/billing period,
+* subscription dates/status do not contradict it.
+
+## Tier 3 — Amount alone
+
+Do NOT automatically repair based on amount alone if:
+
+* multiple plans share the amount,
+* historic pricing could have differed,
+* discounts/promotions could explain the amount,
+* payment evidence is incomplete.
+
+Amount should generally be corroborated by another signal.
+
+## Tier 4 — Dates only
+
+Do NOT automatically repair based only on:
+
+* next billing date,
+* subscription start date,
+* trial dates.
+
+Dates may corroborate stronger evidence but must not independently determine the plan.
+
+---
+
+# Phase 4 — Classify every candidate
+
+Every detected mismatch must be classified as exactly one of:
+
+### `SAFE_AUTOMATIC_REPAIR`
+
+Evidence uniquely identifies the intended plan.
+
+### `MANUAL_REVIEW_REQUIRED`
+
+There is evidence of corruption/mismatch, but the correct plan cannot be proven safely.
+
+### `NO_REPAIR_REQUIRED`
+
+Stored subscription plan agrees with available authoritative evidence.
+
+### `INSUFFICIENT_EVIDENCE`
+
+Something looks unusual but there is not enough reliable data to conclude that the plan is wrong.
+
+---
+
+# Phase 5 — Produce the read-only preview BEFORE writing
+
+Before any production mutation, return a repair preview table.
+
+Use internal IDs only where practical.
+
+For every proposed automatic repair show:
+
+| User ID | Current Plan | Proposed Plan | Evidence | Confidence |
+| ------- | ------------ | ------------- | -------- | ---------- |
+
+For every manual-review candidate show:
+
+| User ID | Current Plan | Conflicting Evidence | Why Not Safe to Repair |
+| ------- | ------------ | -------------------- | ---------------------- |
+
+Also provide totals:
+
+```text
+Subscriptions scanned:
+Potential mismatches:
+Safe automatic repairs:
+Manual review:
+Insufficient evidence:
+No repair required:
+```
+
+Do not perform writes until this classification has been calculated and validated internally.
+
+---
+
+# Phase 6 — Automatic repair rules
+
+For every `SAFE_AUTOMATIC_REPAIR` candidate:
+
+Change **only**:
+
+```text
+user_subscriptions.plan_id
+```
+
+unless a separate corrupted field is independently proven and specifically included in the preview.
+
+For this job the default is:
+
+> repair `plan_id` only.
+
+DO NOT change:
+
+* subscription status
+* subscription start date
+* trial dates
+* next billing date
+* cancellation date
+* total paid
+* last payment date
+* Paystack customer code
+* Paystack reference
+* authorization code
+* recurring readiness
+* subscription identity
+* payment transactions
+* checkout attempts
+* billing events
+
+---
+
+# Phase 7 — Guard every write
+
+Do not issue a broad update such as:
+
+```sql
+UPDATE user_subscriptions
+SET plan_id = ...
+WHERE ...
+```
+
+across an inferred population.
+
+Each repair must use a guarded expected-state condition.
+
+Conceptually:
+
+```text
+WHERE subscription_id = expected_subscription_id
+AND user_id = expected_user_id
+AND plan_id = expected_old_plan_id
+AND status = expected_status
+```
+
+Verify exactly one expected row is affected.
+
+If the row has changed since the read-only classification:
+
+* do not repair it,
+* classify it as `STATE_CHANGED`,
+* continue safely with other independent candidates.
+
+---
+
+# Phase 8 — Transaction safety
+
+Use an appropriate database transaction.
+
+A failure repairing one candidate must not result in partially modified fields for that candidate.
+
+Do not allow an error to trigger a broad rollback/retry that could accidentally update candidates whose state has changed.
+
+Use the safest existing database transaction pattern.
+
+---
+
+# Phase 9 — KeoraSoko expected candidate
+
+Re-evaluate user 7 as part of the population scan rather than special-casing the account.
+
+Existing diagnostic evidence previously showed:
+
+* active subscription,
+* `plan_id = 1` / free_trial,
+* R530 completed Paystack payment,
+* description `Simple Slips Yearly Subscription`,
+* annual billing period through 2027-01-20,
+* annual paid plan previously identified as `premium_yearly`.
+
+Do not assume those values remain unchanged.
+
+Re-read them immediately before classification.
+
+User 7 should be repaired automatically only if the current evidence still satisfies the same population-wide rules applied to everyone else.
+
+Do not create user-specific business logic.
+
+---
+
+# Phase 10 — Post-repair verification
+
+After repairs, rerun the complete integrity scan.
+
+Verify for every repaired account:
+
+* subscription plan now matches authoritative payment/checkout evidence,
+* subscription status is unchanged,
+* next billing date is unchanged,
+* total paid is unchanged,
+* payment records are unchanged,
+* Paystack customer information is unchanged,
+* recurring readiness is unchanged,
+* billing events are unchanged.
+
+Produce:
+
+```text
+automatic repairs attempted:
+automatic repairs completed:
+state-changed/skipped:
+repair failures:
+remaining manual-review candidates:
+remaining unexplained mismatches:
+```
+
+---
+
+# Phase 11 — Verify customer access
+
+For every repaired account, compare effective subscription access:
+
+### Before repair
+
+vs
+
+### After repair
+
+The repair must not accidentally:
+
+* expire access,
+* shorten a paid term,
+* extend a paid term,
+* trigger a trial,
+* trigger payment-required state,
+* change billing owner,
+* alter workspace entitlement.
+
+The objective is to correct the displayed/recorded plan identity, not to recalculate access.
+
+---
+
+# Phase 12 — Renewal status must remain independent
+
+Do not treat correcting `plan_id` as evidence that automatic renewal works.
+
+After repair, `getPaystackRenewalStatus()` must continue using its existing evidence rules.
+
+For accounts like user 7, it may legitimately remain:
+
+```text
+renewal_setup_required
+```
+
+if recurring settlement/identity evidence is absent.
+
+Do not fabricate:
+
+* Paystack subscription identities,
+* `SUB_...` subscription codes,
+* reusable authorizations,
+* recurring settlement events.
+
+---
+
+# Phase 13 — Root-cause protection
+
+Inspect all current successful paid-plan activation paths.
+
+Confirm that:
+
+```text
+purchased plan_id
+=
+resulting user_subscriptions.plan_id
+```
+
+Add regression coverage for at least:
+
+### Trial → monthly
+
+Successful monthly activation replaces `free_trial` plan ID with the monthly plan.
+
+### Trial → annual
+
+Successful annual activation replaces `free_trial` plan ID with the annual plan.
+
+### Monthly → annual
+
+Successful upgrade results in the correct annual plan ID.
+
+### Failed activation
+
+A failed activation must not leave:
+
+```text
+paid/active dates + stale previous plan_id
+```
+
+### Atomicity
+
+Where the operation is intended to be atomic, confirm a failed payment/subscription transaction cannot commit only a subset of the business state.
+
+If a current defect can still cause the historical mismatch, fix it narrowly.
+
+Do not redesign billing.
+
+---
+
+# Phase 14 — Historical pricing caution
+
+Before using payment amount as plan evidence, inspect whether subscription pricing has changed historically.
+
+If historic plan pricing means a successful amount could map to multiple plans depending on date:
+
+* do not automatically infer the plan from current price,
+* require additional explicit evidence,
+* otherwise send to manual review.
+
+Likewise account for:
+
+* promos,
+* discounts,
+* test charges,
+* partial payments,
+* prorated transactions,
+
+if those exist in the current billing architecture.
+
+Fail closed.
+
+---
+
+# Phase 15 — Reporting
+
+After completion provide four sections.
+
+## A. Population scan
+
+```text
+subscriptions reviewed:
+mismatches found:
+safe repairs:
+manual review:
+insufficient evidence:
+```
+
+## B. Repairs
+
+For each repaired record:
+
+```text
+user ID
+subscription ID
+old plan
+new plan
+evidence used
+```
+
+Do not include unnecessary customer personal information.
+
+## C. Manual review
+
+List internal IDs and the specific ambiguity preventing automatic repair.
+
+## D. Integrity verification
+
+Confirm that no other billing/subscription fields changed.
+
+---
+
+# Phase 16 — Tests
+
+Run focused and full tests.
+
+Add tests covering:
+
+* free trial + successful annual checkout → annual plan
+* free trial + successful monthly checkout → monthly plan
+* monthly → annual transition
+* correct paid plan remains untouched
+* mismatched plan with unique evidence qualifies for repair
+* ambiguous amount does not qualify
+* contradictory evidence does not qualify
+* historic-price ambiguity fails closed
+* guarded update skips changed state
+* automatic repair changes only plan ID
+* renewal evidence does not change because of plan repair
+* access/next billing date remains unchanged
+* failed subscription processing cannot leave stale plan identity where current architecture promises atomicity
+
+---
+
+# Absolute safety constraints
+
+Do NOT:
+
+* charge any customer
+* call `transaction.charge`
+* create a Paystack checkout
+* create a Paystack subscription
+* cancel a Paystack subscription
+* modify provider records
+* collect historical arrears
+* alter recurring readiness
+* create subscription identities
+* alter next billing dates
+* alter total-paid figures
+* modify payment transactions
+* modify checkout attempts
+* modify billing events
+* email customers
+* change Bank Statement Processor code
+* change Team/workspace code
+* make ambiguous repairs
+
+This is a **local subscription plan-integrity repair only**.
+
+---
+
+# Done looks like
+
+This job is complete when:
+
+1. The entire relevant subscription population has been scanned.
+2. Every detected plan mismatch has been classified.
+3. All unambiguous plan-ID corruptions have been repaired.
+4. Ambiguous records remain untouched and are reported for manual review.
+5. No Paystack mutations or customer charges occurred.
+6. No subscription fields other than proven-corrupt `plan_id` values were changed.
+7. Access dates/status/payment history remain unchanged.
+8. The scan is rerun after repair and confirms the corrected state.
+9. Regression tests protect paid-plan assignment going forward.
+10. Full relevant test suites pass.
+
+---
+
+# Before writing anything
+
+First calculate and report the read-only classification.
+
+Then, **within this same job**, proceed automatically with only the records classified `SAFE_AUTOMATIC_REPAIR`.
+
+Do not wait for manual approval between the scan and safe repairs.
+
+Anything classified as ambiguous/manual review must remain untouched.
+
+---
+
+# Final report
+
+Return:
+
+1. total subscriptions scanned,
+2. total mismatches found,
+3. number safely repaired,
+4. internal IDs repaired,
+5. old → new plans,
+6. evidence supporting each repair,
+7. accounts left for manual review,
+8. exact reason each was not automatically repaired,
+9. post-repair integrity scan,
+10. tests added,
+11. focused test results,
+12. full-suite results,
+13. root-cause status,
+14. explicit confirmation that no customer was charged and no Paystack mutation occurred.

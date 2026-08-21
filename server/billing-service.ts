@@ -3028,6 +3028,24 @@ export class BillingService {
       throw new Error(`Could not resolve subscription plan for transaction ${transactionReference} — flagged for manual review`);
     }
 
+    // Guard: a Paystack recurring invoice cannot belong to a trial plan. Trial
+    // plans carry no Paystack plan code — Paystack has no subscription to bill
+    // against. If plan resolution inherited a trial plan for a recurring invoice
+    // it would silently write the wrong plan_id to user_subscriptions without
+    // rejection, reproducing the exact historical mismatch this guard prevents.
+    if (isRecurringInvoice && resolution.plan.billingPeriod === 'trial') {
+      await this.logBillingEvent(userId, 'plan_resolution_failed', {
+        paystackReference: transactionReference,
+        amount: paymentAmount,
+        inheritedPlanId: resolution.plan.id,
+        reason: 'recurring_invoice_resolved_to_trial_plan',
+      });
+      throw new Error(
+        `Recurring Paystack invoice for user ${userId} resolved to a trial plan ` +
+        `(id=${resolution.plan.id}) — cannot process without a valid paid plan`,
+      );
+    }
+
     if (resolution.source === 'existing_subscription_renewal') {
       log(`Plan inherited from existing active subscription for user ${userId}, reference ${transactionReference} ` +
         `(renewal metadata ignored; inheriting plan id=${resolution.plan.id})`, 'billing');

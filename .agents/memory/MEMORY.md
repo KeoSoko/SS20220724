@@ -9,3 +9,5 @@
 - [Paystack schema rollout](paystack-schema-rollout.md) — missing billing tables require read-only fail-closed checks plus durable deferred-event replay with poison-event backoff.
 - [Paystack management links](paystack-management-links.md) — provider contract is documented; live link lifetime and single-use behavior remain unverified without a safe test subscription.
 - [Durable diagnostic exports](durable-diagnostic-exports.md) — durable CodeExecution lacks common byte/clock globals; use SQL hex plus percent decoding for read-only export payloads.
+- [Legacy no-identity subscriber state](legacy-no-identity-subscriber-state.md) — cohort of paying users with no identity row; use settlement evidence for neutral state; recoveryCheckoutEligible always false for this group.
+- [Vitest mockImplementationOnce contamination](vitest-mock-contamination.md) — unused Once mocks accumulate across tests; spy private methods to control code paths instead of chaining many db.select mocks.

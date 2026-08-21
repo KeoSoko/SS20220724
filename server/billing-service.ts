@@ -1180,6 +1180,73 @@ export class BillingService {
     return identity ?? null;
   }
 
+  /**
+   * Returns true when there is at least one `subscription_activated` event for
+   * this user AND the most recent activation is newer than any
+   * `subscription_failed` event. This evidence is authoritative enough to
+   * treat the subscription as actively renewing even when no
+   * `paystack_subscription_identities` row exists — covering legacy customers
+   * whose charges pre-date the server-side identity recording flow.
+   */
+  private async hasSuccessfulRecurringSettlementEvidence(
+    userId: number,
+  ): Promise<boolean> {
+    const [latestActivation] = await db
+      .select({ createdAt: billingEvents.createdAt })
+      .from(billingEvents)
+      .where(and(
+        eq(billingEvents.userId, userId),
+        eq(billingEvents.eventType, "subscription_activated"),
+      ))
+      .orderBy(desc(billingEvents.createdAt))
+      .limit(1);
+
+    if (!latestActivation) return false;
+
+    const [latestFailure] = await db
+      .select({ createdAt: billingEvents.createdAt })
+      .from(billingEvents)
+      .where(and(
+        eq(billingEvents.userId, userId),
+        eq(billingEvents.eventType, "subscription_failed"),
+      ))
+      .orderBy(desc(billingEvents.createdAt))
+      .limit(1);
+
+    // A failure that is newer than the last activation blocks the neutral state.
+    if (latestFailure && latestFailure.createdAt >= latestActivation.createdAt) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Resolve a local user by their Paystack customer code, using active
+   * subscription records. Returns null when no match exists or when more than
+   * one distinct user ID maps to the same customer code (ambiguous — fail
+   * closed).
+   */
+  private async resolveLocalUserByPaystackCustomerCode(
+    customerCode: string,
+  ): Promise<{ userId: number } | null> {
+    const matches = await db
+      .select({ userId: userSubscriptions.userId })
+      .from(userSubscriptions)
+      .where(and(
+        eq(userSubscriptions.paystackCustomerCode, customerCode),
+        eq(userSubscriptions.status, "active"),
+      ))
+      .limit(2);
+
+    if (matches.length === 0) return null;
+
+    const uniqueUserIds = Array.from(new Set(matches.map((m) => m.userId)));
+    if (uniqueUserIds.length !== 1) return null;
+
+    return { userId: uniqueUserIds[0] };
+  }
+
   private async loadPaystackSubscriptionCandidates(userId: number): Promise<
     | {
         available: true;
@@ -1449,6 +1516,72 @@ export class BillingService {
    * paid entitlement. It is deliberately stricter than support-assisted
    * resolution: multiple plausible provider subscriptions remain manual review.
    */
+
+  /**
+   * Attempt safe identity recovery for a `charge.success` webhook that arrived
+   * with a known subscription code but no matching `paystack_subscription_identities`
+   * row.
+   *
+   * Safety gates — all must pass before creating an identity:
+   * 1. The subscription code is not already owned by a different row.
+   * 2. Exactly one local active subscription has the matching Paystack customer
+   *    code (no ambiguity across multiple users).
+   * 3. No active identity already exists for the resolved user.
+   *
+   * When every gate passes the identity is recorded via
+   * `recordPaystackSubscriptionIdentity` with `allowNewActive: true`. Readiness
+   * follows the standard authorization evidence rules (`ready` when
+   * `authorization.reusable === true`, `unknown` otherwise).
+   *
+   * This method NEVER creates a checkout attempt and NEVER charges the customer.
+   */
+  async attemptSafeLegacyWebhookIdentityRecovery(
+    data: any,
+    renewalEvidence: {
+      subscriptionCode: string;
+      customerCode: string;
+      transactionReference: string;
+    },
+  ): Promise<
+    | { outcome: "recovered"; userId: number }
+    | { outcome: "failed"; reason: string }
+  > {
+    const { subscriptionCode, customerCode } = renewalEvidence;
+
+    // Gate 1: subscription code must not already be owned by another row.
+    const existingOwner = await this.getPaystackSubscriptionIdentityByCode(subscriptionCode);
+    if (existingOwner) {
+      return { outcome: "failed", reason: "subscription_code_already_owned" };
+    }
+
+    // Gate 2: customer code must resolve to exactly one local active subscription
+    // (no ambiguity across multiple user accounts).
+    const resolved = await this.resolveLocalUserByPaystackCustomerCode(customerCode);
+    if (!resolved) {
+      return {
+        outcome: "failed",
+        reason: "ambiguous_or_missing_local_subscription_for_customer_code",
+      };
+    }
+    const { userId } = resolved;
+
+    // Gate 3: no competing active identity may already exist for this user.
+    const existingIdentity = await this.getActivePaystackSubscriptionIdentity(userId);
+    if (existingIdentity) {
+      return { outcome: "failed", reason: "user_already_has_active_identity" };
+    }
+
+    // All gates passed — record the identity. Readiness is determined by the
+    // authorization evidence present in the charge payload (same rules as the
+    // subscription.create flow).
+    await this.recordPaystackSubscriptionIdentity(userId, data, {
+      allowNewActive: true,
+      auditSource: "legacy_charge_success_recovery",
+    });
+
+    return { outcome: "recovered", userId };
+  }
+
   async recoverPaystackRenewalRelationship(
     userId: number,
   ): Promise<PaystackRenewalIdentityRecoveryResult> {
@@ -3884,9 +4017,51 @@ export class BillingService {
       return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
     }
 
-    // A successful initial payment without a trusted recurring identity must
-    // not be presented as automatic renewal, even during the paid period.
+    // No identity row. Check whether the subscription's billing date is still
+    // in the future — which implies the customer is currently paid up.
     if (new Date(subscription.nextBillingDate).getTime() > Date.now()) {
+      // Active reconciliation or manual-review signals take precedence over any
+      // neutral state, even when billing is future-dated.
+      const [recentRecoverySignal] = await db
+        .select({ eventType: billingEvents.eventType })
+        .from(billingEvents)
+        .where(and(
+          eq(billingEvents.userId, userId),
+          inArray(billingEvents.eventType, [
+            "renewal_recovery_manual_review",
+            "renewal_reconciliation_pending",
+          ]),
+        ))
+        .orderBy(desc(billingEvents.createdAt))
+        .limit(1);
+      if (recentRecoverySignal?.eventType === "renewal_recovery_manual_review") {
+        return { state: "manual_review_required", recoveryCheckoutEligible: false, managementLinkEligible: false };
+      }
+      if (recentRecoverySignal?.eventType === "renewal_reconciliation_pending") {
+        return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
+      }
+
+      // A customer with future billing and at least one successful settlement
+      // event that supersedes any past failure is actively paying — surface the
+      // neutral subscription_active state rather than a misleading setup-required
+      // warning. This covers legacy customers whose identity row was never created
+      // because their charges pre-dated the server-side identity recording flow.
+      // recoveryCheckoutEligible is intentionally false: opening a new checkout
+      // for an already-paying customer risks creating a duplicate Paystack
+      // subscription.
+      const hasSettlementEvidence =
+        await this.hasSuccessfulRecurringSettlementEvidence(userId);
+      if (hasSettlementEvidence) {
+        return {
+          state: "subscription_active",
+          recoveryCheckoutEligible: false,
+          managementLinkEligible: false,
+        };
+      }
+
+      // No settlement evidence — conservative setup path. Do NOT set
+      // recoveryCheckoutEligible here; without settlement evidence we cannot
+      // rule out that this user genuinely never completed a recurring payment.
       return {
         state: "renewal_setup_required",
         recoveryCheckoutEligible: false,

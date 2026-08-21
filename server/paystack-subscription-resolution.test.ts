@@ -515,3 +515,378 @@ describe("automatic legacy renewal relationship recovery", () => {
     expect(result).toEqual({ state: "renewal_setup_required", recoveryCheckoutEligible: true, managementLinkEligible: false });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getPaystackRenewalStatus — no identity row (legacy paying subscriber cohort)
+// ─────────────────────────────────────────────────────────────────────────────
+// These tests cover the future-billing + no identity branch introduced to fix
+// the cohort of 33 active customers who were paying via legacy charge.success
+// webhooks but never had a paystack_subscription_identities row created.
+
+describe("getPaystackRenewalStatus — no identity row, future billing", () => {
+  const futureBillingDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  // Set up a service instance with no identity row and spy on the private
+  // settlement evidence method so each test only consumes ONE db.select call
+  // (the recovery-signals check).  This prevents mock-queue contamination
+  // across tests.
+  function buildService(settlementEvidence: boolean) {
+    const service = new BillingService();
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    vi.spyOn(service as any, "hasSuccessfulRecurringSettlementEvidence").mockResolvedValue(
+      settlementEvidence,
+    );
+    return service;
+  }
+
+  // Mock exactly ONE db.select call (recovery-signals check).
+  function mockRecoverySignal(signal?: string | null) {
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        orderBy: () => chain,
+        limit: async () => (signal ? [{ eventType: signal }] : []),
+      };
+      return chain;
+    });
+  }
+
+  // Test A: Jesse's exact production profile — future billing, no identity row,
+  // settlement evidence present (repeated successful activations).
+  it("A: maps Jesse-exact profile (future billing + no identity + settlement evidence) to subscription_active", async () => {
+    vi.mocked(storage.getUserSubscription).mockResolvedValue({
+      ...localSubscription,
+      nextBillingDate: futureBillingDate,
+    } as any);
+    const service = buildService(true);
+    mockRecoverySignal(); // no recovery signal
+
+    const result = await service.getPaystackRenewalStatus(42);
+    expect(result.state).toBe("subscription_active");
+    expect(result).toEqual({
+      state: "subscription_active",
+      recoveryCheckoutEligible: false,
+      managementLinkEligible: false,
+    });
+  });
+
+  // Test B: Single recent activation with no prior failures (settlement evidence = true).
+  it("B: maps single recent legacy activation to subscription_active", async () => {
+    vi.mocked(storage.getUserSubscription).mockResolvedValue({
+      ...localSubscription,
+      nextBillingDate: futureBillingDate,
+    } as any);
+    const service = buildService(true);
+    mockRecoverySignal();
+
+    const result = await service.getPaystackRenewalStatus(42);
+    expect(result.state).toBe("subscription_active");
+  });
+
+  // Test D: An active reconciliation_pending event overrides subscription_active.
+  it("D: returns reconciling when a reconciliation event is pending, even without an identity row", async () => {
+    vi.mocked(storage.getUserSubscription).mockResolvedValue({
+      ...localSubscription,
+      nextBillingDate: futureBillingDate,
+    } as any);
+    const service = buildService(true);
+    mockRecoverySignal("renewal_reconciliation_pending");
+
+    const result = await service.getPaystackRenewalStatus(42);
+    expect(result.state).toBe("reconciling");
+    expect(result.state).not.toBe("subscription_active");
+    expect(result).toEqual({
+      state: "reconciling",
+      recoveryCheckoutEligible: false,
+      managementLinkEligible: false,
+    });
+  });
+
+  // Test E: No identity and no settlement evidence — conservative setup path (users 7 and 100).
+  it("E: stays on renewal_setup_required when no successful settlement evidence exists", async () => {
+    vi.mocked(storage.getUserSubscription).mockResolvedValue({
+      ...localSubscription,
+      nextBillingDate: futureBillingDate,
+    } as any);
+    const service = buildService(false); // no settlement evidence
+    mockRecoverySignal(); // no recovery signal
+
+    const result = await service.getPaystackRenewalStatus(42);
+    expect(result.state).toBe("renewal_setup_required");
+    expect(result.recoveryCheckoutEligible).toBe(false);
+    expect(result).toEqual({
+      state: "renewal_setup_required",
+      recoveryCheckoutEligible: false,
+      managementLinkEligible: false,
+    });
+  });
+
+  // Test F: manual_review_required takes precedence over subscription_active.
+  it("F: returns manual_review_required when a review signal is present, not subscription_active", async () => {
+    vi.mocked(storage.getUserSubscription).mockResolvedValue({
+      ...localSubscription,
+      nextBillingDate: futureBillingDate,
+    } as any);
+    const service = buildService(true);
+    mockRecoverySignal("renewal_recovery_manual_review");
+
+    const result = await service.getPaystackRenewalStatus(42);
+    expect(result.state).toBe("manual_review_required");
+    expect(result.state).not.toBe("subscription_active");
+    expect(result).toEqual({
+      state: "manual_review_required",
+      recoveryCheckoutEligible: false,
+      managementLinkEligible: false,
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// hasSuccessfulRecurringSettlementEvidence — private method unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests the activation-vs-failure comparison logic in isolation.  Because this
+// method is private, we call it via `(service as any)`.
+
+describe("hasSuccessfulRecurringSettlementEvidence", () => {
+  const recent = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const stale  = new Date(Date.now() - 300 * 24 * 60 * 60 * 1000);
+
+  function mockActivationAndFailure(
+    activation: Date | null,
+    failure: Date | null,
+  ) {
+    vi.mocked(db.select)
+      .mockImplementationOnce(() => {
+        const chain: any = {
+          from: () => chain,
+          where: () => chain,
+          orderBy: () => chain,
+          limit: async () => (activation ? [{ createdAt: activation }] : []),
+        };
+        return chain;
+      })
+      .mockImplementationOnce(() => {
+        const chain: any = {
+          from: () => chain,
+          where: () => chain,
+          orderBy: () => chain,
+          limit: async () => (failure ? [{ createdAt: failure }] : []),
+        };
+        return chain;
+      });
+  }
+
+  // Test C: An old failure is superseded by a later successful activation.
+  it("C: returns true when a stale failure is superseded by a more recent activation", async () => {
+    const service = new BillingService();
+    mockActivationAndFailure(recent, stale);
+
+    const result = await (service as any).hasSuccessfulRecurringSettlementEvidence(42);
+    expect(result).toBe(true);
+  });
+
+  it("returns true when there is at least one activation and no failure", async () => {
+    const service = new BillingService();
+    mockActivationAndFailure(recent, null);
+
+    const result = await (service as any).hasSuccessfulRecurringSettlementEvidence(42);
+    expect(result).toBe(true);
+  });
+
+  it("returns false when no activation events exist", async () => {
+    const service = new BillingService();
+    // Only mock the activation query — the failure query is never reached when
+    // no activation exists (the method returns early).
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        orderBy: () => chain,
+        limit: async () => [],
+      };
+      return chain;
+    });
+
+    const result = await (service as any).hasSuccessfulRecurringSettlementEvidence(42);
+    expect(result).toBe(false);
+  });
+
+  it("returns false when the most recent event is a failure newer than the last activation", async () => {
+    const service = new BillingService();
+    mockActivationAndFailure(stale, recent);
+
+    const result = await (service as any).hasSuccessfulRecurringSettlementEvidence(42);
+    expect(result).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// attemptSafeLegacyWebhookIdentityRecovery — gate logic tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("attemptSafeLegacyWebhookIdentityRecovery", () => {
+  const chargeData = {
+    subscription_code: "SUB_legacy",
+    customer: { customer_code: "CUS_customer" },
+    authorization: { authorization_code: "AUTH_legacy", reusable: true },
+    plan: { plan_code: "PLN_monthly" },
+    reference: "ref_legacy_001",
+  };
+  const renewalEvidence = {
+    subscriptionCode: "SUB_legacy",
+    customerCode: "CUS_customer",
+    transactionReference: "ref_legacy_001",
+  };
+
+  // Test G: Unambiguous ownership → identity created.
+  it("G: records a paystack identity when webhook evidence unambiguously identifies the owner", async () => {
+    const service = new BillingService();
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({
+      subscriptionCode: "SUB_legacy",
+      status: "active",
+    } as any);
+    // Customer code resolves to exactly one user.
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        limit: async () => [{ userId: 42 }],
+      };
+      return chain;
+    });
+
+    const result = await service.attemptSafeLegacyWebhookIdentityRecovery(chargeData, renewalEvidence);
+
+    expect(result.outcome).toBe("recovered");
+    expect((result as any).userId).toBe(42);
+    expect(recordSpy).toHaveBeenCalledWith(
+      42,
+      chargeData,
+      expect.objectContaining({ allowNewActive: true }),
+    );
+  });
+
+  // Test H: Ambiguous ownership (multiple users share the customer code) → no identity.
+  it("H: does not create an identity when multiple local subscriptions share the customer code", async () => {
+    const service = new BillingService();
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({} as any);
+    // Two different user IDs → ambiguous.
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        limit: async () => [{ userId: 42 }, { userId: 99 }],
+      };
+      return chain;
+    });
+
+    const result = await service.attemptSafeLegacyWebhookIdentityRecovery(chargeData, renewalEvidence);
+
+    expect(result.outcome).toBe("failed");
+    expect((result as any).reason).toContain("ambiguous");
+    expect(recordSpy).not.toHaveBeenCalled();
+  });
+
+  // Test I: Authorization evidence lacks reusable flag → identity readiness stays unknown.
+  it("I: delegates readiness determination to recordPaystackSubscriptionIdentity (missing reusable evidence)", async () => {
+    const service = new BillingService();
+    const dataNoReusable = {
+      ...chargeData,
+      authorization: { authorization_code: "AUTH_noreuse" }, // no `reusable` field
+    };
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({
+      subscriptionCode: "SUB_legacy",
+      status: "active",
+    } as any);
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        limit: async () => [{ userId: 42 }],
+      };
+      return chain;
+    });
+
+    const result = await service.attemptSafeLegacyWebhookIdentityRecovery(dataNoReusable, renewalEvidence);
+
+    // Recovery still succeeds; the readiness decision is delegated to the existing
+    // recordPaystackSubscriptionIdentity logic (not the recovery method itself).
+    expect(result.outcome).toBe("recovered");
+    expect(recordSpy).toHaveBeenCalledWith(
+      42,
+      dataNoReusable,
+      expect.objectContaining({ allowNewActive: true }),
+    );
+  });
+
+  // Test J: All checks pass + reusable=true → recovery succeeds (readiness=ready delegated).
+  it("J: succeeds when all gates pass and reusable=true is present on the authorization", async () => {
+    const service = new BillingService();
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({
+      subscriptionCode: "SUB_legacy",
+      status: "active",
+    } as any);
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        limit: async () => [{ userId: 42 }],
+      };
+      return chain;
+    });
+
+    const result = await service.attemptSafeLegacyWebhookIdentityRecovery(chargeData, renewalEvidence);
+
+    expect(result.outcome).toBe("recovered");
+    expect(recordSpy).toHaveBeenCalledWith(
+      42,
+      chargeData,
+      expect.objectContaining({ allowNewActive: true }),
+    );
+  });
+
+  // Test K: Successful legacy webhook recovery never triggers a checkout attempt.
+  it("K: successful legacy recovery never inserts a checkout attempt or initiates a new charge", async () => {
+    state.transactionInserts = [];
+    state.billingEventInserts = [];
+
+    const service = new BillingService();
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({
+      subscriptionCode: "SUB_legacy",
+      status: "active",
+    } as any);
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        limit: async () => [{ userId: 42 }],
+      };
+      return chain;
+    });
+
+    await service.attemptSafeLegacyWebhookIdentityRecovery(chargeData, renewalEvidence);
+
+    // No checkout attempt insert should have been made.
+    const checkoutInsert = state.transactionInserts.find(
+      (r: any) => r.paystackReference && r.status === "pending",
+    );
+    expect(checkoutInsert).toBeUndefined();
+
+    // No billing event should record a checkout creation.
+    const checkoutEvent = state.billingEventInserts.find(
+      (r: any) => r.eventType?.includes("checkout"),
+    );
+    expect(checkoutEvent).toBeUndefined();
+  });
+});

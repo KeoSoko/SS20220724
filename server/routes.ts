@@ -182,8 +182,57 @@ async function handlePaystackChargeSuccess(data: any) {
       knownIdentity,
     );
     if (!renewalRelationship.valid) {
+      // When no identity row exists for this subscription code, attempt safe
+      // recovery before rejecting. All three gates in
+      // attemptSafeLegacyWebhookIdentityRecovery must pass: no competing
+      // ownership for the SUB_*, unambiguous local customer-code match, and no
+      // active identity already on the resolved user.
+      if (knownIdentity === null) {
+        const recovery = await billingService.attemptSafeLegacyWebhookIdentityRecovery(
+          data,
+          renewalEvidence,
+        );
+        if (recovery.outcome === "recovered") {
+          log(
+            `charge.success: safe legacy identity recovery for user ${recovery.userId} ` +
+            `via ${renewalEvidence.subscriptionCode}`,
+            "billing",
+          );
+          await billingService.processPaystackSubscription(
+            recovery.userId,
+            renewalEvidence.transactionReference,
+            {
+              expectedSubscriptionCode: renewalEvidence.subscriptionCode,
+              expectedCustomerCode: renewalEvidence.customerCode,
+              expectedInvoiceCode: renewalEvidence.invoiceCode,
+              source: "charge.success",
+            },
+          );
+          log(
+            `Successfully applied legacy renewal for user ${recovery.userId} via webhook`,
+            "billing",
+          );
+          return;
+        }
+        await billingService.recordBillingEvent(null, "untracked_paystack_charge_rejected", {
+          reference: renewalEvidence.transactionReference,
+          reason: recovery.reason,
+          subscriptionCode: renewalEvidence.subscriptionCode,
+          customerCode: renewalEvidence.customerCode,
+          legacyRecoveryAttempted: true,
+        });
+        log(
+          `Rejected untracked Paystack charge ${renewalEvidence.transactionReference}; ` +
+          `no identity and legacy recovery failed: ${recovery.reason}`,
+          "billing",
+        );
+        return;
+      }
+
+      // An existing identity was found but it is not a valid match for this
+      // subscription or customer code. Reject without a recovery attempt.
       await billingService.recordBillingEvent(
-        knownIdentity?.userId ?? null,
+        knownIdentity.userId,
         "untracked_paystack_charge_rejected",
         {
           reference: renewalEvidence.transactionReference,

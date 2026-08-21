@@ -1,0 +1,213 @@
+# Temporarily Disable Apple Pay for New Paystack Subscription Checkout
+
+We have identified a probable recurring-billing incompatibility/risk involving Apple Pay-created Paystack subscriptions.
+
+Implement a temporary, fail-closed safety gate preventing Apple Pay from being used to establish **new Simple Slips recurring subscriptions through Paystack**.
+
+This is a preventative change only.
+
+DO NOT DEPLOY after implementation. Stop for review.
+
+## Required behaviour
+
+For new Simple Slips subscription checkout:
+
+```text
+Card → AVAILABLE
+Apple Pay → UNAVAILABLE
+```
+
+This applies to:
+
+* Premium Monthly
+* Premium Annual
+* Team subscription plans
+* new subscriptions
+* prospective recovery subscription checkout
+
+Do not affect unrelated one-off payment functionality if any exists.
+
+## Important implementation requirement
+
+Do not merely hide an Apple Pay button in the Simple Slips frontend.
+
+Trace how Paystack Checkout currently determines available payment channels and enforce the restriction at the Paystack checkout initialization/configuration layer wherever supported.
+
+The objective is:
+
+> Paystack must not allow Apple Pay to create a new recurring Simple Slips `SUB_*`.
+
+If Paystack does not provide a supported way for the current integration to restrict Apple Pay while retaining Card, STOP and report the limitation rather than inventing an unsupported implementation.
+
+## Existing customers
+
+Do NOT:
+
+* disable existing Paystack subscriptions;
+* cancel subscriptions;
+* alter existing Apple Pay-created subscriptions;
+* change subscription identities;
+* change recurring-readiness values;
+* change next billing dates;
+* remove paid access;
+* refund transactions;
+* collect missed payments;
+* create replacement subscriptions;
+* contact customers.
+
+Existing Apple Pay-originated customers will be remediated separately.
+
+## Antebellum
+
+Do not modify:
+
+`corinne.nk@gmail.com`
+
+Do not:
+
+* disable either existing `SUB_*`;
+* charge the authorized 2 August R49 recovery payment;
+* create checkout;
+* attach a local identity.
+
+Her remediation remains a separate customer-specific task.
+
+## Existing billing protections
+
+Preserve all existing safeguards, including:
+
+* server-owned checkout attempts;
+* server-generated Paystack references;
+* billing-owner locking;
+* immutable checkout terms;
+* checkout idempotency;
+* exact payment verification;
+* provider subscription identity checks;
+* `authorization.reusable === true` requirement;
+* recurring-readiness states;
+* duplicate subscription protection;
+* management-link feature gate;
+* stored-authorization charging disabled;
+* prospective-only recovery policy;
+* deferred webhook handling.
+
+Do not weaken any of these protections.
+
+## Customer experience
+
+Do not expose a broken Apple Pay option and allow the customer to discover the restriction after attempting payment.
+
+Where Simple Slips controls the payment-method presentation, Apple Pay should not be offered for subscription setup.
+
+Normal Card subscription checkout should continue working exactly as before.
+
+Do not add alarming customer messaging.
+
+If messaging is necessary, use neutral wording such as:
+
+`Apple Pay is temporarily unavailable for subscription payments. Please use a bank card.`
+
+## Feature gate
+
+Prefer a fail-closed server-owned configuration such as:
+
+```text
+PAYSTACK_APPLE_PAY_SUBSCRIPTIONS_ENABLED=false
+```
+
+Requirements:
+
+* missing → disabled;
+* false → disabled;
+* only explicit `true` may enable it;
+* server-side enforcement required;
+* frontend state may mirror the server configuration but must not be the only protection.
+
+Do not enable the flag in production.
+
+## Tests
+
+Add regression coverage proving:
+
+### Apple Pay disabled
+
+New recurring subscription checkout cannot expose/use Apple Pay.
+
+### Card unaffected
+
+Normal Card subscription checkout remains available.
+
+### Recovery checkout
+
+Prospective recovery checkout also cannot create an Apple Pay subscription.
+
+### Existing subscriptions
+
+Existing Apple Pay-originated subscriptions remain untouched.
+
+### No mutation from gate
+
+The gate itself performs:
+
+```text
+Paystack charges: 0
+Paystack subscriptions created: 0
+Paystack subscriptions cancelled: 0
+Refunds: 0
+Production billing mutations: 0
+Historical collections: 0
+```
+
+### Existing billing safety
+
+Run the focused Paystack billing suite and confirm no regression in duplicate-charge, recurring-readiness, reconciliation, identity, checkout-attempt, or billing-owner protections.
+
+## Validation
+
+Run:
+
+* TypeScript
+* production build
+* focused Paystack/billing tests
+* relevant full test suite
+* read-only application smoke test
+
+Document unrelated pre-existing failures separately.
+
+## Return
+
+Report:
+
+### A. Current Apple Pay checkout mechanism
+
+### B. Exact gate implementation
+
+### C. Server-side enforcement
+
+### D. Paystack channel restriction
+
+### E. Customer-facing behaviour
+
+### F. Card checkout verification
+
+### G. Recovery checkout verification
+
+### H. Existing-customer impact
+
+### I. Test results
+
+### J. Files changed
+
+### K. Zero-mutation confirmation
+
+### L. Deployment recommendation
+
+End with exactly:
+
+`APPLE PAY RECURRING CHECKOUT SAFELY DISABLED — READY FOR REVIEW`
+
+or:
+
+`APPLE PAY GATE BLOCKED — [reason]`
+
+DO NOT DEPLOY.

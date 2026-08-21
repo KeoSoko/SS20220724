@@ -35,6 +35,8 @@ import {
   parsePaystackDate,
   PaystackSubscriptionCandidateSummary,
   paystackInvoiceFailureTransactionId,
+  applyPaystackApplePayGate,
+  PaystackRecurringReadiness,
   selectPaystackSubscriptionIdentityCandidate,
   subscriptionIdentityMatches,
   validateActivePaystackRenewalRelationship,
@@ -124,6 +126,27 @@ export interface PaystackRenewalStatus {
 
 export function isPaystackSubscriptionManagementLinkEnabled(): boolean {
   return process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED === "true";
+}
+
+/**
+ * Fail-closed gate for Apple Pay on new recurring subscription checkout.
+ *
+ * Apple Pay authorizations have not demonstrated reusable authorization in
+ * Simple Slips' current Paystack plan-checkout flow (25 Apple Pay payments
+ * across 21 customers; zero confirmed subsequent automatic renewals).
+ *
+ * Only explicit `true` enables Apple Pay for new subscriptions.
+ * Missing or any other value → disabled.
+ *
+ * This gate:
+ *  - Restricts channels presented to the customer in the Paystack checkout popup
+ *  - Blocks recurring-readiness from being established for Apple Pay transactions
+ *    at the settlement layer even if a client bypasses the popup restriction
+ *  - Does NOT affect existing Apple Pay-originated subscriptions
+ *  - Does NOT cancel, refund, or alter any existing customer relationship
+ */
+export function isPaystackApplePaySubscriptionsEnabled(): boolean {
+  return process.env.PAYSTACK_APPLE_PAY_SUBSCRIPTIONS_ENABLED === "true";
 }
 
 export type PaystackManagementLinkResult =
@@ -2479,7 +2502,11 @@ export class BillingService {
     const isYearly = plan.billingPeriod === 'yearly';
     const subscriptionTier = isYearly ? 'yearly' : 'monthly';
     const providerEvidence = extractPaystackAuthorizationEvidence(transactionData);
-    const recurringReadiness = hasExactPaystackRecurringRelationship(
+
+    // Compute the readiness that the authorization evidence alone would produce,
+    // then let the Apple Pay gate override it if Apple Pay is currently disabled.
+    const applePayEnabled = isPaystackApplePaySubscriptionsEnabled();
+    const normalReadiness: PaystackRecurringReadiness = hasExactPaystackRecurringRelationship(
       providerEvidence,
       verifiedCustomerCode,
       plan.paystackPlanCode,
@@ -2489,6 +2516,18 @@ export class BillingService {
       : providerEvidence.authorizationReusable === false
         ? "not_ready"
         : "unknown";
+    const recurringReadiness = applyPaystackApplePayGate(
+      providerEvidence,
+      normalReadiness,
+      applePayEnabled,
+    );
+    if (recurringReadiness !== normalReadiness) {
+      // Gate downgraded the readiness — log for auditing.
+      log(
+        `Apple Pay subscription gate: readiness for Apple Pay transaction ${transactionReference} (user ${userId}) set to not_ready (gate closed)`,
+        "billing",
+      );
+    }
     const authorizationCode = providerEvidence.authorizationCode ?? undefined;
     log(`Resolved plan ${plan.name} (id=${plan.id}, period=${plan.billingPeriod}) via ${resolution.source} for user ${userId}`, 'billing');
 

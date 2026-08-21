@@ -34,6 +34,9 @@ interface ServerCheckout {
   currency: string;
   billingPeriod: string;
   email: string;
+  /** null = no restriction; ['card'] = card only (Apple Pay gate active) */
+  channels: string[] | null;
+  applePayAvailable: boolean;
 }
 
 export function PaystackBilling({
@@ -142,6 +145,10 @@ export function PaystackBilling({
         currency: checkout.currency,
         plan: checkout.planCode,
         ref: checkout.reference,
+        // When the server sends a channels restriction (Apple Pay gate active),
+        // pass it to the Paystack SDK so the popup only shows allowed methods.
+        // null / absent means no restriction.
+        ...(checkout.channels ? { channels: checkout.channels } : {}),
         metadata: {
           user_id: checkout.billingOwnerUserId,
           plan_id: checkout.planId,
@@ -230,7 +237,7 @@ export function PaystackBilling({
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CreditCard className="h-4 w-4" />
-            <span>Pay with card or Apple Pay</span>
+            <span>Pay with card</span>
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Globe className="h-4 w-4" />

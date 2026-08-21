@@ -59,6 +59,7 @@ import { aiEmailAssistant } from "./ai-email-assistant";
 import { recurringExpenseService } from "./recurring-expense-service";
 import {
   billingService,
+  isPaystackApplePaySubscriptionsEnabled,
   isPaystackSubscriptionManagementLinkEnabled,
 } from "./billing-service";
 import { resolveUserForReconciliation } from "./reconcile-user-resolver";
@@ -4251,6 +4252,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(409).json({ error: "The pending checkout plan is no longer available" });
       }
 
+      const applePayEnabled = isPaystackApplePaySubscriptionsEnabled();
       return res.status(outcome === "created" ? 201 : 200).json({
         status: outcome,
         checkout: {
@@ -4265,6 +4267,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
            currency: attempt.currency,
           billingPeriod: checkoutPlan.billingPeriod,
            email: attempt.customerEmail,
+          // When Apple Pay is disabled for new subscriptions, restrict the
+          // Paystack popup to card only. The client passes this to the SDK.
+          // null means no restriction (all Paystack-supported channels).
+          channels: applePayEnabled ? null : ["card"],
+          applePayAvailable: applePayEnabled,
         },
       });
     } catch (error: any) {

@@ -107,6 +107,28 @@ export function extractPaystackAuthorizationEvidence(
   };
 }
 
+/**
+ * Applies the Apple Pay subscription gate on top of normal recurring-readiness
+ * determination. When Apple Pay is disabled (`applePayEnabled = false`) and the
+ * transaction channel is `apple_pay`, the readiness is forced to `"not_ready"`
+ * regardless of what `authorization.reusable` returned. This preserves the
+ * payment (access is still granted) while blocking the recurring relationship.
+ *
+ * Keeping this as a pure function decouples the gate logic from env-var
+ * access so callers (billing-service) inject the flag and tests can drive all
+ * branches without process.env manipulation.
+ */
+export function applyPaystackApplePayGate(
+  evidence: PaystackAuthorizationEvidence,
+  normalReadiness: PaystackRecurringReadiness,
+  applePayEnabled: boolean,
+): PaystackRecurringReadiness {
+  if (!applePayEnabled && evidence.transactionChannel === "apple_pay") {
+    return "not_ready";
+  }
+  return normalReadiness;
+}
+
 export function hasExactPaystackRecurringRelationship(
   evidence: PaystackAuthorizationEvidence,
   expectedCustomerCode: string | null | undefined,

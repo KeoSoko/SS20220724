@@ -1,0 +1,491 @@
+# Investigate Paystack Reusable Authorization Enforcement for Subscription Checkout
+
+We have identified a probable systemic recurring-billing issue involving some Simple Slips subscriptions initially paid through Apple Pay.
+
+This task is **INVESTIGATION / PLAN MODE FIRST**.
+
+Do not deploy.
+
+Do not charge customers.
+
+Do not modify production customer or billing data.
+
+Do not disable existing subscriptions.
+
+Do not create recovery checkouts.
+
+---
+
+# 1. Paystack contract we need to enforce
+
+Paystack's documentation establishes two separate concepts:
+
+### Successful initial payment
+
+A successful first payment proves the payment itself succeeded.
+
+It does NOT by itself prove that the payment instrument can be used for future recurring debits.
+
+### Reusable authorization
+
+Paystack states that only payment instruments where:
+
+```text
+authorization.reusable === true
+```
+
+can be charged recurrently.
+
+If `authorization.reusable` is not explicitly `true`, Simple Slips must not treat that authorization as recurring-ready.
+
+Paystack also recommends that applications requiring recurring charges restrict initial payment to payment channels that support reusable authorizations.
+
+This distinction must be treated as a billing invariant:
+
+```text
+payment_success != recurring_ready
+```
+
+and:
+
+```text
+recurring_ready requires authorization.reusable === true
+```
+
+---
+
+# 2. Current incident evidence
+
+We have manually investigated Antebellum:
+
+`corinne.nk@gmail.com`
+
+Two Paystack subscriptions exist:
+
+```text
+SUB_vv41mb6cjuhd66y
+SUB_w76gwzmclvkq313
+```
+
+Both are currently in Paystack `attention`.
+
+The first relationship shows:
+
+```text
+26 Apr — Apple Pay — successful
+26 May — Card recurring attempt — abandoned
+26 Jun — Card recurring attempt — not completed
+26 Jul — Card recurring attempt — abandoned
+```
+
+The second shows:
+
+```text
+2 Jul — Apple Pay — successful
+2 Aug — Card recurring attempt — abandoned
+```
+
+The Apple Pay transactions created different authorization codes, but neither authorization has demonstrated a successful subsequent automatic renewal.
+
+We also reviewed Paystack exports containing:
+
+* 25 successful Apple Pay transactions
+* across 21 customers
+
+We have not yet established a confirmed case where an Apple Pay-originated authorization subsequently completed a successful automatic recurring charge.
+
+IMPORTANT:
+
+Do not conclude:
+
+```text
+Apple Pay can never recur
+```
+
+from this evidence.
+
+The correct technical question is whether the authorization returned by the payment is explicitly reusable.
+
+---
+
+# 3. Audit current Simple Slips subscription checkout
+
+Trace the complete current checkout path from:
+
+```text
+customer selects subscription
+→ frontend
+→ Simple Slips backend
+→ Paystack transaction initialization
+→ Paystack payment
+→ transaction verification
+→ checkout attempt completion
+→ subscription activation
+→ recurring-readiness determination
+```
+
+Report exactly:
+
+* where the Paystack transaction is initialized;
+* what payload is sent;
+* whether `plan` is included;
+* what payment channels are permitted;
+* whether Apple Pay is explicitly enabled;
+* whether Paystack custom filters are used;
+* whether checkout is currently restricted to reusable payment channels;
+* whether transaction verification retrieves the complete `authorization` object;
+* whether `authorization.reusable` is persisted;
+* whether authorization channel is persisted;
+* whether authorization signature is persisted;
+* whether recurring readiness depends on `reusable === true`.
+
+---
+
+# 4. Audit historical behavior versus current hardened behavior
+
+We have already implemented recurring-readiness protections.
+
+Determine separately:
+
+## Historical behavior
+
+Before the recurring-readiness work, could this occur?
+
+```text
+Apple Pay succeeds
+→ Simple Slips marks subscription paid/active
+→ Paystack creates SUB_*
+→ Simple Slips assumes future automatic renewal is configured
+→ authorization is actually not reusable or not proven reusable
+```
+
+Establish this from source/history where possible.
+
+Do not guess.
+
+## Current behavior
+
+Determine what happens today if Paystack returns:
+
+```text
+payment status = success
+authorization.reusable = false
+```
+
+or:
+
+```text
+authorization.reusable = null / missing
+```
+
+Confirm whether:
+
+* paid access is preserved;
+* payment is recorded;
+* subscription is represented as paid;
+* recurring readiness is NOT represented as active;
+* customer receives payment-method/setup-attention state;
+* no stored authorization charge occurs;
+* no duplicate checkout is automatically created.
+
+---
+
+# 5. Determine whether checkout itself is still unsafe
+
+Even if post-payment recurring-readiness detection is now correct, determine whether Simple Slips still allows customers to initialize a recurring Paystack subscription using payment channels that cannot provide reusable authorization.
+
+Specifically investigate whether Paystack's transaction initialization supports restricting this checkout to reusable payment channels/instruments.
+
+Inspect existing Paystack integration and the relevant supported Paystack configuration.
+
+Do not invent undocumented configuration.
+
+If the repository does not contain enough information to establish the correct Paystack configuration, report:
+
+```text
+PAYSTACK_REUSABLE_CHANNEL_FILTER_REQUIRES_PROVIDER_CONFIRMATION
+```
+
+---
+
+# 6. Apple Pay treatment
+
+Do NOT implement:
+
+```text
+if channel === apple_pay:
+    reject
+```
+
+unless authoritative Paystack behavior proves that Apple Pay cannot support the recurring requirement used by Simple Slips.
+
+Prefer capability-based logic:
+
+```text
+authorization.reusable === true
+```
+
+rather than payment-channel assumptions.
+
+However, assess whether we need an interim safety gate that prevents Apple Pay from initiating NEW recurring subscription relationships until its recurring behavior is verified.
+
+If you recommend an interim gate, it must:
+
+* affect new recurring subscription checkout only;
+* not cancel existing Apple Pay subscriptions;
+* not alter existing customer access;
+* not refund anything;
+* not collect anything;
+* not modify historical transactions.
+
+Return the recommendation but DO NOT implement it during this investigation unless separately authorized.
+
+---
+
+# 7. Subscription creation timing
+
+This is particularly important.
+
+Determine whether Paystack creates the `SUB_*` automatically because Simple Slips sends:
+
+```text
+plan: PLN_...
+```
+
+during transaction initialization.
+
+If so, determine whether Simple Slips can know:
+
+```text
+authorization.reusable
+```
+
+BEFORE Paystack has already created the subscription.
+
+If Paystack creates the subscription as part of the initial plan checkout before Simple Slips can verify authorization reusability, document that architectural limitation clearly.
+
+We need to know whether the correct future design should instead be:
+
+```text
+1. collect/verify reusable payment method
+2. verify authorization.reusable === true
+3. only then establish recurring subscription
+```
+
+rather than:
+
+```text
+1. initialize transaction with plan
+2. Paystack automatically creates subscription
+3. discover afterward that authorization cannot renew
+```
+
+Do NOT change architecture yet.
+
+---
+
+# 8. Duplicate-subscription failure path
+
+Trace whether the historical Simple Slips recovery flow allowed:
+
+```text
+existing SUB_* fails renewal
+→ customer shown payment due
+→ customer starts another plan checkout
+→ another SUB_* created
+```
+
+Confirm whether the current hardened code now prevents this when an unresolved provider subscription already exists.
+
+This is the failure pattern seen with Antebellum.
+
+---
+
+# 9. Existing Apple Pay customer safety
+
+Do not modify these customers.
+
+Determine whether the existing diagnostic tooling can safely identify customers where:
+
+```text
+successful Apple Pay initial payment
+AND
+provider subscription exists
+AND
+recurring authorization is not proven reusable
+```
+
+These customers should NOT automatically be classified as failed subscriptions.
+
+Proposed safe classification should be equivalent to:
+
+```text
+PAYMENT_METHOD_ATTENTION
+```
+
+or:
+
+```text
+RECURRING_READINESS_UNKNOWN
+```
+
+depending on authoritative evidence.
+
+Do not change production rows in this task.
+
+---
+
+# 10. Historical collection policy remains unchanged
+
+The global policy remains:
+
+> Simple Slips will not automatically collect historical missed subscription payments discovered during billing reconciliation or recovery. Recovery establishes correct billing prospectively from the appropriate next billing date.
+
+Antebellum has separately authorized recovery of the specific missed R49 payment for 2 August 2026.
+
+That is a customer-specific exception and must NOT weaken the global billing invariant.
+
+Do not collect that payment during this task.
+
+---
+
+# 11. Absolutely prohibited during investigation
+
+Do not:
+
+* call `transaction.charge_authorization`;
+* charge stored authorization;
+* initialize checkout;
+* create Paystack subscription;
+* disable Paystack subscription;
+* cancel Paystack subscription;
+* refund;
+* generate management links;
+* collect historical payments;
+* modify entitlements;
+* modify recurring readiness in production;
+* modify subscription identities;
+* modify checkout attempts;
+* contact customers.
+
+---
+
+# 12. Tests / evidence
+
+Where possible, add or identify regression tests proving the current invariants:
+
+### Successful but non-reusable payment
+
+```text
+payment = success
+authorization.reusable = false
+```
+
+Expected:
+
+```text
+payment recorded
+paid access preserved
+recurring_ready = false
+no stored authorization charge
+no automatic recovery checkout
+```
+
+### Missing reusable evidence
+
+```text
+payment = success
+authorization.reusable = undefined/null
+```
+
+Expected:
+
+fail closed for recurring readiness.
+
+### Reusable authorization
+
+```text
+payment = success
+authorization.reusable = true
+```
+
+Expected:
+
+may qualify for recurring readiness only when all other provider subscription/customer/plan identity checks also pass.
+
+### Existing unresolved provider subscription
+
+Expected:
+
+no second recovery checkout merely because renewal failed.
+
+---
+
+# 13. Return report
+
+Return:
+
+## A. Current subscription checkout architecture
+
+## B. Exact Paystack initialization payload
+
+## C. Current allowed payment channels
+
+## D. Whether reusable-channel filtering exists
+
+## E. Historical `authorization.reusable` handling
+
+## F. Current `authorization.reusable` handling
+
+## G. When Paystack creates the SUB_*
+
+## H. Whether reusability can be verified before SUB creation
+
+## I. Root cause of Antebellum duplicate SUB creation
+
+## J. Current protection against recurrence
+
+## K. Apple Pay-specific findings
+
+Clearly distinguish:
+
+* proven;
+* strongly indicated;
+* unknown.
+
+## L. Recommended checkout architecture
+
+## M. Whether an interim Apple Pay recurring-checkout gate is recommended
+
+## N. Existing Apple Pay customer remediation strategy
+
+Planning only.
+
+## O. Tests and validation
+
+## P. Zero-mutation confirmation
+
+Report:
+
+```text
+Production DB writes: 0
+Paystack charges: 0
+Paystack subscriptions created: 0
+Paystack subscriptions disabled/cancelled: 0
+Checkouts created: 0
+Refunds: 0
+Historical collections: 0
+Customers contacted: 0
+```
+
+End with exactly one:
+
+`PAYSTACK REUSABLE AUTHORIZATION AUDIT COMPLETE — READY FOR REVIEW`
+
+or:
+
+`PAYSTACK REUSABLE AUTHORIZATION AUDIT INCOMPLETE — [reason]`
+
+DO NOT DEPLOY.
+DO NOT REMEDIATE CUSTOMERS.
+DO NOT CHARGE ANTEBELLUM.

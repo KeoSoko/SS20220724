@@ -104,4 +104,43 @@ describe("Paystack recurring readiness", () => {
       "SUB_monthly",
     )).toBe(false);
   });
+
+  it("treats JSON null reusable as unknown, not as not_ready", () => {
+    // Paystack may return authorization.reusable: null in some response shapes.
+    // JSON null is not the same as false — it means evidence is absent, not
+    // that the authorization is confirmed non-reusable. The system must fail
+    // closed (unknown) rather than actively marking not_ready.
+    const data = transaction("card", undefined);
+    data.authorization = {
+      authorization_code: "AUTH_nullreuse",
+      channel: "card",
+      signature: "SIG_x",
+      reusable: null as any,
+    };
+    const evidence = extractPaystackAuthorizationEvidence(data);
+
+    expect(evidence.authorizationReusable).toBeNull();
+    expect(evidence.recurringReadiness).toBe("unknown");
+    expect(hasExactPaystackRecurringRelationship(
+      evidence,
+      "CUS_owner",
+      "PLN_monthly",
+      "SUB_monthly",
+    )).toBe(false);
+  });
+
+  it("records authorization fields even when recurring readiness is not_ready", () => {
+    // A failed recurring payment should still preserve the transaction channel
+    // and authorization code for future diagnostics. The not_ready classification
+    // must not drop the authorization metadata.
+    const evidence = extractPaystackAuthorizationEvidence(transaction("apple_pay", false));
+
+    expect(evidence.authorizationCode).toBe("AUTH_verified");
+    expect(evidence.authorizationChannel).toBe("apple_pay");
+    expect(evidence.authorizationSignature).toBe("SIG_verified");
+    expect(evidence.authorizationReusable).toBe(false);
+    expect(evidence.transactionChannel).toBe("apple_pay");
+    // readiness is not_ready but all fields are present for diagnostics
+    expect(evidence.recurringReadiness).toBe("not_ready");
+  });
 });

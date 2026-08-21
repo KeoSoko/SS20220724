@@ -1,0 +1,235 @@
+# Urgent Audit — Why Existing Customers Show “Renewal Being Checked”
+
+Production customers are now widely seeing:
+
+`Renewal being checked`
+
+after deployment of the recurring-readiness changes.
+
+Investigate immediately.
+
+Do not mutate customer billing data.
+
+Do not charge anyone.
+
+Do not change subscriptions.
+
+Do not deploy until the cause is understood.
+
+## 1. Trace the exact UI decision
+
+Identify the exact server state/API response that causes the subscription page to render:
+
+`Renewal being checked`
+
+Trace:
+
+`production DB state`
+→ `getPaystackRenewalStatus()`
+→ API response
+→ frontend condition
+→ displayed copy.
+
+Report every state/value that maps to this message.
+
+## 2. Quantify production impact
+
+READ ONLY.
+
+Report how many active subscribers currently resolve to each customer-facing renewal state:
+
+* active / no warning;
+* renewal being checked;
+* payment method needs attention;
+* renewal setup required;
+* payment failed;
+* manual review;
+* other.
+
+Also break down the `Renewal being checked` population by:
+
+* active local trusted `SUB_*` exists / missing;
+* `recurring_readiness = unknown`;
+* next billing date in future / overdue;
+* recent successful payment present;
+* actual reconciliation/provider lookup currently pending.
+
+## 3. Determine whether `unknown` is being treated as `reconciling`
+
+Specifically answer:
+
+Does:
+
+`recurring_readiness = unknown`
+
+currently map to:
+
+`Renewal being checked`
+
+even when:
+
+* subscription is active;
+* next billing date is still in the future;
+* there is no provider operation currently in progress;
+* no failed renewal exists?
+
+If yes, identify this as a UX/state-model bug.
+
+`unknown` must not automatically mean `actively reconciling`.
+
+## 4. Separate state semantics
+
+We need distinct semantics:
+
+### ACTIVE / LEGACY UNKNOWN
+
+Customer has valid paid access and no action is currently required, but historic recurring-readiness evidence is incomplete.
+
+Customer-facing behavior:
+
+Normal active-subscription state.
+
+Do NOT show:
+
+`Renewal being checked`
+
+merely because historic evidence is unknown.
+
+### RECONCILING
+
+Use only when the system is actually awaiting/performing provider reconciliation or when provider state is temporarily unavailable and a billing decision is pending.
+
+Customer-facing:
+
+`Renewal being checked`
+
+### PAYMENT METHOD NEEDS ATTENTION
+
+Use only when authoritative evidence supports this.
+
+### RENEWAL SETUP REQUIRED
+
+Use only when provider inspection establishes no usable recurring relationship.
+
+### PAYMENT FAILED
+
+Use only for authoritative attempted-and-failed renewal evidence.
+
+## 5. Do not hide real billing problems
+
+The fix must NOT simply suppress all warnings.
+
+Customers with genuine:
+
+* failed renewals;
+* non-reusable authorization;
+* missing provider relationship after complete inspection;
+* multiple subscriptions;
+* payment-method attention;
+
+must retain the appropriate state.
+
+We only want to prevent:
+
+`historic data incomplete`
+
+from being presented as:
+
+`an active renewal check is currently occurring`.
+
+## 6. Antebellum
+
+Do not modify Antebellum.
+
+Her actual provider ambiguity/failure evidence must remain correctly represented.
+
+Do not use her as justification for showing every legacy customer a reconciliation warning.
+
+## 7. Proposed correction
+
+If the investigation confirms this mapping problem, propose the smallest safe change so:
+
+`active subscription + future billing date + recurring_readiness unknown + no active reconciliation`
+
+renders as normal active subscription state.
+
+The backend may retain:
+
+`recurring_readiness = unknown`
+
+internally.
+
+Do not fabricate `ready`.
+
+This should be a presentation/derived-state correction, not a mass database update.
+
+## 8. Tests
+
+Add regression tests for:
+
+### Legacy active customer
+
+* active subscription;
+* next billing date future;
+* readiness unknown;
+* no pending reconciliation/failure.
+
+Expected:
+
+normal active UI.
+
+Not:
+
+`Renewal being checked`.
+
+### Actual reconciliation
+
+Expected:
+
+`Renewal being checked`.
+
+### Actual failed renewal
+
+Expected:
+
+failed-payment state.
+
+### Payment-method attention
+
+Expected:
+
+attention state.
+
+### Missing provider relationship
+
+Expected:
+
+setup/recovery state.
+
+## Return
+
+### A. Root cause
+
+### B. Production population affected
+
+### C. Exact current mapping
+
+### D. Whether unknown is incorrectly treated as reconciling
+
+### E. Proposed state-model correction
+
+### F. Customer-facing change
+
+### G. Tests
+
+### H. Zero-mutation confirmation
+
+End with:
+
+`RENEWAL STATUS ROOT CAUSE CONFIRMED — READY FOR FIX REVIEW`
+
+or:
+
+`ROOT CAUSE NOT CONFIRMED — [reason]`
+
+Do not deploy.

@@ -5,6 +5,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { azureStorage } from "./azure-storage";
 import { initializeSubscriptionPlans } from "./subscription-plans-seeder";
+import { runBillingIntegrityMigration } from "./billing-integrity-migration";
 
 const app = express();
 
@@ -262,6 +263,10 @@ app.use((req, res, next) => {
 
   // Initialize subscription plans
   await initializeSubscriptionPlans();
+
+  // Apply billing integrity data repairs (tasks 59 & 60B) — idempotent; no-ops
+  // when repairs have already been applied. Never touches Paystack or charges cards.
+  await runBillingIntegrityMigration();
 
   // Error logging endpoints for monitoring
   app.post('/api/log-error', (req: Request, res: Response) => {

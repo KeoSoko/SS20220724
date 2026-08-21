@@ -1,0 +1,395 @@
+# Task #61 — Deploy Billing Integrity Fixes to Production & Verify Safely
+
+## What & Why
+
+The following billing work has now been completed and tested:
+
+* population-wide plan assignment integrity repair;
+* confirmed repairs for users 7, 95, and 100;
+* root-cause guard preventing recurring invoices from resolving to a trial plan;
+* duplicate annual payment investigation for user 100;
+* manual provider refund already completed for the duplicate R530 payment;
+* local reconciliation of user 100:
+
+  * legitimate payment retained,
+  * duplicate payment marked refunded,
+  * `total_paid` corrected to R530,
+  * `last_payment_date` corrected,
+  * audit billing event created;
+* recurring-renewal evidence logic remains fail-closed;
+* no historical back-charge path introduced;
+* no stored-authorization charging re-enabled.
+
+Task #61 is to deploy the relevant code changes to production and perform a controlled post-deployment verification.
+
+This task is NOT a customer remediation task.
+
+Do not modify customer billing records during verification unless required by an already-completed migration that is part of the release.
+
+---
+
+# 1. Identify exact release changes
+
+Before publishing, list the exact code changes included in this deployment.
+
+At minimum identify:
+
+* plan-assignment/root-cause guard changes in `server/billing-service.ts`;
+* related billing integrity tests;
+* any supporting code changed for the recurring-settlement evidence work;
+* any schema/migration changes included in the branch;
+* any unrelated changes currently present in the deployment branch.
+
+Do not accidentally publish unrelated unfinished work.
+
+If unrelated changes are present, report them before publishing and isolate the intended release where practical.
+
+---
+
+# 2. Pre-deployment validation
+
+Run:
+
+* TypeScript typecheck
+* production build
+* focused Paystack/billing test suites
+* plan-assignment integrity tests
+* duplicate refund reconciliation tests
+* subscription-resolution tests
+* full automated test suite
+
+Report:
+
+```text
+TypeScript:
+Production build:
+Focused billing tests:
+Full suite:
+Known pre-existing failures:
+```
+
+The two known invite-related failures may remain if they are confirmed identical and unrelated.
+
+Do not silently treat new failures as pre-existing.
+
+---
+
+# 3. Confirm production schema readiness
+
+Before or immediately after publish, verify production contains all required billing schema used by the deployed code.
+
+Check relevant:
+
+* `payment_transactions` fields
+* `paystack_subscription_identities`
+* checkout attempt tables/constraints
+* recurring readiness fields
+* required indexes/constraints
+
+Do not modify data merely to make readiness checks pass.
+
+If required schema is missing:
+
+* fail closed,
+* do not expose new billing behaviour,
+* report exact missing schema.
+
+---
+
+# 4. Publish application
+
+Deploy the tested release to production using the existing Simple Slips deployment process.
+
+Do not:
+
+* run customer billing recovery,
+* trigger subscription reconciliation manually,
+* create checkout attempts,
+* charge cards,
+* create/cancel Paystack subscriptions,
+* enable management links,
+* change production pricing.
+
+Publish code only.
+
+---
+
+# 5. Startup verification
+
+After deployment verify:
+
+* production application starts successfully;
+* database connection succeeds;
+* billing schema readiness succeeds;
+* health endpoints recover after normal startup;
+* no persistent `500` loop occurs;
+* no missing-table/column billing errors appear;
+* no migration failures appear.
+
+Distinguish normal container/startup-transition errors from persistent production errors.
+
+---
+
+# 6. Verify root-cause guard is active
+
+Confirm the deployed code contains and executes the new protection:
+
+> A recurring invoice with no checkout attempt must never resolve to a trial plan.
+
+Verify the guard:
+
+* detects `billingPeriod === 'trial'` for recurring invoice processing;
+* emits the expected `plan_resolution_failed` billing event;
+* fails before subscription/payment DB mutation.
+
+Do not trigger a real production customer payment to test this.
+
+Use code-path verification and non-mutating tests only.
+
+---
+
+# 7. Verify repaired plan state remains intact
+
+Read-only verify users:
+
+* 7
+* 95
+* 100
+
+Confirm:
+
+* their repaired plan IDs remain correct;
+* status is unchanged;
+* next billing dates are unchanged;
+* total paid is unchanged from the final reconciled values;
+* no deployment process reverted or reprocessed them.
+
+For user 100 specifically confirm:
+
+* plan = `premium_yearly`;
+* payment 99 remains completed;
+* payment 100 remains refunded;
+* `total_paid = 53000`;
+* refund reason remains present;
+* duplicate-charge audit event remains present.
+
+Do not modify these records.
+
+---
+
+# 8. Verify renewal-status behaviour
+
+Read-only evaluate current renewal status for affected legacy users where safe.
+
+Confirm plan correction did NOT:
+
+* create recurring evidence,
+* create subscription identities,
+* create checkout attempts,
+* enable stored authorization,
+* alter renewal state incorrectly.
+
+For user 100, expected status may remain:
+
+```text
+renewal_setup_required
+recoveryCheckoutEligible: false
+managementLinkEligible: false
+```
+
+Do not force a different result.
+
+---
+
+# 9. Confirm no historical back-charge path
+
+Re-run or inspect focused safety tests confirming:
+
+* reconciliation cannot call `transaction.charge`;
+* reconciliation does not aggregate missed-month arrears;
+* no recovery path automatically collects historical missed payments;
+* subscription recovery remains prospective-only.
+
+Do not trigger a live reconciliation solely for verification.
+
+---
+
+# 10. Confirm stored-authorization charging remains disabled
+
+Verify:
+
+* legacy stored-authorization upgrade path remains hard-disabled;
+* active upgrade route still requires checkout where appropriate;
+* no new code in this release bypasses checkout safety;
+* recurring recovery does not silently call stored-card charging.
+
+---
+
+# 11. Confirm management-link state
+
+Verify the current production management-link configuration remains unchanged.
+
+If disabled before deployment, confirm it remains disabled.
+
+Do not enable management links as part of this task.
+
+Do not impersonate a production customer merely to exercise the route.
+
+Use configuration/code-path verification where sufficient.
+
+---
+
+# 12. Passive reconciliation observation
+
+If the normal scheduled subscription reconciliation runs naturally during the verification window:
+
+observe it read-only.
+
+Check for:
+
+* schema readiness
+* review events
+* recurring resolution events
+* unexpected checkout creation
+* unexpected provider charge
+* subscription mutation errors
+
+Do NOT manually force a reconciliation run just to obtain a result.
+
+---
+
+# 13. Production integrity scan
+
+Run read-only checks after deployment for:
+
+* more than one pending checkout per billing owner;
+* duplicate checkout references;
+* duplicate trusted subscription codes;
+* invalid recurring-readiness values;
+* remaining active paid subscriptions incorrectly pointing to free-trial plan;
+* user 100 duplicate local payment state;
+* new plan-assignment mismatch introduced after release.
+
+Return counts only plus internal IDs for any anomaly.
+
+Do not auto-repair anomalies in this task.
+
+---
+
+# 14. Monitor new errors
+
+Review production logs after startup for new:
+
+* billing errors,
+* Paystack errors,
+* schema errors,
+* webhook errors,
+* checkout errors,
+* subscription processing errors,
+* plan-resolution errors.
+
+If the new plan guard fires naturally, report it.
+
+Do not suppress the guard merely because it produces a fail-closed event.
+
+---
+
+# 15. Verify no provider mutations occurred from deployment
+
+Confirm the deployment/verification itself did not:
+
+* charge a customer,
+* refund a customer,
+* create a checkout,
+* create a Paystack subscription,
+* cancel a Paystack subscription,
+* modify authorization evidence.
+
+The previously completed manual refund for user 100 is historical context and must not be repeated.
+
+---
+
+# 16. Regression boundaries
+
+Do not change or test unrelated product areas beyond normal health verification.
+
+Specifically do not modify:
+
+* Bank Statement Processor
+* Team/workspace invitation logic
+* receipt processing
+* invoices/quotations
+* pricing
+* Paystack management links
+* existing customer subscription dates
+* recurring-readiness records
+
+This is a publish-and-verify task only.
+
+---
+
+# Done looks like
+
+Task #61 is complete when:
+
+1. The intended billing-integrity release is deployed.
+2. Production starts successfully.
+3. Billing schema is ready.
+4. Root-cause trial-plan guard is live.
+5. Users 7, 95, and 100 retain their corrected plan assignments.
+6. User 100's refunded duplicate remains reconciled correctly.
+7. No automatic recurring evidence or subscription identity is fabricated.
+8. No historical back-charge path exists.
+9. Stored-authorization charging remains disabled.
+10. No customer/provider mutation occurs during verification.
+11. Production integrity checks show no new billing corruption.
+12. Any new errors are documented.
+
+---
+
+# Before publishing
+
+Return:
+
+## A. Release contents
+
+Exact files/commits/changes to be deployed.
+
+## B. Pre-deployment test results
+
+## C. Schema readiness assessment
+
+## D. Known unrelated failures
+
+## E. Deployment risks
+
+Then publish.
+
+---
+
+# After publishing
+
+Return:
+
+1. deployment status,
+2. production startup status,
+3. billing schema readiness,
+4. root-cause guard verification,
+5. users 7/95/100 plan verification,
+6. user 100 refund reconciliation verification,
+7. renewal-state verification,
+8. historical-back-charge protection verification,
+9. stored-authorization protection verification,
+10. management-link configuration,
+11. production integrity scan,
+12. reconciliation observations if naturally triggered,
+13. new errors/regressions,
+14. explicit confirmation that deployment caused no customer charge/refund/checkout/subscription mutation.
+
+Finish with one of:
+
+`POST-DEPLOY VERIFICATION PASSED`
+
+or
+
+`POST-DEPLOY VERIFICATION FAILED — DO NOT CONTINUE`

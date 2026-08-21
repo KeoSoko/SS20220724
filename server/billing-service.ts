@@ -21,7 +21,7 @@ import Paystack from "paystack";
 import * as crypto from "crypto";
 import { emailService } from "./email-service";
 import { db } from "./db";
-import { and, eq, inArray, ne, sql, desc } from "drizzle-orm";
+import { and, eq, inArray, isNull, like, lte, ne, or, sql, desc } from "drizzle-orm";
 import {
   advanceBillingDate,
   checkPaystackTransactionOwnership,
@@ -363,6 +363,35 @@ export function validateCurrentTrackedCheckoutAttempt(
 
 export class BillingService {
   private paystack: any;
+
+  /**
+   * Serializes concurrent Paystack initialization within this process.
+   * When two requests race for the same reference, the second finds the
+   * in-flight promise here and awaits it instead of calling Paystack again.
+   * Across process boundaries the DB claim (INIT_CLAIM_PREFIX sentinel) is
+   * the authoritative lock.
+   */
+  private readonly initializationMutex = new Map<string, Promise<string>>();
+
+  /**
+   * Sentinel prefix written into paystack_access_code to claim the
+   * initialization slot atomically at the DB layer. Format:
+   *   PAYSTACK_INIT_CLAIM:<epoch-ms>
+   * The epoch timestamp lets pollers detect and preempt abandoned claims.
+   */
+  private static readonly INIT_CLAIM_PREFIX = "PAYSTACK_INIT_CLAIM";
+
+  /** An abandoned claim older than this is eligible for takeover. */
+  private static readonly CLAIM_TIMEOUT_MS = 30_000;
+
+  /** How often the claim holder refreshes updated_at to prove it is still alive. */
+  private static readonly CLAIM_HEARTBEAT_INTERVAL_MS = 8_000;
+
+  /** How long to wait between DB poll attempts when another process claims. */
+  private static readonly POLL_INTERVAL_MS = 300;
+
+  /** Maximum time to wait for another process to complete initialization. */
+  private static readonly POLL_TIMEOUT_MS = 35_000;
 
   constructor() {
     // Initialize Paystack if secret key is available
@@ -2358,6 +2387,345 @@ export class BillingService {
       log(`Refreshed verified-unpaid Paystack checkout attempt ${refreshed.id} without rotating its reference`, "billing");
     }
     return refreshed ?? null;
+  }
+
+  /**
+   * Initialize a Paystack transaction server-side via POST /transaction/initialize.
+   * Includes channels: ["card"] when the Apple Pay gate is closed (default),
+   * which Paystack binds to the returned access_code — the browser cannot override it.
+   * Returns the access_code to be stored and sent to the client.
+   */
+  async initializePaystackTransaction(params: {
+    reference: string;
+    amount: number;
+    email: string;
+    paystackPlanCode: string;
+    currency: string;
+    billingOwnerUserId: number;
+    attemptId: number;
+    planId: number;
+    planName: string;
+  }): Promise<string> {
+    if (!this.paystack) {
+      throw new Error(
+        "Paystack not initialized — PAYSTACK_SECRET_KEY is not configured",
+      );
+    }
+    const applePayEnabled = isPaystackApplePaySubscriptionsEnabled();
+    const body: Record<string, unknown> = {
+      reference: params.reference,
+      amount: params.amount,
+      email: params.email,
+      plan: params.paystackPlanCode,
+      currency: params.currency,
+      metadata: {
+        user_id: params.billingOwnerUserId,
+        plan_id: params.planId,
+        plan_name: params.planName,
+        checkout_attempt_id: params.attemptId,
+        subscription_type: "recurring",
+      },
+    };
+    if (!applePayEnabled) {
+      // Bind card-only to this transaction on Paystack's server.
+      // The client receives only the access_code and cannot change channels.
+      body.channels = ["card"];
+    }
+    const response = await this.paystack.transaction.initialize(body);
+    const accessCode = response?.data?.access_code;
+    if (!accessCode || typeof accessCode !== "string") {
+      throw new Error(
+        `Paystack transaction/initialize did not return an access_code for reference ${params.reference}`,
+      );
+    }
+    log(
+      `Paystack transaction initialized for reference ${params.reference} — channels=${applePayEnabled ? "all" : "card-only"}`,
+      "billing",
+    );
+    return accessCode;
+  }
+
+  /**
+   * Persist the Paystack access_code returned by transaction/initialize.
+   * Uses a conditional update (only when paystack_access_code IS NULL) so
+   * concurrent requests that both call initialize cannot overwrite each other.
+   */
+  async storePaystackAccessCode(
+    reference: string,
+    accessCode: string,
+  ): Promise<void> {
+    const now = new Date();
+    await db
+      .update(paystackCheckoutAttempts)
+      .set({ paystackAccessCode: accessCode, updatedAt: now })
+      .where(
+        and(
+          eq(paystackCheckoutAttempts.paystackReference, reference),
+          eq(paystackCheckoutAttempts.status, "pending"),
+          isNull(paystackCheckoutAttempts.paystackAccessCode),
+        ),
+      );
+  }
+
+  /**
+   * Ensures exactly one Paystack transaction/initialize call is made per
+   * checkout reference, across concurrent requests AND across server instances.
+   *
+   * Two-layer locking:
+   *
+   * 1. In-process promise map (initializationMutex):
+   *    Within a single server instance, concurrent requests for the same
+   *    reference share one initialization promise. The second+ caller awaits
+   *    the first caller's promise and receives the same canonical code.
+   *
+   * 2. DB-backed sentinel claim (PAYSTACK_INIT_CLAIM:<ts> in paystack_access_code):
+   *    Across server instances (multiple replicas, rolling restarts), an atomic
+   *    conditional UPDATE wins the right to call Paystack. Non-winning processes
+   *    poll until the real code appears or an expired claim is reclaimed.
+   *
+   * Abandoned-claim recovery:
+   *    A claim sentinel older than CLAIM_TIMEOUT_MS is treated as abandoned
+   *    (claimer crashed). The next caller overwrites it and calls Paystack.
+   *
+   * Fast path:
+   *    existingAccessCode already set and is not a sentinel → return immediately.
+   */
+  async ensurePaystackAccessCode(params: {
+    attemptId: number;
+    reference: string;
+    existingAccessCode: string | null;
+    amount: number;
+    email: string;
+    paystackPlanCode: string;
+    currency: string;
+    billingOwnerUserId: number;
+    planId: number;
+    planName: string;
+  }): Promise<string> {
+    // Fast path: real code already stored — skip all I/O and locking.
+    const existing = params.existingAccessCode;
+    if (existing && !existing.startsWith(BillingService.INIT_CLAIM_PREFIX)) {
+      return existing;
+    }
+
+    const { reference } = params;
+
+    // Layer 1: in-process mutex. Share the in-flight promise within this instance
+    // so multiple concurrent requests don't each attempt a DB claim.
+    const inflight = this.initializationMutex.get(reference);
+    if (inflight) return inflight;
+
+    // Register the promise BEFORE the first await so that requests arriving
+    // mid-initialization find it in the map immediately.
+    const promise = (async (): Promise<string> => {
+      // Layer 2: DB-backed sentinel claim. Atomically write an INIT_CLAIM_PREFIX
+      // sentinel into paystack_access_code while the slot is NULL or an expired
+      // previous sentinel is there. Only the winner calls Paystack.
+      const claimValue = `${BillingService.INIT_CLAIM_PREFIX}:${Date.now()}`;
+      const claimed = await this._tryClaimPaystackInit(reference, claimValue);
+
+      if (!claimed) {
+        // Another process/instance holds the claim. Poll until it finalizes.
+        return this._pollForPaystackAccessCode(reference);
+      }
+
+      // This process holds the DB claim. Keep it alive with a periodic heartbeat
+      // so a live holder cannot be preempted during a slow Paystack API call.
+      // A crashed holder stops refreshing; its claim expires after CLAIM_TIMEOUT_MS.
+      const heartbeat = setInterval(
+        () => this._refreshPaystackInitClaim(reference, claimValue).catch(() => {}),
+        BillingService.CLAIM_HEARTBEAT_INTERVAL_MS,
+      );
+
+      let code: string;
+      try {
+        code = await this.initializePaystackTransaction({
+          reference: params.reference,
+          amount: params.amount,
+          email: params.email,
+          paystackPlanCode: params.paystackPlanCode,
+          currency: params.currency,
+          billingOwnerUserId: params.billingOwnerUserId,
+          attemptId: params.attemptId,
+          planId: params.planId,
+          planName: params.planName,
+        });
+      } catch (initErr: any) {
+        clearInterval(heartbeat);
+        await this._releasePaystackInitClaim(reference, claimValue).catch(() => {});
+        // A "Duplicate Transaction Reference" error means a previous holder
+        // already called Paystack but crashed before persisting the access_code.
+        // The reference is now bound to an existing Paystack transaction whose
+        // access_code cannot be retrieved. Fail closed with a clear message;
+        // the checkout attempt must expire before a new one can start.
+        if (this._isPaystackDuplicateReferenceError(initErr)) {
+          throw new Error(
+            `Paystack reference ${params.reference} was already initialized by a ` +
+            `previous server instance but the access_code was not persisted. ` +
+            `Wait for this checkout attempt to expire (up to 30 min) before retrying.`,
+          );
+        }
+        throw initErr;
+      }
+      clearInterval(heartbeat);
+
+      // Overwrite the sentinel with the real code. _finalizePaystackAccessCode
+      // returns the canonical stored code: our own code if the sentinel was still
+      // ours, or the DB value if (unexpectedly) another process replaced it.
+      return this._finalizePaystackAccessCode(reference, claimValue, code);
+    })().finally(() => {
+      this.initializationMutex.delete(reference);
+    });
+
+    this.initializationMutex.set(reference, promise);
+    return promise;
+  }
+
+  /**
+   * Atomically claims the initialization slot for a checkout reference.
+   * Writes claimValue into paystack_access_code when either:
+   *   - the column is NULL (fresh attempt), or
+   *   - it holds an expired sentinel (abandoned claim older than CLAIM_TIMEOUT_MS).
+   * Returns true if this caller won the claim, false if another process holds it.
+   */
+  async _tryClaimPaystackInit(reference: string, claimValue: string): Promise<boolean> {
+    const now = new Date();
+    const timeoutThreshold = new Date(now.getTime() - BillingService.CLAIM_TIMEOUT_MS);
+    const [result] = await db
+      .update(paystackCheckoutAttempts)
+      .set({ paystackAccessCode: claimValue, updatedAt: now })
+      .where(
+        and(
+          eq(paystackCheckoutAttempts.paystackReference, reference),
+          eq(paystackCheckoutAttempts.status, "pending"),
+          or(
+            isNull(paystackCheckoutAttempts.paystackAccessCode),
+            and(
+              like(paystackCheckoutAttempts.paystackAccessCode, `${BillingService.INIT_CLAIM_PREFIX}:%`),
+              lte(paystackCheckoutAttempts.updatedAt, timeoutThreshold),
+            ),
+          ),
+        ),
+      )
+      .returning({ id: paystackCheckoutAttempts.id });
+    return !!result;
+  }
+
+  /**
+   * Overwrites the claim sentinel with the real Paystack access_code.
+   * Uses RETURNING so only the claiming process can finalize.
+   *
+   * Returns the canonical code that callers should use:
+   * - Our code when the sentinel was still ours (normal path).
+   * - The DB value when the sentinel was unexpectedly replaced (defensive path;
+   *   should not occur with the heartbeat but handled for correctness).
+   */
+  async _finalizePaystackAccessCode(
+    reference: string,
+    claimValue: string,
+    code: string,
+  ): Promise<string> {
+    const [finalized] = await db
+      .update(paystackCheckoutAttempts)
+      .set({ paystackAccessCode: code, updatedAt: new Date() })
+      .where(
+        and(
+          eq(paystackCheckoutAttempts.paystackReference, reference),
+          eq(paystackCheckoutAttempts.paystackAccessCode, claimValue),
+        ),
+      )
+      .returning({ paystackAccessCode: paystackCheckoutAttempts.paystackAccessCode });
+
+    if (finalized?.paystackAccessCode) return finalized.paystackAccessCode;
+
+    // RETURNING returned nothing: the sentinel was replaced by another process.
+    // Re-read the DB to return whatever canonical code is now stored.
+    log(
+      `Paystack finalize affected 0 rows for reference ${reference} — re-reading canonical code`,
+      "billing",
+    );
+    const fresh = await this.getPaystackCheckoutAttempt(reference);
+    const canonical = fresh?.paystackAccessCode;
+    if (canonical && !canonical.startsWith(BillingService.INIT_CLAIM_PREFIX)) {
+      return canonical;
+    }
+    // No canonical code found — return the local Paystack response as a best-effort.
+    log(
+      `Paystack finalize: no canonical code found in DB for ${reference}, using local response`,
+      "billing",
+    );
+    return code;
+  }
+
+  /**
+   * Refreshes updated_at for an active claim sentinel to prove the holder is
+   * still alive. Called on a heartbeat interval so the claim cannot be preempted
+   * by another instance while the Paystack call is in-flight.
+   */
+  async _refreshPaystackInitClaim(reference: string, claimValue: string): Promise<void> {
+    await db
+      .update(paystackCheckoutAttempts)
+      .set({ updatedAt: new Date() })
+      .where(
+        and(
+          eq(paystackCheckoutAttempts.paystackReference, reference),
+          eq(paystackCheckoutAttempts.paystackAccessCode, claimValue),
+        ),
+      );
+  }
+
+  /**
+   * Returns true when a Paystack API error indicates the reference was already
+   * initialized by a previous transaction/initialize call. Used to detect the
+   * crash-between-initialize-and-store scenario.
+   */
+  private _isPaystackDuplicateReferenceError(error: any): boolean {
+    const msg = String(error?.message ?? "").toLowerCase();
+    return (
+      msg.includes("duplicate transaction reference") ||
+      msg.includes("duplicate reference") ||
+      msg.includes("transaction reference already used")
+    );
+  }
+
+  /**
+   * Releases an active claim sentinel on failure, resetting the column to NULL
+   * so the next caller can claim and retry. Only affects the row if the sentinel
+   * still matches (prevents races if another process preempted the claim).
+   */
+  async _releasePaystackInitClaim(reference: string, claimValue: string): Promise<void> {
+    await db
+      .update(paystackCheckoutAttempts)
+      .set({ paystackAccessCode: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(paystackCheckoutAttempts.paystackReference, reference),
+          eq(paystackCheckoutAttempts.paystackAccessCode, claimValue),
+        ),
+      );
+  }
+
+  /**
+   * Polls the DB until a real (non-sentinel) access_code appears or timeout.
+   * Called by processes that lost the claim race.
+   */
+  async _pollForPaystackAccessCode(reference: string): Promise<string> {
+    const deadline = Date.now() + BillingService.POLL_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, BillingService.POLL_INTERVAL_MS));
+      const fresh = await this.getPaystackCheckoutAttempt(reference);
+      const code = fresh?.paystackAccessCode;
+      if (code && !code.startsWith(BillingService.INIT_CLAIM_PREFIX)) {
+        log(
+          `Paystack access_code available for reference ${reference} after claim wait`,
+          "billing",
+        );
+        return code;
+      }
+    }
+    throw new Error(
+      `Timed out waiting for Paystack access_code for reference ${reference}`,
+    );
   }
 
   private async cancelOtherPendingCheckoutAttempts(

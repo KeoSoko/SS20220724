@@ -478,6 +478,9 @@ export const paystackCheckoutAttempts = pgTable("paystack_checkout_attempts", {
   paystackPlanCode: text("paystack_plan_code").notNull(),
   customerEmail: text("customer_email").notNull(),
   paystackReference: text("paystack_reference").notNull().unique(),
+  // Set after server-side transaction/initialize; used by the browser to open the
+  // Paystack popup without any billing-critical fields (amount, plan, channels).
+  paystackAccessCode: text("paystack_access_code"),
   status: text("status").notNull().default("pending"), // pending, completed, failed, expired, cancelled
   expiresAt: timestamp("expires_at").notNull(),
   completedAt: timestamp("completed_at"),

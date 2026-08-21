@@ -30,6 +30,7 @@ const readyRow = () => ({
   subscription_code_unique: true,
   checkout_reference_unique: true,
   one_pending_checkout_per_owner: true,
+  checkout_access_code_column: true,
 });
 
 beforeEach(() => {
@@ -99,6 +100,25 @@ describe("Paystack billing schema readiness", () => {
     expect(readiness.ready).toBe(false);
     expect(readiness.missing).toContain("subscription_identities_table");
     expect(readiness.missing).toContain("one_pending_checkout_per_owner");
+    expect(readiness.missing).toContain("checkout_access_code_column");
+  });
+
+  it("reports checkout_access_code_column missing when the migration has not been applied", async () => {
+    state.row = { ...readyRow(), checkout_access_code_column: false };
+
+    const readiness = await getPaystackBillingSchemaReadiness();
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.missing).toContain("checkout_access_code_column");
+  });
+
+  it("reports ready when checkout_access_code_column is present (migration 0005 applied)", async () => {
+    state.row = readyRow(); // checkout_access_code_column: true
+
+    const readiness = await getPaystackBillingSchemaReadiness();
+
+    expect(readiness.ready).toBe(true);
+    expect(readiness.missing).toHaveLength(0);
   });
 
   it("uses only catalog reads and removes all startup DDL", () => {

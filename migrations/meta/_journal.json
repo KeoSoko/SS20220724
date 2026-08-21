@@ -36,6 +36,13 @@
       "when": 1787160000000,
       "tag": "0004_add_paystack_recurring_readiness",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787165000000,
+      "tag": "0005_add_paystack_access_code",
+      "breakpoints": true
     }
   ]
 }

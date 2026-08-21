@@ -170,10 +170,18 @@ describe("Paystack route safety invariants", () => {
     expect(billingService).toContain('(options.allowNewActive ? "active" : "unresolved")');
   });
 
-  it("passes every browser session the one server-generated Paystack reference", () => {
-    expect(paystackClient).toContain("ref: checkout.reference");
+  it("passes every browser session the one server-issued Paystack access_code", () => {
+    // Server calls POST /transaction/initialize and returns only the access_code.
+    // The client passes it as-is — no reference, amount, plan, or channels from the browser.
+    expect(paystackClient).toContain("accessCode: checkout.accessCode");
+    expect(paystackClient).not.toContain("ref: checkout.reference");
     expect(paystackClient).not.toContain("Date.now()");
     expect(paystackClient).not.toContain("randomUUID");
+    // Billing-critical fields are not in the checkout response shape
+    expect(paystackClient).not.toContain("checkout.amount");
+    expect(paystackClient).not.toContain("checkout.planCode");
+    expect(paystackClient).not.toContain("checkout.email");
+    expect(paystackClient).not.toContain("checkout.channels");
   });
 
   it("returns a controlled temporary-unavailable result before checkout, settlement, or provider verification", () => {

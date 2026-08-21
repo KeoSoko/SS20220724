@@ -59,7 +59,6 @@ import { aiEmailAssistant } from "./ai-email-assistant";
 import { recurringExpenseService } from "./recurring-expense-service";
 import {
   billingService,
-  isPaystackApplePaySubscriptionsEnabled,
   isPaystackSubscriptionManagementLinkEnabled,
 } from "./billing-service";
 import { resolveUserForReconciliation } from "./reconcile-user-resolver";
@@ -4252,26 +4251,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(409).json({ error: "The pending checkout plan is no longer available" });
       }
 
-      const applePayEnabled = isPaystackApplePaySubscriptionsEnabled();
+      // Ensure exactly one Paystack transaction/initialize call is made for this
+      // reference. ensurePaystackAccessCode serializes concurrent requests via an
+      // in-process promise map: the first caller initializes; all others await the
+      // same promise and receive the canonical access_code without a duplicate
+      // provider call. See BillingService.ensurePaystackAccessCode for details.
+      const accessCode = await billingService.ensurePaystackAccessCode({
+        attemptId: attempt.id,
+        reference: attempt.paystackReference,
+        existingAccessCode: attempt.paystackAccessCode ?? null,
+        amount: attempt.amount,
+        email: attempt.customerEmail,
+        paystackPlanCode: attempt.paystackPlanCode,
+        currency: attempt.currency,
+        billingOwnerUserId: attempt.billingOwnerUserId,
+        planId: checkoutPlan.id,
+        planName: checkoutPlan.name,
+      });
+
       return res.status(outcome === "created" ? 201 : 200).json({
         status: outcome,
         checkout: {
           attemptId: attempt.id,
-          reference: attempt.paystackReference,
+          // The browser uses only the access_code — all billing-critical terms
+          // (amount, plan, email, channels) are locked by server-side initialization.
+          accessCode,
           expiresAt: attempt.expiresAt,
-          billingOwnerUserId: attempt.billingOwnerUserId,
-          planId: checkoutPlan.id,
-          planName: checkoutPlan.name,
-           planCode: attempt.paystackPlanCode,
-           amount: attempt.amount,
-           currency: attempt.currency,
-          billingPeriod: checkoutPlan.billingPeriod,
-           email: attempt.customerEmail,
-          // When Apple Pay is disabled for new subscriptions, restrict the
-          // Paystack popup to card only. The client passes this to the SDK.
-          // null means no restriction (all Paystack-supported channels).
-          channels: applePayEnabled ? null : ["card"],
-          applePayAvailable: applePayEnabled,
         },
       });
     } catch (error: any) {

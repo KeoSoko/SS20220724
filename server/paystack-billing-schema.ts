@@ -10,7 +10,8 @@ export type PaystackBillingSchemaRequirement =
   | "checkout_attempts_table"
   | "subscription_code_unique"
   | "checkout_reference_unique"
-  | "one_pending_checkout_per_owner";
+  | "one_pending_checkout_per_owner"
+  | "checkout_access_code_column";
 
 export interface PaystackBillingSchemaReadiness {
   ready: boolean;
@@ -94,7 +95,14 @@ export async function getPaystackBillingSchemaReadiness(
             AND index_meta.indisunique
             AND pg_get_indexdef(index_meta.indexrelid)
               ~* '\\(billing_owner_user_id\\).*WHERE.*status.*pending'
-        ) AS one_pending_checkout_per_owner
+        ) AS one_pending_checkout_per_owner,
+        EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name  = 'paystack_checkout_attempts'
+            AND column_name = 'paystack_access_code'
+        ) AS checkout_access_code_column
     `);
     const row = (result as any).rows?.[0] ?? {};
     const requirements: Array<[PaystackBillingSchemaRequirement, boolean]> = [
@@ -103,6 +111,7 @@ export async function getPaystackBillingSchemaReadiness(
       ["subscription_code_unique", asBoolean(row.subscription_code_unique)],
       ["checkout_reference_unique", asBoolean(row.checkout_reference_unique)],
       ["one_pending_checkout_per_owner", asBoolean(row.one_pending_checkout_per_owner)],
+      ["checkout_access_code_column", asBoolean(row.checkout_access_code_column)],
     ];
     const missing = requirements
       .filter(([, satisfied]) => !satisfied)
@@ -123,6 +132,7 @@ export async function getPaystackBillingSchemaReadiness(
         "subscription_code_unique",
         "checkout_reference_unique",
         "one_pending_checkout_per_owner",
+        "checkout_access_code_column",
       ],
       checkedAt,
     };

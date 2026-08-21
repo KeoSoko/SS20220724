@@ -24,19 +24,11 @@ interface PaystackBillingProps {
 
 interface ServerCheckout {
   attemptId: number;
-  reference: string;
+  // The browser uses only the access_code. All billing-critical fields
+  // (amount, plan, email, channels) are locked by server-side Paystack
+  // initialization and cannot be overridden by the client.
+  accessCode: string;
   expiresAt: string;
-  billingOwnerUserId: number;
-  planId: number;
-  planName: string;
-  planCode: string;
-  amount: number;
-  currency: string;
-  billingPeriod: string;
-  email: string;
-  /** null = no restriction; ['card'] = card only (Apple Pay gate active) */
-  channels: string[] | null;
-  applePayAvailable: boolean;
 }
 
 export function PaystackBilling({
@@ -132,31 +124,14 @@ export function PaystackBilling({
       return;
     }
 
-    const isYearly = checkout.billingPeriod === 'yearly';
-    const priceDisplay = `R${(checkout.amount / 100).toFixed(0)} ${isYearly ? 'yearly' : 'monthly'}`;
-
     try {
-      // Use Paystack v2 checkout() method - this auto-detects iOS/Safari and shows Apple Pay
+      // Use the server-issued access_code to open the Paystack popup. All billing
+      // terms (amount, plan, email, channels) were locked during server-side
+      // transaction/initialize — the client cannot override them.
       const paystackPop = new (window as any).PaystackPop();
       await paystackPop.checkout({
         key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-        email: checkout.email,
-        amount: checkout.amount,
-        currency: checkout.currency,
-        plan: checkout.planCode,
-        ref: checkout.reference,
-        // When the server sends a channels restriction (Apple Pay gate active),
-        // pass it to the Paystack SDK so the popup only shows allowed methods.
-        // null / absent means no restriction.
-        ...(checkout.channels ? { channels: checkout.channels } : {}),
-        metadata: {
-          user_id: checkout.billingOwnerUserId,
-          plan_id: checkout.planId,
-          plan_name: checkout.planName,
-          checkout_attempt_id: checkout.attemptId,
-          subscription_type: 'recurring',
-          billing_period: checkout.billingPeriod
-        },
+        accessCode: checkout.accessCode,
         onSuccess: (transaction: any) => {
           setIsProcessing(false);
           toast({

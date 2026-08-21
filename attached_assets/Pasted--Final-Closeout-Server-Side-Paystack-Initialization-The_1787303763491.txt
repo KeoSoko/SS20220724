@@ -1,0 +1,145 @@
+# Final Closeout — Server-Side Paystack Initialization
+
+The build is clean and 388 tests are passing.
+
+Before deployment, return the final implementation report.
+
+Do not deploy.
+
+Do not modify production billing data.
+
+Include:
+
+## A. Old vs new checkout flow
+
+Show the previous browser-owned Paystack initialization flow and the new server-owned initialization flow.
+
+## B. Exact Paystack initialization payload
+
+Show which server-owned fields are sent to Paystack, including:
+
+* email
+* amount
+* currency
+* reference
+* plan
+* channels
+* metadata
+
+Confirm no browser-supplied value can override them.
+
+## C. Access-code storage and reuse
+
+Explain:
+
+* whether `access_code` is persisted;
+* where;
+* how long it remains valid;
+* how retries reuse it;
+* what happens if the browser loses the response;
+* what happens if the same customer opens two tabs.
+
+## D. Provider initialization idempotency
+
+Prove that:
+
+* two simultaneous checkout requests do not create two provider transactions;
+* a network retry does not initialize Paystack twice;
+* a lost response does not create a second provider transaction;
+* one local pending checkout maps to one effective Paystack initialization.
+
+If the implementation can call Paystack initialize twice with the same reference, explain why that is safe and what Paystack returns.
+
+## E. Apple Pay enforcement
+
+When:
+
+`PAYSTACK_APPLE_PAY_SUBSCRIPTIONS_ENABLED=false`
+
+confirm the backend sends:
+
+`channels: ["card"]`
+
+to Paystack during server-side transaction initialization.
+
+Confirm the client receives only the provider access code and cannot override channels.
+
+## F. Stale/modified client
+
+Explain why:
+
+* an old cached frontend;
+* modified frontend code;
+* browser-console invocation;
+
+cannot restore Apple Pay for the already server-initialized transaction.
+
+## G. Settlement fallback
+
+Confirm that if an Apple Pay transaction somehow still appears while the gate is closed:
+
+* successful payment remains honored;
+* recurring readiness becomes `not_ready`;
+* no trusted recurring identity is established automatically.
+
+## H. Existing safety protections
+
+Confirm no regression in:
+
+* one pending checkout per billing owner;
+* billing-owner locking;
+* immutable checkout terms;
+* payment-ledger uniqueness;
+* workspace billing ownership;
+* recurring-readiness checks;
+* duplicate-provider-subscription protection;
+* webhook replay;
+* reconciliation;
+* no historical back-charging;
+* stored-authorization charging disabled.
+
+## I. Files changed
+
+Exact list.
+
+## J. Test results
+
+Include:
+
+* TypeScript;
+* production build;
+* focused checkout tests;
+* concurrency/idempotency tests;
+* Paystack billing tests;
+* full Vitest suite.
+
+List any remaining known unrelated failures separately.
+
+## K. Production migration/configuration requirements
+
+Confirm whether:
+
+* any new database migration is required;
+* any new production environment variable is required;
+* `PAYSTACK_APPLE_PAY_SUBSCRIPTIONS_ENABLED=false` must be set explicitly.
+
+## L. Zero-mutation confirmation
+
+Confirm:
+
+* production DB writes during implementation: 0
+* Paystack charges: 0
+* Paystack subscriptions created: 0
+* Paystack subscriptions changed: 0
+* refunds: 0
+* customer emails: 0
+
+## M. Deployment recommendation
+
+End with exactly:
+
+`SAFE TO PUBLISH SERVER-SIDE PAYSTACK INITIALIZATION`
+
+or:
+
+`DO NOT PUBLISH — [remaining blocker]`

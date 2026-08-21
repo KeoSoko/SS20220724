@@ -1,0 +1,138 @@
+# Final Apple Pay Gate Security Review
+
+The Apple Pay recurring checkout gate has been implemented and all focused tests pass.
+
+Do not deploy yet.
+
+Perform a final review of one specific invariant:
+
+> With `PAYSTACK_APPLE_PAY_SUBSCRIPTIONS_ENABLED=false`, can any client request still cause Paystack to create a new Apple Pay-backed Simple Slips subscription?
+
+## Current implementation
+
+The server returns:
+
+```text
+channels: ["card"]
+applePayAvailable: false
+```
+
+and the frontend supplies the channels value to:
+
+```text
+PaystackPop.checkout()
+```
+
+The settlement path separately forces Apple Pay transactions to:
+
+```text
+recurringReadiness = "not_ready"
+```
+
+when the gate is closed.
+
+That settlement protection is correct, but it happens after Paystack may already have created a `SUB_*`.
+
+## Review requirement
+
+Determine whether the channel restriction is enforceable only by the browser configuration or whether Paystack/server initialization also enforces it.
+
+Trace the exact checkout architecture.
+
+Answer:
+
+1. Does Simple Slips initialize the Paystack transaction server-side before opening the popup?
+2. If yes, are allowed channels included in the server-to-Paystack initialization payload?
+3. Or does the browser directly instantiate Paystack using the plan/reference/amount?
+4. Can a modified/stale client omit or change:
+
+```text
+channels: ["card"]
+```
+
+and still create a valid Apple Pay subscription?
+5. Could a user manually construct a Paystack checkout using the public key, valid plan and server-owned reference while ignoring the returned channel restriction?
+6. What prevents a disabled Apple Pay checkout from reaching provider subscription creation?
+
+## Required security invariant
+
+When the feature gate is false:
+
+```text
+Apple Pay payment through supported Simple Slips flow
+→ impossible before provider subscription creation
+```
+
+We do not merely want:
+
+```text
+Apple Pay payment succeeds
+→ SUB_* gets created
+→ Simple Slips later calls it not_ready
+```
+
+The latter is still capable of creating more orphaned provider subscriptions.
+
+## If current protection is sufficient
+
+Explain precisely why Paystack itself will enforce `card` for the transaction and why the client cannot bypass it within the supported application flow.
+
+Include the relevant request boundary.
+
+## If the restriction is client-controlled only
+
+Do not redesign billing yet.
+
+Report:
+
+`APPLE_PAY_GATE NOT FULLY SERVER-ENFORCED`
+
+and propose the smallest supported server/provider-side mechanism that can constrain the payment channel before Paystack creates a subscription.
+
+Do not invent undocumented Paystack parameters.
+
+If Paystack cannot provide server-side channel enforcement with the current plan checkout architecture, say so clearly.
+
+## Regression scenarios
+
+Confirm behaviour for:
+
+### Normal current frontend
+
+Gate false → Card only.
+
+### Old cached frontend
+
+Gate false → determine whether server/provider still blocks Apple Pay.
+
+### Modified frontend
+
+Ignores `channels` → determine whether provider can create Apple Pay `SUB_*`.
+
+### Direct Paystack attempt
+
+Using valid public information but bypassing Simple Slips UI → determine the boundary.
+
+### Apple Pay settlement somehow received
+
+Payment remains honoured but:
+
+```text
+recurringReadiness = not_ready
+```
+
+and no unsafe local recurring identity is established.
+
+## Stop
+
+No deployment.
+No production billing changes.
+No Paystack charge.
+
+End with exactly:
+
+`APPLE PAY GATE FULLY ENFORCED — SAFE TO DEPLOY`
+
+or:
+
+`APPLE PAY GATE NOT FULLY SERVER-ENFORCED — [reason]`

@@ -1,0 +1,179 @@
+# Publish Server-Side Paystack Initialization to Production
+
+The server-side Paystack initialization implementation has completed final review and is approved for production deployment.
+
+Proceed carefully.
+
+## 1. Production configuration
+
+Before deployment, verify:
+
+`PAYSTACK_APPLE_PAY_SUBSCRIPTIONS_ENABLED=false`
+
+Set it explicitly to `false` if it is currently missing.
+
+Do NOT set it to `true`.
+
+Do not expose or print any production secret.
+
+Verify that the existing production Paystack secret is available to the backend through the existing managed environment configuration because server-side `transaction.initialize` now requires authenticated Paystack access.
+
+Do not rotate or replace the key.
+
+## 2. Production migration
+
+Apply/register migration:
+
+`0005_add_paystack_access_code`
+
+Expected SQL:
+
+`ALTER TABLE "paystack_checkout_attempts" ADD COLUMN IF NOT EXISTS "paystack_access_code" text;`
+
+Before applying, inspect the production schema diff.
+
+STOP if it proposes:
+
+* DROP;
+* DELETE;
+* TRUNCATE;
+* table replacement;
+* removal of columns;
+* incompatible type changes;
+* unexpected billing-table changes;
+* destructive data migration.
+
+Only the expected additive nullable column is authorized.
+
+## 3. Publish
+
+Publish the validated build.
+
+Do not manually modify:
+
+* subscriptions;
+* Paystack identities;
+* payments;
+* checkout attempts;
+* recurring-readiness values;
+* billing dates;
+* entitlements.
+
+Do not perform any customer-specific remediation during this deployment.
+
+Antebellum is explicitly out of scope.
+
+## 4. Production health verification
+
+After deployment verify:
+
+* application health endpoint;
+* application starts normally;
+* migration/schema initialization succeeds;
+* no missing `paystack_access_code` errors;
+* no billing worker/reconciliation startup errors.
+
+## 5. Checkout architecture verification
+
+Perform a non-charge verification where possible.
+
+Confirm the production checkout endpoint now uses:
+
+Server:
+→ resolves billing owner
+→ resolves server-owned plan/amount/currency/email
+→ creates/reuses checkout attempt
+→ initializes Paystack
+→ receives/persists `access_code`
+
+Browser:
+→ receives access code
+→ opens Paystack using access code
+
+Confirm the browser is no longer given authority to initialize Paystack using raw:
+
+* amount;
+* plan;
+* currency;
+* email;
+* reference;
+* channels.
+
+Do NOT complete a real payment merely for verification.
+
+## 6. Apple Pay production verification
+
+Confirm:
+
+`PAYSTACK_APPLE_PAY_SUBSCRIPTIONS_ENABLED=false`
+
+and confirm server-side Paystack initialization supplies:
+
+`channels: ["card"]`
+
+Do not attempt an Apple Pay payment.
+
+If a safe checkout popup can be opened without charging, verify that Apple Pay is absent and normal Card remains available.
+
+Close/abandon the test checkout without payment.
+
+Do not use a real customer's account.
+
+## 7. Existing customers
+
+Verify deployment itself caused:
+
+* Paystack charges: 0
+* subscriptions created: 0
+* subscriptions cancelled: 0
+* refunds: 0
+* historical collections: 0
+* customer subscription changes: 0
+* entitlement changes: 0
+* customer emails: 0
+
+Existing Apple Pay-originated customers must remain untouched.
+
+## 8. Post-deployment tests
+
+Run appropriate production-safe/read-only smoke checks.
+
+Do not run tests capable of:
+
+* charging;
+* creating subscriptions;
+* cancelling subscriptions;
+* refunding;
+* changing billing data.
+
+## Return
+
+Report:
+
+### A. Production configuration
+
+### B. Migration result
+
+### C. Deployment result
+
+### D. Production health
+
+### E. Server-side initialization verification
+
+### F. Apple Pay restriction verification
+
+### G. Card availability
+
+### H. Existing-customer impact
+
+### I. Production errors/log findings
+
+### J. Zero-mutation confirmation
+
+End with exactly:
+
+`PAYSTACK SERVER-SIDE INITIALIZATION LIVE — APPLE PAY CLOSED FOR NEW SUBSCRIPTIONS`
+
+or:
+
+`PRODUCTION DEPLOYMENT STOPPED — [reason]`

@@ -1,0 +1,474 @@
+# Task #59 — Fix Legacy Paying Subscribers Without Creating Duplicate Checkouts
+
+The investigation into `JesseSoko25` identified a systemic legacy billing-state bug affecting **33 active production customers**.
+
+These customers have:
+
+* active Simple Slips subscriptions;
+* future next billing dates;
+* existing Paystack relationship evidence;
+* successful recurring payments;
+* no active local `paystack_subscription_identities` row;
+* no current reconciliation/manual-review event.
+
+They currently receive:
+
+`renewal_setup_required`
+
+with:
+
+`recoveryCheckoutEligible: false`
+
+and the frontend renders:
+
+**Automatic renewal needs setup**
+
+plus a disabled:
+
+**Renewal needs review**
+
+button.
+
+This is misleading.
+
+Do not deploy yet.
+
+Do not charge customers.
+
+Do not create recovery checkouts.
+
+Do not mutate production customers during implementation.
+
+---
+
+# 1. Core invariant
+
+An active customer with a future billing date and continuing successful Paystack renewals must NOT be told:
+
+`Renewal needs review`
+
+merely because Simple Slips is missing a local trusted `SUB_*` identity.
+
+Missing local identity is an internal reconciliation/data-completeness problem.
+
+It is not automatically a customer payment problem.
+
+---
+
+# 2. Do NOT enable recovery checkout for this cohort
+
+For the 33 identified customers:
+
+Do NOT change:
+
+`recoveryCheckoutEligible = false`
+
+into:
+
+`true`
+
+simply to make the button actionable.
+
+These customers may already have a functioning Paystack subscription.
+
+Allowing a new recovery checkout could create:
+
+* a second Paystack `SUB_*`;
+* duplicate future charges;
+* duplicate subscription schedules.
+
+This is explicitly prohibited.
+
+---
+
+# 3. Correct customer-facing state
+
+Introduce or reuse a neutral state for:
+
+```text
+subscription.status = active
+nextBillingDate > now
+hasPaystackRelationship = true
+active local identity = none
+no renewal_reconciliation_pending event
+no renewal_recovery_manual_review event
+no authoritative failed-payment state
+recent successful recurring settlement evidence exists
+```
+
+Expected customer-facing state:
+
+**Subscription active**
+
+NOT:
+
+* Renewal needs review
+* Automatic renewal needs setup
+* Renewal being checked
+* Payment failed
+
+Do not fabricate:
+
+`automatic_renewal_active`
+
+unless recurring readiness/provider identity has actually been established.
+
+---
+
+# 4. Define successful recurring settlement evidence
+
+Do not use “active subscription” alone.
+
+Determine what authoritative local evidence proves that the customer has been successfully renewing through Paystack.
+
+For legacy customers, this may include:
+
+* completed Paystack payment rows;
+* provider-originated webhook events;
+* recurring plan evidence;
+* repeated monthly successful settlement pattern;
+* provider customer/authorization data;
+* existing Paystack reference history.
+
+Use the strongest existing server-owned evidence.
+
+Do not infer from frontend metadata.
+
+---
+
+# 5. Jesse regression case
+
+Use production-derived fixture:
+
+User:
+
+`25`
+
+Subscription:
+
+`20`
+
+Current facts:
+
+* active Premium Monthly;
+* future next billing date: 2026-09-02;
+* Paystack customer exists;
+* Paystack authorization exists;
+* no active identity row;
+* no pending reconciliation event;
+* five consecutive successful Paystack subscription payments from April through August;
+* most recent successful activation: 2026-08-02;
+* one stale `subscription_failed` event from 2025-11-02.
+
+Expected:
+
+`subscription_active`
+
+No amber warning.
+
+No recovery CTA.
+
+No disabled “Renewal needs review” button.
+
+No new checkout.
+
+---
+
+# 6. Stale event precedence
+
+A historical billing failure must not permanently override later successful recurring payments.
+
+Review event precedence.
+
+For states such as:
+
+* `subscription_failed`
+* historical renewal warning
+* legacy webhook warning
+* previous setup-required signal
+
+determine whether a later authoritative successful settlement/activation supersedes the older event.
+
+If yes, derive current state from the latest relevant authoritative evidence rather than treating old events as permanently unresolved.
+
+Do not delete historical events.
+
+Preserve them for audit.
+
+---
+
+# 7. Fix the legacy webhook path
+
+The deeper issue is:
+
+`legacy_paystack_webhook_processed`
+with:
+
+`reason: missing_metadata_user_id`
+
+successfully activates subscriptions but does not establish/update the trusted Paystack subscription identity.
+
+Audit this path.
+
+Determine what authoritative provider information is actually available on these successful recurring webhooks, including where available:
+
+* Paystack customer code;
+* plan code;
+* subscription code;
+* transaction reference;
+* authorization code;
+* authorization reusable flag;
+* provider transaction ID.
+
+Do not trust client metadata.
+
+---
+
+# 8. Safe identity recovery from legacy recurring webhooks
+
+Only if the webhook/provider evidence establishes an identity unambiguously should Simple Slips create or update a local trusted `paystack_subscription_identity`.
+
+Requirements:
+
+* exact billing owner established;
+* exact Paystack customer match;
+* exact plan match;
+* exact `SUB_*`;
+* no competing viable local identity;
+* subscription code not owned by another user;
+* no ambiguous multiple-subscription state.
+
+If any ambiguity exists:
+
+do NOT attach identity automatically.
+
+Keep internal/manual-review state.
+
+Do not create checkout.
+
+---
+
+# 9. Missing `metadata.user_id` must not be fatal if ownership is otherwise authoritative
+
+The current legacy handler appears to depend on provider metadata containing a Simple Slips user ID.
+
+Investigate whether billing ownership can instead be resolved safely from authoritative server/provider data such as:
+
+* Paystack customer code already stored on the local subscription;
+* exact provider subscription/customer relationship;
+* exact plan relationship;
+* transaction reference mapping;
+* existing checkout/payment records.
+
+Do not weaken ownership validation.
+
+Do not resolve solely by email if stronger identifiers exist.
+
+---
+
+# 10. Recurring readiness
+
+If the recovered provider identity includes authoritative:
+
+`authorization.reusable === true`
+
+then recurring readiness may become:
+
+`ready`
+
+only if all other identity/customer/plan checks pass.
+
+If reusable evidence is absent:
+
+`unknown`
+
+must remain `unknown`.
+
+Do not fabricate readiness.
+
+A missing reusable flag must not prevent the customer from seeing neutral:
+
+**Subscription active**
+
+while they are currently paid and future-dated.
+
+---
+
+# 11. Actual problem states must remain visible
+
+Do not suppress genuine billing issues.
+
+Preserve correct customer-facing states for:
+
+### Actual reconciliation pending
+
+→ `reconciling`
+
+### Verified non-reusable authorization
+
+→ `payment_method_needs_attention`
+
+### Authoritative failed renewal
+
+→ failed-payment state
+
+### Multiple provider subscriptions / ambiguous provider identity
+
+→ manual review
+
+### Overdue subscription with no viable provider relationship
+
+→ `renewal_setup_required`
+
+The fix applies only to falsely warning healthy/future-dated legacy customers.
+
+---
+
+# 12. Audit all 33 affected customers
+
+READ ONLY during implementation.
+
+Confirm the 33-customer cohort.
+
+Break them down by:
+
+* successful settlement count;
+* latest successful payment date;
+* next billing date;
+* Paystack customer present;
+* authorization present;
+* provider reference present;
+* local identity absent;
+* stale failure/recovery events;
+* actual pending reconciliation events.
+
+Identify any account that should NOT receive the neutral active treatment because genuine unresolved evidence exists.
+
+Do not mass-update them.
+
+---
+
+# 13. No mass identity backfill
+
+Do not create 33 identity rows merely because they are in this cohort.
+
+Identity creation must remain evidence-driven and unambiguous.
+
+The customer-facing state fix must work independently of a mass production identity migration.
+
+---
+
+# 14. Tests
+
+Add focused tests for:
+
+### A. Jesse exact case
+
+Active + future billing + no identity + repeated successful recurring settlements + no pending reconciliation
+
+Expected:
+
+`subscription_active`
+
+### B. Single recent successful legacy renewal
+
+Expected neutral active if all other conditions are safe.
+
+### C. Old failure followed by multiple successful renewals
+
+Old failure does not force review state.
+
+### D. Actual pending reconciliation
+
+Still:
+
+`reconciling`
+
+### E. No identity + no successful recurring evidence
+
+Do NOT automatically mark neutral active merely because billing date is future.
+
+Use the existing conservative/setup path.
+
+### F. Multiple provider ambiguity
+
+Still manual review.
+
+### G. Legacy webhook with unambiguous provider subscription
+
+Safely recovers/creates identity.
+
+### H. Legacy webhook with ambiguous ownership
+
+No identity created.
+
+No checkout created.
+
+### I. Missing reusable evidence
+
+Identity readiness remains `unknown`.
+
+### J. Explicit reusable=true
+
+May become `ready` only when all ownership checks pass.
+
+### K. No duplicate checkout
+
+Legacy successful renewal never causes recovery checkout creation.
+
+---
+
+# 15. Production safety
+
+This implementation must not:
+
+* charge stored authorization;
+* create checkout automatically;
+* initialize a Paystack transaction;
+* create another provider subscription;
+* cancel provider subscription;
+* refund;
+* back-charge missed periods;
+* change existing entitlement merely to repair UI state.
+
+---
+
+# 16. Return
+
+## A. Root cause
+
+## B. Exact 33-customer cohort
+
+## C. New state-decision logic
+
+## D. Jesse result
+
+## E. Stale-event precedence
+
+## F. Legacy webhook root fix
+
+## G. Safe identity-recovery criteria
+
+## H. Ambiguity protections
+
+## I. Customer-facing changes
+
+## J. Tests
+
+## K. Files changed
+
+## L. Production migration requirements
+
+## M. Zero-mutation confirmation
+
+## N. Deployment recommendation
+
+End with exactly:
+
+`LEGACY PAYING SUBSCRIBER STATE FIXED — READY FOR REVIEW`
+
+or:
+
+`NOT READY — [remaining blocker]`
+
+Do not deploy.

@@ -652,8 +652,11 @@ describe("hasSuccessfulRecurringSettlementEvidence", () => {
   const recent = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const stale  = new Date(Date.now() - 300 * 24 * 60 * 60 * 1000);
 
-  function mockActivationAndFailure(
-    activation: Date | null,
+  // Helper: mock the two db.select calls in hasSuccessfulRecurringSettlementEvidence.
+  // First call is the legacy_paystack_webhook_processed query; second is the
+  // subscription_failed query (only reached when a webhook event exists).
+  function mockWebhookEvidenceAndFailure(
+    webhookEvent: Date | null,
     failure: Date | null,
   ) {
     vi.mocked(db.select)
@@ -662,7 +665,7 @@ describe("hasSuccessfulRecurringSettlementEvidence", () => {
           from: () => chain,
           where: () => chain,
           orderBy: () => chain,
-          limit: async () => (activation ? [{ createdAt: activation }] : []),
+          limit: async () => (webhookEvent ? [{ createdAt: webhookEvent }] : []),
         };
         return chain;
       })
@@ -677,27 +680,27 @@ describe("hasSuccessfulRecurringSettlementEvidence", () => {
       });
   }
 
-  // Test C: An old failure is superseded by a later successful activation.
-  it("C: returns true when a stale failure is superseded by a more recent activation", async () => {
+  // Test C: An old failure is superseded by a later successful recurring webhook event.
+  it("C: returns true when a stale failure is superseded by a more recent recurring webhook event", async () => {
     const service = new BillingService();
-    mockActivationAndFailure(recent, stale);
+    mockWebhookEvidenceAndFailure(recent, stale);
 
     const result = await (service as any).hasSuccessfulRecurringSettlementEvidence(42);
     expect(result).toBe(true);
   });
 
-  it("returns true when there is at least one activation and no failure", async () => {
+  it("returns true when there is at least one recurring webhook event and no failure", async () => {
     const service = new BillingService();
-    mockActivationAndFailure(recent, null);
+    mockWebhookEvidenceAndFailure(recent, null);
 
     const result = await (service as any).hasSuccessfulRecurringSettlementEvidence(42);
     expect(result).toBe(true);
   });
 
-  it("returns false when no activation events exist", async () => {
+  it("returns false when no recurring webhook events exist", async () => {
     const service = new BillingService();
-    // Only mock the activation query — the failure query is never reached when
-    // no activation exists (the method returns early).
+    // Only mock the recurring webhook query — the failure query is never reached
+    // when no legacy_paystack_webhook_processed event exists (early return).
     vi.mocked(db.select).mockImplementationOnce(() => {
       const chain: any = {
         from: () => chain,
@@ -712,12 +715,48 @@ describe("hasSuccessfulRecurringSettlementEvidence", () => {
     expect(result).toBe(false);
   });
 
-  it("returns false when the most recent event is a failure newer than the last activation", async () => {
+  it("returns false when the most recent event is a failure newer than the last recurring webhook event", async () => {
     const service = new BillingService();
-    mockActivationAndFailure(stale, recent);
+    mockWebhookEvidenceAndFailure(stale, recent);
 
     const result = await (service as any).hasSuccessfulRecurringSettlementEvidence(42);
     expect(result).toBe(false);
+  });
+
+  // Section 4 regression — spec requirement: a customer who has only completed
+  // an initial checkout (one subscription_activated event, no recurring webhook)
+  // must NOT be classified as having proven recurring settlement evidence.
+  // Initial checkouts reach processPaystackSubscription via the checkout
+  // completion endpoint (which carries metadata.user_id), so no
+  // legacy_paystack_webhook_processed event is ever written for them.
+  it("Section 4 regression — initial-checkout-only customer has no recurring webhook evidence (returns false)", async () => {
+    const service = new BillingService();
+    // The legacy_paystack_webhook_processed query returns empty — method returns early.
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        orderBy: () => chain,
+        limit: async () => [],
+      };
+      return chain;
+    });
+
+    const result = await (service as any).hasSuccessfulRecurringSettlementEvidence(42);
+    expect(result).toBe(false);
+  });
+
+  // Section 5 regression — spec requirement: a customer with a proven provider
+  // recurring charge.success after their initial subscription payment must
+  // return true. Each recurring charge processed via the legacy webhook path
+  // records a legacy_paystack_webhook_processed event (Jesse's profile).
+  it("Section 5 regression — proven provider recurring charge.success after initial payment returns true", async () => {
+    const service = new BillingService();
+    // Recent legacy_paystack_webhook_processed event, no failure.
+    mockWebhookEvidenceAndFailure(recent, null);
+
+    const result = await (service as any).hasSuccessfulRecurringSettlementEvidence(42);
+    expect(result).toBe(true);
   });
 });
 
@@ -739,6 +778,31 @@ describe("attemptSafeLegacyWebhookIdentityRecovery", () => {
     transactionReference: "ref_legacy_001",
   };
 
+  // Helper: mock the two db.select calls in attemptSafeLegacyWebhookIdentityRecovery
+  // that follow Gate 1 (getPaystackSubscriptionIdentityByCode is spied):
+  //   1st call — resolveLocalUserByPaystackCustomerCode (returns userId + planId)
+  //   2nd call — plan code lookup against subscriptionPlans (Gate 2b)
+  // chargeData carries plan.plan_code = "PLN_monthly"; localPlanCode must match.
+  function mockResolveAndPlanLookup(userId: number, planId: number, localPlanCode: string) {
+    vi.mocked(db.select)
+      .mockImplementationOnce(() => {
+        const chain: any = {
+          from: () => chain,
+          where: () => chain,
+          limit: async () => [{ userId, planId }],
+        };
+        return chain;
+      })
+      .mockImplementationOnce(() => {
+        const chain: any = {
+          from: () => chain,
+          where: () => chain,
+          limit: async () => [{ paystackPlanCode: localPlanCode }],
+        };
+        return chain;
+      });
+  }
+
   // Test G: Unambiguous ownership → identity created.
   it("G: records a paystack identity when webhook evidence unambiguously identifies the owner", async () => {
     const service = new BillingService();
@@ -748,15 +812,8 @@ describe("attemptSafeLegacyWebhookIdentityRecovery", () => {
       subscriptionCode: "SUB_legacy",
       status: "active",
     } as any);
-    // Customer code resolves to exactly one user.
-    vi.mocked(db.select).mockImplementationOnce(() => {
-      const chain: any = {
-        from: () => chain,
-        where: () => chain,
-        limit: async () => [{ userId: 42 }],
-      };
-      return chain;
-    });
+    // Customer code resolves to exactly one user; local plan matches webhook plan code.
+    mockResolveAndPlanLookup(42, 7, "PLN_monthly");
 
     const result = await service.attemptSafeLegacyWebhookIdentityRecovery(chargeData, renewalEvidence);
 
@@ -770,17 +827,18 @@ describe("attemptSafeLegacyWebhookIdentityRecovery", () => {
   });
 
   // Test H: Ambiguous ownership (multiple users share the customer code) → no identity.
+  // Gate 2 fails before reaching the plan code check (Gate 2b).
   it("H: does not create an identity when multiple local subscriptions share the customer code", async () => {
     const service = new BillingService();
     vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
     vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
     const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({} as any);
-    // Two different user IDs → ambiguous.
+    // Two different user IDs → ambiguous → fails before plan lookup.
     vi.mocked(db.select).mockImplementationOnce(() => {
       const chain: any = {
         from: () => chain,
         where: () => chain,
-        limit: async () => [{ userId: 42 }, { userId: 99 }],
+        limit: async () => [{ userId: 42, planId: 7 }, { userId: 99, planId: 3 }],
       };
       return chain;
     });
@@ -805,14 +863,8 @@ describe("attemptSafeLegacyWebhookIdentityRecovery", () => {
       subscriptionCode: "SUB_legacy",
       status: "active",
     } as any);
-    vi.mocked(db.select).mockImplementationOnce(() => {
-      const chain: any = {
-        from: () => chain,
-        where: () => chain,
-        limit: async () => [{ userId: 42 }],
-      };
-      return chain;
-    });
+    // Local plan matches webhook plan code (dataNoReusable still has plan.plan_code = "PLN_monthly").
+    mockResolveAndPlanLookup(42, 7, "PLN_monthly");
 
     const result = await service.attemptSafeLegacyWebhookIdentityRecovery(dataNoReusable, renewalEvidence);
 
@@ -835,14 +887,7 @@ describe("attemptSafeLegacyWebhookIdentityRecovery", () => {
       subscriptionCode: "SUB_legacy",
       status: "active",
     } as any);
-    vi.mocked(db.select).mockImplementationOnce(() => {
-      const chain: any = {
-        from: () => chain,
-        where: () => chain,
-        limit: async () => [{ userId: 42 }],
-      };
-      return chain;
-    });
+    mockResolveAndPlanLookup(42, 7, "PLN_monthly");
 
     const result = await service.attemptSafeLegacyWebhookIdentityRecovery(chargeData, renewalEvidence);
 
@@ -866,14 +911,7 @@ describe("attemptSafeLegacyWebhookIdentityRecovery", () => {
       subscriptionCode: "SUB_legacy",
       status: "active",
     } as any);
-    vi.mocked(db.select).mockImplementationOnce(() => {
-      const chain: any = {
-        from: () => chain,
-        where: () => chain,
-        limit: async () => [{ userId: 42 }],
-      };
-      return chain;
-    });
+    mockResolveAndPlanLookup(42, 7, "PLN_monthly");
 
     await service.attemptSafeLegacyWebhookIdentityRecovery(chargeData, renewalEvidence);
 
@@ -888,5 +926,22 @@ describe("attemptSafeLegacyWebhookIdentityRecovery", () => {
       (r: any) => r.eventType?.includes("checkout"),
     );
     expect(checkoutEvent).toBeUndefined();
+  });
+
+  // Test L: Provider plan code contradicts local plan → fails with plan_code_mismatch.
+  // Spec section 6: do not recover when plan evidence contradicts the local plan.
+  it("L: fails with plan_code_mismatch when webhook plan code contradicts the local subscription plan", async () => {
+    const service = new BillingService();
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({} as any);
+    // Webhook says PLN_monthly; local plan says PLN_annual → mismatch.
+    mockResolveAndPlanLookup(42, 7, "PLN_annual");
+
+    const result = await service.attemptSafeLegacyWebhookIdentityRecovery(chargeData, renewalEvidence);
+
+    expect(result.outcome).toBe("failed");
+    expect((result as any).reason).toBe("plan_code_mismatch");
+    expect(recordSpy).not.toHaveBeenCalled();
   });
 });

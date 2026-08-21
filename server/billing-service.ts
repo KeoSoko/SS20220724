@@ -1181,27 +1181,32 @@ export class BillingService {
   }
 
   /**
-   * Returns true when there is at least one `subscription_activated` event for
-   * this user AND the most recent activation is newer than any
-   * `subscription_failed` event. This evidence is authoritative enough to
-   * treat the subscription as actively renewing even when no
-   * `paystack_subscription_identities` row exists — covering legacy customers
-   * whose charges pre-date the server-side identity recording flow.
+   * Returns true when there is at least one `legacy_paystack_webhook_processed`
+   * event for this user AND the most recent such event is newer than any
+   * `subscription_failed` event.
+   *
+   * `legacy_paystack_webhook_processed` is exclusively recorded when a Paystack
+   * `charge.success` webhook arrives without `metadata.user_id` — a pattern
+   * that only occurs for provider-originated recurring renewals, never for
+   * customer-initiated initial checkout payments (which carry metadata). This
+   * makes it a more authoritative recurring settlement signal than the generic
+   * `subscription_activated` event, which is also emitted for initial checkouts
+   * and cannot on its own prove a recurring relationship is healthy.
    */
   private async hasSuccessfulRecurringSettlementEvidence(
     userId: number,
   ): Promise<boolean> {
-    const [latestActivation] = await db
+    const [latestWebhookProcessed] = await db
       .select({ createdAt: billingEvents.createdAt })
       .from(billingEvents)
       .where(and(
         eq(billingEvents.userId, userId),
-        eq(billingEvents.eventType, "subscription_activated"),
+        eq(billingEvents.eventType, "legacy_paystack_webhook_processed"),
       ))
       .orderBy(desc(billingEvents.createdAt))
       .limit(1);
 
-    if (!latestActivation) return false;
+    if (!latestWebhookProcessed) return false;
 
     const [latestFailure] = await db
       .select({ createdAt: billingEvents.createdAt })
@@ -1213,8 +1218,9 @@ export class BillingService {
       .orderBy(desc(billingEvents.createdAt))
       .limit(1);
 
-    // A failure that is newer than the last activation blocks the neutral state.
-    if (latestFailure && latestFailure.createdAt >= latestActivation.createdAt) {
+    // A failure that is newer than the last authoritative recurring webhook
+    // blocks the neutral state.
+    if (latestFailure && latestFailure.createdAt >= latestWebhookProcessed.createdAt) {
       return false;
     }
 
@@ -1222,16 +1228,33 @@ export class BillingService {
   }
 
   /**
+   * Extracts the Paystack plan code from a raw webhook payload using the same
+   * candidate fields that `extractPaystackRenewalEvidence` in paystack-renewal.ts
+   * supports. Returns null when no plan code is present in the payload.
+   */
+  private extractProviderPlanCodeFromWebhook(data: any): string | null {
+    if (typeof data?.plan === "string") return data.plan || null;
+    return (
+      data?.plan?.plan_code ??
+      data?.plan_code ??
+      data?.subscription?.plan?.plan_code ??
+      data?.subscription?.plan_code ??
+      null
+    );
+  }
+
+  /**
    * Resolve a local user by their Paystack customer code, using active
    * subscription records. Returns null when no match exists or when more than
    * one distinct user ID maps to the same customer code (ambiguous — fail
-   * closed).
+   * closed). Also returns the resolved subscription's planId so the caller can
+   * verify the provider plan code against the local plan.
    */
   private async resolveLocalUserByPaystackCustomerCode(
     customerCode: string,
-  ): Promise<{ userId: number } | null> {
+  ): Promise<{ userId: number; planId: number } | null> {
     const matches = await db
-      .select({ userId: userSubscriptions.userId })
+      .select({ userId: userSubscriptions.userId, planId: userSubscriptions.planId })
       .from(userSubscriptions)
       .where(and(
         eq(userSubscriptions.paystackCustomerCode, customerCode),
@@ -1244,7 +1267,7 @@ export class BillingService {
     const uniqueUserIds = Array.from(new Set(matches.map((m) => m.userId)));
     if (uniqueUserIds.length !== 1) return null;
 
-    return { userId: uniqueUserIds[0] };
+    return { userId: uniqueUserIds[0], planId: matches[0].planId };
   }
 
   private async loadPaystackSubscriptionCandidates(userId: number): Promise<
@@ -1563,7 +1586,23 @@ export class BillingService {
         reason: "ambiguous_or_missing_local_subscription_for_customer_code",
       };
     }
-    const { userId } = resolved;
+    const { userId, planId } = resolved;
+
+    // Gate 2b: if the webhook contains a plan code, it must match the local
+    // plan's Paystack plan code exactly. A mismatch means the provider and
+    // local records describe different plans — fail closed rather than create
+    // a mismatched identity.
+    const webhookPlanCode = this.extractProviderPlanCodeFromWebhook(data);
+    if (webhookPlanCode) {
+      const [localPlan] = await db
+        .select({ paystackPlanCode: subscriptionPlans.paystackPlanCode })
+        .from(subscriptionPlans)
+        .where(eq(subscriptionPlans.id, planId))
+        .limit(1);
+      if (localPlan?.paystackPlanCode && localPlan.paystackPlanCode !== webhookPlanCode) {
+        return { outcome: "failed", reason: "plan_code_mismatch" };
+      }
+    }
 
     // Gate 3: no competing active identity may already exist for this user.
     const existingIdentity = await this.getActivePaystackSubscriptionIdentity(userId);

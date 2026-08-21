@@ -1,0 +1,171 @@
+# Final Review — Tighten Legacy Recurring Settlement Evidence
+
+The proposed Task #59 implementation is broadly approved, but one condition must be tightened before deployment.
+
+Do not deploy yet.
+
+## 1. Do not equate subscription activation with recurring settlement
+
+The helper:
+
+`hasSuccessfulRecurringSettlementEvidence`
+
+must not treat every:
+
+`subscription_activated`
+
+event as proof of a successful recurring renewal.
+
+A first/customer-initiated subscription payment may also create `subscription_activated`.
+
+That would incorrectly recreate:
+
+`initial payment succeeded → assume recurring relationship is healthy`
+
+which is the billing assumption we have specifically removed.
+
+## 2. Define authoritative recurring settlement evidence
+
+Determine what existing local/provider evidence distinguishes:
+
+### Initial/customer-initiated checkout
+
+from:
+
+### Subsequent Paystack recurring `charge.success`
+
+Prefer explicit authoritative signals such as:
+
+* Paystack webhook with subscription context;
+* `subscription_code`;
+* provider invoice/renewal context;
+* provider-originated recurring transaction source;
+* event metadata proving it was a renewal;
+* transaction occurring against an already-existing subscription cycle.
+
+Do not rely only on the generic event name:
+
+`subscription_activated`
+
+## 3. Jesse must still qualify
+
+JesseSoko25 has five consecutive successful provider renewal cycles through the legacy webhook path.
+
+Confirm that the strengthened evidence rule still classifies Jesse as:
+
+`subscription_active`
+
+without requiring a new checkout.
+
+## 4. Initial-payment regression
+
+Add an explicit test:
+
+Customer has:
+
+* active subscription;
+* future billing date;
+* no identity;
+* one successful initial checkout;
+* one `subscription_activated` event;
+* no proven recurring renewal.
+
+Expected:
+
+Do NOT classify that single initial activation as successful recurring settlement evidence.
+
+Use the appropriate conservative state.
+
+## 5. Recurring-payment regression
+
+Customer has:
+
+* active subscription;
+* future billing;
+* no identity;
+* proven provider recurring `charge.success` after the initial subscription payment.
+
+Expected:
+
+`subscription_active`
+
+## 6. Identity recovery — verify exact plan too
+
+For `attemptSafeLegacyWebhookIdentityRecovery`, confirm the automatic identity repair requires:
+
+* exact subscription code;
+* exact Paystack customer;
+* exact local billing owner;
+* exactly one matching active local subscription;
+* exact Paystack plan code matching the local plan;
+* subscription code not already owned by another user;
+* no competing active identity.
+
+Do not recover an identity based only on:
+
+`customer_code + exactly one active local subscription`
+
+if provider plan evidence contradicts the local plan.
+
+## 7. Readiness remains evidence-based
+
+If the recovered webhook does not contain authoritative:
+
+`authorization.reusable === true`
+
+then:
+
+`recurring_readiness = unknown`
+
+must remain permitted.
+
+Do not infer `ready` from repeated successful payments alone.
+
+## 8. No checkout fallback
+
+Reconfirm that the entire:
+
+`future billing + no local identity`
+
+legacy cohort remains:
+
+`recoveryCheckoutEligible = false`
+
+unless a separately proven provider-inspection path establishes that no viable subscription exists.
+
+## 9. Final validation
+
+Run:
+
+* TypeScript
+* production build
+* focused legacy renewal tests
+* identity recovery tests
+* Paystack billing suite
+* full Vitest suite
+
+Return:
+
+### A. Strengthened definition of recurring settlement evidence
+
+### B. Jesse result
+
+### C. Initial-payment-only regression
+
+### D. Exact identity recovery gates
+
+### E. Recurring readiness behavior
+
+### F. Test results
+
+### G. Deployment recommendation
+
+End with:
+
+`LEGACY PAYING SUBSCRIBER FIX SAFE TO DEPLOY`
+
+or:
+
+`NOT READY — [reason]`
+
+Do not deploy.

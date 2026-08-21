@@ -1,0 +1,407 @@
+# Task #60 — User 100 Duplicate R530 Payment Investigation
+
+## What & Why
+
+During the subscription plan-integrity reconciliation, user 100 was identified as having a potential duplicate R530 annual subscription charge.
+
+User 100's corrupted `plan_id` has already been repaired separately.
+
+This task is specifically about determining whether the customer was actually charged R530 more than once and, if so, identifying exactly how the duplicate occurred and what remediation is appropriate.
+
+## CRITICAL: READ-ONLY INVESTIGATION FIRST
+
+Do NOT make any production data changes during the investigation.
+
+Do NOT:
+
+* refund anything
+* charge anything
+* create a checkout
+* create/cancel a Paystack subscription
+* modify a payment transaction
+* modify a subscription
+* modify billing events
+* modify checkout attempts
+* modify subscription identities
+* change `total_paid`
+* contact the customer
+
+First establish the facts.
+
+---
+
+# 1. Local subscription state
+
+For user 100, report:
+
+* subscription ID
+* current plan ID
+* plan code/name
+* subscription status
+* subscription start date
+* next billing date
+* last payment date
+* total paid
+* cancelled_at
+* Paystack customer code
+* Paystack reference
+* authorization state/readiness
+* trusted subscription identity, if any
+* trusted `SUB_...` code, if any
+
+Confirm that the previous plan-integrity repair is intact.
+
+---
+
+# 2. Find every R530-related payment record
+
+Retrieve every relevant `payment_transactions` record for user 100.
+
+For each show:
+
+* transaction ID
+* amount
+* status
+* payment method
+* description
+* created_at
+* payment date
+* local reference
+* provider transaction ID
+* provider channel
+* authorization code presence — yes/no only
+* authorization reusable state
+* recurring readiness
+* provider verification timestamp
+
+Do not expose full authorization credentials.
+
+Do not assume two local rows mean two actual charges.
+
+---
+
+# 3. Checkout attempts
+
+Retrieve all `paystack_checkout_attempts` for user 100.
+
+For each show:
+
+* attempt ID
+* Paystack reference
+* requested plan
+* billing owner
+* requester
+* status
+* created_at
+* completed_at if available
+* expiry
+* provider transaction relationship if stored
+
+Determine whether:
+
+* one checkout was created,
+* multiple checkouts were created,
+* a checkout was retried,
+* the same reference appears more than once.
+
+---
+
+# 4. Billing events
+
+Retrieve the complete relevant billing-event timeline around the suspected duplicate.
+
+Include events such as:
+
+* checkout created
+* checkout completed
+* subscription activated
+* charge success
+* webhook processed
+* webhook duplicate
+* subscription failed
+* reconciliation events
+* recovery events
+* admin events
+
+Sort chronologically.
+
+For each event report:
+
+* event type
+* timestamp
+* safe identifiers
+* relevant reason/status
+
+Do not expose secrets or full sensitive payloads.
+
+---
+
+# 5. Determine whether there are TWO provider transactions
+
+This is the most important question.
+
+Use existing locally stored provider transaction IDs/references first.
+
+If the existing application has an approved **read-only Paystack verification/retrieval mechanism**, it may be used to verify specific known transaction references/IDs.
+
+Do NOT perform broad customer mutation or subscription operations.
+
+Determine:
+
+### Scenario A
+
+Two distinct successful Paystack transactions exist.
+
+This indicates a real duplicate customer charge.
+
+### Scenario B
+
+One Paystack transaction exists but two local payment records exist.
+
+This indicates local duplication, not necessarily a duplicate customer charge.
+
+### Scenario C
+
+One charge was successful and another failed/abandoned.
+
+No duplicate successful collection.
+
+### Scenario D
+
+Evidence remains insufficient to prove provider-side duplication.
+
+Manual/provider review required.
+
+Do not infer Scenario A merely from `total_paid` or duplicate local rows.
+
+---
+
+# 6. Compare provider identifiers
+
+For each suspected payment compare:
+
+* Paystack reference
+* provider transaction ID
+* amount
+* timestamp
+* channel
+* customer code
+* authorization signature where safely comparable
+* checkout attempt
+* webhook event
+
+Determine whether they represent:
+
+* the same transaction processed twice locally,
+* or two genuinely separate payment transactions.
+
+---
+
+# 7. Check webhook idempotency
+
+Inspect how each suspected payment entered Simple Slips.
+
+Determine:
+
+* which Paystack webhook(s) were received,
+* whether the same webhook was processed more than once,
+* whether idempotency correctly recognised duplicates,
+* whether one transaction came from checkout verification and another from webhook handling,
+* whether two code paths independently wrote the same payment,
+* whether retry behaviour could create duplicate financial records.
+
+Do not modify the idempotency system in the investigation phase.
+
+---
+
+# 8. Check actual subscription behaviour
+
+Determine whether the suspected duplicate arose from:
+
+* two customer-initiated checkouts,
+* checkout + automatic recurring charge,
+* two recurring charges,
+* duplicate webhook processing,
+* checkout verification + webhook double-processing,
+* admin recovery,
+* another path.
+
+Trace the exact code path if evidence supports it.
+
+---
+
+# 9. Reconcile `total_paid`
+
+Explain how user 100's current `total_paid` was calculated.
+
+Compare:
+
+```text
+stored total_paid
+vs
+sum of legitimate successful payments
+```
+
+Do not change it yet.
+
+Identify whether it is:
+
+* correct,
+* overstated,
+* understated,
+* or impossible to determine safely.
+
+---
+
+# 10. Check other customers for the same pattern
+
+Run a READ-ONLY population diagnostic for similar potential duplicate payments.
+
+Look for:
+
+* same user
+* same amount
+* unusually close timestamps
+* multiple completed Paystack transactions
+* duplicated provider transaction IDs
+* duplicated references
+* checkout + webhook records that may represent the same payment
+* annual payments appearing twice within an implausibly short period
+
+Do not automatically classify legitimate monthly recurring payments as duplicates.
+
+Return aggregate results and internal user IDs requiring review.
+
+Do NOT modify anyone.
+
+---
+
+# 11. Root-cause assessment
+
+If a genuine duplicate is established, identify the precise mechanism.
+
+Answer:
+
+1. What initiated charge #1?
+2. What initiated charge #2?
+3. Why did Simple Slips allow both?
+4. Is the vulnerable code path still present?
+5. Could another customer currently encounter it?
+6. Do existing idempotency protections already prevent recurrence?
+
+Do not implement a speculative fix.
+
+---
+
+# 12. Remediation recommendation
+
+After the investigation, classify user 100 as exactly one:
+
+### `CONFIRMED_DUPLICATE_CHARGE`
+
+Two distinct successful provider collections are proven.
+
+### `LOCAL_DUPLICATE_ONLY`
+
+Only one provider charge exists; local records duplicated it.
+
+### `NO_DUPLICATE`
+
+Evidence shows only one legitimate successful payment.
+
+### `MANUAL_REVIEW_REQUIRED`
+
+Available evidence cannot safely establish what happened.
+
+Then recommend the exact remediation.
+
+If a refund appears appropriate, **do not issue it in this task**.
+
+Specify:
+
+* which provider transaction would be the refund candidate,
+* amount,
+* why,
+* what local records would subsequently require reconciliation.
+
+---
+
+# 13. Absolute safety constraints
+
+During Task #60 investigation:
+
+DO NOT:
+
+* call a Paystack charge endpoint
+* call a Paystack refund endpoint
+* create checkout
+* create subscription
+* cancel subscription
+* change authorization
+* change recurring readiness
+* alter customer billing dates
+* alter subscription status
+* alter plan
+* alter total_paid
+* delete/modify payment records
+* modify billing events
+* email the customer
+
+Read-only only.
+
+---
+
+# Final report
+
+Return:
+
+## A. User 100 subscription state
+
+## B. Complete payment timeline
+
+## C. Checkout timeline
+
+## D. Billing-event timeline
+
+## E. Provider evidence
+
+State clearly whether there are one or two distinct successful provider transactions.
+
+## F. Classification
+
+One of:
+
+* `CONFIRMED_DUPLICATE_CHARGE`
+* `LOCAL_DUPLICATE_ONLY`
+* `NO_DUPLICATE`
+* `MANUAL_REVIEW_REQUIRED`
+
+## G. Root cause
+
+Explain exactly how the situation occurred, if determinable.
+
+## H. Financial reconciliation
+
+Show:
+
+* legitimate amount expected
+* amount actually collected
+* potential overpayment
+* current `total_paid`
+* what `total_paid` should ultimately represent
+
+Do not change it.
+
+## I. Population scan
+
+Report whether any other users exhibit the same suspicious pattern.
+
+## J. Recommended remediation
+
+Give the exact next action but do not execute it.
+
+## K. Safety confirmation
+
+Explicitly confirm:
+
+> No charge, refund, checkout, subscription creation/cancellation, customer contact, or production billing-data mutation occurred during this investigation.

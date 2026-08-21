@@ -166,7 +166,7 @@ export function SubscriptionPage() {
     paymentRecoveryRecommended?: boolean;
     renewalDueDate?: string;
     recoveryPath?: string;
-    renewalState?: 'not_due' | 'reconciling' | 'payment_failed' | 'renewal_setup_required' | 'automatic_renewal_active' | 'payment_method_needs_attention' | 'manual_review_required';
+    renewalState?: 'not_due' | 'reconciling' | 'payment_failed' | 'renewal_setup_required' | 'automatic_renewal_active' | 'subscription_active' | 'payment_method_needs_attention' | 'manual_review_required';
     renewalRecoveryCheckoutEligible?: boolean;
     renewalManagementLinkEligible?: boolean;
     workspaceContext: {
@@ -230,6 +230,7 @@ export function SubscriptionPage() {
   const transactions: PaymentTransaction[] = (transactionsData as any)?.transactions || [];
   const renewalSetupRequired = statusData?.renewalState === 'renewal_setup_required';
   const renewalReconciling = statusData?.renewalState === 'reconciling';
+  const subscriptionActiveUnknownRenewal = statusData?.renewalState === 'subscription_active';
   const paymentMethodNeedsAttention = statusData?.renewalState === 'payment_method_needs_attention';
   const manualReviewRequired = statusData?.renewalState === 'manual_review_required';
   const paymentActuallyFailed = !!(
@@ -265,6 +266,7 @@ export function SubscriptionPage() {
     if (manualReviewRequired) return 'Automatic renewal needs review';
     if (renewalSetupRequired) return 'Automatic renewal needs setup';
     if (statusData?.renewalState === 'automatic_renewal_active') return 'Automatic renewal active';
+    if (subscriptionActiveUnknownRenewal) return 'Subscription active';
     if (renewalReconciling) return 'Renewal being checked';
     
     if (subscription.isTrialActive) {

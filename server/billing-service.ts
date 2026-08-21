@@ -115,6 +115,7 @@ export type PaystackRenewalState =
   | "payment_failed"
   | "renewal_setup_required"
   | "automatic_renewal_active"
+  | "subscription_active"
   | "payment_method_needs_attention"
   | "manual_review_required";
 
@@ -3854,7 +3855,30 @@ export class BillingService {
             managementLinkEligible: isPaystackSubscriptionManagementLinkEnabled(),
           };
         }
-        return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
+        // recurringReadiness === "unknown": historic evidence is incomplete — this is
+        // the schema default for identities that have never been provider-verified.
+        // "unknown" must not be treated as an active reconciliation. When billing is
+        // still in the future, surface a neutral active state rather than implying
+        // that a check is currently in progress.
+        // Exception: if a reconciliation_pending event exists, the system IS actively
+        // awaiting a provider result — preserve "reconciling" in that case.
+        if (new Date(subscription.nextBillingDate).getTime() > Date.now()) {
+          const [pendingReconciliation] = await db
+            .select({ eventType: billingEvents.eventType })
+            .from(billingEvents)
+            .where(and(
+              eq(billingEvents.userId, userId),
+              eq(billingEvents.eventType, "renewal_reconciliation_pending"),
+            ))
+            .orderBy(desc(billingEvents.createdAt))
+            .limit(1);
+          if (!pendingReconciliation) {
+            return { state: "subscription_active", recoveryCheckoutEligible: false, managementLinkEligible: false };
+          }
+          return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
+        }
+        // Overdue + unknown: fall through to the recovery-signal / setup-required
+        // checks below so the existing billing-date-overdue logic applies.
       }
     } catch {
       return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };

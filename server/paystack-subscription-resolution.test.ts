@@ -73,6 +73,7 @@ vi.mock("./db", () => {
 
 import { BillingService } from "./billing-service";
 import { storage } from "./storage";
+import { db } from "./db";
 
 const localSubscription = {
   id: 11,
@@ -440,5 +441,77 @@ describe("automatic legacy renewal relationship recovery", () => {
     expect(charge).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
     expect(disable).not.toHaveBeenCalled();
+  });
+
+  // Regression: unknown readiness must never alias automatic_renewal_active or
+  // reconciling merely because the billing date is in the future.
+  const futureBillingDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  it("maps unknown readiness + future billing date to subscription_active, not reconciling or automatic_renewal_active", async () => {
+    vi.mocked(storage.getUserSubscription).mockResolvedValue({
+      ...localSubscription,
+      nextBillingDate: futureBillingDate,
+    } as any);
+    const service = new BillingService();
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity")
+      .mockResolvedValue({ recurringReadiness: "unknown", subscriptionCode: "SUB_legacy" });
+
+    const result = await service.getPaystackRenewalStatus(42);
+    expect(result.state).toBe("subscription_active");
+    expect(result.state).not.toBe("automatic_renewal_active");
+    expect(result.state).not.toBe("reconciling");
+    expect(result).toEqual({ state: "subscription_active", recoveryCheckoutEligible: false, managementLinkEligible: false });
+  });
+
+  it("maps ready readiness + future billing date to automatic_renewal_active, not subscription_active", async () => {
+    vi.mocked(storage.getUserSubscription).mockResolvedValue({
+      ...localSubscription,
+      nextBillingDate: futureBillingDate,
+    } as any);
+    const service = new BillingService();
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity")
+      .mockResolvedValue({ recurringReadiness: "ready", subscriptionCode: "SUB_verified" });
+
+    const result = await service.getPaystackRenewalStatus(42);
+    expect(result.state).toBe("automatic_renewal_active");
+    expect(result.state).not.toBe("subscription_active");
+    expect(result).toEqual({ state: "automatic_renewal_active", recoveryCheckoutEligible: false, managementLinkEligible: false });
+  });
+
+  it("maps unknown readiness + future billing + active reconciliation event to reconciling, not subscription_active", async () => {
+    vi.mocked(storage.getUserSubscription).mockResolvedValue({
+      ...localSubscription,
+      nextBillingDate: futureBillingDate,
+    } as any);
+    const service = new BillingService();
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity")
+      .mockResolvedValue({ recurringReadiness: "unknown", subscriptionCode: "SUB_legacy" });
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        orderBy: () => chain,
+        limit: async () => [{ eventType: "renewal_reconciliation_pending" }],
+      };
+      return chain;
+    });
+
+    const result = await service.getPaystackRenewalStatus(42);
+    expect(result.state).toBe("reconciling");
+    expect(result.state).not.toBe("subscription_active");
+    expect(result).toEqual({ state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false });
+  });
+
+  it("routes unknown readiness + overdue billing through setup-required path, not reconciling", async () => {
+    // localSubscription.nextBillingDate (2026-08-01) is already overdue
+    const service = new BillingService();
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity")
+      .mockResolvedValue({ recurringReadiness: "unknown", subscriptionCode: "SUB_legacy" });
+
+    const result = await service.getPaystackRenewalStatus(42);
+    expect(result.state).toBe("renewal_setup_required");
+    expect(result.state).not.toBe("reconciling");
+    expect(result.state).not.toBe("subscription_active");
+    expect(result).toEqual({ state: "renewal_setup_required", recoveryCheckoutEligible: true, managementLinkEligible: false });
   });
 });

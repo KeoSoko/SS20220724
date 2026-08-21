@@ -1,0 +1,312 @@
+# Task — Move Paystack Subscription Checkout to Server-Side Initialization
+
+The final Apple Pay gate security review established that the current client-side:
+
+`channels: ["card"]`
+
+restriction is bypassable by stale or modified clients because Paystack has no provider-side transaction initialization record.
+
+Fix this by moving Paystack transaction initialization to the Simple Slips backend.
+
+Do not deploy after implementation.
+
+Do not modify existing customers or subscriptions.
+
+## Required architecture
+
+Current unsafe flow:
+
+`backend creates local reference`
+
+→ `browser receives amount/email/plan/reference/channels`
+
+→ `browser calls PaystackPop.checkout()`
+
+Replace with:
+
+`backend creates/reuses local checkout attempt`
+
+→ `backend initializes Paystack transaction`
+
+→ `Paystack returns access_code`
+
+→ `backend returns access_code`
+
+→ `browser opens Paystack checkout using access_code`
+
+The browser must no longer be authoritative for:
+
+* amount;
+* currency;
+* plan;
+* email;
+* Paystack reference;
+* allowed payment channels.
+
+---
+
+# 1. Server-side Paystack initialization
+
+After creating or safely reusing the existing server-owned checkout attempt, initialize Paystack from the backend using:
+
+`POST /transaction/initialize`
+
+through the existing Paystack server client.
+
+Use server-owned values only:
+
+* billing-owner email;
+* server-owned reference;
+* Paystack plan code;
+* currency;
+* expected amount where applicable;
+* metadata derived server-side;
+* allowed channels.
+
+When:
+
+`PAYSTACK_APPLE_PAY_SUBSCRIPTIONS_ENABLED=false`
+
+initialize with:
+
+`channels: ["card"]`
+
+When explicitly enabled in future, use the approved supported configuration.
+
+Do not take channel selection from the browser.
+
+---
+
+# 2. Preserve existing checkout idempotency
+
+This change must preserve all existing protections:
+
+* one pending checkout attempt per billing owner;
+* billing-owner advisory locking;
+* server-generated reference;
+* immutable checkout terms;
+* retry/reuse behavior;
+* lost-response recovery;
+* workspace billing-owner enforcement.
+
+Critically:
+
+**Retrying the same pending checkout must not repeatedly initialize Paystack into multiple independent transactions.**
+
+Determine how the Paystack `access_code` / initialization result should be safely associated with the existing checkout attempt.
+
+Persist only what is necessary.
+
+Do not generate a fresh provider transaction/reference merely because the browser retries.
+
+---
+
+# 3. Provider initialization idempotency
+
+Handle:
+
+### Double click
+
+Two requests arrive simultaneously.
+
+Expected:
+
+* one local checkout attempt;
+* one Paystack reference;
+* at most one effective provider initialization.
+
+### Lost response
+
+Paystack initialization succeeds but the response to the browser is lost.
+
+Expected:
+
+* retry safely recovers/reuses the same checkout/provider relationship;
+* no second subscription opportunity.
+
+### Two tabs
+
+Expected:
+
+same effective checkout relationship, not two Paystack transactions.
+
+Do not weaken the existing one-pending-owner protection.
+
+---
+
+# 4. Client changes
+
+The frontend must no longer call Paystack using:
+
+* raw `plan`;
+* raw `amount`;
+* raw `currency`;
+* raw `email`;
+* raw `reference`;
+* `channels`.
+
+Instead use the provider `access_code` returned by the server.
+
+Use Paystack's supported access-code/resume transaction flow.
+
+Do not allow the client to override payment channels after initialization.
+
+---
+
+# 5. Apple Pay gate
+
+When:
+
+`PAYSTACK_APPLE_PAY_SUBSCRIPTIONS_ENABLED=false`
+
+the provider transaction must be initialized server-side with:
+
+`channels: ["card"]`
+
+The intended invariant is:
+
+`Apple Pay cannot be selected for that provider transaction`
+
+before subscription creation.
+
+Do not rely on frontend hiding alone.
+
+Preserve the settlement-level fallback:
+
+If an Apple Pay transaction somehow still reaches verified settlement while the gate is disabled:
+
+* honor legitimate successful payment;
+* force recurring readiness `not_ready`;
+* do not establish a trusted recurring identity automatically;
+* surface for review.
+
+---
+
+# 6. Stale and modified client protection
+
+Add explicit tests for:
+
+### Old cached frontend
+
+Old client attempts to open checkout without specifying channel restrictions.
+
+Expected:
+
+it only possesses the server-issued access code, whose provider initialization already has Card-only channels.
+
+### Modified frontend
+
+Client attempts to substitute Apple Pay configuration.
+
+Expected:
+
+cannot alter the server-initialized transaction.
+
+### Direct browser invocation
+
+Public key + plan code must not be sufficient to hijack/reuse the server-owned reference into an unrestricted subscription transaction.
+
+Explain what prevents reference reuse or duplicate processing.
+
+---
+
+# 7. Verify Paystack contract
+
+Use current Paystack documentation/API behavior to confirm:
+
+* `transaction.initialize` supports `channels`;
+* `transaction.initialize` supports `plan`;
+* response contains `access_code`;
+* client checkout can resume/complete using `access_code`;
+* the browser cannot override transaction terms initialized server-side.
+
+If any of these assumptions are false in the installed Paystack integration, STOP and report before inventing another implementation.
+
+---
+
+# 8. Existing customers
+
+Do not touch:
+
+* existing Paystack subscriptions;
+* existing Apple Pay-originated subscriptions;
+* recurring readiness;
+* subscription identities;
+* payment history;
+* Antebellum;
+* historical billing.
+
+This is only for NEW checkout initialization after deployment.
+
+---
+
+# 9. Tests
+
+Add tests proving:
+
+1. Server initializes Paystack with Card-only channels when gate false.
+2. Apple Pay channel never comes from client input.
+3. Plan comes from server-owned checkout terms.
+4. Email comes from billing owner.
+5. Reference comes from server-owned checkout attempt.
+6. Amount/plan mismatch cannot be supplied by browser.
+7. Double-click remains idempotent.
+8. Concurrent requests create one effective provider checkout.
+9. Lost initialization response recovers safely.
+10. Two tabs reuse the same effective attempt.
+11. Stale frontend cannot restore Apple Pay.
+12. Modified frontend cannot restore Apple Pay.
+13. Existing settlement reusability checks remain green.
+14. Existing duplicate-charge protections remain green.
+15. Workspace billing-owner tests remain green.
+16. Reconciliation and webhook tests remain green.
+
+---
+
+# 10. Validation
+
+Run:
+
+* TypeScript;
+* production build;
+* focused checkout suite;
+* Paystack recurring-readiness suite;
+* concurrency tests;
+* full billing suite;
+* full Vitest suite.
+
+No deployment.
+
+---
+
+# Return
+
+## A. Old checkout flow
+
+## B. New server-initialized flow
+
+## C. Exact Paystack initialization payload
+
+## D. Access-code handling
+
+## E. Initialization idempotency
+
+## F. Stale/modified-client protection
+
+## G. Apple Pay gate enforcement
+
+## H. Existing protection preservation
+
+## I. Files changed
+
+## J. Test results
+
+## K. Zero customer/provider mutation confirmation
+
+End with exactly:
+
+`SERVER-SIDE PAYSTACK INITIALIZATION READY FOR REVIEW — DO NOT DEPLOY`
+
+or:
+
+`SERVER-SIDE INITIALIZATION BLOCKED — [reason]`

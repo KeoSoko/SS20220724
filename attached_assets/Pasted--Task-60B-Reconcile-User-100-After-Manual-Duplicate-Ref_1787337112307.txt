@@ -1,0 +1,457 @@
+# Task #60B — Reconcile User 100 After Manual Duplicate Refund
+
+## What & Why
+
+User 100 was previously identified as having two completed local R530 annual subscription payments recorded 93 seconds apart.
+
+The duplicate second payment has now been **manually refunded outside this task**.
+
+This task must reconcile the Simple Slips local billing records so they accurately reflect:
+
+* one legitimate R530 annual payment,
+* one refunded duplicate R530 payment,
+* total paid of R530,
+* continued active annual access,
+* a clear audit trail of the refund.
+
+This is a local data-reconciliation task only.
+
+Do NOT issue another refund.
+
+Do NOT call Paystack mutation endpoints.
+
+---
+
+# Known local records
+
+User 100 previously had:
+
+## Subscription
+
+* subscription ID: `68`
+* current plan: `premium_yearly`
+* plan ID: `3`
+* status: `active`
+* subscription start: `2026-01-22 07:23:39 UTC`
+* next billing date: `2027-01-22 07:25:12 UTC`
+* last payment date: `2026-01-22 07:25:12 UTC`
+* total paid: `106000` cents
+
+## Legitimate first payment
+
+* payment transaction ID: `99`
+* amount: `53000`
+* status: `completed`
+* reference: `ss_1769066505896_uhjiyz260`
+* created at: `2026-01-22 07:23:39 UTC`
+
+## Duplicate second payment
+
+* payment transaction ID: `100`
+* amount: `53000`
+* status: `completed`
+* reference: `ss_1769066643548_b38i9jlwk`
+* created at: `2026-01-22 07:25:12 UTC`
+
+The second payment has now been manually refunded.
+
+Do not assume these values are unchanged. Re-read the database before writing.
+
+---
+
+# 1. Read-only verification before mutation
+
+Confirm:
+
+### Subscription
+
+* user ID remains `100`
+* subscription ID remains `68`
+* plan ID remains `3`
+* plan remains `premium_yearly`
+* status remains `active`
+* `total_paid` remains `106000`
+* no cancellation exists
+
+### Payment transaction 99
+
+Confirm:
+
+* belongs to user 100
+* amount = `53000`
+* status = `completed`
+* reference = `ss_1769066505896_uhjiyz260`
+
+### Payment transaction 100
+
+Confirm:
+
+* belongs to user 100
+* amount = `53000`
+* current status remains `completed`
+* reference = `ss_1769066643548_b38i9jlwk`
+
+If any core evidence differs:
+
+**STOP and return a read-only discrepancy report.**
+
+Do not make broad or inferred repairs.
+
+---
+
+# 2. Verify refund evidence if locally available
+
+Check whether any local record now reflects the manual refund, such as:
+
+* refund event,
+* refund status,
+* provider verification metadata,
+* admin note,
+* imported Paystack record.
+
+If local refund evidence exists, report it.
+
+If no local refund evidence exists, proceed based on the operator-confirmed manual refund instruction for this specific duplicate transaction.
+
+Do NOT call Paystack to refund or mutate anything.
+
+A read-only provider verification call may be used only if an existing safe mechanism is available and necessary.
+
+---
+
+# 3. Reconcile payment transaction 100
+
+Update only the duplicate payment record.
+
+Change:
+
+```text
+payment_transactions.id = 100
+status: completed → refunded
+```
+
+Populate the existing refund reason/note field if one exists.
+
+Use a concise reason such as:
+
+`Duplicate annual subscription payment manually refunded`
+
+Do not create an incompatible new status if `refunded` is not allowed by the current schema.
+
+If the schema uses another existing refund-state mechanism, use the established model and document it.
+
+Do not delete the payment record.
+
+We need to preserve the financial audit trail.
+
+---
+
+# 4. Correct subscription total_paid
+
+Update subscription ID 68:
+
+```text
+total_paid: 106000 → 53000
+```
+
+This should represent the net legitimate successful subscription payment retained after the duplicate refund.
+
+Do not recalculate this from unrelated historical records.
+
+Use the confirmed transaction evidence for this specific reconciliation.
+
+---
+
+# 5. Review last_payment_date
+
+The legitimate retained payment is transaction 99:
+
+`2026-01-22 07:23:39 UTC`
+
+The current `last_payment_date` may reflect the refunded duplicate transaction at:
+
+`2026-01-22 07:25:12 UTC`
+
+If `last_payment_date` is intended to represent the most recent **retained successful subscription payment**, correct it to the legitimate first transaction timestamp.
+
+Before changing it:
+
+* inspect how `last_payment_date` is defined and used elsewhere,
+* confirm that refunded transactions should not remain the authoritative last successful payment.
+
+If that interpretation is correct, change:
+
+```text
+last_payment_date → timestamp of transaction 99
+```
+
+If current application semantics intentionally preserve the last attempted/processed payment rather than the last retained successful payment, do not change it and document why.
+
+---
+
+# 6. Review next_billing_date
+
+Do NOT automatically change `next_billing_date`.
+
+Inspect how the annual renewal date is calculated.
+
+The current value differs from the legitimate first payment timestamp by only about 93 seconds.
+
+Determine whether next billing is expected to be:
+
+* exactly one year from the legitimate successful payment,
+* based on subscription activation time,
+* based on provider subscription schedule,
+* or another authoritative field.
+
+If the current `2027-01-22` date is still semantically correct, leave it untouched.
+
+Do not alter the paid annual term merely to correct a seconds-level timestamp difference.
+
+Only change `next_billing_date` if current application semantics clearly require it and the correct value can be derived unambiguously.
+
+Document the decision.
+
+---
+
+# 7. Preserve current annual subscription
+
+Do not change:
+
+* `plan_id`
+* plan code
+* subscription status
+* subscription start date unless a proven inconsistency requires it
+* cancellation state
+* Paystack customer code
+* Paystack reference
+* authorization data
+* recurring readiness
+* subscription identity
+
+User 100 should remain an active annual subscriber.
+
+---
+
+# 8. Add audit billing event
+
+Create one local billing event recording the reconciliation.
+
+Use an existing compatible event type if one already exists.
+
+Otherwise use a clear event such as:
+
+`duplicate_charge_refunded`
+
+Include safe metadata such as:
+
+* user ID
+* subscription ID
+* refunded local payment transaction ID
+* refunded amount = `53000`
+* duplicate reference
+* retained payment transaction ID
+* reason: manual duplicate refund reconciliation
+* reconciliation timestamp
+
+Do NOT store secrets, authorization codes, or card data.
+
+The billing event must not trigger any charge/recovery behaviour.
+
+---
+
+# 9. Guard all writes
+
+Use expected-state conditions.
+
+For example, payment transaction 100 should only be updated if:
+
+* ID = 100
+* user ID = 100
+* amount = 53000
+* expected reference matches
+* current status = completed
+
+Subscription 68 should only be updated if:
+
+* ID = 68
+* user ID = 100
+* current total_paid = 106000
+* current plan_id = 3
+* status = active
+
+If guarded state no longer matches:
+
+* stop that repair,
+* roll back where appropriate,
+* return a discrepancy report.
+
+---
+
+# 10. Transactional reconciliation
+
+Where feasible, perform the local reconciliation atomically:
+
+1. mark payment 100 refunded,
+2. correct subscription total paid,
+3. update last payment date only if required,
+4. add audit billing event.
+
+Do not leave a state where:
+
+* payment is refunded but total_paid still says R1,060,
+* or total_paid is R530 while the duplicate payment still appears completed.
+
+---
+
+# 11. Post-repair verification
+
+After commit, verify:
+
+### Payment 99
+
+* remains `completed`
+* remains R530
+* unchanged reference
+
+### Payment 100
+
+* now reflects refunded state
+* remains R530
+* remains linked to the same original reference
+
+### Subscription 68
+
+* plan remains `premium_yearly`
+* status remains `active`
+* total_paid = `53000`
+* annual access remains intact
+* next billing date remains appropriate
+* recurring readiness unchanged
+
+### Audit
+
+* one reconciliation/refund billing event exists
+* no checkout was created
+* no charge was made
+* no Paystack subscription was created/cancelled
+
+---
+
+# 12. Verify renewal status separately
+
+Run the current renewal-status calculation after reconciliation.
+
+Do not modify its result.
+
+The duplicate refund must not fabricate recurring renewal evidence.
+
+Report the state returned by:
+
+`getPaystackRenewalStatus(100)`
+
+If it remains `renewal_setup_required`, that may be correct.
+
+---
+
+# 13. Regression tests
+
+Add focused tests covering:
+
+* duplicate payment marked refunded
+* retained legitimate payment remains completed
+* `total_paid` reduces correctly
+* plan remains unchanged
+* active subscription remains active
+* annual entitlement remains intact
+* refunded payment does not count as retained successful paid total
+* audit billing event is created
+* no checkout/charge/provider mutation occurs
+* renewal status remains evidence-based
+* guarded reconciliation fails safely if expected state has changed
+
+Do not overbuild a general refund engine unless one already exists.
+
+---
+
+# 14. Out of scope
+
+Do NOT:
+
+* call Paystack refund
+* call Paystack charge
+* create checkout
+* create subscription
+* cancel subscription
+* change recurring readiness
+* create subscription identity
+* modify other users
+* email the customer
+* change pricing
+* change annual plan
+* revisit plan-integrity repairs
+* change Bank Statement work
+* redesign billing
+
+---
+
+# Done looks like
+
+This task is complete when:
+
+1. The legitimate first R530 payment remains completed.
+2. The duplicate second R530 payment is recorded locally as refunded.
+3. `total_paid` changes from R1,060 to R530.
+4. User 100 remains on the annual paid plan.
+5. User 100 remains active through the valid annual term.
+6. `last_payment_date` is corrected only if application semantics require it.
+7. `next_billing_date` is changed only if clearly necessary.
+8. A local audit billing event records the manual duplicate refund.
+9. Renewal evidence is not fabricated or changed.
+10. No Paystack mutation occurs.
+
+---
+
+# Before mutation
+
+Return:
+
+## A. Current verified state
+
+Subscription and both payment records.
+
+## B. Refund-state representation
+
+Explain exactly how the current schema represents refunds.
+
+## C. Proposed local changes
+
+List every field that will change.
+
+## D. Date-field decision
+
+Explain whether `last_payment_date` and `next_billing_date` should change, and why.
+
+## E. Transaction plan
+
+Explain how partial reconciliation will be prevented.
+
+Then perform the reconciliation if all evidence remains consistent.
+
+---
+
+# After implementation
+
+Return:
+
+1. payment 99 final state,
+2. payment 100 final state,
+3. subscription 68 final state,
+4. before/after `total_paid`,
+5. whether `last_payment_date` changed,
+6. whether `next_billing_date` changed,
+7. billing event created,
+8. renewal status after repair,
+9. tests added,
+10. test results,
+11. explicit confirmation that no Paystack charge, refund, checkout, subscription creation, or cancellation occurred.

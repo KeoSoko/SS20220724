@@ -1,0 +1,127 @@
+Kaykaymoropa Production Repair — Existing Paid Renewal, No New Charge
+
+We are now remediating the stranded production renewal for:
+
+kaykaymoropa@gmail.com
+
+Confirmed facts:
+
+User / billing owner: 36
+Workspace: 148
+Local subscription ID: 2
+Plan: Premium Monthly — R49/month
+Paystack customer: CUS_rp6x5estwo1j5v4
+Existing provider subscription: SUB_7nkpx1503chaqnr
+Paid invoice: INV_27tbptir9gw8i45
+Paid reference: 056d343c848c695119b4b644accd9226ce0951a44407b745
+Amount already collected by Paystack: R49
+
+This is not a new payment.
+
+Do not charge the customer.
+Do not initialize checkout.
+Do not create a new Paystack subscription.
+Do not refund.
+Do not back-charge anything.
+
+1. Production-only dry run first
+
+Confirm PRODUCTION CONFIRMED.
+
+Read back the current production state and verify:
+
+subscription ID 2 is still active;
+billing owner is still user 36;
+customer code still matches CUS_rp6x5estwo1j5v4;
+no trusted local identity currently exists for SUB_7nkpx1503chaqnr;
+no local payment ledger row exists for reference 056d343c848c695119b4b644accd9226ce0951a44407b745;
+no pending checkout exists;
+no conflicting active local identity exists;
+SUB_7nkpx1503chaqnr is not trusted by another owner.
+
+If anything differs, STOP.
+
+2. Verify repair path
+
+Use the deployed guarded signed-invoice / legacy identity recovery logic.
+
+The repair must:
+
+recover exactly one local identity for SUB_7nkpx1503chaqnr;
+bind it to billing owner 36;
+preserve exact customer/plan ownership;
+keep recurring readiness unknown unless authoritative reusable evidence exists;
+create the missing payment ledger row exactly once;
+apply the already-paid August renewal exactly once;
+advance the existing subscription according to the normal successful-renewal logic;
+create appropriate audit/billing events.
+3. No provider mutation
+
+Expected Paystack provider mutations:
+
+0
+
+Do not:
+
+charge;
+retry payment;
+create subscription;
+cancel subscription;
+disable subscription;
+generate management link.
+
+If a read-only Paystack verification call is required by the guarded path, report it separately.
+
+4. Idempotency
+
+Before execution, confirm the exact reference/invoice/subscription idempotency protections.
+
+After repair, re-running the same reconciliation must result in:
+
+no second payment row;
+no second identity row;
+no second entitlement extension;
+no second billing-date advancement.
+5. Execute only after clean preview
+
+If the production preview passes, execute the repair for this customer only.
+
+Do not process any other customer.
+
+6. Post-write verification
+
+Confirm:
+
+active trusted identity count for owner 36 = 1;
+canonical identity = SUB_7nkpx1503chaqnr;
+payment reference 056d343c848c695119b4b644accd9226ce0951a44407b745 exists exactly once locally;
+payment amount = R49;
+payment status = completed;
+subscription ID 2 remains active;
+next billing date advances exactly once according to normal renewal rules;
+no checkout created;
+no duplicate entitlement;
+no other billing owner changed.
+7. Exact mutation report
+
+Return:
+
+identity rows inserted;
+identity rows updated;
+payment rows inserted;
+payment rows updated;
+subscription rows updated;
+checkout rows changed;
+audit/billing events inserted;
+Paystack read calls;
+Paystack mutation calls;
+other customers affected.
+8. Final result
+
+End with exactly:
+
+KAYKAYMOROPA PAID RENEWAL RECONCILED — NO NEW CHARGE
+
+or:
+
+KAYKAYMOROPA REPAIR STOPPED — [reason]

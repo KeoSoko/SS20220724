@@ -34,7 +34,7 @@ export interface PaystackAuthorizationEvidence {
   recurringReadiness: PaystackRecurringReadiness;
 }
 
-function extractPaystackPlanCode(data: any): string | null {
+export function extractPaystackPlanCode(data: any): string | null {
   return asNonEmptyString(
     typeof data?.plan === "string"
       ? data.plan
@@ -190,7 +190,9 @@ export function extractPaystackSubscriptionCode(data: any): string | null {
 
 export function extractPaystackCustomerCode(data: any): string | null {
   return asNonEmptyString(data?.customer?.customer_code)
-    ?? asNonEmptyString(data?.customer_code);
+    ?? asNonEmptyString(data?.customer_code)
+    ?? asNonEmptyString(data?.subscription?.customer?.customer_code)
+    ?? asNonEmptyString(data?.transaction?.customer?.customer_code);
 }
 
 export function extractPaystackInvoiceCode(data: any): string | null {
@@ -380,29 +382,54 @@ export function checkPaystackTransactionOwnership(
     customerCode: string | null | undefined;
   },
 ): { valid: boolean; reason: string } {
-  const rawMetadataUserId = transactionData?.metadata?.user_id;
-  const metadataUserId = rawMetadataUserId === undefined || rawMetadataUserId === null
-    ? null
-    : Number(rawMetadataUserId);
-  const transactionEmail = typeof transactionData?.customer?.email === "string"
-    ? transactionData.customer.email.trim().toLowerCase()
-    : null;
+  const rawMetadataUserIds = [
+    transactionData?.metadata?.user_id,
+    transactionData?.subscription?.metadata?.user_id,
+  ].filter((value) => value !== undefined && value !== null);
+  const metadataUserIds = rawMetadataUserIds.map((value) => Number(value));
+  const transactionEmails = [
+    transactionData?.customer?.email,
+    transactionData?.subscription?.customer?.email,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim().toLowerCase());
   const expectedEmail = expected.email?.trim().toLowerCase() ?? null;
-  const transactionCustomerCode = asNonEmptyString(transactionData?.customer?.customer_code);
+  const transactionCustomerCodes = [
+    transactionData?.customer?.customer_code,
+    transactionData?.customer_code,
+    transactionData?.subscription?.customer?.customer_code,
+    transactionData?.transaction?.customer?.customer_code,
+  ]
+    .map(asNonEmptyString)
+    .filter((value): value is string => !!value);
 
-  if (metadataUserId !== null
-    && (!Number.isFinite(metadataUserId) || metadataUserId !== expected.userId)) {
+  if (metadataUserIds.some(
+    (metadataUserId) => !Number.isFinite(metadataUserId) || metadataUserId !== expected.userId,
+  )) {
     return { valid: false, reason: "metadata_user_mismatch" };
   }
-  if (transactionEmail && expectedEmail && transactionEmail !== expectedEmail) {
+  if (transactionEmails.some(
+    (transactionEmail) => !expectedEmail || transactionEmail !== expectedEmail,
+  )) {
     return { valid: false, reason: "customer_email_mismatch" };
   }
+  if (
+    expected.customerCode
+    && transactionCustomerCodes.some(
+      (transactionCustomerCode) => transactionCustomerCode !== expected.customerCode,
+    )
+  ) {
+    return { valid: false, reason: "customer_code_mismatch" };
+  }
 
-  const valid = metadataUserId === expected.userId
-    || (!!transactionEmail && !!expectedEmail && transactionEmail === expectedEmail)
-    || (!!transactionCustomerCode
-      && !!expected.customerCode
-      && transactionCustomerCode === expected.customerCode);
+  const valid = metadataUserIds.includes(expected.userId)
+    || transactionEmails.some(
+      (transactionEmail) => !!expectedEmail && transactionEmail === expectedEmail,
+    )
+    || transactionCustomerCodes.some(
+      (transactionCustomerCode) => !!expected.customerCode
+        && transactionCustomerCode === expected.customerCode,
+    );
   return valid
     ? { valid: true, reason: "ownership_confirmed" }
     : { valid: false, reason: "no_matching_customer_identifier" };

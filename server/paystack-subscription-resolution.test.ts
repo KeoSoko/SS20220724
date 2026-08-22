@@ -944,4 +944,174 @@ describe("attemptSafeLegacyWebhookIdentityRecovery", () => {
     expect((result as any).reason).toBe("plan_code_mismatch");
     expect(recordSpy).not.toHaveBeenCalled();
   });
+
+  it("fails closed when the signed provider webhook has no plan identity", async () => {
+    const service = new BillingService();
+    const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({} as any);
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    const withoutPlan = { ...chargeData, plan: undefined };
+    // Only customer ownership is read; plan lookup must not run without a provider plan.
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        limit: async () => [{ userId: 42, planId: 7 }],
+      };
+      return chain;
+    });
+
+    await expect(service.attemptSafeLegacyWebhookIdentityRecovery(withoutPlan, renewalEvidence))
+      .resolves.toEqual({ outcome: "failed", reason: "missing_plan_identity" });
+    expect(recordSpy).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when an already-resolved invoice owner conflicts with customer-code ownership", async () => {
+    const service = new BillingService();
+    const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({} as any);
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        limit: async () => [{ userId: 42, planId: 7 }],
+      };
+      return chain;
+    });
+
+    await expect(service.attemptSafeLegacyWebhookIdentityRecovery(
+      chargeData,
+      renewalEvidence,
+      { expectedUserId: 99 },
+    )).resolves.toEqual({ outcome: "failed", reason: "resolved_owner_mismatch" });
+    expect(recordSpy).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when application metadata conflicts with provider customer-code ownership", async () => {
+    const service = new BillingService();
+    const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({} as any);
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        limit: async () => [{ userId: 42, planId: 7 }],
+      };
+      return chain;
+    });
+
+    await expect(service.attemptSafeLegacyWebhookIdentityRecovery(
+      { ...chargeData, metadata: { user_id: 99 } },
+      renewalEvidence,
+    )).resolves.toEqual({ outcome: "failed", reason: "metadata_user_mismatch" });
+    expect(recordSpy).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the signed customer email conflicts with the customer-code owner", async () => {
+    const service = new BillingService();
+    const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity").mockResolvedValue({} as any);
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    vi.mocked(storage as any).getUser = vi.fn().mockResolvedValue({ id: 42, email: "owner@example.com" });
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        limit: async () => [{ userId: 42, planId: 7 }],
+      };
+      return chain;
+    });
+
+    await expect(service.attemptSafeLegacyWebhookIdentityRecovery(
+      { ...chargeData, customer: { customer_code: "CUS_customer", email: "other@example.com" } },
+      renewalEvidence,
+    )).resolves.toEqual({ outcome: "failed", reason: "customer_email_mismatch" });
+    expect(recordSpy).not.toHaveBeenCalled();
+  });
+
+  it("treats a competing active identity found under the writer lock as a failed recovery", async () => {
+    const service = new BillingService();
+    vi.spyOn(service as any, "getPaystackSubscriptionIdentityByCode").mockResolvedValue(null);
+    vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue(null);
+    const recordSpy = vi.spyOn(service, "recordPaystackSubscriptionIdentity")
+      .mockRejectedValue(new Error("Paystack identity recovery found a competing active subscription"));
+    mockResolveAndPlanLookup(42, 7, "PLN_monthly");
+
+    await expect(service.attemptSafeLegacyWebhookIdentityRecovery(chargeData, renewalEvidence))
+      .resolves.toEqual({ outcome: "failed", reason: "user_already_has_active_identity" });
+    expect(recordSpy).toHaveBeenCalledWith(
+      42,
+      chargeData,
+      expect.objectContaining({
+        allowNewActive: true,
+        rejectExistingActive: true,
+        expectedCustomerCode: "CUS_customer",
+        expectedPlanCode: "PLN_monthly",
+      }),
+    );
+  });
+});
+
+describe("validatePaystackWebhookOwner", () => {
+  it("rejects a known identity when signed metadata names another user", async () => {
+    const service = new BillingService();
+    vi.mocked(storage as any).getUser = vi.fn().mockResolvedValue({
+      id: 42,
+      email: "owner@example.com",
+    });
+    vi.spyOn(service, "getUserSubscription").mockResolvedValue(localSubscription as any);
+
+    await expect(service.validatePaystackWebhookOwner(42, {
+      metadata: { user_id: 99 },
+      customer: { customer_code: "CUS_customer", email: "owner@example.com" },
+    })).resolves.toEqual({ valid: false, reason: "metadata_user_mismatch" });
+  });
+
+  it("rejects a known identity when the signed customer email disagrees with its owner", async () => {
+    const service = new BillingService();
+    vi.mocked(storage as any).getUser = vi.fn().mockResolvedValue({
+      id: 42,
+      email: "owner@example.com",
+    });
+    vi.spyOn(service, "getUserSubscription").mockResolvedValue(localSubscription as any);
+
+    await expect(service.validatePaystackWebhookOwner(42, {
+      customer: { customer_code: "CUS_customer", email: "other@example.com" },
+    })).resolves.toEqual({ valid: false, reason: "customer_email_mismatch" });
+  });
+
+  it("rejects a known invoice identity when nested subscription metadata conflicts", async () => {
+    const service = new BillingService();
+    vi.mocked(storage as any).getUser = vi.fn().mockResolvedValue({
+      id: 42,
+      email: "owner@example.com",
+    });
+    vi.spyOn(service, "getUserSubscription").mockResolvedValue(localSubscription as any);
+
+    await expect(service.validatePaystackWebhookOwner(42, {
+      customer: { customer_code: "CUS_customer", email: "owner@example.com" },
+      subscription: {
+        metadata: { user_id: 99 },
+        customer: { customer_code: "CUS_customer", email: "owner@example.com" },
+      },
+    })).resolves.toEqual({ valid: false, reason: "metadata_user_mismatch" });
+  });
+
+  it("rejects a known invoice identity when nested subscription email conflicts", async () => {
+    const service = new BillingService();
+    vi.mocked(storage as any).getUser = vi.fn().mockResolvedValue({
+      id: 42,
+      email: "owner@example.com",
+    });
+    vi.spyOn(service, "getUserSubscription").mockResolvedValue(localSubscription as any);
+
+    await expect(service.validatePaystackWebhookOwner(42, {
+      customer: { customer_code: "CUS_customer", email: "owner@example.com" },
+      subscription: {
+        customer: { customer_code: "CUS_customer", email: "other@example.com" },
+      },
+    })).resolves.toEqual({ valid: false, reason: "customer_email_mismatch" });
+  });
 });

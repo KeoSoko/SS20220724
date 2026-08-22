@@ -129,6 +129,82 @@ describe("Paystack route safety invariants", () => {
     expect(billingService).not.toContain("isPaystackRecurringInvoiceTransaction");
   });
 
+  it("uses one guarded identity resolver for charge and paid-invoice webhook orderings", () => {
+    const resolver = routeSource(
+      "async function resolvePaystackRenewalIdentity",
+      "async function handlePaystackChargeSuccess",
+    );
+    const charge = routeSource(
+      "async function handlePaystackChargeSuccess",
+      "async function handlePaystackSubscriptionCreate",
+    );
+    const invoice = routeSource(
+      "async function handlePaystackInvoiceUpdate",
+      "async function dispatchPaystackWebhookEvent",
+    );
+
+    expect(resolver).toContain("attemptSafeLegacyWebhookIdentityRecovery");
+    expect(resolver).toContain("validateActivePaystackRenewalRelationship");
+    expect(resolver).toContain("validatePaystackWebhookOwner");
+    expect(resolver).toContain("subscription_owner_mismatch");
+    expect(charge).toContain("resolvePaystackRenewalIdentity");
+    expect(invoice).toContain("resolvePaystackRenewalIdentity");
+    expect(invoice.indexOf("resolvePaystackRenewalIdentity")).toBeLessThan(
+      invoice.indexOf("processPaystackSubscription"),
+    );
+    expect(invoice).toContain('source: "invoice.update"');
+    expect(invoice).toContain("expectedPlanCode: extractPaystackPlanCode(data)");
+    expect(invoice).not.toContain("createOrReusePaystackCheckoutAttempt");
+    expect(invoice).not.toContain("createPaystackSubscription(");
+  });
+
+  it("rejects a verified renewal when its provider plan disagrees with the signed event", () => {
+    const billingService = readFileSync(
+      new URL("./billing-service.ts", import.meta.url),
+      "utf8",
+    );
+    const settlementStart = billingService.indexOf("async processPaystackSubscription");
+    const settlementEnd = billingService.indexOf("async recordPaystackRenewalFailure", settlementStart);
+    const settlement = billingService.slice(settlementStart, settlementEnd);
+
+    expect(settlement).toContain("const expectedPlanCode = context.expectedPlanCode ?? null");
+    expect(settlement).toContain("verified_and_event_plan_identity_disagree");
+    expect(settlement).toContain("verified_transaction_missing_plan_identity");
+    expect(settlement.indexOf("verified_and_event_plan_identity_disagree")).toBeLessThan(
+      settlement.indexOf("const plans = await this.getSubscriptionPlans"),
+    );
+    expect(settlement).toContain("|| verifiedPlanCode !== plan.paystackPlanCode");
+    expect(settlement.indexOf('requireFinancialReview("renewal_provider_plan_mismatch"')).toBeLessThan(
+      settlement.indexOf("const billingBase"),
+    );
+  });
+
+  it("rejects invalid signatures before paid invoice recovery can dispatch", () => {
+    const webhook = routeSource(
+      'app.post("/api/billing/paystack/webhook"',
+      'app.post("/api/billing/verify-subscription"',
+    );
+    expect(webhook.indexOf("if (!signatureIsValid)")).toBeLessThan(
+      webhook.indexOf("await dispatchPaystackWebhookEvent(event, data)"),
+    );
+    expect(webhook).toContain("return res.status(400).json({ error: 'Invalid signature' })");
+  });
+
+  it("classifies existing provider subscriptions as identity recovery, not subscription creation", () => {
+    const billingService = readFileSync(
+      new URL("./billing-service.ts", import.meta.url),
+      "utf8",
+    );
+    const alertStart = billingService.indexOf("async sendOrphanedPaymentAlert");
+    const alertEnd = billingService.indexOf("startOrphanedPaymentMonitoring", alertStart);
+    const alert = billingService.slice(alertStart, alertEnd);
+
+    expect(alert).toContain("existing_provider_subscription_identity_missing");
+    expect(alert).toContain("PAYMENT NEEDS IDENTITY RECONCILIATION");
+    expect(alert).toContain("Do not create a checkout");
+    expect(alert).toContain("extractPaystackSubscriptionCode(verification.subscription)");
+  });
+
   it("rejects stale lifecycle events before they can cancel a newer subscription", () => {
     const billingService = readFileSync(
       new URL("./billing-service.ts", import.meta.url),

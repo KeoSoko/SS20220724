@@ -77,6 +77,7 @@ import { getReportingCategory } from "./reporting-utils";
 import { normalizeMerchantName } from "./utils/merchant-normalizer";
 import {
   extractPaystackCustomerCode,
+  extractPaystackPlanCode,
   extractPaystackRenewalEvidence,
   extractPaystackSubscriptionCode,
   isPaystackInvoicePaid,
@@ -133,6 +134,99 @@ import { validateReceiptId as validateReceiptIdShared } from "@shared/validators
 import * as crypto from "crypto";
 
 // Paystack webhook event handlers
+type PaystackRenewalIdentityResolution =
+  | { outcome: "resolved"; userId: number; recovered: boolean }
+  | { outcome: "failed"; reason: string; userId: number | null };
+
+/**
+ * Resolve the local owner for a provider-originated renewal.
+ *
+ * The customer/plan/subscription relationship in the signed webhook is the
+ * authority for legacy recovery. An existing active identity is reused; when
+ * it is absent, the billing service may create only the missing local identity
+ * after all of its ownership gates pass. This helper is shared by charge.success
+ * and invoice.update so the two webhook orderings cannot apply different rules.
+ */
+async function resolvePaystackRenewalIdentity(
+  data: any,
+  renewalEvidence: {
+    subscriptionCode: string;
+    customerCode: string;
+    transactionReference: string;
+  },
+  expectedUserId?: number,
+): Promise<PaystackRenewalIdentityResolution> {
+  const knownIdentity = await billingService.getPaystackSubscriptionIdentityByCode(
+    renewalEvidence.subscriptionCode,
+  );
+  const providerPlanCode = extractPaystackPlanCode(data);
+  if (!providerPlanCode) {
+    return {
+      outcome: "failed",
+      reason: "missing_plan_identity",
+      userId: knownIdentity?.userId ?? expectedUserId ?? null,
+    };
+  }
+  const renewalRelationship = validateActivePaystackRenewalRelationship(
+    renewalEvidence.subscriptionCode,
+    renewalEvidence.customerCode,
+    knownIdentity,
+  );
+
+  if (renewalRelationship.valid) {
+    if (expectedUserId !== undefined && knownIdentity!.userId !== expectedUserId) {
+      return {
+        outcome: "failed",
+        reason: "subscription_owner_mismatch",
+        userId: knownIdentity!.userId,
+      };
+    }
+    const ownership = await billingService.validatePaystackWebhookOwner(
+      knownIdentity!.userId,
+      data,
+    );
+    if (!ownership.valid) {
+      return {
+        outcome: "failed",
+        reason: ownership.reason,
+        userId: knownIdentity!.userId,
+      };
+    }
+    return {
+      outcome: "resolved",
+      userId: knownIdentity!.userId,
+      recovered: false,
+    };
+  }
+
+  if (knownIdentity) {
+    return {
+      outcome: "failed",
+      reason: renewalRelationship.reason,
+      userId: knownIdentity.userId,
+    };
+  }
+
+  const recovery = await billingService.attemptSafeLegacyWebhookIdentityRecovery(
+    data,
+    renewalEvidence,
+    expectedUserId === undefined ? {} : { expectedUserId },
+  );
+  if (recovery.outcome === "recovered") {
+    return {
+      outcome: "resolved",
+      userId: recovery.userId,
+      recovered: true,
+    };
+  }
+
+  return {
+    outcome: "failed",
+    reason: recovery.reason,
+    userId: expectedUserId ?? null,
+  };
+}
+
 async function handlePaystackChargeSuccess(data: any) {
   try {
     log(`Processing Paystack charge success: ${data.reference}`, 'billing');
@@ -173,93 +267,42 @@ async function handlePaystackChargeSuccess(data: any) {
       return;
     }
 
-    const knownIdentity = await billingService.getPaystackSubscriptionIdentityByCode(
-      renewalEvidence.subscriptionCode,
+    const identityResolution = await resolvePaystackRenewalIdentity(
+      data,
+      renewalEvidence,
     );
-    const renewalRelationship = validateActivePaystackRenewalRelationship(
-      renewalEvidence.subscriptionCode,
-      renewalEvidence.customerCode,
-      knownIdentity,
-    );
-    if (!renewalRelationship.valid) {
-      // When no identity row exists for this subscription code, attempt safe
-      // recovery before rejecting. All three gates in
-      // attemptSafeLegacyWebhookIdentityRecovery must pass: no competing
-      // ownership for the SUB_*, unambiguous local customer-code match, and no
-      // active identity already on the resolved user.
-      if (knownIdentity === null) {
-        const recovery = await billingService.attemptSafeLegacyWebhookIdentityRecovery(
-          data,
-          renewalEvidence,
-        );
-        if (recovery.outcome === "recovered") {
-          log(
-            `charge.success: safe legacy identity recovery for user ${recovery.userId} ` +
-            `via ${renewalEvidence.subscriptionCode}`,
-            "billing",
-          );
-          await billingService.processPaystackSubscription(
-            recovery.userId,
-            renewalEvidence.transactionReference,
-            {
-              expectedSubscriptionCode: renewalEvidence.subscriptionCode,
-              expectedCustomerCode: renewalEvidence.customerCode,
-              expectedInvoiceCode: renewalEvidence.invoiceCode,
-              source: "charge.success",
-            },
-          );
-          log(
-            `Successfully applied legacy renewal for user ${recovery.userId} via webhook`,
-            "billing",
-          );
-          return;
-        }
-        await billingService.recordBillingEvent(null, "untracked_paystack_charge_rejected", {
-          reference: renewalEvidence.transactionReference,
-          reason: recovery.reason,
-          subscriptionCode: renewalEvidence.subscriptionCode,
-          customerCode: renewalEvidence.customerCode,
-          legacyRecoveryAttempted: true,
-        });
-        log(
-          `Rejected untracked Paystack charge ${renewalEvidence.transactionReference}; ` +
-          `no identity and legacy recovery failed: ${recovery.reason}`,
-          "billing",
-        );
-        return;
-      }
-
-      // An existing identity was found but it is not a valid match for this
-      // subscription or customer code. Reject without a recovery attempt.
+    if (identityResolution.outcome === "failed") {
       await billingService.recordBillingEvent(
-        knownIdentity.userId,
+        identityResolution.userId,
         "untracked_paystack_charge_rejected",
         {
           reference: renewalEvidence.transactionReference,
-          reason: renewalRelationship.reason,
+          reason: identityResolution.reason,
           subscriptionCode: renewalEvidence.subscriptionCode,
           customerCode: renewalEvidence.customerCode,
+          legacyRecoveryAttempted: identityResolution.userId === null,
         },
       );
       log(
         `Rejected untracked Paystack charge ${renewalEvidence.transactionReference}; ` +
-        `subscription identity ${renewalEvidence.subscriptionCode} is not an exact active match`,
+        `renewal identity resolution failed: ${identityResolution.reason}`,
         "billing",
       );
       return;
     }
 
     await billingService.processPaystackSubscription(
-      knownIdentity.userId,
+      identityResolution.userId,
       renewalEvidence.transactionReference,
       {
         expectedSubscriptionCode: renewalEvidence.subscriptionCode,
         expectedCustomerCode: renewalEvidence.customerCode,
+        expectedPlanCode: extractPaystackPlanCode(data),
         expectedInvoiceCode: renewalEvidence.invoiceCode,
         source: "charge.success",
       },
     );
-    log(`Successfully applied trusted renewal for user ${knownIdentity.userId} via webhook`, 'billing');
+    log(`Successfully applied trusted renewal for user ${identityResolution.userId} via webhook`, 'billing');
   } catch (error) {
     log(`Error handling Paystack charge success: ${error}`, 'billing');
     throw error;
@@ -547,11 +590,18 @@ async function handlePaystackInvoiceCreate(data: any) {
 async function handlePaystackInvoiceUpdate(data: any) {
   try {
     log(`Paystack invoice updated: ${data.invoice_code || 'unknown'} - paid=${data.paid}`, 'billing');
-    
-    const resolved = await resolvePaystackUser(data, 'invoice.update');
-    if (!resolved) return;
 
-    await billingService.recordBillingEvent(resolved.user.id, 'paystack_invoice_updated', {
+    const invoicePaid = isPaystackInvoicePaid(data);
+    const renewalEvidence = invoicePaid
+      ? extractPaystackRenewalEvidence(data)
+      : null;
+    // Paid recurring invoices can be resolved by the signed provider customer
+    // relationship even when legacy payloads lack application metadata/email.
+    // Unpaid invoices still require the ordinary local user resolver.
+    const resolved = await resolvePaystackUser(data, 'invoice.update');
+    if (!resolved && !invoicePaid) return;
+
+    await billingService.recordBillingEvent(resolved?.user.id ?? null, 'paystack_invoice_updated', {
       invoice_code: data.invoice_code,
       subscription_code: data.subscription?.subscription_code,
       amount: data.amount,
@@ -561,48 +611,46 @@ async function handlePaystackInvoiceUpdate(data: any) {
 
     // charge.success is primary. A paid invoice with a reference is an
     // authoritative fallback when that webhook is delayed or missing.
-    if (isPaystackInvoicePaid(data)) {
-      const renewalEvidence = extractPaystackRenewalEvidence(data);
+    if (invoicePaid) {
       if (renewalEvidence) {
-        const knownIdentity = await billingService.getPaystackSubscriptionIdentityByCode(
-          renewalEvidence.subscriptionCode,
+        const identityResolution = await resolvePaystackRenewalIdentity(
+          data,
+          renewalEvidence,
+          resolved?.user.id,
         );
-        const renewalRelationship = validateActivePaystackRenewalRelationship(
-          renewalEvidence.subscriptionCode,
-          renewalEvidence.customerCode,
-          knownIdentity,
-        );
-        if (
-          !renewalRelationship.valid
-          || !knownIdentity
-          || knownIdentity.userId !== resolved.user.id
-        ) {
+        if (identityResolution.outcome === "failed") {
           await billingService.recordBillingEvent(
-            knownIdentity?.userId ?? resolved.user.id,
+            identityResolution.userId,
             "renewal_reconciliation_unresolved",
             {
-              reason: knownIdentity && knownIdentity.userId !== resolved.user.id
-                  ? "subscription_owner_mismatch"
-                  : renewalRelationship.valid
-                    ? "unknown_subscription_identity"
-                    : renewalRelationship.reason,
+              reason: identityResolution.reason,
               invoice_code: renewalEvidence.invoiceCode,
               subscription_code: renewalEvidence.subscriptionCode,
               transactionReference: renewalEvidence.transactionReference,
+              identityRecoveryAttempted: identityResolution.userId === null
+                || identityResolution.reason === "resolved_owner_mismatch",
             },
           );
           return;
         }
 
-        await billingService.processPaystackSubscription(knownIdentity.userId, renewalEvidence.transactionReference, {
+        if (identityResolution.recovered) {
+          log(
+            `invoice.update: safe legacy identity recovery for user ${identityResolution.userId} ` +
+            `via ${renewalEvidence.subscriptionCode}`,
+            "billing",
+          );
+        }
+        await billingService.processPaystackSubscription(identityResolution.userId, renewalEvidence.transactionReference, {
           expectedSubscriptionCode: renewalEvidence.subscriptionCode,
           expectedCustomerCode: renewalEvidence.customerCode,
+          expectedPlanCode: extractPaystackPlanCode(data),
           expectedInvoiceCode: renewalEvidence.invoiceCode,
           source: "invoice.update",
         });
         log(`Invoice ${data.invoice_code} paid transaction reconciled via ${renewalEvidence.transactionReference}`, 'billing');
       } else {
-        await billingService.recordBillingEvent(resolved.user.id, 'renewal_reconciliation_unresolved', {
+        await billingService.recordBillingEvent(resolved?.user.id ?? null, 'renewal_reconciliation_unresolved', {
           reason: 'paid_invoice_missing_authoritative_relationship',
           invoice_code: data.invoice_code,
           subscription_code: data.subscription?.subscription_code,
@@ -612,7 +660,7 @@ async function handlePaystackInvoiceUpdate(data: any) {
     }
 
     const result = await billingService.recordPaystackRenewalFailure(
-      resolved.user.id,
+      resolved!.user.id,
       data,
       'invoice.update',
     );

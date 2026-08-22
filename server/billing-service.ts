@@ -27,6 +27,7 @@ import {
   checkPaystackTransactionOwnership,
   classifyPaystackInvoice,
   extractPaystackCustomerCode,
+  extractPaystackPlanCode,
   extractPaystackAuthorizationEvidence,
   extractPaystackSubscriptionCode,
   getMostRecentPaystackInvoice,
@@ -299,6 +300,7 @@ export function validateTrackedCheckoutTerms(
 interface PaystackProcessingContext {
   expectedSubscriptionCode?: string | null;
   expectedCustomerCode?: string | null;
+  expectedPlanCode?: string | null;
   expectedInvoiceCode?: string | null;
   source?: "charge.success" | "invoice.update" | "reconciliation";
 }
@@ -1541,9 +1543,9 @@ export class BillingService {
    */
 
   /**
-   * Attempt safe identity recovery for a `charge.success` webhook that arrived
-   * with a known subscription code but no matching `paystack_subscription_identities`
-   * row.
+   * Attempt safe identity recovery for a signed recurring webhook (charge.success
+   * or paid invoice.update) that arrived with a known subscription code but no
+   * matching `paystack_subscription_identities` row.
    *
    * Safety gates — all must pass before creating an identity:
    * 1. The subscription code is not already owned by a different row.
@@ -1553,8 +1555,9 @@ export class BillingService {
    *
    * When every gate passes the identity is recorded via
    * `recordPaystackSubscriptionIdentity` with `allowNewActive: true`. Readiness
-   * follows the standard authorization evidence rules (`ready` when
-   * `authorization.reusable === true`, `unknown` otherwise).
+   * follows the standard authorization evidence rules (`ready` only when reusable
+   * authorization is explicitly bound to the exact provider relationship;
+   * otherwise `unknown`).
    *
    * This method NEVER creates a checkout attempt and NEVER charges the customer.
    */
@@ -1565,11 +1568,21 @@ export class BillingService {
       customerCode: string;
       transactionReference: string;
     },
+    options: {
+      expectedUserId?: number;
+    } = {},
   ): Promise<
     | { outcome: "recovered"; userId: number }
     | { outcome: "failed"; reason: string }
   > {
     const { subscriptionCode, customerCode } = renewalEvidence;
+
+    if (!subscriptionCode || !subscriptionCode.startsWith("SUB_")) {
+      return { outcome: "failed", reason: "missing_subscription_identity" };
+    }
+    if (!customerCode) {
+      return { outcome: "failed", reason: "missing_customer_identity" };
+    }
 
     // Gate 1: subscription code must not already be owned by another row.
     const existingOwner = await this.getPaystackSubscriptionIdentityByCode(subscriptionCode);
@@ -1588,20 +1601,46 @@ export class BillingService {
     }
     const { userId, planId } = resolved;
 
-    // Gate 2b: if the webhook contains a plan code, it must match the local
-    // plan's Paystack plan code exactly. A mismatch means the provider and
-    // local records describe different plans — fail closed rather than create
-    // a mismatched identity.
-    const webhookPlanCode = this.extractProviderPlanCodeFromWebhook(data);
-    if (webhookPlanCode) {
-      const [localPlan] = await db
-        .select({ paystackPlanCode: subscriptionPlans.paystackPlanCode })
-        .from(subscriptionPlans)
-        .where(eq(subscriptionPlans.id, planId))
-        .limit(1);
-      if (localPlan?.paystackPlanCode && localPlan.paystackPlanCode !== webhookPlanCode) {
-        return { outcome: "failed", reason: "plan_code_mismatch" };
+    if (options.expectedUserId !== undefined && options.expectedUserId !== userId) {
+      return { outcome: "failed", reason: "resolved_owner_mismatch" };
+    }
+
+    // Signed webhooks can still carry application-supplied metadata or customer
+    // fields. They are useful consistency checks, but the provider customer-code
+    // match above remains the ownership authority for legacy recovery.
+    const rawMetadataUserId = data?.metadata?.user_id ?? data?.subscription?.metadata?.user_id;
+    if (rawMetadataUserId !== undefined && rawMetadataUserId !== null) {
+      const metadataUserId = Number(rawMetadataUserId);
+      if (!Number.isFinite(metadataUserId) || metadataUserId !== userId) {
+        return { outcome: "failed", reason: "metadata_user_mismatch" };
       }
+    }
+    const webhookEmail = data?.customer?.email ?? data?.subscription?.customer?.email;
+    if (typeof webhookEmail === "string" && webhookEmail.trim()) {
+      const owner = await storage.getUser(userId);
+      if (
+        !owner?.email
+        || owner.email.trim().toLowerCase() !== webhookEmail.trim().toLowerCase()
+      ) {
+        return { outcome: "failed", reason: "customer_email_mismatch" };
+      }
+    }
+
+    // Gate 2b: if the webhook contains a plan code, it must match the local
+    // plan's Paystack plan code exactly. Missing plan evidence is also unsafe:
+    // without it, a customer code alone cannot prove that this SUB_* belongs to
+    // the local paid plan.
+    const webhookPlanCode = this.extractProviderPlanCodeFromWebhook(data);
+    if (!webhookPlanCode) {
+      return { outcome: "failed", reason: "missing_plan_identity" };
+    }
+    const [localPlan] = await db
+      .select({ paystackPlanCode: subscriptionPlans.paystackPlanCode })
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, planId))
+      .limit(1);
+    if (!localPlan?.paystackPlanCode || localPlan.paystackPlanCode !== webhookPlanCode) {
+      return { outcome: "failed", reason: "plan_code_mismatch" };
     }
 
     // Gate 3: no competing active identity may already exist for this user.
@@ -1613,10 +1652,24 @@ export class BillingService {
     // All gates passed — record the identity. Readiness is determined by the
     // authorization evidence present in the charge payload (same rules as the
     // subscription.create flow).
-    await this.recordPaystackSubscriptionIdentity(userId, data, {
-      allowNewActive: true,
-      auditSource: "legacy_charge_success_recovery",
-    });
+    try {
+      const identity = await this.recordPaystackSubscriptionIdentity(userId, data, {
+        allowNewActive: true,
+        rejectExistingActive: true,
+        expectedCustomerCode: customerCode,
+        expectedPlanCode: webhookPlanCode,
+        auditSource: "legacy_webhook_identity_recovery",
+      });
+      if (identity.status !== "active") {
+        return { outcome: "failed", reason: "user_already_has_active_identity" };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "Paystack identity recovery found a competing active subscription") {
+        return { outcome: "failed", reason: "user_already_has_active_identity" };
+      }
+      throw error;
+    }
 
     return { outcome: "recovered", userId };
   }
@@ -2119,6 +2172,7 @@ export class BillingService {
       supersedeExisting?: boolean;
       allowNewActive?: boolean;
       preserveExistingActive?: boolean;
+      rejectExistingActive?: boolean;
       auditSource?: string;
       adminUserId?: number;
       expectedCustomerCode?: string | null;
@@ -2134,7 +2188,11 @@ export class BillingService {
     const customerCode = extractPaystackCustomerCode(data);
     const planCode = typeof data?.plan === "string"
       ? data.plan
-      : data?.plan?.plan_code ?? data?.plan_code ?? null;
+      : data?.plan?.plan_code
+        ?? data?.plan_code
+        ?? data?.subscription?.plan?.plan_code
+        ?? data?.subscription?.plan_code
+        ?? null;
     const providerCreatedAt = parsePaystackDate(
       data?.created_at ?? data?.createdAt ?? data?.created,
     );
@@ -2172,6 +2230,17 @@ export class BillingService {
       ))
       .orderBy(desc(paystackSubscriptionIdentities.providerCreatedAt), desc(paystackSubscriptionIdentities.createdAt))
       .limit(1);
+
+    if (
+      options.rejectExistingActive
+      && activeIdentity
+      && activeIdentity.subscriptionCode !== subscriptionCode
+    ) {
+      // Legacy recovery validated the absence of a trusted identity before it
+      // acquired the user lock. Re-checking inside this transaction prevents a
+      // concurrently delivered, different SUB_* from retiring that identity.
+      throw new Error("Paystack identity recovery found a competing active subscription");
+    }
 
     let identityStatus = existingCode?.status
       ?? (options.allowNewActive ? "active" : "unresolved");
@@ -2274,6 +2343,7 @@ export class BillingService {
       allowNewActive?: boolean;
       supersedeExisting?: boolean;
       preserveExistingActive?: boolean;
+      rejectExistingActive?: boolean;
       auditSource?: string;
       adminUserId?: number;
       expectedCustomerCode?: string | null;
@@ -2296,6 +2366,27 @@ export class BillingService {
       .where(eq(paystackSubscriptionIdentities.subscriptionCode, subscriptionCode))
       .limit(1);
     return identity ?? null;
+  }
+
+  /**
+   * Validate the customer-facing identifiers carried by a signed webhook before
+   * treating its SUB_* identity as authoritative. A matching subscription code
+   * cannot override a conflicting metadata user or customer email.
+   */
+  async validatePaystackWebhookOwner(
+    userId: number,
+    webhookData: any,
+  ): Promise<{ valid: boolean; reason: string }> {
+    const user = await storage.getUser(userId);
+    if (!user) {
+      return { valid: false, reason: "identity_owner_missing" };
+    }
+    const existingSubscription = await this.getUserSubscription(userId);
+    return checkPaystackTransactionOwnership(webhookData, {
+      userId,
+      email: user.email,
+      customerCode: existingSubscription?.paystackCustomerCode ?? null,
+    });
   }
 
   private async assertPaystackTransactionOwnership(userId: number, transactionData: any): Promise<void> {
@@ -2971,6 +3062,8 @@ export class BillingService {
     const effectiveSubscriptionCode = verifiedSubscriptionCode ?? expectedSubscriptionCode;
     const verifiedCustomerCode = extractPaystackCustomerCode(transactionData);
     const expectedCustomerCode = context.expectedCustomerCode ?? null;
+    const verifiedPlanCode = extractPaystackPlanCode(transactionData);
+    const expectedPlanCode = context.expectedPlanCode ?? null;
     const isRecurringInvoice = !checkoutAttempt;
 
     if (
@@ -2986,6 +3079,21 @@ export class BillingService {
         source: context.source ?? "direct_verification",
       });
       throw new Error("Paystack transaction and renewal event identify different customers");
+    }
+    if (
+      expectedPlanCode
+      && (!verifiedPlanCode || expectedPlanCode !== verifiedPlanCode)
+    ) {
+      await this.logBillingEvent(userId, "renewal_reconciliation_unresolved", {
+        reason: !verifiedPlanCode
+          ? "verified_transaction_missing_plan_identity"
+          : "verified_and_event_plan_identity_disagree",
+        transactionReference,
+        verifiedPlanCode,
+        expectedPlanCode,
+        source: context.source ?? "direct_verification",
+      });
+      throw new Error("Paystack transaction and renewal event identify different plans");
     }
 
     if (isRecurringInvoice && (!effectiveSubscriptionCode || !verifiedCustomerCode)) {
@@ -3251,12 +3359,13 @@ export class BillingService {
             });
           }
 
-          const providerPlanCode = typeof transactionData?.plan === "string"
-            ? transactionData.plan
-            : transactionData?.plan?.plan_code ?? transactionData?.plan_code ?? null;
-          if (providerPlanCode && plan.paystackPlanCode && providerPlanCode !== plan.paystackPlanCode) {
+          if (
+            !verifiedPlanCode
+            || !plan.paystackPlanCode
+            || verifiedPlanCode !== plan.paystackPlanCode
+          ) {
             return requireFinancialReview("renewal_provider_plan_mismatch", {
-              providerPlanCode,
+              providerPlanCode: verifiedPlanCode,
               currentPlanCode: plan.paystackPlanCode,
             });
           }
@@ -4616,28 +4725,62 @@ export class BillingService {
     try {
       const { userId, reference, paymentTime, minutesSincePayment } = orphanedPayment;
 
-      // Record that we're alerting for this payment (prevent duplicate alerts)
-      await this.recordBillingEvent(userId, 'orphaned_payment_alert', {
-        reference,
-        payment_time: paymentTime,
-        minutes_since_payment: minutesSincePayment,
-        alerted_at: new Date().toISOString()
-      });
-
       // Verify with Paystack to get payment details
       let amount = 0;
       let customerEmail = 'unknown';
+      let providerSubscriptionCode: string | null = null;
       try {
         const verification = await this.verifyPaystackTransaction(reference);
         if (verification.valid && verification.subscription) {
           amount = verification.subscription.amount || 0;
           customerEmail = verification.subscription.customer?.email || 'unknown';
+          providerSubscriptionCode = extractPaystackSubscriptionCode(verification.subscription);
         }
       } catch (e) {
         log(`[ORPHAN_ALERT] Could not verify transaction ${reference}`, 'billing');
       }
 
-      const alertMessage = `
+      const requiresIdentityReconciliation = !!providerSubscriptionCode;
+      const alertClassification = requiresIdentityReconciliation
+        ? "existing_provider_subscription_identity_missing"
+        : "payment_without_provider_subscription_identity";
+
+      // Record that we're alerting only after provider verification so the event
+      // itself carries the operational classification used in the alert copy.
+      await this.recordBillingEvent(userId, 'orphaned_payment_alert', {
+        reference,
+        payment_time: paymentTime,
+        minutes_since_payment: minutesSincePayment,
+        provider_subscription_code: providerSubscriptionCode,
+        alert_classification: alertClassification,
+        alerted_at: new Date().toISOString()
+      });
+
+      const alertMessage = requiresIdentityReconciliation
+        ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAYMENT NEEDS IDENTITY RECONCILIATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+A payment was received for an existing Paystack subscription, but the local
+subscription identity was not reconciled.
+
+Details:
+• User ID: ${userId || 'Not identified'}
+• Customer Email: ${customerEmail}
+• Paystack Reference: ${reference}
+• Provider Subscription: ${providerSubscriptionCode}
+• Payment Amount: R${(amount / 100).toFixed(2)}
+• Time Since Payment: ${minutesSincePayment} minutes
+
+Safe next step:
+Verify the signed charge.success or invoice.update event can be replayed after
+the local customer and plan relationship are checked. Do not create a checkout,
+charge a card, or create another Paystack subscription for this payment.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`
+        : `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PAYMENT NEEDS ATTENTION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

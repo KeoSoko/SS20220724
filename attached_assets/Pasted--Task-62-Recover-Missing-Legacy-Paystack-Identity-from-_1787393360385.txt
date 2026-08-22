@@ -1,0 +1,393 @@
+# Task #62 — Recover Missing Legacy Paystack Identity from Signed Paid Invoice Webhooks
+
+A legitimate recurring Paystack payment for:
+
+`kaykaymoropa@gmail.com`
+
+was stranded even though Paystack successfully collected R49.
+
+Confirmed provider relationship:
+
+* Billing owner: user `36`
+* Workspace: `148`
+* Local subscription: ID `2`
+* Plan: Premium Monthly — R49/month
+* Paystack customer: `CUS_rp6x5estwo1j5v4`
+* Existing provider subscription: `SUB_7nkpx1503chaqnr`
+* Paid invoice: `INV_27tbptir9gw8i45`
+* Current renewal reference: `056d343c848c695119b4b644accd9226ce0951a44407b745`
+
+The same provider `SUB_*` has signed paid invoice history for April, May, June, July and August.
+
+The payment is legitimate.
+
+The failure is local identity reconciliation.
+
+Do not deploy immediately.
+
+Do not charge the customer.
+
+Do not create checkout.
+
+Do not create a Paystack subscription.
+
+---
+
+# 1. Root problem
+
+The current signed `invoice.update` paid path can establish:
+
+* exact paid invoice;
+* exact transaction reference;
+* exact customer email;
+* exact provider subscription code;
+
+but when:
+
+`paystack_subscription_identities`
+
+does not already contain that legacy `SUB_*`, the webhook stops at:
+
+`renewal_reconciliation_unresolved`
+→ `unknown_subscription_identity`
+
+This strands a legitimate successful recurring payment.
+
+Meanwhile the hardened `charge.success` path now has:
+
+`attemptSafeLegacyWebhookIdentityRecovery`
+
+for exactly this class of legacy missing-identity problem.
+
+The paid invoice path needs equivalent guarded recovery.
+
+---
+
+# 2. Reuse the hardened identity-recovery mechanism
+
+Do not build a weaker second recovery system.
+
+Refactor/reuse the existing:
+
+`attemptSafeLegacyWebhookIdentityRecovery`
+
+or create one shared internal primitive used by both:
+
+* recurring `charge.success`
+* paid `invoice.update`
+
+The same ownership and ambiguity protections must apply.
+
+---
+
+# 3. Required provider evidence
+
+Automatic identity recovery from a signed paid invoice is allowed only when authoritative provider evidence establishes:
+
+* valid signed Paystack webhook;
+* invoice is actually paid;
+* exact `subscription_code`;
+* exact Paystack customer relationship;
+* exact expected Simple Slips plan;
+* exact billing owner can be resolved unambiguously;
+* no competing active local identity exists;
+* subscription code is not trusted by another owner;
+* no local/provider ownership conflict exists.
+
+Do not recover based solely on email.
+
+Email may assist resolution, but stronger provider/local identifiers must validate ownership.
+
+---
+
+# 4. Exact customer + plan validation
+
+For the known user 36 regression:
+
+Expected:
+
+* customer code: `CUS_rp6x5estwo1j5v4`
+* provider SUB: `SUB_7nkpx1503chaqnr`
+* local subscription plan: Premium Monthly
+* provider plan must match the expected Paystack plan for that local subscription.
+
+If plan evidence conflicts:
+
+STOP.
+
+Do not attach identity.
+
+---
+
+# 5. Multiple-subscription ambiguity
+
+If provider evidence indicates multiple competing `SUB_*` relationships for the same customer/plan:
+
+Do not automatically select one.
+
+Return/manual-review equivalent.
+
+Do not:
+
+* attach either identity;
+* create checkout;
+* create another subscription.
+
+Preserve the duplicate-subscription safeguards already established.
+
+---
+
+# 6. Recurring readiness
+
+Identity recovery and recurring readiness are separate.
+
+If authoritative invoice/webhook evidence does NOT provide:
+
+`authorization.reusable === true`
+
+then the recovered identity must use:
+
+`recurring_readiness = unknown`
+
+Do not infer `ready` from:
+
+* five successful payments;
+* subscription existence;
+* authorization-code existence;
+* paid invoice;
+* card payment method.
+
+A legitimate recurring payment may establish identity while readiness remains `unknown`.
+
+---
+
+# 7. Continue settlement after safe recovery
+
+When identity recovery succeeds:
+
+1. create/activate the trusted local provider identity;
+2. continue the existing exact renewal settlement path;
+3. create the missing payment ledger row exactly once;
+4. apply the paid renewal exactly once;
+5. update the existing local subscription according to the normal successful-renewal rules;
+6. create appropriate audit/billing events.
+
+Do not create another local subscription if the active subscription already exists.
+
+---
+
+# 8. Idempotency
+
+This is financial code.
+
+The following sequence must be safe:
+
+`invoice.update paid`
++
+`charge.success`
++
+duplicate webhook delivery
++
+manual/replay processing
+
+Expected result:
+
+* one payment ledger record;
+* one renewal entitlement effect;
+* one canonical provider identity;
+* no duplicate subscription;
+* no duplicate next-billing-date extension.
+
+Use exact provider reference/invoice/subscription idempotency.
+
+---
+
+# 9. The kaykaymoropa regression
+
+Create an explicit fixture based on the confirmed production case:
+
+Local:
+
+* user 36;
+* active Premium Monthly subscription ID 2;
+* Paystack customer `CUS_rp6x5estwo1j5v4`;
+* no trusted identity;
+* historical successful recurring invoices;
+* next billing date at August boundary.
+
+Provider signed invoice:
+
+* paid = true;
+* R49;
+* `SUB_7nkpx1503chaqnr`;
+* `INV_27tbptir9gw8i45`;
+* reference `056d343c848c695119b4b644accd9226ce0951a44407b745`.
+
+Expected:
+
+* safe identity recovery;
+* no new provider subscription;
+* recurring readiness remains `unknown` unless reusable evidence exists;
+* payment ledger created exactly once;
+* existing subscription renewed normally;
+* no manual-reconciliation failure events.
+
+---
+
+# 10. Do not use `/api/admin/payments/reconcile` for this flow
+
+The generic admin endpoint currently:
+
+* verifies the payment;
+* discovers missing trusted identity;
+* fails closed;
+* writes misleading `subscription_failed` / manual-reconciliation telemetry.
+
+Do not make that endpoint the primary solution to this bug.
+
+The normal signed recurring webhook path should settle legitimate renewals automatically when identity recovery is unambiguous.
+
+The admin endpoint can remain a fallback/manual tool.
+
+---
+
+# 11. Improve alert semantics
+
+The current alert says:
+
+`A payment was received but no subscription was created.`
+
+That is incorrect for this case.
+
+A provider subscription ALREADY exists.
+
+Update classification/copy so this scenario reports something conceptually like:
+
+`Recurring payment received but local subscription identity could not be confirmed.`
+
+or:
+
+`Existing Paystack subscription payment requires reconciliation.`
+
+Do not instruct the administrator to “create the subscription” when provider evidence already proves one exists.
+
+---
+
+# 12. Tests
+
+Add tests covering:
+
+1. Signed paid invoice + missing identity + unambiguous customer/plan/SUB
+   → recover identity and settle.
+
+2. Identity already exists
+   → normal settlement; no duplicate identity.
+
+3. `SUB_*` owned by another user
+   → reject/manual review.
+
+4. Multiple candidate local owners
+   → reject/manual review.
+
+5. Customer code mismatch
+   → reject.
+
+6. Plan mismatch
+   → reject.
+
+7. Missing subscription code
+   → no recovery.
+
+8. Unsigned/invalid webhook
+   → no recovery.
+
+9. Missing reusable evidence
+   → identity readiness `unknown`.
+
+10. Explicit reusable=true
+    → readiness may become `ready` only if all existing readiness checks pass.
+
+11. `invoice.update` then `charge.success`
+    → one ledger settlement.
+
+12. `charge.success` then `invoice.update`
+    → one ledger settlement.
+
+13. Duplicate invoice webhook
+    → one ledger settlement.
+
+14. Recovery creates no checkout attempt.
+
+15. Recovery makes no Paystack subscription-create call.
+
+16. Recovery makes no stored-authorization charge.
+
+---
+
+# 13. Preserve historical billing policy
+
+Do not introduce catch-up billing.
+
+Global policy remains:
+
+> Simple Slips will not automatically collect historical missed subscription payments discovered during billing reconciliation or recovery. Recovery establishes correct billing prospectively from the appropriate next billing date.
+
+This payment is not a back-charge. Paystack has already successfully collected the current R49 renewal.
+
+The task is to record that actual provider payment correctly.
+
+---
+
+# 14. Production safety
+
+Implementation work only.
+
+No production customer mutation.
+
+Do not manually reconcile reference:
+
+`056d343c848c695119b4b644accd9226ce0951a44407b745`
+
+during implementation.
+
+After code is approved/deployed, we can separately repair that stranded production payment through the safest path.
+
+---
+
+# 15. Return
+
+## A. Root cause
+
+## B. Shared identity-recovery architecture
+
+## C. Paid invoice ownership validation
+
+## D. Plan/customer/SUB ambiguity protections
+
+## E. Recurring-readiness handling
+
+## F. Settlement/idempotency behavior
+
+## G. kaykaymoropa regression result
+
+## H. Alert/copy correction
+
+## I. Files changed
+
+## J. Tests
+
+## K. Production migration requirements
+
+## L. Zero-mutation confirmation
+
+## M. Deployment recommendation
+
+End with exactly:
+
+`SIGNED INVOICE LEGACY IDENTITY RECOVERY READY FOR REVIEW`
+
+or:
+
+`NOT READY — [remaining blocker]`
+
+Do not deploy.

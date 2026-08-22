@@ -1,0 +1,226 @@
+# Urgent Payment Reconciliation Investigation — [kaykaymoropa@gmail.com](mailto:kaykaymoropa@gmail.com)
+
+A production billing alert was generated:
+
+* Customer email: `kaykaymoropa@gmail.com`
+* Paystack reference: `056d343c848c695119b4b644accd9226ce0951a44407b745`
+* Amount: R49.00
+* Alert: `Payment was received but no subscription was created`
+* Alert says User ID: `Not identified`
+
+DO NOT call:
+
+`POST /api/admin/payments/reconcile`
+
+yet.
+
+This task is READ-ONLY INVESTIGATION FIRST.
+
+Do not charge the customer.
+Do not create checkout.
+Do not create a Paystack subscription.
+Do not attach a `SUB_*`.
+Do not refund.
+Do not alter entitlement.
+Do not modify production billing data.
+
+## 1. Confirm production transaction
+
+Find this exact production reference:
+
+`056d343c848c695119b4b644accd9226ce0951a44407b745`
+
+Report:
+
+* whether a local `payment_transactions` row exists;
+* status;
+* amount;
+* currency;
+* platform;
+* provider transaction ID;
+* provider channel;
+* provider authorization code/channel/reusable value;
+* recurring readiness;
+* created/paid timestamps;
+* associated user ID, if any;
+* associated checkout attempt ID/reference, if any.
+
+## 2. Resolve customer ownership
+
+Resolve:
+
+`kaykaymoropa@gmail.com`
+
+to:
+
+* Simple Slips user ID;
+* effective billing owner;
+* workspace;
+* active local subscription;
+* current plan;
+* next billing date;
+* Paystack customer code;
+* existing trusted `SUB_*` identities.
+
+Determine why the alert says:
+
+`User ID: Not identified`
+
+Do not resolve ownership solely from email if stronger billing/provider identifiers exist.
+
+## 3. Determine checkout generation
+
+Establish whether this transaction came from:
+
+### A. New server-side initialized checkout
+
+Evidence should include:
+
+* matching `paystack_checkout_attempts` row;
+* stored Paystack access code;
+* server-generated reference;
+* immutable amount/plan/customer terms.
+
+### B. Old browser-side checkout
+
+### C. Legacy/provider-initiated recurring charge
+
+### D. Other/unknown
+
+Report exactly.
+
+## 4. Determine payment channel
+
+This is critical.
+
+Confirm from authoritative stored/provider evidence whether this payment was:
+
+* Card
+* Apple Pay
+* Other
+* Unknown
+
+Do not infer from historic `payment_method = card`.
+
+If this transaction occurred after the Apple Pay gate/server-side initialization deployment and Paystack reports Apple Pay, treat that as a security/integration incident and STOP.
+
+## 5. Determine whether Paystack already created a SUB_*
+
+Before any reconciliation that could create a subscription, determine whether provider/local evidence establishes an existing Paystack subscription relationship for this payment/customer.
+
+Check:
+
+* existing local trusted identities;
+* webhook payloads;
+* billing events;
+* stored subscription code;
+* provider transaction metadata;
+* plan relationship.
+
+If an exact existing `SUB_*` is already evidenced, do NOT create another subscription.
+
+## 6. Inspect webhook/event path
+
+Find all billing/webhook events for this exact reference.
+
+Report:
+
+* webhook event type;
+* whether webhook signature was valid;
+* why ownership resolution failed;
+* metadata received;
+* customer code;
+* plan code;
+* subscription code if present;
+* whether event went through legacy handling;
+* whether it was deferred/replayed;
+* exact reason the automated subscription path did not complete.
+
+## 7. Recurring-readiness evidence
+
+If payment succeeded, determine whether the transaction contains authoritative:
+
+`authorization.reusable === true`
+
+Do not equate successful payment with recurring readiness.
+
+Classify:
+
+* `ready`
+* `not_ready`
+* `unknown`
+
+using existing hardened rules only.
+
+## 8. Decide whether the existing admin reconcile endpoint is safe
+
+Audit what:
+
+`POST /api/admin/payments/reconcile`
+
+would do for THIS exact reference.
+
+Before running it, report whether it would:
+
+* merely associate an existing provider subscription;
+* create a new local identity;
+* create a local subscription;
+* create a provider `SUB_*`;
+* call Paystack;
+* charge anything;
+* alter entitlement;
+* alter next billing date.
+
+We need the exact behavior, not the alert's generic claim.
+
+## 9. No duplicate provider subscription rule
+
+If there is any possibility that Paystack already created a subscription for this successful payment:
+
+DO NOT run a path that can create another one.
+
+Fail closed to manual review.
+
+## 10. Customer access
+
+Determine whether the successful R49 payment has already granted paid access.
+
+If payment is valid but recurring setup is unresolved:
+
+* preserve legitimate paid access;
+* do not charge again;
+* do not create a second payment opportunity automatically.
+
+## 11. Return
+
+### A. Customer / billing owner
+
+### B. Exact transaction state
+
+### C. Checkout generation path
+
+### D. Payment channel
+
+### E. Existing SUB_* evidence
+
+### F. Webhook failure/root cause
+
+### G. Recurring readiness
+
+### H. Current customer access
+
+### I. Exact effect of `/api/admin/payments/reconcile`
+
+### J. Whether reconciliation is safe
+
+### K. Recommended single next action
+
+End with exactly:
+
+`SAFE TO RECONCILE REFERENCE — [reason]`
+
+or:
+
+`DO NOT RECONCILE — [reason]`
+
+Zero production mutations during investigation.

@@ -420,6 +420,7 @@ export const userSubscriptions = pgTable("user_subscriptions", {
   subscriptionStartDate: timestamp("subscription_start_date"),
   nextBillingDate: timestamp("next_billing_date"),
   cancelledAt: timestamp("cancelled_at"),
+  cancellationRequestedAt: timestamp("cancellation_requested_at"),
   
   // Google Play billing integration
   googlePlayPurchaseToken: text("google_play_purchase_token"),
@@ -484,6 +485,24 @@ export const paystackCheckoutAttempts = pgTable("paystack_checkout_attempts", {
   status: text("status").notNull().default("pending"), // pending, completed, failed, expired, cancelled
   expiresAt: timestamp("expires_at").notNull(),
   completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Durable, non-mutating cancellation orchestration. Provider mutation is added
+// only after Paystack test-mode contract behaviour has been established.
+export const paystackCancellationAttempts = pgTable("paystack_cancellation_attempts", {
+  id: serial("id").primaryKey(),
+  billingOwnerUserId: integer("billing_owner_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  subscriptionCode: text("subscription_code"),
+  status: text("status").notNull().default("requested"),
+  requestedAt: timestamp("requested_at").notNull().defaultNow(),
+  providerCallStartedAt: timestamp("provider_call_started_at"),
+  providerConfirmedAt: timestamp("provider_confirmed_at"),
+  lastCheckedAt: timestamp("last_checked_at"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  failureCode: text("failure_code"),
+  failureDetail: text("failure_detail"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -578,6 +597,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   paystackSubscriptionIdentities: many(paystackSubscriptionIdentities),
   paystackCheckoutAttempts: many(paystackCheckoutAttempts, { relationName: "checkoutBillingOwner" }),
   requestedPaystackCheckoutAttempts: many(paystackCheckoutAttempts, { relationName: "checkoutRequester" }),
+  paystackCancellationAttempts: many(paystackCancellationAttempts),
   paymentTransactions: many(paymentTransactions),
   workspace: one(workspaces, {
     fields: [users.workspaceId],
@@ -737,6 +757,13 @@ export const paystackCheckoutAttemptsRelations = relations(paystackCheckoutAttem
   plan: one(subscriptionPlans, {
     fields: [paystackCheckoutAttempts.planId],
     references: [subscriptionPlans.id],
+  }),
+}));
+
+export const paystackCancellationAttemptsRelations = relations(paystackCancellationAttempts, ({ one }) => ({
+  billingOwner: one(users, {
+    fields: [paystackCancellationAttempts.billingOwnerUserId],
+    references: [users.id],
   }),
 }));
 
@@ -1168,6 +1195,7 @@ export type BillingEvent = typeof billingEvents.$inferSelect;
 export type InsertBillingEvent = z.infer<typeof insertBillingEventSchema>;
 export type PaystackSubscriptionIdentity = typeof paystackSubscriptionIdentities.$inferSelect;
 export type PaystackCheckoutAttempt = typeof paystackCheckoutAttempts.$inferSelect;
+export type PaystackCancellationAttempt = typeof paystackCancellationAttempts.$inferSelect;
 export type PromoCode = typeof promoCodes.$inferSelect;
 export type InsertPromoCode = z.infer<typeof insertPromoCodeSchema>;
 

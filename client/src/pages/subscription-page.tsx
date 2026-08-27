@@ -205,11 +205,11 @@ export function SubscriptionPage() {
 
   // Cancel subscription mutation
   const cancelMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/billing/cancel'),
-    onSuccess: () => {
+    mutationFn: async () => (await apiRequest('POST', '/api/billing/cancel')).json(),
+    onSuccess: (result: any) => {
       toast({
-        title: "Subscription Cancelled",
-        description: "Your subscription has been cancelled. You'll continue to have access until the end of your billing period.",
+        title: "Cancellation requested",
+        description: result?.message || "We’re confirming that automatic renewal has stopped.",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
       queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
@@ -227,6 +227,19 @@ export function SubscriptionPage() {
   // Filter out trial plans from available plans - trials are automatic
   const plans = allPlans.filter(plan => plan.name !== 'free_trial');
   const subscription: UserSubscription | null = (subscriptionData as any)?.subscription || null;
+  const cancellation = (subscriptionData as any)?.cancellation as {
+    status: string;
+    requestedAt?: string;
+    providerConfirmedAt?: string;
+  } | null;
+  const cancellationPending = !!cancellation && [
+    'requested', 'provider_call_started', 'provider_confirmation_pending',
+    'provider_result_unknown', 'failed_retryable',
+  ].includes(cancellation.status);
+  const cancellationNeedsReview = cancellation?.status === 'manual_review_required';
+  const cancellationConfirmed = !!cancellation && [
+    'provider_non_renewing', 'provider_disabled', 'completed',
+  ].includes(cancellation.status);
   const transactions: PaymentTransaction[] = (transactionsData as any)?.transactions || [];
   const renewalSetupRequired = statusData?.renewalState === 'renewal_setup_required';
   const renewalReconciling = statusData?.renewalState === 'reconciling';
@@ -615,7 +628,7 @@ export function SubscriptionPage() {
                         Payment History
                       </Button>
                     </Link>
-                    {subscription?.status === 'active' && (
+                    {subscription?.status === 'active' && !cancellationPending && !cancellationConfirmed && !cancellationNeedsReview && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -627,6 +640,27 @@ export function SubscriptionPage() {
                         )}
                         Cancel Subscription
                       </Button>
+                    )}
+                    {cancellationPending && (
+                      <Alert className="border-blue-300 bg-blue-50">
+                        <AlertDescription>We’re confirming that automatic renewal has stopped.</AlertDescription>
+                      </Alert>
+                    )}
+                    {cancellationConfirmed && (
+                      <Alert className="border-green-300 bg-green-50">
+                        <AlertDescription>
+                          Automatic renewal cancelled{subscription?.nextBillingDate
+                            ? ` — access continues until ${formatDate(String(subscription.nextBillingDate))}`
+                            : ''}.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    {cancellationNeedsReview && (
+                      <Alert className="border-amber-300 bg-amber-50">
+                        <AlertDescription>
+                          We need support to confirm your automatic-renewal details. No final cancellation has been claimed.
+                        </AlertDescription>
+                      </Alert>
                     )}
                     {paymentMethodNeedsAttention && statusData?.renewalManagementLinkEligible && (
                       <Button

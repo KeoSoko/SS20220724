@@ -459,6 +459,14 @@ async function handlePaystackSubscriptionDisable(data: any) {
       source: "subscription.disable" as const,
     };
 
+    const confirmation = await billingService.confirmPaystackCancellationLifecycle({
+      userId: user.id,
+      subscriptionCode: subscriptionCode!,
+      customerCode: customerCode!,
+      event: "subscription.disable",
+    });
+    if (confirmation.outcome !== "confirmed") return;
+
     // Mark as cancelled but keep access until next_billing_date (user already paid for this period)
     const subscription = await billingService.getUserSubscription(user.id);
     if (subscription && subscription.nextBillingDate && new Date(subscription.nextBillingDate) > new Date()) {
@@ -498,6 +506,14 @@ async function handlePaystackSubscriptionNotRenew(data: any) {
     const lifecycle = await resolveActivePaystackLifecycleUser(data, 'subscription.not_renew');
     if (!lifecycle) return;
     const { user, subscriptionCode, customerCode } = lifecycle;
+
+    const confirmation = await billingService.confirmPaystackCancellationLifecycle({
+      userId: user.id,
+      subscriptionCode: subscriptionCode!,
+      customerCode: customerCode!,
+      event: "subscription.not_renew",
+    });
+    if (confirmation.outcome !== "confirmed") return;
 
     // User cancelled - mark cancelledAt but keep status active until billing period ends
     const subscription = await billingService.getUserSubscription(user.id);
@@ -4103,8 +4119,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const userId = getUserId(req);
-      const subscription = await billingService.getUserSubscription(userId);
-      res.json({ subscription });
+      const [subscription, cancellation] = await Promise.all([
+        billingService.getUserSubscription(userId),
+        billingService.getPaystackCancellationStatus(userId),
+      ]);
+      res.json({ subscription, cancellation });
     } catch (error: any) {
       log(`Error in /api/billing/subscription: ${error.message}`, 'express');
       res.status(500).json({ error: "Failed to get subscription status" });
@@ -4686,8 +4705,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const userId = getUserId(req);
-      const subscription = await billingService.cancelSubscription(userId);
-      res.json({ subscription });
+      const result = await billingService.requestPaystackCancellation(userId);
+      if (result.outcome === "manual_review_required") {
+        return res.status(409).json({
+          status: "manual_review_required",
+          message: "We need support to confirm your automatic-renewal details before cancellation can continue.",
+        });
+      }
+      return res.status(202).json({
+        status: "cancellation_requested",
+        message: "Cancellation requested. We’re confirming that automatic renewal has stopped.",
+      });
     } catch (error: any) {
       log(`Error in /api/billing/cancel: ${error.message}`, 'express');
       res.status(500).json({ error: "Failed to cancel subscription" });
@@ -5085,15 +5113,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.deleteReceiptsByUserId(userId);
         }
         
-        // 6. Cancel any active subscriptions
-        try {
-          await billingService.cancelSubscription(userId);
-        } catch (billingError) {
-          log(`Warning: Failed to cancel subscription for user ${userId}: ${billingError}`, "api");
-          // Continue even if billing cancellation fails
-        }
-        
-        log(`Successfully cleared all data for user ${userId}`, "api");
+        // Billing is intentionally untouched. "Clear All Data" deletes receipt
+        // and business data while preserving the account and paid entitlement.
+        log(`Successfully cleared all non-billing data for user ${userId}`, "api");
         
         res.json({ 
           message: "All data successfully cleared",

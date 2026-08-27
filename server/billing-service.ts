@@ -8,9 +8,11 @@ import {
   InsertPaymentTransaction,
   InsertBillingEvent,
   PaystackCheckoutAttempt,
+  PaystackCancellationAttempt,
   userSubscriptions,
   paystackSubscriptionIdentities,
   paystackCheckoutAttempts,
+  paystackCancellationAttempts,
   paymentTransactions,
   billingEvents,
   subscriptionPlans,
@@ -119,6 +121,17 @@ export type PaystackRenewalState =
   | "subscription_active"
   | "payment_method_needs_attention"
   | "manual_review_required";
+
+const OPEN_PAYSTACK_CANCELLATION_STATUSES = [
+  "requested",
+  "provider_call_started",
+  "provider_confirmation_pending",
+  "provider_result_unknown",
+  "failed_retryable",
+  "manual_review_required",
+  "provider_non_renewing",
+  "provider_disabled",
+] as const;
 
 export interface PaystackRenewalStatus {
   state: PaystackRenewalState;
@@ -375,6 +388,158 @@ export class BillingService {
    * the authoritative lock.
    */
   private readonly initializationMutex = new Map<string, Promise<string>>();
+
+  async requestPaystackCancellation(requestedByUserId: number) {
+    await this.requirePaystackBillingSchema();
+    const owner = await resolveBillingOwner(requestedByUserId);
+    if (owner.state === "unresolved" || !owner.canManageBilling) {
+      return { outcome: "manual_review_required" as const, reason: "billing_owner_unresolved" };
+    }
+    const userId = owner.billingOwnerUserId;
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+      const [existing] = await tx
+        .select()
+        .from(paystackCancellationAttempts)
+        .where(and(
+          eq(paystackCancellationAttempts.billingOwnerUserId, userId),
+          inArray(paystackCancellationAttempts.status, [...OPEN_PAYSTACK_CANCELLATION_STATUSES]),
+        ))
+        .orderBy(desc(paystackCancellationAttempts.createdAt))
+        .limit(1);
+      if (existing) {
+        return {
+          outcome: existing.status === "manual_review_required" ? "manual_review_required" as const : "requested" as const,
+          attempt: existing,
+        };
+      }
+      const [subscription] = await tx.select().from(userSubscriptions)
+        .where(eq(userSubscriptions.userId, userId)).limit(1);
+      const [plan] = subscription
+        ? await tx.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId)).limit(1)
+        : [];
+      const identities = await tx.select().from(paystackSubscriptionIdentities)
+        .where(and(
+          eq(paystackSubscriptionIdentities.userId, userId),
+          eq(paystackSubscriptionIdentities.status, "active"),
+        ));
+      const exact = identities.filter((identity) =>
+        identity.subscriptionCode
+        && identity.customerCode === subscription?.paystackCustomerCode
+        && identity.planCode === plan?.paystackPlanCode
+      );
+      const safe = identities.length === 1 && exact.length === 1;
+      const now = new Date();
+      const [attempt] = await tx.insert(paystackCancellationAttempts).values({
+        billingOwnerUserId: userId,
+        subscriptionCode: safe ? exact[0].subscriptionCode : null,
+        status: safe ? "requested" : "manual_review_required",
+        requestedAt: now,
+        failureCode: safe ? null : identities.length === 0 ? "missing_active_identity" : "ambiguous_active_identity",
+        updatedAt: now,
+      }).returning();
+      await tx.update(userSubscriptions)
+        .set({ cancellationRequestedAt: now, updatedAt: now })
+        .where(eq(userSubscriptions.userId, userId));
+      return { outcome: safe ? "requested" as const : "manual_review_required" as const, attempt };
+    });
+  }
+
+  async confirmPaystackCancellationLifecycle(input: {
+    userId: number;
+    subscriptionCode: string;
+    customerCode: string;
+    event: "subscription.not_renew" | "subscription.disable";
+  }) {
+    await this.requirePaystackBillingSchema();
+    // Exact signed provider lifecycle events are authoritative even when the
+    // customer used Paystack's hosted management page instead of our UI.
+    await this.requestPaystackCancellation(input.userId);
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.userId}, 36)`);
+      const [identity] = await tx.select().from(paystackSubscriptionIdentities)
+        .where(and(
+          eq(paystackSubscriptionIdentities.userId, input.userId),
+          eq(paystackSubscriptionIdentities.status, "active"),
+          eq(paystackSubscriptionIdentities.subscriptionCode, input.subscriptionCode),
+          eq(paystackSubscriptionIdentities.customerCode, input.customerCode),
+        )).limit(1);
+      const [attempt] = await tx.select().from(paystackCancellationAttempts)
+        .where(and(
+          eq(paystackCancellationAttempts.billingOwnerUserId, input.userId),
+          eq(paystackCancellationAttempts.subscriptionCode, input.subscriptionCode),
+          inArray(paystackCancellationAttempts.status, [...OPEN_PAYSTACK_CANCELLATION_STATUSES]),
+        )).orderBy(desc(paystackCancellationAttempts.createdAt)).limit(1);
+      if (!identity || !attempt) {
+        return { outcome: "rejected" as const, reason: "cancellation_identity_mismatch" };
+      }
+      const status = input.event === "subscription.disable" ? "provider_disabled" : "provider_non_renewing";
+      if (attempt.status === "provider_disabled" || attempt.status === status) {
+        return { outcome: "confirmed" as const, attempt };
+      }
+      const now = new Date();
+      const [updated] = await tx.update(paystackCancellationAttempts).set({
+        status,
+        providerConfirmedAt: attempt.providerConfirmedAt ?? now,
+        lastCheckedAt: now,
+        updatedAt: now,
+      }).where(eq(paystackCancellationAttempts.id, attempt.id)).returning();
+      return { outcome: "confirmed" as const, attempt: updated };
+    });
+  }
+
+  async getPaystackCancellationStatus(userId: number) {
+    const owner = await resolveBillingOwner(userId);
+    if (owner.state === "unresolved") return null;
+    const [attempt] = await db.select().from(paystackCancellationAttempts)
+      .where(eq(paystackCancellationAttempts.billingOwnerUserId, owner.billingOwnerUserId))
+      .orderBy(desc(paystackCancellationAttempts.createdAt)).limit(1);
+    if (!attempt) return null;
+    return {
+      status: attempt.status,
+      requestedAt: attempt.requestedAt,
+      providerConfirmedAt: attempt.providerConfirmedAt,
+    };
+  }
+
+  /** Read-only provider boundary. Never persists or logs email_token. */
+  async fetchAndValidateCancellationTarget(subscriptionCode: string) {
+    await this.requirePaystackBillingSchema();
+    if (!this.paystack) return { valid: false as const, reason: "paystack_unavailable" };
+    const identity = await this.getPaystackSubscriptionIdentityByCode(subscriptionCode);
+    if (!identity || identity.status !== "active") {
+      return { valid: false as const, reason: "active_identity_missing" };
+    }
+    const localSubscription = await this.getUserSubscription(identity.userId);
+    const plan = localSubscription && storage.getSubscriptionPlan
+      ? await storage.getSubscriptionPlan(localSubscription.planId)
+      : null;
+    const response = await this.paystack.subscription.get(subscriptionCode);
+    const data = response?.status ? response.data : null;
+    const providerCode = extractPaystackSubscriptionCode(data);
+    const providerCustomer = extractPaystackCustomerCode(data);
+    const providerPlan = extractPaystackPlanCode(data);
+    const emailToken = typeof data?.email_token === "string" && data.email_token.trim()
+      ? data.email_token
+      : null;
+    if (
+      providerCode !== identity.subscriptionCode
+      || providerCustomer !== identity.customerCode
+      || providerPlan !== identity.planCode
+      || providerPlan !== plan?.paystackPlanCode
+      || !emailToken
+    ) {
+      return { valid: false as const, reason: "provider_relationship_mismatch" };
+    }
+    return {
+      valid: true as const,
+      subscriptionCode: providerCode,
+      customerCode: providerCustomer,
+      planCode: providerPlan,
+      providerStatus: String(data?.status ?? "unknown").toLowerCase(),
+      emailToken,
+    };
+  }
 
   /**
    * Sentinel prefix written into paystack_access_code to claim the
@@ -3319,6 +3484,36 @@ export class BillingService {
 
         let subscription: UserSubscription;
         const existing = existingSubscription[0];
+        const [cancellationAttempt] = isRecurringInvoice
+          ? await tx.select().from(paystackCancellationAttempts)
+              .where(and(
+                eq(paystackCancellationAttempts.billingOwnerUserId, userId),
+                eq(paystackCancellationAttempts.subscriptionCode, effectiveSubscriptionCode!),
+                inArray(paystackCancellationAttempts.status, [
+                  "requested",
+                  "provider_call_started",
+                  "provider_confirmation_pending",
+                  "provider_result_unknown",
+                  "provider_non_renewing",
+                  "provider_disabled",
+                  "completed",
+                ]),
+              ))
+              .orderBy(desc(paystackCancellationAttempts.createdAt)).limit(1)
+          : [];
+        const providerCancellationConfirmedAt = cancellationAttempt?.providerConfirmedAt
+          ? new Date(cancellationAttempt.providerConfirmedAt)
+          : null;
+        const chargeAfterConfirmedNonRenewal = !!providerCancellationConfirmedAt
+          && paidAt.getTime() > providerCancellationConfirmedAt.getTime();
+
+        if (isRecurringInvoice && chargeAfterConfirmedNonRenewal) {
+          return requireFinancialReview("charge_after_provider_non_renewing_confirmation", {
+            cancellationAttemptId: cancellationAttempt.id,
+            providerConfirmedAt: providerCancellationConfirmedAt!.toISOString(),
+            paidAt: paidAt.toISOString(),
+          });
+        }
 
         if (isRecurringInvoice) {
           const [activeIdentity] = await tx
@@ -3348,7 +3543,7 @@ export class BillingService {
           if (
             !existing
             || !["active", "paused"].includes(existing.status)
-            || !!existing.cancelledAt
+            || (!!existing.cancelledAt && !providerCancellationConfirmedAt)
             || existing.planId !== plan.id
           ) {
             return requireFinancialReview("renewal_subscription_state_changed", {
@@ -3389,7 +3584,10 @@ export class BillingService {
             .set({
               status: 'active',
               planId: plan.id,
-              cancelledAt: null,
+              // A renewal paid before provider cancellation became effective
+              // receives its corresponding entitlement without re-enabling renewal.
+              cancelledAt: providerCancellationConfirmedAt ? existing.cancelledAt : null,
+              cancellationRequestedAt: cancellationAttempt ? existing.cancellationRequestedAt : null,
               subscriptionStartDate: isRenewal ? existing.subscriptionStartDate : paidAt,
               nextBillingDate,
               totalPaid: sql`COALESCE(${userSubscriptions.totalPaid}, 0) + ${chargedAmount}`,
@@ -3434,7 +3632,8 @@ export class BillingService {
               set: {
                 status: 'active',
                 planId: plan.id,
-                cancelledAt: null,
+                cancelledAt: providerCancellationConfirmedAt ? existing?.cancelledAt ?? null : null,
+                cancellationRequestedAt: cancellationAttempt ? existing?.cancellationRequestedAt ?? null : null,
                 subscriptionStartDate: paidAt,
                 nextBillingDate,
                 totalPaid: sql`COALESCE(${userSubscriptions.totalPaid}, 0) + ${chargedAmount}`,

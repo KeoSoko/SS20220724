@@ -7,7 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { dispatchVerificationRequiredEvent } from '@/lib/queryClient';
 
-export function ExportMenu() {
+type ExportMenuProps = {
+  /** Optional context to carry over when routing into the full Exports page. */
+  category?: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+export function ExportMenu({ category, startDate, endDate }: ExportMenuProps = {}) {
   const [isExporting, setIsExporting] = useState(false);
   const [exportType, setExportType] = useState<string>('');
   const { toast } = useToast();
@@ -18,6 +25,20 @@ export function ExportMenu() {
     setExportType(type);
 
     try {
+      if (type === 'csv') {
+        // Route straight into the spreadsheet export controls (pre-filling any
+        // known date range/category) instead of dropping the user on the
+        // Exports page with a generic toast.
+        const params = new URLSearchParams({
+          focus: 'csv',
+          ...(startDate && { startDate }),
+          ...(endDate && { endDate }),
+          ...(category && { category }),
+        });
+        setLocation(`/exports?${params.toString()}`);
+        return;
+      }
+
       if (type !== 'backup') {
         setLocation('/exports');
         toast({
@@ -92,8 +113,8 @@ export function ExportMenu() {
   const exportOptions = [
     {
       type: 'csv' as const,
-      title: 'CSV Export',
-      description: 'Choose a date range on the Exports page',
+      title: 'Excel / CSV',
+      description: 'Download for Excel (CSV)',
       icon: Download,
       color: 'text-green-600',
     },

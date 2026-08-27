@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Download, FileText, Receipt, Calendar, CalendarRange, Archive, Eye } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { EXPENSE_CATEGORIES } from '@shared/schema';
@@ -37,8 +37,35 @@ export default function ExportsPage() {
   const [showDateRangeExport, setShowDateRangeExport] = useState(true);
   const [groupByCategory, setGroupByCategory] = useState(false);
   const [allowAllTimeExport, setAllowAllTimeExport] = useState(false);
+  const [highlightCsv, setHighlightCsv] = useState(false);
+  const csvSectionRef = useRef<HTMLButtonElement | null>(null);
   const { toast } = useToast();
   const isMobile = useIsMobile();
+
+  // Pick up context (date range/category) and a focus target passed in from
+  // other entry points (e.g. the legacy Export Data dialog) so users land
+  // directly on the right controls instead of starting from a blank form.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qsStartDate = params.get('startDate');
+    const qsEndDate = params.get('endDate');
+    const qsCategory = params.get('category');
+    const focus = params.get('focus');
+
+    if (qsStartDate) setStartDate(qsStartDate);
+    if (qsEndDate) setEndDate(qsEndDate);
+    if (qsCategory) setCategory(qsCategory);
+
+    if (focus === 'csv') {
+      setShowDateRangeExport(true);
+      setHighlightCsv(true);
+      requestAnimationFrame(() => {
+        csvSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      const timer = setTimeout(() => setHighlightCsv(false), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   const { data: customCategories = [] } = useQuery<{ id: number; name: string; displayName?: string }[]>({
     queryKey: ['/api/custom-categories'],
@@ -478,23 +505,24 @@ export default function ExportsPage() {
 
               {/* CSV row */}
               <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">CSV Spreadsheet</p>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">Excel / CSV</p>
                 <Button
+                  ref={csvSectionRef}
                   variant="outline"
                   onClick={() => handleDateRangeExport('csv')}
                   disabled={busy}
                   size={isMobile ? "lg" : "default"}
-                  className="w-full"
+                  className={`w-full transition-shadow ${highlightCsv ? 'ring-2 ring-indigo-400' : ''}`}
                 >
                   {isExporting && exportType === 'date-range-csv' ? (
                     <>
                       <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-gray-500 border-t-transparent" />
-                      Generating CSV...
+                      Generating...
                     </>
                   ) : (
                     <>
                       <Download className="h-4 w-4 mr-2" />
-                      Download CSV
+                      Download for Excel (CSV)
                     </>
                   )}
                 </Button>

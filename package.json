@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "test:manual-flow": "tsx --test server/tests/manual-entry-flow.test.ts",
+    "contract:paystack-cancellation": "tsx scripts/paystack-cancellation-contract.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

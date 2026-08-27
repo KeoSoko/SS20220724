@@ -6,7 +6,7 @@ describe("Clear All Data billing isolation", () => {
   it("does not cancel billing or alter subscription/Paystack identity records", () => {
     const routes = readFileSync(join(__dirname, "routes.ts"), "utf8");
     const start = routes.indexOf('app.delete("/api/account/clear-data"');
-    const end = routes.indexOf("// Get user preferences", start);
+    const end = routes.indexOf("// Widget data endpoint for PWA widgets", start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const handler = routes.slice(start, end);

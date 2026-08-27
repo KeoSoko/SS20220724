@@ -141,7 +141,11 @@ vi.mock("./db", () => {
             if (state.scenario === "old_renewal" || state.scenario === "trusted_renewal") {
               if (state.txSelectOrdinal === 1) return query([]);
               if (state.txSelectOrdinal === 2) return query([state.subscription]);
-              if (state.txSelectOrdinal === 3) {
+              // Ordinal 3 is the recurring-invoice paystackCancellationAttempts
+              // lookup added for the Phase 3 cancellation foundation; these
+              // scenarios have no open cancellation attempt, so it stays empty.
+              if (state.txSelectOrdinal === 3) return query([]);
+              if (state.txSelectOrdinal === 4) {
                 return query([{
                   id: 77,
                   userId: 10,

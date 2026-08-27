@@ -19,7 +19,7 @@ function harness(activeIdentities: any[] = [{
   });
   const deps = {
     withBillingOwnerLock: async (_userId: number, fn: () => Promise<any>) => fn(),
-    getSubscription: vi.fn(async () => ({ id: 3, userId: 7, planId: 2, status: "active", nextBillingDate: new Date("2030-02-01") })),
+    getSubscription: vi.fn(async () => ({ id: 3, userId: 7, planId: 2, status: "active", nextBillingDate: new Date("2030-02-01"), paystackCustomerCode: "CUS_current" })),
     getPlan: vi.fn(async () => ({ id: 2, paystackPlanCode: "PLN_current" })),
     getActiveIdentities: vi.fn(async () => activeIdentities),
     getOpenAttempt: vi.fn(async () => attempt),

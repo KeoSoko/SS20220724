@@ -465,7 +465,7 @@ async function handlePaystackSubscriptionDisable(data: any) {
       customerCode: customerCode!,
       event: "subscription.disable",
     });
-    if (confirmation.outcome !== "confirmed") return;
+    if (confirmation.outcome !== "confirmed" || confirmation.transition !== "applied") return;
 
     // Mark as cancelled but keep access until next_billing_date (user already paid for this period)
     const subscription = await billingService.getUserSubscription(user.id);
@@ -513,7 +513,7 @@ async function handlePaystackSubscriptionNotRenew(data: any) {
       customerCode: customerCode!,
       event: "subscription.not_renew",
     });
-    if (confirmation.outcome !== "confirmed") return;
+    if (confirmation.outcome !== "confirmed" || confirmation.transition !== "applied") return;
 
     // User cancelled - mark cancelledAt but keep status active until billing period ends
     const subscription = await billingService.getUserSubscription(user.id);

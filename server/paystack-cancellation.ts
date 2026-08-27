@@ -81,9 +81,15 @@ export function createPaystackCancellationCoordinator(deps: CancellationDependen
       customerCode: string;
       event: "subscription.not_renew" | "subscription.disable";
     }) {
-      const attempt = await deps.getAttemptBySubscriptionCode(input.subscriptionCode);
-      if (!attempt) return { outcome: "rejected", reason: "cancellation_attempt_missing" } as const;
-      return deps.withBillingOwnerLock(attempt.billingOwnerUserId, async () => {
+      const discoveredAttempt = await deps.getAttemptBySubscriptionCode(input.subscriptionCode);
+      if (!discoveredAttempt) return { outcome: "rejected", reason: "cancellation_attempt_missing" } as const;
+      return deps.withBillingOwnerLock(discoveredAttempt.billingOwnerUserId, async () => {
+        // Re-read after taking the owner lock so concurrent identical deliveries
+        // observe the winner's committed lifecycle state instead of a stale one.
+        const attempt = await deps.getAttemptBySubscriptionCode(input.subscriptionCode);
+        if (!attempt || attempt.billingOwnerUserId !== discoveredAttempt.billingOwnerUserId) {
+          return { outcome: "rejected", reason: "cancellation_attempt_missing" } as const;
+        }
         const identities = await deps.getActiveIdentities(attempt.billingOwnerUserId);
         const identity = identities.find((candidate) => candidate.subscriptionCode === input.subscriptionCode);
         if (!identity || identity.customerCode !== input.customerCode) {
@@ -93,14 +99,14 @@ export function createPaystackCancellationCoordinator(deps: CancellationDependen
           ? "provider_disabled"
           : "provider_non_renewing";
         if (attempt.status === "provider_disabled" || (attempt.status === targetStatus && confirmedStates.has(attempt.status))) {
-          return { outcome: "confirmed", attempt } as const;
+          return { outcome: "confirmed", transition: "already_applied", attempt } as const;
         }
         const updated = await deps.saveAttempt({
           ...attempt,
           status: targetStatus,
           providerConfirmedAt: attempt.providerConfirmedAt ?? new Date(),
         });
-        return { outcome: "confirmed", attempt: updated } as const;
+        return { outcome: "confirmed", transition: "applied", attempt: updated } as const;
       });
     },
   };

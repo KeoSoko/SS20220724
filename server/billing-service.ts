@@ -475,7 +475,7 @@ export class BillingService {
       }
       const status = input.event === "subscription.disable" ? "provider_disabled" : "provider_non_renewing";
       if (attempt.status === "provider_disabled" || attempt.status === status) {
-        return { outcome: "confirmed" as const, attempt };
+        return { outcome: "confirmed" as const, transition: "already_applied" as const, attempt };
       }
       const now = new Date();
       const [updated] = await tx.update(paystackCancellationAttempts).set({
@@ -484,7 +484,7 @@ export class BillingService {
         lastCheckedAt: now,
         updatedAt: now,
       }).where(eq(paystackCancellationAttempts.id, attempt.id)).returning();
-      return { outcome: "confirmed" as const, attempt: updated };
+      return { outcome: "confirmed" as const, transition: "applied" as const, attempt: updated };
     });
   }
 

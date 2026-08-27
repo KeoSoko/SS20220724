@@ -1,0 +1,58 @@
+Proceed with **fix #1 only**.
+
+Do **not** backfill or mutate the 1,668 production rows yet.
+
+### Implementation
+
+Change `GET /api/receipts/:id/refresh-image-url` so that it:
+
+* Generates a fresh SAS URL from the receipt's durable `blob_name`.
+* Returns the generated URL to the client as it does today.
+* **Does not persist the refreshed SAS URL back into `blob_url`.**
+
+The temporary SAS URL should be treated as an ephemeral access URL, not durable database state.
+
+Do not change the current SAS expiry duration as part of this task unless that is required for correctness.
+
+### Validation
+
+After making the code change:
+
+1. Run the relevant receipt/image tests.
+2. Run TypeScript checks.
+3. Run the production build.
+4. Run the full test suite and report any failures against the current baseline.
+5. Verify the receipt-detail `onError` recovery path still works correctly.
+6. Verify edit mode still receives a usable refreshed URL.
+7. Verify client-side and backend PDF/export behaviour remains unchanged.
+8. Add or update a regression test proving that calling `refresh-image-url` returns a fresh URL **without modifying the stored `blob_url` value**.
+
+### Production verification
+
+If deployment is required, perform no production data repair.
+
+After deployment, use a receipt that currently has an expired SAS token and perform a controlled verification:
+
+* Capture its existing `blob_url` value/read-only fingerprint before the request.
+* Trigger the normal refresh endpoint.
+* Confirm a valid fresh URL is returned and the image can load.
+* Re-read the receipt and confirm `blob_url` was **not changed**.
+* Confirm `blob_name` remains unchanged.
+
+Do not perform a bulk refresh or database update.
+
+### Follow-up investigation
+
+Once the fix is verified, investigate whether `blob_url` is still architecturally necessary at all.
+
+Specifically report:
+
+* Every remaining server and client read/write of `blob_url`.
+* Whether new Azure-backed receipts can safely rely on `blob_name` as the durable database reference and generate SAS URLs only when needed.
+* Whether `blob_url` can be made nullable/deprecated for Azure receipts.
+* Whether the 1,668 expired values can simply be left as legacy data or safely cleared later instead of regenerated.
+* Any migration or backwards-compatibility risks.
+
+**Do not implement that cleanup yet.**
+
+The goal of this task is to stop creating stale persisted SAS URLs first, validate the behaviour, and then decide whether a production backfill is even necessary.

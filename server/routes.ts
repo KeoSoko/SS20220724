@@ -3147,11 +3147,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       log(`Successfully generated SAS URL for blob: ${receipt.blobName}`, "azure");
 
-      // Update the receipt with the new URL
-      const updatedReceipt = await storage.updateReceipt(receiptId, {
-        blobUrl: sasUrl
-      });
-
+      // Intentionally do NOT persist this SAS URL back onto the receipt.
+      // It is a short-lived, ephemeral access URL derived from the durable
+      // `blobName` reference; writing it into `blobUrl` would overwrite the
+      // long-lived URL stored at upload time with one that expires sooner,
+      // causing the stored link to go stale again after this token expires.
       res.json({ imageUrl: sasUrl });
     } catch (error: any) {
       log(`Error refreshing image URL: ${error}`, "api");

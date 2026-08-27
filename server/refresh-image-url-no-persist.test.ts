@@ -34,6 +34,12 @@ vi.mock('./admin-routes', () => ({ registerAdminRoutes: vi.fn() }));
 vi.mock('./vite', () => ({ log: vi.fn(), setupVite: vi.fn(), serveStatic: vi.fn() }));
 vi.mock('./storage', () => ({ storage: { getReceipt, updateReceipt } }));
 vi.mock('./azure-storage', () => ({ azureStorage: { generateSasUrl } }));
+vi.mock('./azure-form-recognizer', () => ({ azureFormRecognizer: {} }));
+vi.mock('./ai-categorization', () => ({ aiCategorizationService: {} }));
+vi.mock('./smart-search-service', () => ({ smartSearchService: {} }));
+vi.mock('./tax-ai-assistant', () => ({ taxAIAssistant: {} }));
+vi.mock('./ai-email-assistant', () => ({ aiEmailAssistant: {} }));
+vi.mock('./email-service', () => ({ emailService: null }));
 
 const dbMock: any = {
   select: () => ({

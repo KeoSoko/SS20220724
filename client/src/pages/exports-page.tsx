@@ -34,7 +34,6 @@ export default function ExportsPage() {
   const [category, setCategory] = useState<string>('');
   const [includeSummary, setIncludeSummary] = useState(true);
   const [includeImages, setIncludeImages] = useState(true);
-  const [showDateRangeExport, setShowDateRangeExport] = useState(true);
   const [groupByCategory, setGroupByCategory] = useState(false);
   const [allowAllTimeExport, setAllowAllTimeExport] = useState(false);
   const [highlightCsv, setHighlightCsv] = useState(false);
@@ -57,7 +56,6 @@ export default function ExportsPage() {
     if (qsCategory) setCategory(qsCategory);
 
     if (focus === 'csv') {
-      setShowDateRangeExport(true);
       setHighlightCsv(true);
       requestAnimationFrame(() => {
         csvSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -317,18 +315,9 @@ export default function ExportsPage() {
                 <CalendarRange className="h-6 w-6 text-indigo-600" />
               </div>
               Custom Reports (Date Range)
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowDateRangeExport(!showDateRangeExport)}
-                className="ml-auto"
-              >
-                {showDateRangeExport ? 'Hide' : 'Show'}
-              </Button>
             </CardTitle>
           </CardHeader>
-          {showDateRangeExport && (
-            <CardContent className="space-y-4">
+          <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Choose a date range or enable all-time export, then optionally filter by category.
               </p>
@@ -527,8 +516,7 @@ export default function ExportsPage() {
                   )}
                 </Button>
               </div>
-            </CardContent>
-          )}
+          </CardContent>
         </Card>
 
         <div className={`grid gap-6 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>

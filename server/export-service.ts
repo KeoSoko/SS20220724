@@ -11,8 +11,25 @@ import { db } from './db.js';
 import { emailDocuments } from '../shared/schema.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { createServerLogger } from "./logger";
+import { isReceiptWithinExportDateRange } from "./export-date-range";
 
 const logger = createServerLogger("export-service");
+
+function formatJohannesburgDate(date: Date): string {
+  return new Intl.DateTimeFormat('en-ZA', {
+    timeZone: 'Africa/Johannesburg',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function formatExportDateRange(startDate?: Date, endDateExclusive?: Date): string {
+  const inclusiveEndDate = endDateExclusive
+    ? new Date(endDateExclusive.getTime() - 1)
+    : undefined;
+  return `${startDate ? formatJohannesburgDate(startDate) : 'All'} - ${inclusiveEndDate ? formatJohannesburgDate(inclusiveEndDate) : 'All'}`;
+}
 /**
  * Compress and resize logo image to reduce PDF size for email attachments
  * Returns a smaller base64-encoded JPEG image
@@ -202,7 +219,7 @@ export class ExportService {
    */
   async exportReceiptsToCSV(userId: number, options: {
     startDate?: Date;
-    endDate?: Date;
+    endDateExclusive?: Date;
     category?: string;
     includeTaxInfo?: boolean;
   } = {}): Promise<string> {
@@ -211,8 +228,7 @@ export class ExportService {
       
       // Filter receipts based on options
       const filteredReceipts = receipts.filter(receipt => {
-        if (options.startDate && receipt.date < options.startDate) return false;
-        if (options.endDate && receipt.date > options.endDate) return false;
+        if (!isReceiptWithinExportDateRange(receipt.date, options)) return false;
         if (!this.matchesCategoryFilter(receipt, options.category)) return false;
         return true;
       });
@@ -275,7 +291,7 @@ export class ExportService {
    */
   async exportReceiptsToPDF(userId: number, options: {
     startDate?: Date;
-    endDate?: Date;
+    endDateExclusive?: Date;
     category?: string;
     includeSummary?: boolean;
     includeImages?: boolean;
@@ -289,8 +305,7 @@ export class ExportService {
       
       // Filter receipts
       const filteredReceipts = receipts.filter(receipt => {
-        if (options.startDate && receipt.date < options.startDate) return false;
-        if (options.endDate && receipt.date > options.endDate) return false;
+        if (!isReceiptWithinExportDateRange(receipt.date, options)) return false;
         if (!this.matchesCategoryFilter(receipt, options.category)) return false;
         return true;
       }).sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -316,8 +331,8 @@ export class ExportService {
         hour: '2-digit', minute: '2-digit'
       })}`, 20, 45);
       
-      if (options.startDate || options.endDate) {
-        const dateRange = `Date Range: ${options.startDate?.toLocaleDateString() || 'All'} - ${options.endDate?.toLocaleDateString() || 'All'}`;
+      if (options.startDate || options.endDateExclusive) {
+        const dateRange = `Date Range: ${formatExportDateRange(options.startDate, options.endDateExclusive)}`;
         doc.text(dateRange, 20, 55);
       }
 
@@ -640,7 +655,7 @@ export class ExportService {
         userId,
         receiptCount: filteredReceipts.length,
         startDate: options.startDate?.toISOString() || null,
-        endDate: options.endDate?.toISOString() || null,
+        endDateExclusive: options.endDateExclusive?.toISOString() || null,
         category: options.category || null,
         includeImages: options.includeImages || false,
         timingMs: {
@@ -841,7 +856,7 @@ export class ExportService {
    */
   async generateTaxReport(userId: number, taxYear: number, options?: {
     startDate?: Date;
-    endDate?: Date;
+    endDateExclusive?: Date;
     category?: string;
   }): Promise<{
     csv: string;
@@ -858,10 +873,9 @@ export class ExportService {
       // Filter for date range or tax year and deductible receipts
       const taxReceipts = receipts.filter(receipt => {
         if (!receipt.isTaxDeductible) return false;
-        if (options?.startDate && receipt.date < options.startDate) return false;
-        if (options?.endDate && receipt.date > options.endDate) return false;
+        if (!isReceiptWithinExportDateRange(receipt.date, options ?? {})) return false;
         if (options?.category && !this.matchesCategoryFilter(receipt, options.category)) return false;
-        if (!options?.startDate && !options?.endDate) {
+        if (!options?.startDate && !options?.endDateExclusive) {
           const receiptYear = receipt.date.getFullYear();
           return receiptYear === taxYear;
         }
@@ -899,7 +913,7 @@ export class ExportService {
       // Generate PDF
       const doc = new jsPDF();
       doc.setFontSize(20);
-      const titleSuffix = options?.startDate || options?.endDate
+      const titleSuffix = options?.startDate || options?.endDateExclusive
         ? 'Custom Range'
         : `${taxYear}`;
       doc.text(`Tax Report ${titleSuffix}`, 20, 20);
@@ -907,13 +921,13 @@ export class ExportService {
       doc.setFontSize(12);
       doc.text(`Total Deductible Amount: R ${totalDeductible.toFixed(2)}`, 20, 40);
       doc.text(`Number of Deductible Receipts: ${taxReceipts.length}`, 20, 50);
-      if (options?.startDate || options?.endDate) {
-        const dateRange = `Date Range: ${options?.startDate?.toLocaleDateString() || 'All'} - ${options?.endDate?.toLocaleDateString() || 'All'}`;
+      if (options?.startDate || options?.endDateExclusive) {
+        const dateRange = `Date Range: ${formatExportDateRange(options?.startDate, options?.endDateExclusive)}`;
         doc.text(dateRange, 20, 60);
       }
 
       // Category breakdown
-      let yPos = options?.startDate || options?.endDate ? 80 : 70;
+      let yPos = options?.startDate || options?.endDateExclusive ? 80 : 70;
       doc.text('Category Breakdown:', 20, yPos);
       Object.entries(categoriesBreakdown).forEach(([category, amount]) => {
         yPos += 10;

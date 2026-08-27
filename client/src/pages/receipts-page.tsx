@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { Receipt, Search, Filter, Plus, ArrowLeft, AlertCircle, CheckSquare, Square, Trash2, Tag, Calendar, DollarSign, Store, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Receipt, Search, Filter, Plus, ArrowLeft, AlertCircle, CheckSquare, Square, Trash2, Tag, Calendar, DollarSign, Store, ChevronDown, ChevronUp, X, FileSpreadsheet } from 'lucide-react';
 import { PageLayout } from '@/components/page-layout';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -346,6 +346,16 @@ export default function ReceiptsPage() {
     });
   };
 
+  const openExports = () => {
+    const params = new URLSearchParams({
+      focus: 'csv',
+      ...(dateFrom && { startDate: dateFrom }),
+      ...(dateTo && { endDate: dateTo }),
+      ...(categoryFilter !== 'all' && categoryFilter !== 'uncategorized' && { category: categoryFilter }),
+    });
+    setLocation(`/exports?${params.toString()}`);
+  };
+
   // Header actions
   const headerActions = (
     <div className="flex items-center gap-2">
@@ -433,6 +443,17 @@ export default function ReceiptsPage() {
       headerActions={headerActions}
     >
       <SpacingContainer>
+        <div className="flex justify-end">
+          <Button
+            onClick={openExports}
+            className="w-full sm:w-auto flex items-center gap-2"
+            data-testid="button-export-receipts"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Export to Excel / Reports
+          </Button>
+        </div>
+
         {/* Filters */}
         <Card>
           <CardContent className="p-4">

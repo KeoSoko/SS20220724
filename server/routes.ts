@@ -75,6 +75,7 @@ import { generateUserManual } from "./user-manual";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
 import { normalizeMerchantName } from "./utils/merchant-normalizer";
+import { normalizeReceiptExportDateRange } from "./export-date-range";
 import {
   extractPaystackCustomerCode,
   extractPaystackPlanCode,
@@ -3409,9 +3410,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/export/csv", requireVerifiedEmail, async (req, res) => {
     
     try {
+      const dateRange = normalizeReceiptExportDateRange(
+        typeof req.query.startDate === "string" ? req.query.startDate : undefined,
+        typeof req.query.endDate === "string" ? req.query.endDate : undefined,
+      );
       const options = {
-        startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
-        endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
+        ...dateRange,
         category: req.query.category as string,
         includeTaxInfo: req.query.includeTaxInfo === 'true',
       };
@@ -3433,9 +3437,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const groupByParam = typeof req.query.groupBy === "string" ? req.query.groupBy : undefined;
+      const dateRange = normalizeReceiptExportDateRange(
+        typeof req.query.startDate === "string" ? req.query.startDate : undefined,
+        typeof req.query.endDate === "string" ? req.query.endDate : undefined,
+      );
       const options = {
-        startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
-        endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
+        ...dateRange,
         category: req.query.category as string,
         includeSummary: req.query.includeSummary === 'true',
         includeImages: req.query.includeImages === 'true',
@@ -3462,9 +3469,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const year = parseInt(req.params.year);
       const format = req.query.format as string || 'pdf';
+      const dateRange = normalizeReceiptExportDateRange(
+        typeof req.query.startDate === "string" ? req.query.startDate : undefined,
+        typeof req.query.endDate === "string" ? req.query.endDate : undefined,
+      );
       const options = {
-        startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
-        endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
+        ...dateRange,
         category: req.query.category as string,
       };
       

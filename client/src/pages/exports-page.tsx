@@ -34,7 +34,7 @@ export default function ExportsPage() {
   const [category, setCategory] = useState<string>('');
   const [includeSummary, setIncludeSummary] = useState(true);
   const [includeImages, setIncludeImages] = useState(true);
-  const [showDateRangeExport, setShowDateRangeExport] = useState(false);
+  const [showDateRangeExport, setShowDateRangeExport] = useState(true);
   const [groupByCategory, setGroupByCategory] = useState(false);
   const [allowAllTimeExport, setAllowAllTimeExport] = useState(false);
   const { toast } = useToast();

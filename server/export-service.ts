@@ -452,22 +452,40 @@ export class ExportService {
         }
         const emailLookupCompletedAt = Date.now();
 
-        // Pre-fetch all Azure images in parallel batches of 5 with a per-image timeout.
-        // This replaces sequential fetching which would hang for minutes on Cold-tier blobs.
-        const IMAGE_BATCH_SIZE = 5;
+        // Pre-fetch all Azure images in parallel batches with a per-image timeout,
+        // bounded by an overall time budget so large/older exports can never hang
+        // long enough to trip a client or proxy timeout. This replaces sequential
+        // fetching which would hang for minutes on Cold-tier blobs.
+        const IMAGE_BATCH_SIZE = 10;
+        const IMAGE_PHASE_BUDGET_MS = 20000;
         const imageCache = new Map<number, string | null>();
         const azurePrefetchStartedAt = Date.now();
         const receiptsNeedingAzureFetch = filteredReceipts.filter(
           r => r.blobName && !r.imageData && !((r.blobUrl as string | null)?.startsWith('/uploads/'))
         );
+        let imagePhaseBudgetExceeded = false;
         for (let i = 0; i < receiptsNeedingAzureFetch.length; i += IMAGE_BATCH_SIZE) {
+          if (Date.now() - azurePrefetchStartedAt > IMAGE_PHASE_BUDGET_MS) {
+            imagePhaseBudgetExceeded = true;
+            break;
+          }
           const batch = receiptsNeedingAzureFetch.slice(i, i + IMAGE_BATCH_SIZE);
           await Promise.all(batch.map(async (r) => {
-            const data = await fetchAzureImageWithTimeout(r.blobName as string);
+            const data = await fetchAzureImageWithTimeout(r.blobName as string, 5000);
             imageCache.set(r.id, data);
           }));
         }
         const azurePrefetchCompletedAt = Date.now();
+        if (imagePhaseBudgetExceeded) {
+          logger.warn(JSON.stringify({
+            stage: "EXPORT_IMAGE_PHASE_BUDGET_EXCEEDED",
+            userId,
+            receiptsNeedingAzureFetch: receiptsNeedingAzureFetch.length,
+            imagesFetched: imageCache.size,
+            budgetMs: IMAGE_PHASE_BUDGET_MS,
+            timestamp: new Date().toISOString()
+          }));
+        }
 
         const receiptRenderStartedAt = Date.now();
         for (const receipt of filteredReceipts) {

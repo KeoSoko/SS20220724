@@ -1442,7 +1442,10 @@ export class BillingService {
     return { userId: uniqueUserIds[0], planId: matches[0].planId };
   }
 
-  private async loadPaystackSubscriptionCandidates(userId: number): Promise<
+  private async loadPaystackSubscriptionCandidates(
+    userId: number,
+    subscriptionOverride?: Pick<UserSubscription, "planId" | "paystackCustomerCode" | "nextBillingDate">,
+  ): Promise<
     | {
         available: true;
         customerCode: string;
@@ -1453,7 +1456,7 @@ export class BillingService {
       }
     | { available: false; reason: PaystackSubscriptionCandidateInspectionUnavailableReason }
   > {
-    const subscription = await this.getUserSubscription(userId);
+    const subscription = subscriptionOverride ?? await this.getUserSubscription(userId);
     if (!subscription) {
       return { available: false, reason: "missing_local_subscription" };
     }
@@ -2333,11 +2336,8 @@ export class BillingService {
   private manualLegacyPaystackAccountingService(database: any) {
     return createManualLegacyPaystackAccountingSettlementService({
       loadSnapshot: async (input: ManualLegacyPaystackAccountingInput) => {
-        const [verification, providerInspection, ownerResolution] = await Promise.all([
-          this.verifyPaystackTransaction(input.reference),
-          this.loadPaystackSubscriptionCandidates(input.billingOwnerUserId),
-          resolveBillingOwner(input.billingOwnerUserId),
-        ]);
+        const verificationPromise = this.verifyPaystackTransaction(input.reference);
+        const ownerResolutionPromise = resolveBillingOwner(input.billingOwnerUserId);
         const [billingOwnerRows, subscriptionRows, entitlementRows, identities, identityRows, existingPayments] = await Promise.all([
           database.select({ id: users.id }).from(users)
             .where(eq(users.id, input.billingOwnerUserId)).limit(1),
@@ -2389,6 +2389,16 @@ export class BillingService {
 
         const billingOwner = billingOwnerRows[0] ?? null;
         const localSubscription = subscriptionRows[0] ?? null;
+        const providerInspectionSubscription = localSubscription ? {
+          planId: localSubscription.planId,
+          paystackCustomerCode: localSubscription.paystackCustomerCode,
+          nextBillingDate: localSubscription.nextBillingDate,
+        } : undefined;
+        const [verification, providerInspection, ownerResolution] = await Promise.all([
+          verificationPromise,
+          this.loadPaystackSubscriptionCandidates(input.billingOwnerUserId, providerInspectionSubscription),
+          ownerResolutionPromise,
+        ]);
         const entitlement = entitlementRows[0] ?? { subscriptionTier: null, expiresAt: null };
         const identity = identityRows[0] ?? null;
         const transaction = verification.valid ? verification.subscription : null;

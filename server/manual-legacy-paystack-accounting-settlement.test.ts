@@ -363,4 +363,26 @@ describe("manual legacy Paystack accounting settlement", () => {
     expect(adapter).not.toContain("admin_verified_renewal_entitlement_compensation");
     expect(adapter).not.toMatch(/subscription\.(disable|create|enable)|transaction\.charge/);
   });
+
+  it("uses an explicit production-compatible subscription projection for provider inspection", () => {
+    const source = readFileSync(new URL("./billing-service.ts", import.meta.url), "utf8");
+    const start = source.indexOf("private manualLegacyPaystackAccountingService");
+    const nextMethod = source.indexOf("private async recordPaystackSubscriptionIdentityInTransaction", start);
+    const end = source.lastIndexOf("  /**", nextMethod);
+    const adapter = source.slice(start, end);
+    const selectedSubscription = adapter.slice(
+      adapter.indexOf("database.select({", adapter.indexOf("subscriptionRows")),
+      adapter.indexOf("}).from(userSubscriptions)", adapter.indexOf("subscriptionRows")),
+    );
+
+    expect(selectedSubscription).toContain("planId: userSubscriptions.planId");
+    expect(selectedSubscription).toContain("paystackCustomerCode: userSubscriptions.paystackCustomerCode");
+    expect(selectedSubscription).toContain("nextBillingDate: userSubscriptions.nextBillingDate");
+    expect(selectedSubscription).not.toContain("cancellationRequestedAt");
+    expect(adapter).toContain(
+      "this.loadPaystackSubscriptionCandidates(input.billingOwnerUserId, providerInspectionSubscription)",
+    );
+    expect(adapter.indexOf("const providerInspectionSubscription"))
+      .toBeGreaterThan(adapter.indexOf("const localSubscription = subscriptionRows[0]"));
+  });
 });

@@ -2451,6 +2451,17 @@ export class BillingService {
             planCode: providerCandidate.planCode,
             status: providerCandidate.status,
           } : null,
+          providerInspection: providerInspection.available ? {
+            available: true,
+            reason: null,
+            providerSubscriptionCount: providerInspection.providerSubscriptionCount,
+            exactCandidateFound: !!providerCandidate,
+          } : {
+            available: false,
+            reason: providerInspection.reason,
+            providerSubscriptionCount: null,
+            exactCandidateFound: false,
+          },
           existingPayment: existingPayments[0] ? {
             ...existingPayments[0],
             subscriptionId: existingPayments[0].subscriptionId ?? 0,

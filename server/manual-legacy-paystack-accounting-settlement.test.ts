@@ -385,4 +385,39 @@ describe("manual legacy Paystack accounting settlement", () => {
     expect(adapter.indexOf("const providerInspectionSubscription"))
       .toBeGreaterThan(adapter.indexOf("const localSubscription = subscriptionRows[0]"));
   });
+
+  it("preserves the exact provider-inspection failure category", () => {
+    const unavailable = snapshot();
+    unavailable.providerSubscription = null;
+    unavailable.providerInspection = {
+      available: false,
+      reason: "paystack_subscription_list_failed",
+      providerSubscriptionCount: null,
+      exactCandidateFound: false,
+    };
+    expect(classifyManualLegacyPaystackAccountingSettlement(input, unavailable))
+      .toMatchObject({ outcome: "manual_review_required", reason: "provider_subscription_inspection_unavailable" });
+
+    const absent = snapshot();
+    absent.providerSubscription = null;
+    absent.providerInspection = {
+      available: true,
+      reason: null,
+      providerSubscriptionCount: 1,
+      exactCandidateFound: false,
+    };
+    expect(classifyManualLegacyPaystackAccountingSettlement(input, absent))
+      .toMatchObject({ outcome: "manual_review_required", reason: "provider_subscription_not_found" });
+
+    const failedDetail = snapshot();
+    failedDetail.providerSubscription!.valid = false;
+    failedDetail.providerInspection = {
+      available: true,
+      reason: null,
+      providerSubscriptionCount: 1,
+      exactCandidateFound: true,
+    };
+    expect(classifyManualLegacyPaystackAccountingSettlement(input, failedDetail))
+      .toMatchObject({ outcome: "manual_review_required", reason: "provider_subscription_lookup_failed" });
+  });
 });

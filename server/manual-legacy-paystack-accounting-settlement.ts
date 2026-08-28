@@ -64,6 +64,12 @@ export interface ManualLegacyPaystackAccountingSnapshot {
     planCode: string | null;
     status: string;
   } | null;
+  providerInspection?: {
+    available: boolean;
+    reason: string | null;
+    providerSubscriptionCount: number | null;
+    exactCandidateFound: boolean;
+  };
   existingPayment: {
     userId: number;
     subscriptionId: number;
@@ -94,6 +100,9 @@ export type ManualLegacyPaystackAccountingReviewReason =
   | "provider_amount_mismatch"
   | "provider_currency_mismatch"
   | "provider_subscription_invalid"
+  | "provider_subscription_inspection_unavailable"
+  | "provider_subscription_not_found"
+  | "provider_subscription_lookup_failed"
   | "provider_relationship_mismatch"
   | "payment_reference_conflict";
 
@@ -333,9 +342,17 @@ export function classifyManualLegacyPaystackAccountingSettlement(
   }
 
   const providerSubscription = snapshot.providerSubscription;
-  if (!providerSubscription || !providerSubscription.valid) {
+  if (!providerSubscription) {
+    if (snapshot.providerInspection?.available === false) {
+      return review("provider_subscription_inspection_unavailable");
+    }
+    if (snapshot.providerInspection?.available === true
+      && !snapshot.providerInspection.exactCandidateFound) {
+      return review("provider_subscription_not_found");
+    }
     return review("provider_subscription_invalid");
   }
+  if (!providerSubscription.valid) return review("provider_subscription_lookup_failed");
   if (providerSubscription.subscriptionCode !== input.subscriptionCode
     || providerSubscription.customerCode !== input.customerCode
     || providerSubscription.planCode !== input.planCode) {

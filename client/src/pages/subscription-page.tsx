@@ -804,7 +804,9 @@ export function SubscriptionPage() {
                       >
                         {renewalSetupRequired
                           ? recoveryCheckoutEligible
-                            ? 'Restore automatic renewal'
+                            ? subscription?.planId === selectedBillingPlan.id
+                              ? 'Restore automatic renewal'
+                              : 'Switch to this plan'
                             : 'Renewal needs review'
                           : needsPaymentRecovery
                           ? 'Update payment method'

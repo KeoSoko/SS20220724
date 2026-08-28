@@ -4252,13 +4252,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             code: "renewal_recovery_not_required",
           });
         }
-        if (existingSubscription.planId !== requestedPlan.id) {
-          return res.status(409).json({
-            error: "Restore automatic renewal using your current subscription plan",
-            code: "renewal_recovery_plan_mismatch",
-          });
-        }
-
         // This does provider reads and may record one exact identity, but never
         // charges a card or opens checkout. A new checkout is permitted only
         // after Paystack confirms there is no viable relationship to recover.

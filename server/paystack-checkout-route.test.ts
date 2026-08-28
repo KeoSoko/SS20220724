@@ -72,6 +72,18 @@ describe("Paystack route safety invariants", () => {
     expect(billingService).toContain("renewal_setup_recovery_required");
   });
 
+  it("allows plan choice only after recovery proves there is no provider relationship", () => {
+    const checkout = routeSource(
+      'app.post("/api/billing/paystack/checkout"',
+      'app.post("/api/billing/paystack/subscription"',
+    );
+    const recoveryStart = checkout.indexOf("if (renewalRecoveryRequested)");
+    const recoveryEnd = checkout.indexOf("let attemptResult", recoveryStart);
+    expect(checkout.slice(recoveryStart, recoveryEnd)).not.toContain("renewal_recovery_plan_mismatch");
+    expect(checkout).toContain("recoverPaystackRenewalRelationship");
+    expect(checkout).toContain("allowRenewalSetupRecovery: renewalRecoveryRequested");
+  });
+
   it("keeps hosted payment management owner-scoped and separate from checkout", () => {
     const management = routeSource(
       'app.post("/api/billing/paystack/subscription/manage-link"',

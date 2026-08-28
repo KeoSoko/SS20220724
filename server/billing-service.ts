@@ -3062,14 +3062,6 @@ export class BillingService {
             subscription: existingSubscription,
           };
         }
-        if (existingSubscription.planId !== input.planId) {
-          return {
-            outcome: "checkout_blocked",
-            reason: "renewal_recovery_plan_mismatch",
-            subscription: existingSubscription,
-          };
-        }
-
         // Re-read the trusted identity under the shared entitlement lock so an
         // identity recovered by another request can never race into a second
         // checkout.

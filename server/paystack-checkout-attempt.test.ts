@@ -277,6 +277,44 @@ describe("server-owned Paystack checkout attempts", () => {
     expect(state.inserts).toBe(1);
   });
 
+  it("allows an expired legacy customer with no provider relationship to recover onto a different plan", async () => {
+    state.subscription = {
+      id: 99,
+      userId: 10,
+      planId: 2,
+      status: "active",
+      paystackCustomerCode: "CUS_owner",
+      nextBillingDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      cancelledAt: null,
+    };
+    const service = new BillingService();
+    (service as any).paystack = {
+      customer: { get: vi.fn().mockResolvedValue({ status: true, data: { id: 101 } }) },
+      subscription: {
+        list: vi.fn().mockResolvedValue({
+          status: true,
+          data: [],
+          meta: { total: 0, page: 1, pageCount: 1 },
+        }),
+      },
+    };
+
+    const result = await service.createOrReusePaystackCheckoutAttempt({
+      ...checkoutInput(3),
+      amount: 53_000,
+      paystackPlanCode: "PLN_yearly",
+      allowRenewalSetupRecovery: true,
+    });
+
+    expect(result.outcome).toBe("created");
+    expect((result as any).attempt).toMatchObject({
+      planId: 3,
+      amount: 53_000,
+      paystackPlanCode: "PLN_yearly",
+    });
+    expect(state.inserts).toBe(1);
+  });
+
   it("fails closed when the locked provider reinspection finds a subscription", async () => {
     state.subscription = {
       id: 99,

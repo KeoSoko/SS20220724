@@ -117,7 +117,9 @@ describe("Paystack route safety invariants", () => {
     const reconciliationEnd = billingService.indexOf("async hasActiveSubscription", reconciliationStart);
     const reconciliation = billingService.slice(reconciliationStart, reconciliationEnd);
 
-    expect(reconciliation).toContain('source: "reconciliation"');
+    expect(reconciliation).toContain("previewLegacyPaystackRenewalSettlement(shadowInput)");
+    expect(reconciliation).toContain("recordLegacyRenewalShadowObservationOnce");
+    expect(reconciliation).not.toContain("processPaystackSubscription(");
     expect(reconciliation).not.toContain("transaction.charge");
     expect(reconciliation).not.toContain("subscription.create");
     expect(reconciliation).not.toContain("createOrReusePaystackCheckoutAttempt");

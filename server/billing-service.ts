@@ -64,6 +64,7 @@ import {
   type LegacyRenewalSettlementInput,
   type LegacyRenewalSettlementSnapshot,
 } from "./legacy-paystack-renewal-settlement";
+import { buildLegacyRenewalShadowObservation } from "./legacy-renewal-shadow";
 
 export interface GooglePlayPurchase {
   purchaseToken: string;
@@ -4429,6 +4430,32 @@ export class BillingService {
       : null;
   }
 
+  private async recordLegacyRenewalShadowObservationOnce(
+    userId: number,
+    paymentReference: string,
+    eventData: Record<string, unknown>,
+  ): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+      const [existingObservation] = await tx.select({ id: billingEvents.id })
+        .from(billingEvents)
+        .where(and(
+          eq(billingEvents.userId, userId),
+          eq(billingEvents.eventType, "legacy_renewal_shadow_observed"),
+          sql`${billingEvents.eventData}->>'paymentReference' = ${paymentReference}`,
+        ))
+        .limit(1);
+      if (!existingObservation) {
+        await tx.insert(billingEvents).values({
+          userId,
+          eventType: "legacy_renewal_shadow_observed",
+          eventData,
+          processed: true,
+        });
+      }
+    });
+  }
+
   async reconcilePaystackSubscriptionForUser(userId: number): Promise<PaystackReconciliationResult> {
     const readiness = await this.getPaystackBillingSchemaReadiness();
     if (!readiness.ready) {
@@ -4451,32 +4478,14 @@ export class BillingService {
     const plan = storage.getSubscriptionPlan
       ? await storage.getSubscriptionPlan(subscription.planId)
       : null;
-    const existingIdentity = await this.getActivePaystackSubscriptionIdentity(userId);
-    const recovery = existingIdentity
-      ? {
-          outcome: "relationship_available" as const,
-          subscriptionCode: existingIdentity.subscriptionCode,
-        }
-      : await this.recoverPaystackRenewalRelationship(userId);
-    const identity = recovery.outcome === "relationship_available"
-      ? existingIdentity
-      : recovery.outcome === "recovered"
-        ? await this.getActivePaystackSubscriptionIdentity(userId)
-        : null;
+    // Automatic settlement shadowing is permitted only for an identity that was
+    // already trusted locally before this reconciliation run. Identity recovery
+    // remains a separate, explicit workflow and cannot be smuggled into Phase 2.
+    const identity = await this.getActivePaystackSubscriptionIdentity(userId);
     if (!identity) {
-      if (recovery.outcome === "no_verified_relationship") {
-        return {
-          outcome: "renewal_setup_required",
-          reason: "no_verified_recurring_relationship",
-        };
-      }
       return {
         outcome: "unresolved",
-        reason: recovery.outcome === "manual_review_required"
-          ? recovery.reason
-          : recovery.outcome === "reconciling"
-            ? recovery.reason
-            : "subscription_identity_unresolved",
+        reason: "trusted_active_identity_required_for_shadow_classification",
       };
     }
 
@@ -4532,18 +4541,51 @@ export class BillingService {
         if (!paidAt || paidAt.getTime() < new Date(subscription.nextBillingDate).getTime()) {
           continue;
         }
-        await this.processPaystackSubscription(userId, classified.transactionReference, {
-          expectedSubscriptionCode: identity.subscriptionCode,
-          source: "reconciliation",
-        });
-        await this.logBillingEvent(userId, "renewal_reconciled_paid", {
+        // Phase 2 is deliberately observation-only. Reuse the exact admin
+        // settlement classifier, but never execute settlement from reconciliation.
+        if (!identity.customerCode || !identity.planCode || !plan?.paystackPlanCode
+          || identity.planCode !== plan.paystackPlanCode) {
+          await this.recordLegacyRenewalShadowObservationOnce(
+            userId,
+            classified.transactionReference,
+            {
+              schemaVersion: 1,
+              mode: "shadow",
+              paymentReference: classified.transactionReference,
+              classification: "manual_review_required",
+              reason: "trusted_identity_incomplete_or_plan_mismatch",
+              paymentMutation: "none",
+              entitlementMutation: "none",
+              identityMutation: "none",
+              providerMutation: "none",
+            },
+          );
+          return {
+            outcome: "unresolved",
+            reason: "legacy_renewal_shadow_manual_review_required",
+            subscriptionCode: identity.subscriptionCode,
+          };
+        }
+
+        const shadowInput: LegacyRenewalSettlementInput = {
+          billingOwnerUserId: userId,
+          localSubscriptionId: subscription.id,
+          identityId: identity.id,
+          reference: classified.transactionReference,
           subscriptionCode: identity.subscriptionCode,
-          invoiceCode: classified.invoiceCode,
-          transactionReference: classified.transactionReference,
-        });
+          customerCode: identity.customerCode,
+          planCode: identity.planCode,
+        };
+        const assessment = await this.previewLegacyPaystackRenewalSettlement(shadowInput);
+        const observation = buildLegacyRenewalShadowObservation(shadowInput, assessment);
+        await this.recordLegacyRenewalShadowObservationOnce(
+          userId,
+          classified.transactionReference,
+          observation,
+        );
         return {
-          outcome: "reconciled_paid",
-          reason: "verified_paid_invoice_applied",
+          outcome: "unresolved",
+          reason: `legacy_renewal_shadow_${assessment.outcome}`,
           subscriptionCode: identity.subscriptionCode,
         };
       }

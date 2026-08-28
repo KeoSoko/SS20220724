@@ -101,6 +101,14 @@ function parseManualLegacyPaystackAccountingInput(req: Request) {
 }
 
 export function registerAdminRoutes(app: Express) {
+  app.get("/api/admin/billing-schema-readiness", requireAdmin, async (_req, res) => {
+    const readiness = await billingService.getPaystackBillingSchemaReadiness();
+    return res.status(readiness.ready ? 200 : 503).json({
+      status: readiness.ready ? "ready" : "not_ready",
+      ...readiness,
+    });
+  });
+
   
   // ========================================
   // SYSTEM HEALTH METRICS

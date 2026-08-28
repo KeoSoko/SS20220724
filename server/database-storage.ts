@@ -1478,7 +1478,7 @@ export class DatabaseStorage implements IStorage {
       return result[0] || null;
     } catch (error) {
       log(`Error getting user subscription for user ${userId}: ${error}`, 'db');
-      return null;
+      throw error;
     }
   }
 

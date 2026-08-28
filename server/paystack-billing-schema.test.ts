@@ -25,12 +25,16 @@ import {
 } from "./paystack-billing-schema";
 
 const readyRow = () => ({
+  user_subscriptions_table: true,
+  cancellation_requested_at_column: true,
   subscription_identities_table: true,
   checkout_attempts_table: true,
+  cancellation_attempts_table: true,
   subscription_code_unique: true,
   checkout_reference_unique: true,
   one_pending_checkout_per_owner: true,
   checkout_access_code_column: true,
+  payment_reference_unique: true,
 });
 
 beforeEach(() => {
@@ -110,6 +114,24 @@ describe("Paystack billing schema readiness", () => {
 
     expect(readiness.ready).toBe(false);
     expect(readiness.missing).toContain("checkout_access_code_column");
+  });
+
+  it("reproduces the production schema drift when cancellation_requested_at is absent", async () => {
+    state.row = { ...readyRow(), cancellation_requested_at_column: false };
+
+    const readiness = await getPaystackBillingSchemaReadiness();
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.missing).toContain("cancellation_requested_at_column");
+  });
+
+  it("fails closed when provider-reference uniqueness is absent", async () => {
+    state.row = { ...readyRow(), payment_reference_unique: false };
+
+    const readiness = await getPaystackBillingSchemaReadiness();
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.missing).toContain("payment_reference_unique");
   });
 
   it("reports ready when checkout_access_code_column is present (migration 0005 applied)", async () => {

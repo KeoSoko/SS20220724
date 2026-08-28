@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { storage } from './storage';
 import { resolveBillingOwner } from './billing-owner';
+import { BillingSubscriptionReadError, isBillingSubscriptionReadError } from './billing-errors';
 
 export interface SubscriptionStatus {
   hasActiveSubscription: boolean;
@@ -133,7 +134,8 @@ export async function getSubscriptionStatus(userId: number): Promise<Subscriptio
     return { hasActiveSubscription: false, isInTrial: false, subscriptionType: 'none' };
   } catch (error) {
     console.error(`[getSubscriptionStatus] Error checking subscription status for user ${userId}:`, error);
-    return { hasActiveSubscription: false, isInTrial: false, subscriptionType: 'none' };
+    if (isBillingSubscriptionReadError(error)) throw error;
+    throw new BillingSubscriptionReadError(userId, error);
   }
 }
 
@@ -187,7 +189,8 @@ export async function getEffectiveSubscriptionStatus(userId: number): Promise<Su
     return getSubscriptionStatus(resolution.billingOwnerUserId);
   } catch (error) {
     console.error(`[getEffectiveSubscriptionStatus] Error resolving effective status for user ${userId}:`, error);
-    return { ...NO_ACCESS_STATUS };
+    if (isBillingSubscriptionReadError(error)) throw error;
+    throw new BillingSubscriptionReadError(userId, error);
   }
 }
 
@@ -223,8 +226,9 @@ export function requireSubscription() {
       next();
     } catch (error) {
       console.error('Error in requireSubscription middleware:', error);
-      return res.status(500).json({ 
+      return res.status(isBillingSubscriptionReadError(error) ? 503 : 500).json({
         error: 'Connection issue',
+        code: isBillingSubscriptionReadError(error) ? 'billing_state_unavailable' : 'subscription_check_failed',
         message: 'We couldn\'t verify your subscription. Please check your internet connection and try again.',
         userMessage: 'Unable to load your data. Please try again.'
       });
@@ -265,8 +269,9 @@ export function checkFeatureAccess(feature: 'receipt_upload' | 'ai_categorizatio
       });
     } catch (error) {
       console.error('Error in checkFeatureAccess middleware:', error);
-      return res.status(500).json({ 
+      return res.status(isBillingSubscriptionReadError(error) ? 503 : 500).json({
         error: 'Connection issue',
+        code: isBillingSubscriptionReadError(error) ? 'billing_state_unavailable' : 'subscription_check_failed',
         message: 'We couldn\'t load this feature. Please check your internet connection and try again.',
         userMessage: 'Unable to load this feature. Please try again.'
       });

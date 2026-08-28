@@ -48,6 +48,8 @@ import {
   getPaystackBillingSchemaReadiness,
   requirePaystackBillingSchema,
 } from "./paystack-billing-schema";
+import { BillingSubscriptionReadError } from "./billing-errors";
+export { BillingSubscriptionReadError } from "./billing-errors";
 import {
   createManualPaystackIdentityRepairService,
   ManualPaystackIdentityRepairInput,
@@ -608,12 +610,12 @@ export class BillingService {
   async getUserSubscription(userId: number): Promise<UserSubscription | null> {
     try {
       if (!storage.getUserSubscription) {
-        return null;
+        throw new Error("User subscription storage is unavailable");
       }
       return await storage.getUserSubscription(userId);
     } catch (error) {
       log(`Error fetching user subscription for user ${userId}: ${error}`, 'billing');
-      return null;
+      throw new BillingSubscriptionReadError(userId, error);
     }
   }
 

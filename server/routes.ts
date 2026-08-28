@@ -61,6 +61,7 @@ import {
   billingService,
   isPaystackSubscriptionManagementLinkEnabled,
 } from "./billing-service";
+import { isBillingSubscriptionReadError } from "./billing-errors";
 import { resolveUserForReconciliation } from "./reconcile-user-resolver";
 import { smartReminderService } from "./smart-reminder-service";
 import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategorization } from "./receipt-flow-utils";
@@ -1393,6 +1394,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       log(`Error getting subscription status: ${error}`, "api");
+      if (isBillingSubscriptionReadError(error)) {
+        return res.status(503).json({
+          error: "Billing state is temporarily unavailable",
+          code: "billing_state_unavailable",
+        });
+      }
       res.status(500).json({ error: "Failed to get subscription status" });
     }
   });
@@ -4136,6 +4143,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ subscription, cancellation });
     } catch (error: any) {
       log(`Error in /api/billing/subscription: ${error.message}`, 'express');
+      if (isBillingSubscriptionReadError(error)) {
+        return res.status(503).json({
+          error: "Billing state is temporarily unavailable",
+          code: "billing_state_unavailable",
+        });
+      }
       res.status(500).json({ error: "Failed to get subscription status" });
     }
   });

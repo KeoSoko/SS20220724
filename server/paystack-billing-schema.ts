@@ -6,12 +6,16 @@ const READY_CACHE_TTL_MS = 30_000;
 const NOT_READY_CACHE_TTL_MS = 2_000;
 
 export type PaystackBillingSchemaRequirement =
+  | "user_subscriptions_table"
+  | "cancellation_requested_at_column"
   | "subscription_identities_table"
   | "checkout_attempts_table"
+  | "cancellation_attempts_table"
   | "subscription_code_unique"
   | "checkout_reference_unique"
   | "one_pending_checkout_per_owner"
-  | "checkout_access_code_column";
+  | "checkout_access_code_column"
+  | "payment_reference_unique";
 
 export interface PaystackBillingSchemaReadiness {
   ready: boolean;
@@ -68,10 +72,21 @@ export async function getPaystackBillingSchemaReadiness(
   try {
     const result = await db.execute(sql`
       SELECT
+        to_regclass('public.user_subscriptions') IS NOT NULL
+          AS user_subscriptions_table,
+        EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'user_subscriptions'
+            AND column_name = 'cancellation_requested_at'
+        ) AS cancellation_requested_at_column,
         to_regclass('public.paystack_subscription_identities') IS NOT NULL
           AS subscription_identities_table,
         to_regclass('public.paystack_checkout_attempts') IS NOT NULL
           AS checkout_attempts_table,
+        to_regclass('public.paystack_cancellation_attempts') IS NOT NULL
+          AS cancellation_attempts_table,
         EXISTS (
           SELECT 1
           FROM pg_index index_meta
@@ -102,16 +117,27 @@ export async function getPaystackBillingSchemaReadiness(
           WHERE table_schema = 'public'
             AND table_name  = 'paystack_checkout_attempts'
             AND column_name = 'paystack_access_code'
-        ) AS checkout_access_code_column
+        ) AS checkout_access_code_column,
+        EXISTS (
+          SELECT 1
+          FROM pg_index index_meta
+          WHERE index_meta.indrelid = to_regclass('public.payment_transactions')
+            AND index_meta.indisunique
+            AND pg_get_indexdef(index_meta.indexrelid) ~* '\\(platform, platform_transaction_id\\)'
+        ) AS payment_reference_unique
     `);
     const row = (result as any).rows?.[0] ?? {};
     const requirements: Array<[PaystackBillingSchemaRequirement, boolean]> = [
+      ["user_subscriptions_table", asBoolean(row.user_subscriptions_table)],
+      ["cancellation_requested_at_column", asBoolean(row.cancellation_requested_at_column)],
       ["subscription_identities_table", asBoolean(row.subscription_identities_table)],
       ["checkout_attempts_table", asBoolean(row.checkout_attempts_table)],
+      ["cancellation_attempts_table", asBoolean(row.cancellation_attempts_table)],
       ["subscription_code_unique", asBoolean(row.subscription_code_unique)],
       ["checkout_reference_unique", asBoolean(row.checkout_reference_unique)],
       ["one_pending_checkout_per_owner", asBoolean(row.one_pending_checkout_per_owner)],
       ["checkout_access_code_column", asBoolean(row.checkout_access_code_column)],
+      ["payment_reference_unique", asBoolean(row.payment_reference_unique)],
     ];
     const missing = requirements
       .filter(([, satisfied]) => !satisfied)
@@ -127,12 +153,16 @@ export async function getPaystackBillingSchemaReadiness(
     readiness = {
       ready: false,
       missing: [
+        "user_subscriptions_table",
+        "cancellation_requested_at_column",
         "subscription_identities_table",
         "checkout_attempts_table",
+        "cancellation_attempts_table",
         "subscription_code_unique",
         "checkout_reference_unique",
         "one_pending_checkout_per_owner",
         "checkout_access_code_column",
+        "payment_reference_unique",
       ],
       checkedAt,
     };

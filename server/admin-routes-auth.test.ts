@@ -62,4 +62,11 @@ describe("admin authorization for manual identity repair", () => {
       "pg_advisory_xact_lock(${billingOwnerUserId}, 36)",
     );
   });
+
+  it("keeps billing schema readiness behind admin authentication", () => {
+    const source = readFileSync(new URL("./admin-routes.ts", import.meta.url), "utf8");
+    expect(source).toContain(
+      'app.get("/api/admin/billing-schema-readiness", requireAdmin',
+    );
+  });
 });

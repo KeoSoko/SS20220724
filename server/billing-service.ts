@@ -56,7 +56,14 @@ import {
   createManualLegacyPaystackAccountingSettlementService,
   MANUAL_ACCOUNTING_SETTLEMENT_EVENT,
   type ManualLegacyPaystackAccountingInput,
+  type ManualLegacyPaystackAccountingRepository,
 } from "./manual-legacy-paystack-accounting-settlement";
+import {
+  createLegacyRenewalSettlementService,
+  legacyRenewalSettlementFingerprint,
+  type LegacyRenewalSettlementInput,
+  type LegacyRenewalSettlementSnapshot,
+} from "./legacy-paystack-renewal-settlement";
 
 export interface GooglePlayPurchase {
   purchaseToken: string;
@@ -2333,8 +2340,8 @@ export class BillingService {
     ));
   }
 
-  private manualLegacyPaystackAccountingService(database: any) {
-    return createManualLegacyPaystackAccountingSettlementService({
+  private manualLegacyPaystackAccountingRepository(database: any): ManualLegacyPaystackAccountingRepository {
+    return {
       loadSnapshot: async (input: ManualLegacyPaystackAccountingInput) => {
         const verificationPromise = this.verifyPaystackTransaction(input.reference);
         const ownerResolutionPromise = resolveBillingOwner(input.billingOwnerUserId);
@@ -2450,6 +2457,7 @@ export class BillingService {
             customerCode: providerCandidate.customerCode,
             planCode: providerCandidate.planCode,
             status: providerCandidate.status,
+            nextPaymentDate: providerCandidate.nextPaymentDate?.toISOString() ?? null,
           } : null,
           providerInspection: providerInspection.available ? {
             available: true,
@@ -2534,7 +2542,13 @@ export class BillingService {
           processed: true,
         });
       },
-    });
+    };
+  }
+
+  private manualLegacyPaystackAccountingService(database: any) {
+    return createManualLegacyPaystackAccountingSettlementService(
+      this.manualLegacyPaystackAccountingRepository(database),
+    );
   }
 
   async previewManualLegacyPaystackAccountingSettlement(input: ManualLegacyPaystackAccountingInput) {
@@ -2551,6 +2565,180 @@ export class BillingService {
     return db.transaction(async (tx) => (
       this.manualLegacyPaystackAccountingService(tx).execute(input, adminUserId, confirmation)
     ));
+  }
+
+  private legacyRenewalSettlementService(database: any) {
+    let loadedSnapshot: LegacyRenewalSettlementSnapshot | null = null;
+    const service = createLegacyRenewalSettlementService({
+      loadSnapshot: async (input: LegacyRenewalSettlementInput) => {
+        const base = await this.manualLegacyPaystackAccountingRepository(database).loadSnapshot(input);
+        const [events] = await Promise.all([
+          database.select({
+            id: billingEvents.id,
+            eventType: billingEvents.eventType,
+            eventData: billingEvents.eventData,
+            createdAt: billingEvents.createdAt,
+          }).from(billingEvents).where(and(
+            eq(billingEvents.userId, input.billingOwnerUserId),
+            inArray(billingEvents.eventType, [
+              "admin_verified_renewal_entitlement_compensation",
+              "admin_action_activate_subscription",
+            ]),
+          )),
+        ]);
+
+        const candidate = base.providerSubscription;
+        const periodStart = base.localSubscription?.nextBillingDate ?? null;
+        const periodEnd = candidate?.nextPaymentDate ?? null;
+        const paidAt = base.providerPayment?.paidAt ?? null;
+        const startCloseToPayment = periodStart && paidAt
+          ? Math.abs(Date.parse(periodStart) - Date.parse(paidAt)) <= 24 * 60 * 60 * 1000
+          : false;
+        loadedSnapshot = {
+          billingOwner: base.billingOwner,
+          localSubscription: base.localSubscription,
+          entitlement: base.entitlement,
+          identity: base.identity,
+          activeIdentityCount: base.activeIdentityCount,
+          providerPayment: base.providerPayment,
+          providerSubscription: candidate ? {
+            valid: candidate.valid && startCloseToPayment,
+            subscriptionCode: candidate.subscriptionCode,
+            customerCode: candidate.customerCode,
+            planCode: candidate.planCode,
+            status: candidate.status,
+            renewalPeriodStart: periodStart,
+            renewalPeriodEnd: periodEnd,
+          } : null,
+          structuredCompensationEvents: events
+            .filter((event: any) => event.eventType === "admin_verified_renewal_entitlement_compensation")
+            .map((event: any) => ({ ...event.eventData, billingEventId: event.id })),
+          legacyActivationEvents: events
+            .filter((event: any) => event.eventType === "admin_action_activate_subscription")
+            .map((event: any) => ({
+              eventId: event.id,
+              createdAt: event.createdAt.toISOString(),
+              adminUserId: Number.isInteger(event.eventData?.adminUserId) ? event.eventData.adminUserId : null,
+              reason: typeof event.eventData?.reason === "string" ? event.eventData.reason : null,
+            })),
+          existingPayment: base.existingPayment ? {
+            userId: base.existingPayment.userId,
+            subscriptionId: base.existingPayment.subscriptionId,
+            reference: base.existingPayment.reference,
+            outcome: "payment_and_entitlement_applied",
+          } : null,
+        };
+        return loadedSnapshot;
+      },
+      runAtomicallyWithBillingOwnerLock: async (billingOwnerUserId, callback) => {
+        await database.execute(sql`SELECT pg_advisory_xact_lock(${billingOwnerUserId}, 36)`);
+        return callback();
+      },
+      claimPaymentReference: async (input, classification) => {
+        const payment = loadedSnapshot?.providerPayment;
+        if (!payment?.providerTransactionId) return "conflict" as const;
+        const inserted = await database.insert(paymentTransactions).values({
+          userId: input.billingOwnerUserId,
+          subscriptionId: input.localSubscriptionId,
+          amount: payment.amount,
+          currency: payment.currency,
+          status: "completed",
+          platform: "paystack",
+          paymentMethod: "legacy_verified_renewal",
+          platformTransactionId: input.reference,
+          platformSubscriptionId: input.subscriptionCode,
+          providerTransactionId: payment.providerTransactionId,
+          providerVerifiedAt: new Date(),
+          recurringReadiness: "ready",
+          metadata: {
+            settlementType: "admin_legacy_renewal_settled",
+            settlementOutcome: classification,
+            identityId: input.identityId,
+            subscriptionCode: input.subscriptionCode,
+            customerCode: input.customerCode,
+            planCode: input.planCode,
+            providerMutation: "none",
+          },
+          description: "Verified legacy Paystack renewal settlement",
+        }).onConflictDoNothing().returning({ id: paymentTransactions.id });
+        if (inserted.length === 1) return "claimed" as const;
+        const [existing] = await database.select({
+          userId: paymentTransactions.userId,
+          subscriptionId: paymentTransactions.subscriptionId,
+        }).from(paymentTransactions).where(and(
+          eq(paymentTransactions.platform, "paystack"),
+          eq(paymentTransactions.platformTransactionId, input.reference),
+        )).limit(1);
+        return existing?.userId === input.billingOwnerUserId
+          && existing.subscriptionId === input.localSubscriptionId
+          ? "already_applied" as const
+          : "conflict" as const;
+      },
+      applyPaymentAndEntitlement: async (input, assessment) => {
+        const payment = loadedSnapshot!.providerPayment!;
+        const nextBillingDate = new Date(assessment.preview.proposed.nextBillingDate!);
+        const values: Record<string, unknown> = {
+          totalPaid: sql`COALESCE(${userSubscriptions.totalPaid}, 0) + ${payment.amount}`,
+          nextBillingDate,
+          updatedAt: new Date(),
+        };
+        if (assessment.preview.proposed.lastPaymentDate !== assessment.preview.current.lastPaymentDate) {
+          values.lastPaymentDate = new Date(payment.paidAt);
+          values.paystackReference = input.reference;
+        }
+        await database.update(userSubscriptions).set(values).where(and(
+          eq(userSubscriptions.id, input.localSubscriptionId),
+          eq(userSubscriptions.userId, input.billingOwnerUserId),
+        ));
+        await database.update(users).set({
+          subscriptionExpiresAt: nextBillingDate,
+          updatedAt: new Date(),
+        }).where(eq(users.id, input.billingOwnerUserId));
+      },
+      applyPaymentForPreviouslyGrantedEntitlement: async (input, assessment) => {
+        const payment = loadedSnapshot!.providerPayment!;
+        const values: Record<string, unknown> = {
+          totalPaid: sql`COALESCE(${userSubscriptions.totalPaid}, 0) + ${payment.amount}`,
+          updatedAt: new Date(),
+        };
+        if (assessment.preview.proposed.lastPaymentDate !== assessment.preview.current.lastPaymentDate) {
+          values.lastPaymentDate = new Date(payment.paidAt);
+          values.paystackReference = input.reference;
+        }
+        await database.update(userSubscriptions).set(values).where(and(
+          eq(userSubscriptions.id, input.localSubscriptionId),
+          eq(userSubscriptions.userId, input.billingOwnerUserId),
+        ));
+      },
+      recordAuditEvent: async (event) => {
+        await database.insert(billingEvents).values({
+          userId: event.billingOwnerUserId,
+          eventType: event.eventType,
+          eventData: event,
+          processed: true,
+        });
+      },
+    });
+    return service;
+  }
+
+  async previewLegacyPaystackRenewalSettlement(input: LegacyRenewalSettlementInput) {
+    await this.requirePaystackBillingSchema();
+    const assessment = await this.legacyRenewalSettlementService(db).preview(input);
+    const confirmationFingerprint = legacyRenewalSettlementFingerprint(input, assessment);
+    return { ...assessment, confirmationFingerprint, providerMutation: "none" as const };
+  }
+
+  async executeLegacyPaystackRenewalSettlement(
+    input: LegacyRenewalSettlementInput,
+    adminUserId: number,
+    previewFingerprint: string,
+  ) {
+    await this.requirePaystackBillingSchema();
+    return db.transaction(async (tx) => ({
+      ...await this.legacyRenewalSettlementService(tx).execute(input, adminUserId, previewFingerprint),
+      providerMutation: "none" as const,
+    }));
   }
 
   /**

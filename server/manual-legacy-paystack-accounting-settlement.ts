@@ -63,6 +63,7 @@ export interface ManualLegacyPaystackAccountingSnapshot {
     customerCode: string | null;
     planCode: string | null;
     status: string;
+    nextPaymentDate?: string | null;
   } | null;
   providerInspection?: {
     available: boolean;

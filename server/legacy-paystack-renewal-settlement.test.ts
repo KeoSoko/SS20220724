@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   buildStructuredCompensationEvent,
   classifyLegacyRenewalSettlement,
   createLegacyRenewalSettlementService,
+  legacyRenewalSettlementFingerprint,
   type LegacyRenewalSettlementInput,
   type LegacyRenewalSettlementRepository,
   type LegacyRenewalSettlementSnapshot,
@@ -347,6 +349,20 @@ describe("legacy renewal settlement classifier", () => {
     expect(state.localSubscription!.totalPaid).toBe(9_800);
   });
 
+  it("rejects execution when the locked assessment no longer matches the confirmed preview", async () => {
+    const { service, state, calls } = setup();
+    const preview = await service.preview(input);
+    state.localSubscription!.nextBillingDate = "2026-08-28T17:03:56.679Z";
+
+    await expect(service.execute(
+      input,
+      36,
+      legacyRenewalSettlementFingerprint(input, preview),
+    )).resolves.toMatchObject({ outcome: "preview_changed" });
+    expect(calls.paymentInserts).toBe(0);
+    expect(calls.entitlementWrites).toBe(0);
+  });
+
   it("cannot double entitlement when normal settlement races the repair", async () => {
     const { service, runNormalSettlement, state, calls } = setup();
 
@@ -441,5 +457,23 @@ describe("legacy renewal settlement classifier", () => {
         executionPermitted: false,
       },
     });
+  });
+
+  it("wires an admin-only preview and confirmed execute route for the classifier", () => {
+    const source = readFileSync(new URL("./admin-routes.ts", import.meta.url), "utf8");
+    expect(source).toMatch(/paystack-legacy-renewal-settlement\/preview", requireAdmin/);
+    expect(source).toMatch(/paystack-legacy-renewal-settlement\/execute", requireAdmin/);
+    expect(source).toContain("Explicit confirmation of the exact preview is required");
+  });
+
+  it("keeps the executable adapter on lock 36 with unique-reference claiming and no provider mutation", () => {
+    const source = readFileSync(new URL("./billing-service.ts", import.meta.url), "utf8");
+    const start = source.indexOf("private legacyRenewalSettlementService");
+    const end = source.indexOf("\n  /**", source.indexOf("async executeLegacyPaystackRenewalSettlement", start));
+    const adapter = source.slice(start, end);
+    expect(adapter).toContain("pg_advisory_xact_lock(${billingOwnerUserId}, 36)");
+    expect(adapter).toContain("onConflictDoNothing");
+    expect(adapter).toContain("subscriptionExpiresAt: nextBillingDate");
+    expect(adapter).not.toMatch(/subscription\.(disable|create|enable)|transaction\.charge/);
   });
 });

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export type LegacyRenewalSettlementAppliedOutcome =
   | "payment_and_entitlement_applied"
   | "payment_applied_entitlement_already_granted";
@@ -172,6 +174,17 @@ export type LegacyRenewalSettlementAssessment =
       reason: LegacyRenewalSettlementReviewReason;
       preview: LegacyRenewalSettlementPreview;
     };
+
+export type LegacyRenewalSettlementExecutionResult =
+  | LegacyRenewalSettlementAssessment
+  | { outcome: "preview_changed"; preview: LegacyRenewalSettlementPreview };
+
+export function legacyRenewalSettlementFingerprint(
+  input: LegacyRenewalSettlementInput,
+  assessment: LegacyRenewalSettlementAssessment,
+): string {
+  return createHash("sha256").update(JSON.stringify({ input, assessment })).digest("hex");
+}
 
 export interface LegacyRenewalSettlementAuditEvent {
   eventType: "admin_legacy_renewal_settled";
@@ -469,9 +482,14 @@ export function createLegacyRenewalSettlementService(
     async execute(
       input: LegacyRenewalSettlementInput,
       adminUserId: number,
-    ): Promise<LegacyRenewalSettlementAssessment> {
+      previewFingerprint?: string,
+    ): Promise<LegacyRenewalSettlementExecutionResult> {
       return repository.runAtomicallyWithBillingOwnerLock(input.billingOwnerUserId, async () => {
         const assessment = classifyLegacyRenewalSettlement(input, await repository.loadSnapshot(input));
+        if (previewFingerprint
+          && legacyRenewalSettlementFingerprint(input, assessment) !== previewFingerprint) {
+          return { outcome: "preview_changed", preview: assessment.preview };
+        }
         if (assessment.outcome === "manual_review_required"
           || assessment.outcome === "already_applied") {
           return assessment;

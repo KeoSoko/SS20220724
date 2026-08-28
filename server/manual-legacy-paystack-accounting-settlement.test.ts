@@ -348,9 +348,8 @@ describe("manual legacy Paystack accounting settlement", () => {
 
   it("implements the adapter with lock 36 and no entitlement or Paystack mutation write", () => {
     const source = readFileSync(new URL("./billing-service.ts", import.meta.url), "utf8");
-    const start = source.indexOf("private manualLegacyPaystackAccountingService");
-    const nextMethod = source.indexOf("private async recordPaystackSubscriptionIdentityInTransaction", start);
-    const end = source.lastIndexOf("  /**", nextMethod);
+    const start = source.indexOf("private manualLegacyPaystackAccountingRepository");
+    const end = source.indexOf("private manualLegacyPaystackAccountingService", start);
     const adapter = source.slice(start, end);
     const financialStart = adapter.indexOf("applyFinancialAccounting:");
     const financialEnd = adapter.indexOf("recordAuditEvent:", financialStart);
@@ -366,9 +365,8 @@ describe("manual legacy Paystack accounting settlement", () => {
 
   it("uses an explicit production-compatible subscription projection for provider inspection", () => {
     const source = readFileSync(new URL("./billing-service.ts", import.meta.url), "utf8");
-    const start = source.indexOf("private manualLegacyPaystackAccountingService");
-    const nextMethod = source.indexOf("private async recordPaystackSubscriptionIdentityInTransaction", start);
-    const end = source.lastIndexOf("  /**", nextMethod);
+    const start = source.indexOf("private manualLegacyPaystackAccountingRepository");
+    const end = source.indexOf("private manualLegacyPaystackAccountingService", start);
     const adapter = source.slice(start, end);
     const selectedSubscription = adapter.slice(
       adapter.indexOf("database.select({", adapter.indexOf("subscriptionRows")),

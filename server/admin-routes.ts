@@ -100,6 +100,8 @@ function parseManualLegacyPaystackAccountingInput(req: Request) {
   };
 }
 
+const parseLegacyPaystackRenewalSettlementInput = parseManualLegacyPaystackAccountingInput;
+
 export function registerAdminRoutes(app: Express) {
   
   // ========================================
@@ -955,6 +957,39 @@ export function registerAdminRoutes(app: Express) {
     } catch (error: any) {
       log(`Error executing manual Paystack accounting settlement: ${error.message}`, "admin");
       return res.status(500).json({ error: "Failed to execute manual accounting settlement" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/paystack-legacy-renewal-settlement/preview", requireAdmin, async (req, res) => {
+    const input = parseLegacyPaystackRenewalSettlementInput(req);
+    if (!input) return res.status(400).json({ error: "Invalid legacy renewal settlement input" });
+    try {
+      return res.json(await billingService.previewLegacyPaystackRenewalSettlement(input));
+    } catch (error: any) {
+      log(`Error previewing legacy Paystack renewal settlement: ${error.message}`, "admin");
+      return res.status(500).json({ error: "Failed to preview legacy renewal settlement" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/paystack-legacy-renewal-settlement/execute", requireAdmin, async (req, res) => {
+    const input = parseLegacyPaystackRenewalSettlementInput(req);
+    if (!input) return res.status(400).json({ error: "Invalid legacy renewal settlement input" });
+    if (req.body?.confirmed !== true || typeof req.body?.previewFingerprint !== "string") {
+      return res.status(400).json({ error: "Explicit confirmation of the exact preview is required" });
+    }
+    try {
+      const result = await billingService.executeLegacyPaystackRenewalSettlement(
+        input,
+        req.user!.id,
+        req.body.previewFingerprint,
+      );
+      if (result.outcome === "manual_review_required" || result.outcome === "preview_changed") {
+        return res.status(409).json(result);
+      }
+      return res.json(result);
+    } catch (error: any) {
+      log(`Error executing legacy Paystack renewal settlement: ${error.message}`, "admin");
+      return res.status(500).json({ error: "Failed to execute legacy renewal settlement" });
     }
   });
 

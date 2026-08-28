@@ -1469,7 +1469,35 @@ export class DatabaseStorage implements IStorage {
   async getUserSubscription(userId: number): Promise<UserSubscription | null> {
     try {
       const result = await db
-        .select()
+        .select({
+          id: userSubscriptions.id,
+          userId: userSubscriptions.userId,
+          planId: userSubscriptions.planId,
+          status: userSubscriptions.status,
+          trialStartDate: userSubscriptions.trialStartDate,
+          trialEndDate: userSubscriptions.trialEndDate,
+          trialRestartedAt: userSubscriptions.trialRestartedAt,
+          subscriptionStartDate: userSubscriptions.subscriptionStartDate,
+          nextBillingDate: userSubscriptions.nextBillingDate,
+          cancelledAt: userSubscriptions.cancelledAt,
+          // Production predates the cancellation foundation migration. Keep the
+          // generic customer access read compatible until that additive column
+          // is applied; cancellation-specific code uses guarded reads/writes.
+          cancellationRequestedAt: sql<Date | null>`NULL`,
+          googlePlayPurchaseToken: userSubscriptions.googlePlayPurchaseToken,
+          googlePlayOrderId: userSubscriptions.googlePlayOrderId,
+          googlePlaySubscriptionId: userSubscriptions.googlePlaySubscriptionId,
+          paystackReference: userSubscriptions.paystackReference,
+          paystackCustomerCode: userSubscriptions.paystackCustomerCode,
+          authorizationCode: userSubscriptions.authorizationCode,
+          appleReceiptData: userSubscriptions.appleReceiptData,
+          appleTransactionId: userSubscriptions.appleTransactionId,
+          appleOriginalTransactionId: userSubscriptions.appleOriginalTransactionId,
+          totalPaid: userSubscriptions.totalPaid,
+          lastPaymentDate: userSubscriptions.lastPaymentDate,
+          createdAt: userSubscriptions.createdAt,
+          updatedAt: userSubscriptions.updatedAt,
+        })
         .from(userSubscriptions)
         .where(eq(userSubscriptions.userId, userId))
         .orderBy(desc(userSubscriptions.createdAt))

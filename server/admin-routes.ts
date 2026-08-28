@@ -63,6 +63,43 @@ function parseManualPaystackIdentityRepairInput(req: Request) {
   };
 }
 
+function parseManualLegacyPaystackAccountingInput(req: Request) {
+  const billingOwnerUserId = Number.parseInt(req.params.userId, 10);
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const allowedFields = new Set([
+    "billingOwnerUserId",
+    "localSubscriptionId",
+    "identityId",
+    "reference",
+    "subscriptionCode",
+    "customerCode",
+    "planCode",
+    "confirmed",
+    "previewFingerprint",
+  ]);
+  if (!Number.isInteger(billingOwnerUserId)
+    || billingOwnerUserId <= 0
+    || Object.keys(body).some((key) => !allowedFields.has(key))
+    || (body.billingOwnerUserId !== undefined && body.billingOwnerUserId !== billingOwnerUserId)
+    || !Number.isInteger(body.localSubscriptionId)
+    || !Number.isInteger(body.identityId)
+    || typeof body.reference !== "string"
+    || typeof body.subscriptionCode !== "string"
+    || typeof body.customerCode !== "string"
+    || typeof body.planCode !== "string") {
+    return null;
+  }
+  return {
+    billingOwnerUserId,
+    localSubscriptionId: body.localSubscriptionId,
+    identityId: body.identityId,
+    reference: body.reference.trim(),
+    subscriptionCode: body.subscriptionCode.trim(),
+    customerCode: body.customerCode.trim(),
+    planCode: body.planCode.trim(),
+  };
+}
+
 export function registerAdminRoutes(app: Express) {
   
   // ========================================
@@ -884,6 +921,40 @@ export function registerAdminRoutes(app: Express) {
     } catch (error: any) {
       log(`Error executing manual Paystack identity repair: ${error.message}`, "admin");
       return res.status(500).json({ error: "Failed to record manual identity repair" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/paystack-manual-accounting-settlement/preview", requireAdmin, async (req, res) => {
+    const input = parseManualLegacyPaystackAccountingInput(req);
+    if (!input) return res.status(400).json({ error: "Invalid manual accounting settlement input" });
+    try {
+      return res.json(await billingService.previewManualLegacyPaystackAccountingSettlement(input));
+    } catch (error: any) {
+      log(`Error previewing manual Paystack accounting settlement: ${error.message}`, "admin");
+      return res.status(500).json({ error: "Failed to preview manual accounting settlement" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/paystack-manual-accounting-settlement/execute", requireAdmin, async (req, res) => {
+    const input = parseManualLegacyPaystackAccountingInput(req);
+    if (!input) return res.status(400).json({ error: "Invalid manual accounting settlement input" });
+    if (req.body?.confirmed !== true || typeof req.body?.previewFingerprint !== "string") {
+      return res.status(400).json({ error: "Explicit confirmation of the exact preview is required" });
+    }
+    try {
+      const result = await billingService.executeManualLegacyPaystackAccountingSettlement(
+        input,
+        req.user!.id,
+        { confirmed: true, previewFingerprint: req.body.previewFingerprint },
+      );
+      if (result.outcome === "manual_review_required" || result.outcome === "preview_changed") {
+        return res.status(409).json(result);
+      }
+      if (result.outcome === "confirmation_required") return res.status(400).json(result);
+      return res.json(result);
+    } catch (error: any) {
+      log(`Error executing manual Paystack accounting settlement: ${error.message}`, "admin");
+      return res.status(500).json({ error: "Failed to execute manual accounting settlement" });
     }
   });
 

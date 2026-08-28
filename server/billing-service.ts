@@ -52,6 +52,11 @@ import {
   createManualPaystackIdentityRepairService,
   ManualPaystackIdentityRepairInput,
 } from "./manual-paystack-identity-repair";
+import {
+  createManualLegacyPaystackAccountingSettlementService,
+  MANUAL_ACCOUNTING_SETTLEMENT_EVENT,
+  type ManualLegacyPaystackAccountingInput,
+} from "./manual-legacy-paystack-accounting-settlement";
 
 export interface GooglePlayPurchase {
   purchaseToken: string;
@@ -2322,6 +2327,208 @@ export class BillingService {
     await this.requirePaystackBillingSchema();
     return db.transaction(async (tx) => (
       this.manualPaystackIdentityRepairService(tx).execute(input, adminUserId)
+    ));
+  }
+
+  private manualLegacyPaystackAccountingService(database: any) {
+    return createManualLegacyPaystackAccountingSettlementService({
+      loadSnapshot: async (input: ManualLegacyPaystackAccountingInput) => {
+        const [verification, providerInspection, ownerResolution] = await Promise.all([
+          this.verifyPaystackTransaction(input.reference),
+          this.loadPaystackSubscriptionCandidates(input.billingOwnerUserId),
+          resolveBillingOwner(input.billingOwnerUserId),
+        ]);
+        const [billingOwnerRows, subscriptionRows, entitlementRows, identities, identityRows, existingPayments] = await Promise.all([
+          database.select({ id: users.id }).from(users)
+            .where(eq(users.id, input.billingOwnerUserId)).limit(1),
+          database.select({
+            id: userSubscriptions.id,
+            userId: userSubscriptions.userId,
+            planId: userSubscriptions.planId,
+            status: userSubscriptions.status,
+            planCode: subscriptionPlans.paystackPlanCode,
+            planAmount: subscriptionPlans.price,
+            planCurrency: subscriptionPlans.currency,
+            paystackCustomerCode: userSubscriptions.paystackCustomerCode,
+            subscriptionStartDate: userSubscriptions.subscriptionStartDate,
+            nextBillingDate: userSubscriptions.nextBillingDate,
+            totalPaid: userSubscriptions.totalPaid,
+            lastPaymentDate: userSubscriptions.lastPaymentDate,
+            paystackReference: userSubscriptions.paystackReference,
+          }).from(userSubscriptions)
+            .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+            .where(eq(userSubscriptions.id, input.localSubscriptionId)).limit(1),
+          database.select({
+            subscriptionTier: users.subscriptionTier,
+            expiresAt: users.subscriptionExpiresAt,
+          }).from(users).where(eq(users.id, input.billingOwnerUserId)).limit(1),
+          database.select({ id: paystackSubscriptionIdentities.id })
+            .from(paystackSubscriptionIdentities).where(and(
+              eq(paystackSubscriptionIdentities.userId, input.billingOwnerUserId),
+              eq(paystackSubscriptionIdentities.status, "active"),
+            )),
+          database.select({
+            id: paystackSubscriptionIdentities.id,
+            userId: paystackSubscriptionIdentities.userId,
+            subscriptionCode: paystackSubscriptionIdentities.subscriptionCode,
+            customerCode: paystackSubscriptionIdentities.customerCode,
+            planCode: paystackSubscriptionIdentities.planCode,
+            status: paystackSubscriptionIdentities.status,
+          }).from(paystackSubscriptionIdentities)
+            .where(eq(paystackSubscriptionIdentities.id, input.identityId)).limit(1),
+          database.select({
+            userId: paymentTransactions.userId,
+            subscriptionId: paymentTransactions.subscriptionId,
+            reference: paymentTransactions.platformTransactionId,
+            providerTransactionId: paymentTransactions.providerTransactionId,
+          }).from(paymentTransactions).where(and(
+            eq(paymentTransactions.platform, "paystack"),
+            eq(paymentTransactions.platformTransactionId, input.reference),
+          )).limit(1),
+        ]);
+
+        const billingOwner = billingOwnerRows[0] ?? null;
+        const localSubscription = subscriptionRows[0] ?? null;
+        const entitlement = entitlementRows[0] ?? { subscriptionTier: null, expiresAt: null };
+        const identity = identityRows[0] ?? null;
+        const transaction = verification.valid ? verification.subscription : null;
+        const providerCandidate = providerInspection.available
+          ? providerInspection.candidates.find((candidate) => candidate.subscriptionCode === input.subscriptionCode) ?? null
+          : null;
+        const iso = (value: unknown) => {
+          const parsed = parsePaystackDate(value);
+          return parsed?.toISOString() ?? null;
+        };
+
+        return {
+          billingOwner: billingOwner ? {
+            id: billingOwner.id,
+            isCanonicalBillingOwner: ownerResolution.state === "resolved"
+              && ownerResolution.billingOwnerUserId === input.billingOwnerUserId,
+          } : null,
+          localSubscription: localSubscription ? {
+            ...localSubscription,
+            planAmount: localSubscription.planAmount ?? 0,
+            planCurrency: localSubscription.planCurrency ?? "",
+            totalPaid: localSubscription.totalPaid ?? 0,
+            subscriptionStartDate: localSubscription.subscriptionStartDate?.toISOString() ?? null,
+            nextBillingDate: localSubscription.nextBillingDate?.toISOString() ?? null,
+            lastPaymentDate: localSubscription.lastPaymentDate?.toISOString() ?? null,
+          } : null,
+          entitlement: {
+            subscriptionTier: entitlement.subscriptionTier,
+            expiresAt: entitlement.expiresAt?.toISOString() ?? null,
+          },
+          identity,
+          activeIdentityCount: identities.length,
+          providerPayment: transaction ? {
+            valid: true,
+            status: String(transaction.status ?? "").toLowerCase(),
+            reference: String(transaction.reference ?? ""),
+            providerTransactionId: transaction.id === undefined || transaction.id === null
+              ? null : String(transaction.id),
+            customerCode: extractPaystackCustomerCode(transaction),
+            subscriptionCode: extractPaystackSubscriptionCode(transaction),
+            planCode: extractPaystackPlanCode(transaction),
+            amount: Number(transaction.amount),
+            currency: String(transaction.currency ?? ""),
+            paidAt: iso(transaction.paid_at ?? transaction.paidAt ?? transaction.created_at) ?? "",
+          } : null,
+          providerSubscription: providerCandidate ? {
+            valid: !providerCandidate.providerLookupFailed,
+            subscriptionCode: providerCandidate.subscriptionCode,
+            customerCode: providerCandidate.customerCode,
+            planCode: providerCandidate.planCode,
+            status: providerCandidate.status,
+          } : null,
+          existingPayment: existingPayments[0] ? {
+            ...existingPayments[0],
+            subscriptionId: existingPayments[0].subscriptionId ?? 0,
+            reference: existingPayments[0].reference ?? "",
+            auditEventType: null,
+          } : null,
+        };
+      },
+      runAtomicallyWithBillingOwnerLock36: async (billingOwnerUserId, callback) => {
+        await database.execute(sql`SELECT pg_advisory_xact_lock(${billingOwnerUserId}, 36)`);
+        return callback();
+      },
+      claimReferenceAndInsertPayment: async (input, assessment) => {
+        const inserted = await database.insert(paymentTransactions).values({
+          userId: input.billingOwnerUserId,
+          subscriptionId: input.localSubscriptionId,
+          amount: assessment.providerPayment.amount,
+          currency: assessment.providerPayment.currency,
+          status: "completed",
+          platform: "paystack",
+          paymentMethod: "legacy_manual_accounting",
+          platformTransactionId: input.reference,
+          platformSubscriptionId: input.subscriptionCode,
+          providerTransactionId: assessment.providerPayment.providerTransactionId,
+          providerVerifiedAt: new Date(),
+          recurringReadiness: "ready",
+          metadata: {
+            settlementType: MANUAL_ACCOUNTING_SETTLEMENT_EVENT,
+            identityId: input.identityId,
+            subscriptionCode: input.subscriptionCode,
+            customerCode: input.customerCode,
+            planCode: input.planCode,
+            entitlementChange: "none",
+            providerMutation: "none",
+          },
+          description: "Legacy Paystack renewal recorded without adjudicating entitlement",
+        }).onConflictDoNothing().returning({ id: paymentTransactions.id });
+        if (inserted.length === 1) return "claimed" as const;
+        const [existing] = await database.select({
+          userId: paymentTransactions.userId,
+          subscriptionId: paymentTransactions.subscriptionId,
+        }).from(paymentTransactions).where(and(
+          eq(paymentTransactions.platform, "paystack"),
+          eq(paymentTransactions.platformTransactionId, input.reference),
+        )).limit(1);
+        return existing?.userId === input.billingOwnerUserId
+          && existing.subscriptionId === input.localSubscriptionId
+          ? "already_applied" as const
+          : "conflict" as const;
+      },
+      applyFinancialAccounting: async (input, assessment) => {
+        const values: Record<string, unknown> = {
+          totalPaid: sql`COALESCE(${userSubscriptions.totalPaid}, 0) + ${assessment.providerPayment.amount}`,
+        };
+        if (assessment.preview.financialChanges.lastPaymentDate.willChange) {
+          values.lastPaymentDate = new Date(assessment.providerPayment.paidAt);
+          values.paystackReference = input.reference;
+        }
+        await database.update(userSubscriptions).set(values)
+          .where(and(
+            eq(userSubscriptions.id, input.localSubscriptionId),
+            eq(userSubscriptions.userId, input.billingOwnerUserId),
+          ));
+      },
+      recordAuditEvent: async (event) => {
+        await database.insert(billingEvents).values({
+          userId: event.billingOwnerUserId,
+          eventType: event.eventType,
+          eventData: event,
+          processed: true,
+        });
+      },
+    });
+  }
+
+  async previewManualLegacyPaystackAccountingSettlement(input: ManualLegacyPaystackAccountingInput) {
+    await this.requirePaystackBillingSchema();
+    return this.manualLegacyPaystackAccountingService(db).preview(input);
+  }
+
+  async executeManualLegacyPaystackAccountingSettlement(
+    input: ManualLegacyPaystackAccountingInput,
+    adminUserId: number,
+    confirmation: { confirmed: boolean; previewFingerprint: string },
+  ) {
+    await this.requirePaystackBillingSchema();
+    return db.transaction(async (tx) => (
+      this.manualLegacyPaystackAccountingService(tx).execute(input, adminUserId, confirmation)
     ));
   }
 

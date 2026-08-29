@@ -17,6 +17,7 @@ describe("billing operations dashboard", () => {
     const app = readFileSync(new URL("../client/src/App.tsx", import.meta.url), "utf8");
     const page = readFileSync(new URL("../client/src/pages/billing-operations.tsx", import.meta.url), "utf8");
     expect(app).toContain('path="/command-center/billing"');
+    expect(app.indexOf('path="/command-center/billing"')).toBeLessThan(app.indexOf('path="/command-center"'));
     expect(page).toContain("Read-only safety mode");
     expect(page).toContain("View technical details");
     expect(page).not.toContain("apiRequest(");

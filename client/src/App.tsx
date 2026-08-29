@@ -78,8 +78,8 @@ function Router() {
       <ProtectedRoute path="/subscription" component={SubscriptionPage} />
       <ProtectedRoute path="/payment-history" component={PaymentHistory} />
       <AdminRoute path="/admin/email-tracking" component={EmailTrackingPage} />
-      <AdminRoute path="/command-center" component={CommandCenter} />
       <AdminRoute path="/command-center/billing" component={BillingOperations} />
+      <AdminRoute path="/command-center" component={CommandCenter} />
       <ProtectedRoute path="/business-hub" component={BusinessHubPage} />
       <ProtectedRoute path="/business-profile" component={BusinessProfilePage} />
       <ProtectedRoute path="/profit-loss" component={ProfitLossPage} />

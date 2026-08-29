@@ -5,12 +5,14 @@ import {
   users, 
   receipts, 
   userSubscriptions, 
+  subscriptionPlans,
+  paystackSubscriptionIdentities,
   billingEvents, 
   paymentTransactions,
   emailEvents,
   inboundEmailLogs
 } from "@shared/schema";
-import { and, eq, gte, lt, lte, sql, isNull, isNotNull, desc, or, ilike, count } from "drizzle-orm";
+import { and, eq, gte, lt, lte, sql, isNull, isNotNull, desc, or, ilike, count, inArray } from "drizzle-orm";
 import { log } from "./vite";
 import { billingService } from "./billing-service";
 import { emailService } from "./email-service";
@@ -1623,6 +1625,138 @@ Respond ONLY with valid JSON.`;
     } catch (error: any) {
       log(`Error in /api/admin/command-center/payment-health: ${error.message}`, 'admin');
       res.status(500).json({ error: "Failed to get payment health data" });
+    }
+  });
+
+  // Read-only operational queue. No action or mutation is exposed here.
+  app.get("/api/admin/command-center/billing-operations", requireAdmin, async (_req, res) => {
+    try {
+      const activeAccounts = await db.select({
+        userId: users.id,
+        username: users.username,
+        email: users.email,
+        subscriptionId: userSubscriptions.id,
+        status: userSubscriptions.status,
+        nextBillingDate: userSubscriptions.nextBillingDate,
+        entitlementExpiresAt: users.subscriptionExpiresAt,
+        planName: subscriptionPlans.displayName,
+        identityId: paystackSubscriptionIdentities.id,
+        subscriptionCode: paystackSubscriptionIdentities.subscriptionCode,
+        customerCode: paystackSubscriptionIdentities.customerCode,
+        planCode: paystackSubscriptionIdentities.planCode,
+      }).from(userSubscriptions)
+        .innerJoin(users, eq(userSubscriptions.userId, users.id))
+        .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+        .leftJoin(paystackSubscriptionIdentities, and(
+          eq(paystackSubscriptionIdentities.userId, userSubscriptions.userId),
+          eq(paystackSubscriptionIdentities.status, "active"),
+        ))
+        .where(inArray(userSubscriptions.status, ["active", "paused"]));
+
+      const operationalEventTypes = [
+        "legacy_renewal_shadow_observed",
+        "paystack_superseded_subscription_review_required",
+        "payment_failed",
+        "renewal_reconciliation_unresolved",
+        "paystack_successful_payment_requires_review",
+        "paystack_manual_identity_reconciled",
+        "admin_legacy_renewal_settled",
+        "manual_accounting_settlement_entitlement_not_adjudicated",
+      ];
+      const events = await db.select({
+        id: billingEvents.id,
+        userId: billingEvents.userId,
+        eventType: billingEvents.eventType,
+        eventData: billingEvents.eventData,
+        processed: billingEvents.processed,
+        createdAt: billingEvents.createdAt,
+        username: users.username,
+        email: users.email,
+      }).from(billingEvents)
+        .leftJoin(users, eq(billingEvents.userId, users.id))
+        .where(inArray(billingEvents.eventType, operationalEventTypes))
+        .orderBy(desc(billingEvents.createdAt))
+        .limit(250);
+
+      const items: any[] = [];
+      const keys = new Set<string>();
+      const add = (item: any, key: string) => {
+        if (!keys.has(key)) { keys.add(key); items.push(item); }
+      };
+      const now = Date.now();
+      for (const account of activeAccounts) {
+        const base = {
+          userId: account.userId,
+          username: account.username,
+          email: account.email,
+          planName: account.planName,
+          nextBillingDate: account.nextBillingDate,
+          entitlementExpiresAt: account.entitlementExpiresAt,
+          subscriptionId: account.subscriptionId,
+          identityId: account.identityId,
+          subscriptionCode: account.subscriptionCode,
+          customerCode: account.customerCode,
+          planCode: account.planCode,
+        };
+        if (!account.identityId) {
+          add({ ...base, queue: "identity", severity: "high", title: "Trusted Paystack identity missing", recommendedAction: "Run verified identity preview" }, `identity:${account.userId}`);
+        }
+        if (account.nextBillingDate && new Date(account.nextBillingDate).getTime() < now) {
+          add({ ...base, queue: "urgent", severity: "critical", title: "Paid access boundary is overdue", recommendedAction: "Review Paystack renewal evidence" }, `overdue:${account.userId}`);
+        }
+      }
+
+      const repaired: any[] = [];
+      for (const event of events) {
+        const data = (event.eventData ?? {}) as any;
+        const base = {
+          eventId: event.id,
+          userId: event.userId,
+          username: event.username ?? "Unknown user",
+          email: event.email,
+          createdAt: event.createdAt,
+          reference: data.paymentReference ?? data.transactionReference ?? data.reference ?? null,
+          subscriptionCode: data.subscriptionCode ?? data.authoritativeSubscriptionCode ?? null,
+          customerCode: data.customerCode ?? null,
+          planCode: data.planCode ?? data.authoritativePlanCode ?? null,
+        };
+        if (["paystack_manual_identity_reconciled", "admin_legacy_renewal_settled", "manual_accounting_settlement_entitlement_not_adjudicated"].includes(event.eventType)) {
+          repaired.push({ ...base, eventType: event.eventType });
+          continue;
+        }
+        if (event.eventType === "paystack_superseded_subscription_review_required") {
+          add({ ...base, queue: "superseded", severity: "high", title: "Old subscription may still charge", recommendedAction: "Verify and retire only the superseded subscription", details: data }, `superseded:${data.supersededSubscriptionCode}:${data.authoritativeSubscriptionCode}`);
+        } else if (event.eventType === "legacy_renewal_shadow_observed") {
+          const ready = data.classification === "payment_and_entitlement_applied";
+          add({ ...base, queue: ready ? "urgent" : "review", severity: ready ? "critical" : "high", title: ready ? "Successful renewal detected; access not yet applied" : "Renewal requires manual review", recommendedAction: ready ? "Review strict settlement preview" : "Inspect conflicting evidence", details: data }, `shadow:${event.userId}:${base.reference}`);
+        } else if (event.eventType === "payment_failed") {
+          add({ ...base, queue: "failed", severity: "medium", title: "Paystack payment failed", recommendedAction: "Customer payment action required", details: data }, `failed:${event.userId}:${base.reference ?? event.id}`);
+        } else {
+          add({ ...base, queue: "review", severity: "high", title: "Billing evidence needs review", recommendedAction: "Inspect billing timeline", details: data }, `review:${event.userId}:${base.reference ?? event.id}`);
+        }
+      }
+
+      const counts = items.reduce((result: Record<string, number>, item) => {
+        result[item.queue] = (result[item.queue] ?? 0) + 1;
+        return result;
+      }, {});
+      res.json({
+        generatedAt: new Date().toISOString(),
+        summary: {
+          urgent: counts.urgent ?? 0,
+          identity: counts.identity ?? 0,
+          superseded: counts.superseded ?? 0,
+          failed: counts.failed ?? 0,
+          review: counts.review ?? 0,
+          activeAccounts: activeAccounts.length,
+        },
+        items,
+        recentlyRepaired: repaired.slice(0, 25),
+        capabilities: { readOnly: true, settlement: false, cancellation: false, providerMutation: "none" },
+      });
+    } catch (error: any) {
+      log(`Error in billing operations dashboard: ${error.message}`, "admin");
+      res.status(500).json({ error: "Failed to load billing operations" });
     }
   });
 

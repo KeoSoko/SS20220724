@@ -47,6 +47,7 @@ import {
 import { formatDistanceToNow, format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 
 interface SystemHealth {
   totalUsers: number;
@@ -720,6 +721,12 @@ export default function CommandCenter() {
           <p className="text-muted-foreground">Operational dashboard for user diagnosis and recovery</p>
         </div>
         <div className="flex gap-2">
+          <Link href="/command-center/billing">
+            <Button className="bg-blue-700 hover:bg-blue-800">
+              <CreditCard className="h-4 w-4 mr-2" />
+              Billing Operations
+            </Button>
+          </Link>
           <Button
             variant="outline"
             onClick={() => repairWorkspaceMutation.mutate()}

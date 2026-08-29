@@ -65,6 +65,7 @@ import {
   type LegacyRenewalSettlementSnapshot,
 } from "./legacy-paystack-renewal-settlement";
 import { buildLegacyRenewalShadowObservation } from "./legacy-renewal-shadow";
+import { classifySupersededPaystackSubscription } from "./paystack-superseded-subscription";
 
 export interface GooglePlayPurchase {
   purchaseToken: string;
@@ -2835,6 +2836,30 @@ export class BillingService {
         // identity that appeared while its provider reads were in flight.
         identityStatus = "unresolved";
       } else if (options.supersedeExisting) {
+        const supersessionReview = classifySupersededPaystackSubscription(
+          userId,
+          activeIdentity,
+          { userId, subscriptionCode, customerCode, planCode },
+        );
+        if (supersessionReview) {
+          const [existingReview] = await tx.select({ id: billingEvents.id })
+            .from(billingEvents)
+            .where(and(
+              eq(billingEvents.userId, userId),
+              eq(billingEvents.eventType, "paystack_superseded_subscription_review_required"),
+              sql`${billingEvents.eventData}->>'supersededSubscriptionCode' = ${activeIdentity.subscriptionCode}`,
+              sql`${billingEvents.eventData}->>'authoritativeSubscriptionCode' = ${subscriptionCode}`,
+            ))
+            .limit(1);
+          if (!existingReview) {
+            await tx.insert(billingEvents).values({
+              userId,
+              eventType: "paystack_superseded_subscription_review_required",
+              eventData: supersessionReview,
+              processed: false,
+            });
+          }
+        }
         await tx
           .update(paystackSubscriptionIdentities)
           .set({ status: "retired", retiredAt: now, updatedAt: now })
@@ -4433,7 +4458,7 @@ export class BillingService {
   private async recordLegacyRenewalShadowObservationOnce(
     userId: number,
     paymentReference: string,
-    eventData: Record<string, unknown>,
+    eventData: object,
   ): Promise<void> {
     await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
@@ -4449,7 +4474,7 @@ export class BillingService {
         await tx.insert(billingEvents).values({
           userId,
           eventType: "legacy_renewal_shadow_observed",
-          eventData,
+          eventData: { ...eventData },
           processed: true,
         });
       }

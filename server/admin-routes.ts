@@ -1927,10 +1927,10 @@ Respond ONLY with valid JSON.`;
       if (isNaN(targetUserId)) return res.status(400).json({ error: "Invalid user ID" });
       const user = await storage.getUser(targetUserId);
       if (!user) return res.status(404).json({ error: "User not found" });
-      const pdf = await exportService.exportReceiptsToPDF(targetUserId, { includeSummary: true, groupBy: 'category' });
+      const result = await exportService.exportReceiptsToPDF(targetUserId, { includeSummary: true, groupBy: 'category' });
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="receipts-${user.username}-${Date.now()}.pdf"`);
-      res.send(pdf);
+      res.send(result.pdf);
     } catch (error: any) {
       log(`Error in admin export receipts PDF: ${error.message}`, 'admin');
       res.status(500).json({ error: "Failed to export receipts PDF" });

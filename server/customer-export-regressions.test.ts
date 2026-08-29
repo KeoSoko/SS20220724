@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const receiptsPage = readFileSync(new URL("../client/src/pages/receipts-page.tsx", import.meta.url), "utf8");
 const exportsPage = readFileSync(new URL("../client/src/pages/exports-page.tsx", import.meta.url), "utf8");
 const exportService = readFileSync(new URL("./export-service.ts", import.meta.url), "utf8");
+const routes = readFileSync(new URL("./routes.ts", import.meta.url), "utf8");
 
 describe("customer export discoverability", () => {
   it("provides an active receipts-page action that carries applicable filter context to Excel reports", () => {
@@ -33,5 +34,23 @@ describe("image-heavy PDF reliability contract", () => {
     expect(exportService).toContain("fetchAzureImageWithTimeout(r.blobName as string, 5000)");
     expect(exportService).toContain("Receipt image could not be loaded");
     expect(exportService).toContain("Receipt image not available");
+  });
+
+  it("uses the bounded image fetch helper for single-receipt PDFs too", () => {
+    expect(exportService).toContain("fetchAzureImageWithTimeout(blobNameStr, 5000)");
+    expect(exportService).not.toContain("const response = await fetch(imageUrl);");
+  });
+
+  it("returns machine-readable partial export diagnostics without failing the download", () => {
+    expect(exportService).toContain("imagesUnavailable");
+    expect(routes).toContain("X-Export-Receipt-Count");
+    expect(routes).toContain("X-Export-Images-Unavailable");
+    expect(exportsPage).toContain("Some receipt images were unavailable");
+  });
+
+  it("logs both successful and failed PDF export outcomes", () => {
+    expect(exportService).toContain('outcome: "success"');
+    expect(exportService).toContain('outcome: "failed"');
+    expect(exportService).toContain('stage: "EXPORT_RECEIPTS_COMPLETED"');
   });
 });

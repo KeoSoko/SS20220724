@@ -15,6 +15,18 @@ import { isReceiptWithinExportDateRange } from "./export-date-range";
 
 const logger = createServerLogger("export-service");
 
+export interface ReceiptPdfExportSummary {
+  receiptCount: number;
+  imagesIncluded: number;
+  imagesUnavailable: number;
+  imageBudgetExceeded: boolean;
+}
+
+export interface ReceiptPdfExportResult {
+  pdf: Buffer;
+  summary: ReceiptPdfExportSummary;
+}
+
 function formatJohannesburgDate(date: Date): string {
   return new Intl.DateTimeFormat('en-ZA', {
     timeZone: 'Africa/Johannesburg',
@@ -296,9 +308,9 @@ export class ExportService {
     includeSummary?: boolean;
     includeImages?: boolean;
     groupBy?: 'category' | 'date';
-  } = {}): Promise<Buffer> {
+  } = {}): Promise<ReceiptPdfExportResult> {
+    const exportStartedAt = Date.now();
     try {
-      const exportStartedAt = Date.now();
       const receipts = await storage.getReceiptsByUser(userId, 10000);
       const user = await storage.getUser(userId);
       const dataLoadCompletedAt = Date.now();
@@ -438,6 +450,10 @@ export class ExportService {
         });
       }
 
+      let imagesIncluded = 0;
+      let imagesUnavailable = 0;
+      let imageBudgetExceeded = false;
+
       // Add individual receipts with images if requested
       if (options.includeImages) {
         const imagePhaseStartedAt = Date.now();
@@ -478,10 +494,9 @@ export class ExportService {
         const receiptsNeedingAzureFetch = filteredReceipts.filter(
           r => r.blobName && !r.imageData && !((r.blobUrl as string | null)?.startsWith('/uploads/'))
         );
-        let imagePhaseBudgetExceeded = false;
         for (let i = 0; i < receiptsNeedingAzureFetch.length; i += IMAGE_BATCH_SIZE) {
           if (Date.now() - azurePrefetchStartedAt > IMAGE_PHASE_BUDGET_MS) {
-            imagePhaseBudgetExceeded = true;
+            imageBudgetExceeded = true;
             break;
           }
           const batch = receiptsNeedingAzureFetch.slice(i, i + IMAGE_BATCH_SIZE);
@@ -491,7 +506,7 @@ export class ExportService {
           }));
         }
         const azurePrefetchCompletedAt = Date.now();
-        if (imagePhaseBudgetExceeded) {
+        if (imageBudgetExceeded) {
           logger.warn(JSON.stringify({
             stage: "EXPORT_IMAGE_PHASE_BUDGET_EXCEEDED",
             userId,
@@ -578,8 +593,10 @@ export class ExportService {
               if (imageData) {
                 try {
                   doc.addImage(imageData, 'JPEG', 20, yPos, 120, 160);
+                  imagesIncluded += 1;
                   yPos += 165;
                 } catch (imgError) {
+                  imagesUnavailable += 1;
                   logger.error('Failed to add image to PDF:', imgError);
                   doc.setFontSize(10);
                   doc.text('Receipt image could not be loaded', 20, yPos);
@@ -602,6 +619,7 @@ export class ExportService {
                   doc.setTextColor(0, 0, 0);
                   yPos += 25;
                 } else {
+                  imagesUnavailable += 1;
                   doc.setFontSize(10);
                   doc.text('Receipt image not available', 20, yPos);
                   yPos += 15;
@@ -650,10 +668,18 @@ export class ExportService {
         this.addBrandedFooter(doc, i, totalPages, generatedDate);
       }
 
-      logger.info(JSON.stringify({
-        stage: "EXPORT_RECEIPTS_BY_DATE_RANGE",
-        userId,
+      const summary: ReceiptPdfExportSummary = {
         receiptCount: filteredReceipts.length,
+        imagesIncluded,
+        imagesUnavailable,
+        imageBudgetExceeded,
+      };
+
+      logger.info(JSON.stringify({
+        stage: "EXPORT_RECEIPTS_COMPLETED",
+        outcome: "success",
+        userId,
+        ...summary,
         startDate: options.startDate?.toISOString() || null,
         endDateExclusive: options.endDateExclusive?.toISOString() || null,
         category: options.category || null,
@@ -665,9 +691,20 @@ export class ExportService {
         timestamp: new Date().toISOString()
       }));
 
-      return Buffer.from(doc.output('arraybuffer'));
+      return {
+        pdf: Buffer.from(doc.output('arraybuffer')),
+        summary,
+      };
     } catch (error) {
-      logger.error('Failed to export receipts to PDF:', error);
+      logger.error(JSON.stringify({
+        stage: "EXPORT_RECEIPTS_COMPLETED",
+        outcome: "failed",
+        userId,
+        includeImages: options.includeImages || false,
+        durationMs: Date.now() - exportStartedAt,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
       throw new Error('Export failed');
     }
   }
@@ -806,19 +843,7 @@ export class ExportService {
           const isPdfBlob = blobNameStr.toLowerCase().endsWith('.pdf');
 
           if (!isPdfBlob) {
-            const imageUrl = await azureStorage.generateSasUrl(blobNameStr, 1);
-            if (imageUrl) {
-              try {
-                const response = await fetch(imageUrl);
-                if (response.ok) {
-                  const arrayBuffer = await response.arrayBuffer();
-                  const base64 = Buffer.from(arrayBuffer).toString('base64');
-                  imageData = `data:image/jpeg;base64,${base64}`;
-                }
-              } catch (fetchError) {
-                logger.error(`Failed to fetch Azure image: ${blobNameStr}`, fetchError);
-              }
-            }
+            imageData = await fetchAzureImageWithTimeout(blobNameStr, 5000);
           }
         }
 

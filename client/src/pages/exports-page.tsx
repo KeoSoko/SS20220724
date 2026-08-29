@@ -107,7 +107,7 @@ export default function ExportsPage() {
     return true;
   };
 
-  const fetchPdf = async (url: string): Promise<Blob | null> => {
+  const fetchPdf = async (url: string): Promise<{ blob: Blob; imagesUnavailable: number } | null> => {
     const token = localStorage.getItem('auth_token');
     if (!token) {
       toast({ title: "Authentication required", description: "Please log in again.", variant: "destructive" });
@@ -130,7 +130,19 @@ export default function ExportsPage() {
       const errorText = await response.text();
       throw new Error(`Request failed: ${response.status} - ${errorText}`);
     }
-    return response.blob();
+    const imagesUnavailable = Number.parseInt(response.headers.get('X-Export-Images-Unavailable') || '0', 10);
+    return {
+      blob: await response.blob(),
+      imagesUnavailable: Number.isFinite(imagesUnavailable) ? imagesUnavailable : 0,
+    };
+  };
+
+  const notifyUnavailableImages = (imagesUnavailable: number) => {
+    if (imagesUnavailable <= 0) return;
+    toast({
+      title: "Report created with placeholders",
+      description: `${imagesUnavailable} ${imagesUnavailable === 1 ? 'receipt image was' : 'receipt images were'} unavailable. The rest of the report was included.`,
+    });
   };
 
   const handlePreview = async (type: 'pdf' | 'tax-report') => {
@@ -141,8 +153,9 @@ export default function ExportsPage() {
 
     try {
       const url = buildPdfParams(type);
-      const blob = await fetchPdf(url);
-      if (!blob) return;
+      const result = await fetchPdf(url);
+      if (!result) return;
+      const { blob, imagesUnavailable } = result;
 
       if (prevBlobUrlRef.current) {
         URL.revokeObjectURL(prevBlobUrlRef.current);
@@ -154,6 +167,7 @@ export default function ExportsPage() {
       setPreviewUrl(blobUrl);
       setPreviewTitle(type === 'tax-report' ? `Tax Report ${new Date().getFullYear()}` : 'Receipts Report');
       setIsPreviewOpen(true);
+      notifyUnavailableImages(imagesUnavailable);
     } catch (error) {
       toast({
         title: "Preview failed",
@@ -261,8 +275,9 @@ export default function ExportsPage() {
         filename = type === 'tax-report' ? `tax-report-${dateRange}.pdf` : `receipts-${dateRange}.pdf`;
       }
 
-      const blob = await fetchPdf(url);
-      if (!blob) return;
+      const result = await fetchPdf(url);
+      if (!result) return;
+      const { blob, imagesUnavailable } = result;
 
       const link = document.createElement('a');
       const objUrl = window.URL.createObjectURL(blob);
@@ -273,7 +288,9 @@ export default function ExportsPage() {
 
       toast({
         title: "Export Successful",
-        description: `Your ${type.replace('-', ' ')} report has been downloaded.`,
+        description: imagesUnavailable > 0
+          ? `Your report downloaded. Some receipt images were unavailable (${imagesUnavailable}); placeholders were included.`
+          : `Your ${type.replace('-', ' ')} report has been downloaded.`,
       });
     } catch (error) {
       toast({

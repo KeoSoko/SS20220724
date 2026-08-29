@@ -3451,11 +3451,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           : undefined,
       };
       
-      const pdf = await exportService.exportReceiptsToPDF(getUserId(req), options);
+      const result = await exportService.exportReceiptsToPDF(getUserId(req), options);
       
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'attachment; filename="receipts.pdf"');
-      res.send(pdf);
+      res.setHeader('X-Export-Receipt-Count', result.summary.receiptCount.toString());
+      res.setHeader('X-Export-Images-Included', result.summary.imagesIncluded.toString());
+      res.setHeader('X-Export-Images-Unavailable', result.summary.imagesUnavailable.toString());
+      res.setHeader('X-Export-Image-Budget-Exceeded', result.summary.imageBudgetExceeded.toString());
+      res.send(result.pdf);
     } catch (error: any) {
       log(`Error exporting PDF: ${error.message}`, 'express');
       res.status(500).json({ error: "Export failed" });

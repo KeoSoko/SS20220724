@@ -1633,6 +1633,7 @@ Respond ONLY with valid JSON.`;
     try {
       const activeAccounts = await db.select({
         userId: users.id,
+        isAdmin: users.isAdmin,
         username: users.username,
         email: users.email,
         subscriptionId: userSubscriptions.id,
@@ -1672,9 +1673,13 @@ Respond ONLY with valid JSON.`;
         createdAt: billingEvents.createdAt,
         username: users.username,
         email: users.email,
+        userIsAdmin: users.isAdmin,
       }).from(billingEvents)
         .leftJoin(users, eq(billingEvents.userId, users.id))
-        .where(inArray(billingEvents.eventType, operationalEventTypes))
+        .where(and(
+          inArray(billingEvents.eventType, operationalEventTypes),
+          gte(billingEvents.createdAt, new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)),
+        ))
         .orderBy(desc(billingEvents.createdAt))
         .limit(250);
 
@@ -1685,6 +1690,7 @@ Respond ONLY with valid JSON.`;
       };
       const now = Date.now();
       for (const account of activeAccounts) {
+        if (account.isAdmin) continue;
         const base = {
           userId: account.userId,
           username: account.username,
@@ -1702,12 +1708,21 @@ Respond ONLY with valid JSON.`;
           add({ ...base, queue: "identity", severity: "high", title: "Trusted Paystack identity missing", recommendedAction: "Run verified identity preview" }, `identity:${account.userId}`);
         }
         if (account.nextBillingDate && new Date(account.nextBillingDate).getTime() < now) {
-          add({ ...base, queue: "urgent", severity: "critical", title: "Paid access boundary is overdue", recommendedAction: "Review Paystack renewal evidence" }, `overdue:${account.userId}`);
+          add({ ...base, queue: "review", severity: "medium", title: "Billing date overdue; payment status is not yet verified", recommendedAction: "Inspect provider evidence before changing access" }, `overdue:${account.userId}`);
         }
       }
 
       const repaired: any[] = [];
+      const resolvedReferences = new Set(events
+        .filter(event => ["admin_legacy_renewal_settled", "manual_accounting_settlement_entitlement_not_adjudicated"].includes(event.eventType))
+        .map(event => {
+          const data = (event.eventData ?? {}) as any;
+          const reference = data.paymentReference ?? data.transactionReference ?? data.reference ?? null;
+          return reference && event.userId ? `${event.userId}:${reference}` : null;
+        })
+        .filter((key): key is string => !!key));
       for (const event of events) {
+        if (event.userIsAdmin) continue;
         const data = (event.eventData ?? {}) as any;
         const base = {
           eventId: event.id,
@@ -1724,15 +1739,19 @@ Respond ONLY with valid JSON.`;
           repaired.push({ ...base, eventType: event.eventType });
           continue;
         }
+        if (base.reference && event.userId && resolvedReferences.has(`${event.userId}:${base.reference}`)) {
+          continue;
+        }
         if (event.eventType === "paystack_superseded_subscription_review_required") {
           add({ ...base, queue: "superseded", severity: "high", title: "Old subscription may still charge", recommendedAction: "Verify and retire only the superseded subscription", details: data }, `superseded:${data.supersededSubscriptionCode}:${data.authoritativeSubscriptionCode}`);
         } else if (event.eventType === "legacy_renewal_shadow_observed") {
           const ready = data.classification === "payment_and_entitlement_applied";
           add({ ...base, queue: ready ? "urgent" : "review", severity: ready ? "critical" : "high", title: ready ? "Successful renewal detected; access not yet applied" : "Renewal requires manual review", recommendedAction: ready ? "Review strict settlement preview" : "Inspect conflicting evidence", details: data }, `shadow:${event.userId}:${base.reference}`);
         } else if (event.eventType === "payment_failed") {
-          add({ ...base, queue: "failed", severity: "medium", title: "Paystack payment failed", recommendedAction: "Customer payment action required", details: data }, `failed:${event.userId}:${base.reference ?? event.id}`);
+          add({ ...base, queue: "failed", severity: "medium", title: "Paystack payment failed", recommendedAction: "Customer payment action required", details: data }, `failed:${event.userId}`);
         } else {
-          add({ ...base, queue: "review", severity: "high", title: "Billing evidence needs review", recommendedAction: "Inspect billing timeline", details: data }, `review:${event.userId}:${base.reference ?? event.id}`);
+          const reason = data.reason ?? data.error ?? "unspecified";
+          add({ ...base, queue: "review", severity: "high", title: "Billing evidence needs review", recommendedAction: "Inspect billing timeline", details: data }, `review:${event.userId}:${event.eventType}:${reason}`);
         }
       }
 

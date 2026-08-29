@@ -11,6 +11,12 @@ describe("billing operations dashboard", () => {
     expect(route).toContain("capabilities: { readOnly: true, settlement: false, cancellation: false");
     expect(route).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
     expect(route).not.toMatch(/subscription\.(disable|create|enable)|transaction\.charge/);
+    expect(route).toContain("if (account.isAdmin) continue");
+    expect(route).toContain("if (event.userIsAdmin) continue");
+    expect(route).toContain("resolvedReferences.has");
+    expect(route).toContain('queue: "review", severity: "medium", title: "Billing date overdue; payment status is not yet verified"');
+    expect(route).toContain('data.classification === "payment_and_entitlement_applied"');
+    expect(route).not.toContain('queue: "urgent", severity: "critical", title: "Paid access boundary is overdue"');
   });
 
   it("shows the dedicated admin page and keeps technical identities behind details", () => {

@@ -11,7 +11,7 @@ type Queue = "urgent" | "identity" | "superseded" | "failed" | "review";
 interface BillingItem { eventId?: number; userId: number; username: string; email: string | null; planName?: string | null; queue: Queue; severity: string; title: string; recommendedAction: string; nextBillingDate?: string | null; entitlementExpiresAt?: string | null; reference?: string | null; subscriptionCode?: string | null; customerCode?: string | null; planCode?: string | null; }
 interface BillingOperationsData { generatedAt: string; summary: Record<Queue, number> & { activeAccounts: number }; items: BillingItem[]; recentlyRepaired: Array<{ eventId: number; userId: number; username: string; email: string | null; eventType: string; createdAt: string; reference: string | null }>; capabilities: { readOnly: boolean; settlement: boolean; cancellation: boolean; providerMutation: string }; }
 
-const labels: Record<Queue, string> = { urgent: "Urgent paid renewals", identity: "Identity repair", superseded: "Old subscriptions", failed: "Payment failed", review: "Manual review" };
+const labels: Record<Queue, string> = { urgent: "Verified paid renewals", identity: "Identity repair", superseded: "Old subscriptions", failed: "Payment failed", review: "Needs investigation" };
 
 export default function BillingOperations() {
   const [queue, setQueue] = useState<Queue | "all">("all");

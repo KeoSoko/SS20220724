@@ -12,12 +12,13 @@ import {
   emailEvents,
   inboundEmailLogs
 } from "@shared/schema";
-import { and, eq, gte, lt, lte, sql, isNull, isNotNull, desc, or, ilike, count, inArray } from "drizzle-orm";
+import { and, eq, gt, gte, lt, lte, sql, isNull, isNotNull, desc, asc, or, ilike, count, inArray } from "drizzle-orm";
 import { log } from "./vite";
 import { billingService } from "./billing-service";
 import { emailService } from "./email-service";
 import { exportService } from "./export-service";
 import { classifyReceiptImageHealth } from "./receipt-image-health";
+import { azureStorage } from "./azure-storage";
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -1724,6 +1725,79 @@ Respond ONLY with valid JSON.`;
     } catch (error: any) {
       log(`Error in /api/admin/command-center/receipt-image-health: ${error.message}`, "admin");
       res.status(500).json({ error: "Failed to inspect receipt image health" });
+    }
+  });
+
+  // Explicitly triggered, bounded provider metadata scan. This performs Azure
+  // HEAD/getProperties requests only and never calls generateSasUrl or setAccessTier.
+  app.get("/api/admin/command-center/receipt-image-health/provider-scan", requireAdmin, async (req, res) => {
+    try {
+      const requestedLimit = Number.parseInt(String(req.query.limit ?? "50"), 10);
+      const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 50) : 50;
+      const requestedCursor = Number.parseInt(String(req.query.afterReceiptId ?? "0"), 10);
+      const afterReceiptId = Number.isInteger(requestedCursor) && requestedCursor > 0 ? requestedCursor : 0;
+      const durableReferencePredicate = and(
+        isNotNull(receipts.blobName),
+        sql<boolean>`length(trim(${receipts.blobName})) > 0`,
+      );
+
+      const [totalResult, rows] = await Promise.all([
+        db.select({ count: count() }).from(receipts).where(durableReferencePredicate),
+        db.select({
+          receiptId: receipts.id,
+          userId: receipts.userId,
+          username: users.username,
+          email: users.email,
+          storeName: receipts.storeName,
+          receiptDate: receipts.date,
+          blobName: receipts.blobName,
+        })
+          .from(receipts)
+          .innerJoin(users, eq(receipts.userId, users.id))
+          .where(and(durableReferencePredicate, gt(receipts.id, afterReceiptId)))
+          .orderBy(asc(receipts.id))
+          .limit(limit + 1),
+      ]);
+
+      const hasMore = rows.length > limit;
+      const batch = rows.slice(0, limit);
+      const inspected: Array<Record<string, unknown>> = [];
+      const concurrency = 10;
+      for (let index = 0; index < batch.length; index += concurrency) {
+        const chunk = batch.slice(index, index + concurrency);
+        inspected.push(...await Promise.all(chunk.map(async (row) => ({
+          receiptId: row.receiptId,
+          userId: row.userId,
+          username: row.username,
+          email: row.email,
+          storeName: row.storeName,
+          receiptDate: row.receiptDate,
+          blobName: row.blobName,
+          ...await azureStorage.inspectFileMetadata(row.blobName!, 5000),
+        }))));
+      }
+
+      const nextCursor = batch.length > 0 ? batch[batch.length - 1].receiptId : afterReceiptId;
+      res.json({
+        generatedAt: new Date().toISOString(),
+        totalProviderReferences: Number(totalResult[0]?.count ?? 0),
+        inspectedCount: inspected.length,
+        nextCursor,
+        done: !hasMore,
+        results: inspected,
+        capabilities: {
+          readOnly: true,
+          metadataOnly: true,
+          downloadsContent: false,
+          generatesSasUrl: false,
+          changesAccessTier: false,
+          initiatesRehydration: false,
+          writesDatabase: false,
+        },
+      });
+    } catch (error: any) {
+      log(`Error in receipt image provider scan: ${error.message}`, "admin");
+      res.status(500).json({ error: "Failed to inspect provider image metadata" });
     }
   });
 

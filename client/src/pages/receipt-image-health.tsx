@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { apiRequest } from "@/lib/queryClient";
 
 type Severity = "critical" | "high" | "medium";
 
@@ -44,6 +45,27 @@ interface ImageHealthData {
   };
 }
 
+type ProviderStatus = "available" | "archived" | "rehydrating" | "missing" | "inaccessible" | "temporarily_unavailable";
+interface ProviderInspectionItem {
+  receiptId: number;
+  userId: number;
+  username: string;
+  email: string | null;
+  storeName: string;
+  receiptDate: string;
+  blobName: string;
+  status: ProviderStatus;
+  accessTier: string | null;
+  archiveStatus: string | null;
+}
+interface ProviderScanBatch {
+  totalProviderReferences: number;
+  inspectedCount: number;
+  nextCursor: number;
+  done: boolean;
+  results: ProviderInspectionItem[];
+}
+
 const severityLabels: Record<Severity, string> = {
   critical: "Broken access likely",
   high: "Durability risk",
@@ -53,6 +75,13 @@ const severityLabels: Record<Severity, string> = {
 export default function ReceiptImageHealth() {
   const [severity, setSeverity] = useState<Severity | "all">("all");
   const [search, setSearch] = useState("");
+  const [providerCursor, setProviderCursor] = useState(0);
+  const [providerInspected, setProviderInspected] = useState(0);
+  const [providerTotal, setProviderTotal] = useState(0);
+  const [providerDone, setProviderDone] = useState(false);
+  const [providerScanning, setProviderScanning] = useState(false);
+  const [providerFindings, setProviderFindings] = useState<ProviderInspectionItem[]>([]);
+  const [providerError, setProviderError] = useState<string | null>(null);
   const { data, isLoading, isFetching, refetch } = useQuery<ImageHealthData>({
     queryKey: ["/api/admin/command-center/receipt-image-health"],
   });
@@ -62,6 +91,34 @@ export default function ReceiptImageHealth() {
     const term = search.trim().toLowerCase();
     return !term || `${item.username} ${item.email ?? ""} ${item.userId} ${item.receiptId} ${item.storeName}`.toLowerCase().includes(term);
   }), [data, search, severity]);
+
+  const scanNextProviderBatch = async () => {
+    setProviderScanning(true);
+    setProviderError(null);
+    try {
+      const response = await apiRequest("GET", `/api/admin/command-center/receipt-image-health/provider-scan?afterReceiptId=${providerCursor}&limit=50`);
+      const batch = await response.json() as ProviderScanBatch;
+      const findings = batch.results.filter(item => item.status !== "available");
+      setProviderFindings(current => [...current, ...findings]);
+      setProviderCursor(batch.nextCursor);
+      setProviderInspected(current => current + batch.inspectedCount);
+      setProviderTotal(batch.totalProviderReferences);
+      setProviderDone(batch.done);
+    } catch (error) {
+      setProviderError(error instanceof Error ? error.message : "Provider inspection failed");
+    } finally {
+      setProviderScanning(false);
+    }
+  };
+
+  const restartProviderScan = () => {
+    setProviderCursor(0);
+    setProviderInspected(0);
+    setProviderTotal(0);
+    setProviderDone(false);
+    setProviderFindings([]);
+    setProviderError(null);
+  };
 
   return <div className="container mx-auto p-6 space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -76,6 +133,21 @@ export default function ReceiptImageHealth() {
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
       <strong>Full-history metadata scan:</strong> this page searches the entire database for risky attachment metadata. It does not contact or change Azure storage, edit receipts, delete images, or contact customers. A durable blob name is treated as renewable evidence; provider object existence is not claimed here.
     </div>
+
+    <Card><CardHeader><CardTitle>Azure object existence check</CardTitle></CardHeader><CardContent className="space-y-4">
+      <p className="text-sm text-muted-foreground">Manual, read-only batches of 50. This checks Azure metadata only; it does not download images, generate access links, change storage tiers, or initiate archive rehydration.</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={scanNextProviderBatch} disabled={providerScanning || providerDone}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${providerScanning ? "animate-spin" : ""}`} />
+          {providerScanning ? "Checking Azure…" : providerDone ? "Provider scan complete" : "Scan next 50"}
+        </Button>
+        {(providerCursor > 0 || providerDone) && <Button variant="outline" onClick={restartProviderScan} disabled={providerScanning}>Restart provider scan</Button>}
+        <span className="text-sm text-muted-foreground">Progress: {providerInspected}{providerTotal > 0 ? ` of ${providerTotal}` : ""} references checked</span>
+      </div>
+      {providerError && <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">{providerError}. No receipt or storage data was changed.</div>}
+      {providerFindings.length > 0 && <div className="space-y-2"><p className="font-medium">Provider findings from this browser session</p>{providerFindings.map((item, index) => <div key={`${item.receiptId}-${index}`} className="rounded border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><span><strong>{item.username}</strong> #{item.userId} · Receipt #{item.receiptId} · {item.storeName}</span><Badge variant={item.status === "missing" ? "destructive" : "secondary"}>{item.status.replaceAll("_", " ")}</Badge></div><p className="mt-1 text-xs text-muted-foreground">Blob: {item.blobName} · Tier: {item.accessTier ?? "unavailable"}</p></div>)}</div>}
+      {providerDone && providerFindings.length === 0 && <div className="rounded border border-green-300 bg-green-50 p-3 text-sm text-green-800">Provider scan completed with no missing, archived, inaccessible, or temporarily unavailable objects.</div>}
+    </CardContent></Card>
 
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Attachments scanned</p><p className="text-3xl font-bold mt-1">{data?.summary.attachmentsScanned ?? 0}</p></CardContent></Card>

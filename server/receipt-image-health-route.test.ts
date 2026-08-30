@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const adminRoutes = readFileSync(new URL("./admin-routes.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("../client/src/pages/receipt-image-health.tsx", import.meta.url), "utf8");
+const azureStorage = readFileSync(new URL("./azure-storage.ts", import.meta.url), "utf8");
 
 describe("receipt image health admin queue contract", () => {
   it("is admin-protected and read-only", () => {
@@ -27,5 +28,14 @@ describe("receipt image health admin queue contract", () => {
   it("states the metadata-only limitation in the admin interface", () => {
     expect(page).toContain("Full-history metadata scan");
     expect(page).toContain("does not contact or change Azure storage");
+  });
+
+  it("keeps provider inspection bounded, admin-only and non-mutating", () => {
+    expect(adminRoutes).toContain('app.get("/api/admin/command-center/receipt-image-health/provider-scan", requireAdmin');
+    expect(adminRoutes).toContain("Math.min(Math.max(requestedLimit, 1), 50)");
+    expect(adminRoutes).toContain("azureStorage.inspectFileMetadata");
+    expect(adminRoutes).not.toContain("azureStorage.generateSasUrl(row.blobName");
+    expect(azureStorage).toContain("blockBlobClient.getProperties({ abortSignal: controller.signal })");
+    expect(azureStorage).not.toContain("inspectFileMetadata(blobName: string, timeoutMs = 5000): Promise<AzureBlobInspectionResult> {\n    await this.initialize()");
   });
 });

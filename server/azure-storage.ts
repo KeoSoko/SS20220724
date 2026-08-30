@@ -1,5 +1,6 @@
 import { BlobServiceClient, ContainerClient, StorageSharedKeyCredential, generateBlobSASQueryParameters, BlobSASPermissions } from "@azure/storage-blob";
 import { log } from "./vite";
+import { classifyAzureBlobInspectionError, classifyAzureBlobProperties, type AzureBlobInspectionResult } from "./azure-blob-inspection";
 
 // Container name for receipts
 const CONTAINER_NAME = "receipt-images";
@@ -245,6 +246,24 @@ export class AzureBlobStorage {
     } catch (error) {
       log(`Error generating SAS URL: ${error}`, "azure");
       return null;
+    }
+  }
+
+  /**
+   * Read blob metadata without generating a SAS URL, downloading content,
+   * changing access tier, creating containers, or initiating rehydration.
+   */
+  async inspectFileMetadata(blobName: string, timeoutMs = 5000): Promise<AzureBlobInspectionResult> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
+      const properties = await blockBlobClient.getProperties({ abortSignal: controller.signal });
+      return classifyAzureBlobProperties(properties);
+    } catch (error) {
+      return classifyAzureBlobInspectionError(error);
+    } finally {
+      clearTimeout(timer);
     }
   }
   /**

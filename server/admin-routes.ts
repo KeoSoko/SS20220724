@@ -17,6 +17,7 @@ import { log } from "./vite";
 import { billingService } from "./billing-service";
 import { emailService } from "./email-service";
 import { exportService } from "./export-service";
+import { classifyReceiptImageHealth } from "./receipt-image-health";
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -1625,6 +1626,86 @@ Respond ONLY with valid JSON.`;
     } catch (error: any) {
       log(`Error in /api/admin/command-center/payment-health: ${error.message}`, 'admin');
       res.status(500).json({ error: "Failed to get payment health data" });
+    }
+  });
+
+  // Read-only operational queue. No action or mutation is exposed here.
+  app.get("/api/admin/command-center/receipt-image-health", requireAdmin, async (_req, res) => {
+    try {
+      const scanLimit = 5000;
+      const resultLimit = 500;
+      const rows = await db.select({
+        receiptId: receipts.id,
+        userId: receipts.userId,
+        username: users.username,
+        email: users.email,
+        storeName: receipts.storeName,
+        receiptDate: receipts.date,
+        createdAt: receipts.createdAt,
+        blobName: receipts.blobName,
+        blobUrl: receipts.blobUrl,
+        imageDataPresent: sql<boolean>`${receipts.imageData} is not null`,
+        imageDataPrefix: sql<string | null>`case when ${receipts.imageData} is null then null else left(${receipts.imageData}, 32) end`,
+      })
+        .from(receipts)
+        .innerJoin(users, eq(receipts.userId, users.id))
+        .where(or(
+          isNotNull(receipts.blobName),
+          isNotNull(receipts.blobUrl),
+          isNotNull(receipts.imageData),
+        ))
+        .orderBy(desc(receipts.createdAt))
+        .limit(scanLimit + 1);
+
+      const scanTruncated = rows.length > scanLimit;
+      const scannedRows = rows.slice(0, scanLimit);
+      const findings = scannedRows.flatMap((row) => {
+        const finding = classifyReceiptImageHealth({
+          blobName: row.blobName,
+          blobUrl: row.blobUrl,
+          imageDataPresent: row.imageDataPresent,
+          imageDataPrefix: row.imageDataPrefix,
+        });
+        return finding ? [{
+          receiptId: row.receiptId,
+          userId: row.userId,
+          username: row.username,
+          email: row.email,
+          storeName: row.storeName,
+          receiptDate: row.receiptDate,
+          createdAt: row.createdAt,
+          ...finding,
+        }] : [];
+      });
+
+      const severityRank = { critical: 0, high: 1, medium: 2 } as const;
+      findings.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
+      const affectedUsers = new Set(findings.map((finding) => finding.userId)).size;
+
+      res.json({
+        generatedAt: new Date().toISOString(),
+        summary: {
+          attachmentsScanned: scannedRows.length,
+          findings: findings.length,
+          affectedUsers,
+          critical: findings.filter((finding) => finding.severity === "critical").length,
+          high: findings.filter((finding) => finding.severity === "high").length,
+          medium: findings.filter((finding) => finding.severity === "medium").length,
+        },
+        items: findings.slice(0, resultLimit),
+        scan: {
+          readOnly: true,
+          metadataOnly: true,
+          providerObjectExistenceChecked: false,
+          scanLimit,
+          resultLimit,
+          scanTruncated,
+          resultsTruncated: findings.length > resultLimit,
+        },
+      });
+    } catch (error: any) {
+      log(`Error in /api/admin/command-center/receipt-image-health: ${error.message}`, "admin");
+      res.status(500).json({ error: "Failed to inspect receipt image health" });
     }
   });
 

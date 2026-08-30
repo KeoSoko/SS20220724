@@ -39,6 +39,7 @@ import { SubscriptionBanner } from "@/components/subscription-banner";
 import EmailTrackingPage from "@/pages/email-tracking-page";
 import CommandCenter from "@/pages/command-center";
 import BillingOperations from "@/pages/billing-operations";
+import ReceiptImageHealth from "@/pages/receipt-image-health";
 import BusinessHubPage from "@/pages/business-hub-page";
 import BusinessProfilePage from "@/pages/business-profile-page";
 import ProfitLossPage from "@/pages/profit-loss-page";
@@ -79,6 +80,7 @@ function Router() {
       <ProtectedRoute path="/payment-history" component={PaymentHistory} />
       <AdminRoute path="/admin/email-tracking" component={EmailTrackingPage} />
       <AdminRoute path="/command-center/billing" component={BillingOperations} />
+      <AdminRoute path="/command-center/receipt-images" component={ReceiptImageHealth} />
       <AdminRoute path="/command-center" component={CommandCenter} />
       <ProtectedRoute path="/business-hub" component={BusinessHubPage} />
       <ProtectedRoute path="/business-profile" component={BusinessProfilePage} />

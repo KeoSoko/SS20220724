@@ -42,7 +42,8 @@ import {
   Paperclip,
   Download,
   FileText,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Images
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -725,6 +726,12 @@ export default function CommandCenter() {
             <Button className="bg-blue-700 hover:bg-blue-800">
               <CreditCard className="h-4 w-4 mr-2" />
               Billing Operations
+            </Button>
+          </Link>
+          <Link href="/command-center/receipt-images">
+            <Button variant="outline">
+              <Images className="h-4 w-4 mr-2" />
+              Receipt Image Health
             </Button>
           </Link>
           <Button

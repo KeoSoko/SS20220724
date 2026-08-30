@@ -1632,33 +1632,50 @@ Respond ONLY with valid JSON.`;
   // Read-only operational queue. No action or mutation is exposed here.
   app.get("/api/admin/command-center/receipt-image-health", requireAdmin, async (_req, res) => {
     try {
-      const scanLimit = 5000;
+      const candidateScanLimit = 50000;
       const resultLimit = 500;
-      const rows = await db.select({
-        receiptId: receipts.id,
-        userId: receipts.userId,
-        username: users.username,
-        email: users.email,
-        storeName: receipts.storeName,
-        receiptDate: receipts.date,
-        createdAt: receipts.createdAt,
-        blobName: receipts.blobName,
-        blobUrl: receipts.blobUrl,
-        imageDataPresent: sql<boolean>`${receipts.imageData} is not null`,
-        imageDataPrefix: sql<string | null>`case when ${receipts.imageData} is null then null else left(${receipts.imageData}, 32) end`,
-      })
-        .from(receipts)
-        .innerJoin(users, eq(receipts.userId, users.id))
-        .where(or(
-          isNotNull(receipts.blobName),
-          isNotNull(receipts.blobUrl),
-          isNotNull(receipts.imageData),
-        ))
-        .orderBy(desc(receipts.createdAt))
-        .limit(scanLimit + 1);
+      const attachmentEvidencePredicate = or(
+        isNotNull(receipts.blobName),
+        isNotNull(receipts.blobUrl),
+        isNotNull(receipts.imageData),
+      );
+      const noDurableBlobNamePredicate = or(isNull(receipts.blobName), eq(receipts.blobName, ""));
+      const invalidEmbeddedDataPredicate = sql<boolean>`
+        ${receipts.imageData} is not null
+        and lower(left(${receipts.imageData}, 32)) not like 'data:image/%'
+        and lower(left(${receipts.imageData}, 32)) not like 'data:application/pdf%'
+      `;
+      const riskyImageMetadataPredicate = and(
+        noDurableBlobNamePredicate,
+        or(isNotNull(receipts.blobUrl), invalidEmbeddedDataPredicate),
+      );
 
-      const scanTruncated = rows.length > scanLimit;
-      const scannedRows = rows.slice(0, scanLimit);
+      const [totalAttachmentsResult, rows] = await Promise.all([
+        db.select({ count: count() })
+          .from(receipts)
+          .where(attachmentEvidencePredicate),
+        db.select({
+          receiptId: receipts.id,
+          userId: receipts.userId,
+          username: users.username,
+          email: users.email,
+          storeName: receipts.storeName,
+          receiptDate: receipts.date,
+          createdAt: receipts.createdAt,
+          blobName: receipts.blobName,
+          blobUrl: receipts.blobUrl,
+          imageDataPresent: sql<boolean>`${receipts.imageData} is not null`,
+          imageDataPrefix: sql<string | null>`case when ${receipts.imageData} is null then null else left(${receipts.imageData}, 32) end`,
+        })
+          .from(receipts)
+          .innerJoin(users, eq(receipts.userId, users.id))
+          .where(riskyImageMetadataPredicate)
+          .orderBy(desc(receipts.createdAt))
+          .limit(candidateScanLimit + 1),
+      ]);
+
+      const scanTruncated = rows.length > candidateScanLimit;
+      const scannedRows = rows.slice(0, candidateScanLimit);
       const findings = scannedRows.flatMap((row) => {
         const finding = classifyReceiptImageHealth({
           blobName: row.blobName,
@@ -1685,7 +1702,7 @@ Respond ONLY with valid JSON.`;
       res.json({
         generatedAt: new Date().toISOString(),
         summary: {
-          attachmentsScanned: scannedRows.length,
+          attachmentsScanned: Number(totalAttachmentsResult[0]?.count ?? 0),
           findings: findings.length,
           affectedUsers,
           critical: findings.filter((finding) => finding.severity === "critical").length,
@@ -1697,7 +1714,8 @@ Respond ONLY with valid JSON.`;
           readOnly: true,
           metadataOnly: true,
           providerObjectExistenceChecked: false,
-          scanLimit,
+          historyScope: "entire_database",
+          candidateScanLimit,
           resultLimit,
           scanTruncated,
           resultsTruncated: findings.length > resultLimit,

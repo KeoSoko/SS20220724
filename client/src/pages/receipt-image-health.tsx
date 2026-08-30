@@ -38,6 +38,7 @@ interface ImageHealthData {
     readOnly: boolean;
     metadataOnly: boolean;
     providerObjectExistenceChecked: boolean;
+    historyScope: string;
     scanTruncated: boolean;
     resultsTruncated: boolean;
   };
@@ -73,7 +74,7 @@ export default function ReceiptImageHealth() {
     </div>
 
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-      <strong>Metadata-only scan:</strong> this page does not contact or change Azure storage, edit receipts, delete images, or contact customers. A durable blob name is treated as renewable evidence; provider object existence is not claimed here.
+      <strong>Full-history metadata scan:</strong> this page searches the entire database for risky attachment metadata. It does not contact or change Azure storage, edit receipts, delete images, or contact customers. A durable blob name is treated as renewable evidence; provider object existence is not claimed here.
     </div>
 
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

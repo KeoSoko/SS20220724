@@ -16,8 +16,16 @@ describe("receipt image health admin queue contract", () => {
     expect(adminRoutes).not.toContain("imageData: receipts.imageData");
   });
 
+  it("counts the full attachment history and applies the limit only to risky candidates", () => {
+    expect(adminRoutes).toContain("attachmentEvidencePredicate");
+    expect(adminRoutes).toContain("riskyImageMetadataPredicate");
+    expect(adminRoutes).toContain("totalAttachmentsResult");
+    expect(adminRoutes).toContain("historyScope: \"entire_database\"");
+    expect(adminRoutes).not.toContain(".orderBy(desc(receipts.createdAt))\n        .limit(scanLimit + 1)");
+  });
+
   it("states the metadata-only limitation in the admin interface", () => {
-    expect(page).toContain("Metadata-only scan");
+    expect(page).toContain("Full-history metadata scan");
     expect(page).toContain("does not contact or change Azure storage");
   });
 });

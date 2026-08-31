@@ -19,13 +19,22 @@ describe("billing operations dashboard", () => {
     expect(route).not.toContain('queue: "urgent", severity: "critical", title: "Paid access boundary is overdue"');
   });
 
-  it("shows the dedicated admin page and keeps technical identities behind details", () => {
+  it("shows the dedicated admin page and keeps identity repair individually confirmed", () => {
     const app = readFileSync(new URL("../client/src/App.tsx", import.meta.url), "utf8");
     const page = readFileSync(new URL("../client/src/pages/billing-operations.tsx", import.meta.url), "utf8");
     expect(app).toContain('path="/command-center/billing"');
     expect(app.indexOf('path="/command-center/billing"')).toBeLessThan(app.indexOf('path="/command-center"'));
-    expect(page).toContain("Read-only safety mode");
+    expect(page).toContain("Queue discovery is read-only");
     expect(page).toContain("View technical details");
-    expect(page).not.toContain("apiRequest(");
+    expect(page).toContain("Inspect Paystack");
+    expect(page).toContain("Confirm identity repair");
+    expect(page).toContain("paystack-subscription-candidates");
+    expect(page).toContain("paystack-subscription-resolution");
+    expect(page).toContain("confirmed: true");
+    expect(page).toContain("candidates.length === 1");
+    expect(page).toContain('selected.status === "active"');
+    expect(page).toContain("Multiple plausible subscriptions were found");
+    expect(page).not.toContain("paystack-manual-identity-repair/execute");
+    expect(page).not.toMatch(/subscription\.(disable|create|enable)|transaction\.charge/);
   });
 });

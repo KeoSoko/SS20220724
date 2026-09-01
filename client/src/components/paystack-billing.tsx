@@ -125,13 +125,12 @@ export function PaystackBilling({
     }
 
     try {
-      // Use the server-issued access_code to open the Paystack popup. All billing
-      // terms (amount, plan, email, channels) were locked during server-side
-      // transaction/initialize — the client cannot override them.
+      // This transaction was initialized on the server, so Paystack InlineJS v2
+      // must resume that exact access_code. checkout()/newTransaction() are for
+      // frontend-created transactions and must never be used for this handoff.
+      // All billing terms remain locked by the server-side initialization.
       const paystackPop = new (window as any).PaystackPop();
-      await paystackPop.checkout({
-        key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-        accessCode: checkout.accessCode,
+      await paystackPop.resumeTransaction(checkout.accessCode, {
         onSuccess: (transaction: any) => {
           setIsProcessing(false);
           toast({

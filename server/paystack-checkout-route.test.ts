@@ -262,8 +262,9 @@ describe("Paystack route safety invariants", () => {
 
   it("passes every browser session the one server-issued Paystack access_code", () => {
     // Server calls POST /transaction/initialize and returns only the access_code.
-    // The client passes it as-is — no reference, amount, plan, or channels from the browser.
-    expect(paystackClient).toContain("accessCode: checkout.accessCode");
+    // The client resumes it as-is — no reference, amount, plan, or channels from the browser.
+    expect(paystackClient).toContain("resumeTransaction(checkout.accessCode, {");
+    expect(paystackClient).not.toContain("paystackPop.checkout({");
     expect(paystackClient).not.toContain("ref: checkout.reference");
     expect(paystackClient).not.toContain("Date.now()");
     expect(paystackClient).not.toContain("randomUUID");

@@ -338,25 +338,21 @@ describe("Stale and modified frontend protection", () => {
     expect(checkout.accessCode).toBe("ACC_server_issued");
   });
 
-  it("12. modified frontend: passing arbitrary channels to Paystack SDK is irrelevant", () => {
-    // Even if a modified client builds a PaystackPop call with channels: ['apple_pay'],
-    // Paystack ignores client-side channels when an access_code is used — the
-    // server-initialized transaction terms (channels: ['card']) take precedence.
-    //
-    // This is an architectural invariant: once initialized server-side, the Paystack
-    // access_code is bound to those terms. The test expresses the invariant clearly.
+  it("12. resume flow exposes no client-side billing fields", () => {
+    // Paystack InlineJS resumeTransaction accepts the server-issued access code
+    // plus lifecycle callbacks. Amount, plan, currency, and channels are not
+    // supplied again by the browser, so the server-initialized card-only terms
+    // remain authoritative.
     const accessCode = "ACC_server_card_only";
-    // A modified client might attempt:
-    const clientAttemptedCall = {
-      key: "pk_...",
+    const resumeCall = {
       accessCode,
-      channels: ["apple_pay"], // ← ignored by Paystack when access_code is supplied
+      callbacks: { onSuccess: () => undefined },
     };
-    // The server initialization already bound channels: ["card"] to this access_code.
-    // What matters is that the client has no billing field to substitute — only the code.
-    expect(clientAttemptedCall.accessCode).toBe(accessCode);
-    // The channels field in the client call has no effect on the transaction terms.
-    // (This is Paystack's documented behavior for access_code-based checkout.)
+    expect(resumeCall.accessCode).toBe(accessCode);
+    expect(resumeCall).not.toHaveProperty("amount");
+    expect(resumeCall).not.toHaveProperty("plan");
+    expect(resumeCall).not.toHaveProperty("currency");
+    expect(resumeCall).not.toHaveProperty("channels");
   });
 
   it("6. Amount/plan mismatch cannot be injected by browser — no billing fields returned", () => {

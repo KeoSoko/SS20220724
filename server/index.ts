@@ -9,6 +9,10 @@ import { runBillingIntegrityMigration } from "./billing-integrity-migration";
 
 const app = express();
 
+type StartupState = 'starting' | 'ready' | 'failed';
+let startupState: StartupState = 'starting';
+let startupError: string | undefined;
+
 const BUILD_TIME = Date.now().toString();
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -252,22 +256,32 @@ app.use((req, res, next) => {
   next();
 });
 
-(async () => {
-  // Initialize Azure Storage
-  try {
-    await azureStorage.initialize();
-    log("Azure Storage initialized successfully", "azure");
-  } catch (error) {
-    log(`Warning: Azure Storage initialization failed: ${error}`, "azure");
+// Replit probes `/` while the container is still starting. Keep that liveness
+// probe responsive while preventing real traffic from reaching services that
+// have not finished their required initialization yet.
+app.use((req, res, next) => {
+  if (startupState === 'ready') {
+    return next();
   }
 
-  // Initialize subscription plans
-  await initializeSubscriptionPlans();
+  const isHealthProbe = req.path === '/' || req.path === '/api/health';
+  if (isHealthProbe && (req.method === 'GET' || req.method === 'HEAD')) {
+    if (startupState === 'failed') {
+      return res.status(500).json({ status: 'failed', error: startupError });
+    }
 
-  // Apply billing integrity data repairs (tasks 59 & 60B) — idempotent; no-ops
-  // when repairs have already been applied. Never touches Paystack or charges cards.
-  await runBillingIntegrityMigration();
+    res.setHeader('Retry-After', '2');
+    return res.status(200).json({ status: 'starting' });
+  }
 
+  res.setHeader('Retry-After', '2');
+  return res.status(503).json({
+    status: startupState,
+    message: 'Application initialization is still in progress',
+  });
+});
+
+(async () => {
   // Error logging endpoints for monitoring
   app.post('/api/log-error', (req: Request, res: Response) => {
     try {
@@ -362,4 +376,26 @@ app.use((req, res, next) => {
   }, () => {
     log(`serving on port ${port}`);
   });
+
+  try {
+    // Azure is optional: degraded storage must not prevent the application from
+    // starting, matching the existing production behavior.
+    try {
+      await azureStorage.initialize();
+      log("Azure Storage initialized successfully", "azure");
+    } catch (error) {
+      log(`Warning: Azure Storage initialization failed: ${error}`, "azure");
+    }
+
+    // These database-backed initialization steps remain required. Application
+    // traffic stays gated until both complete successfully.
+    await initializeSubscriptionPlans();
+    await runBillingIntegrityMigration();
+    startupState = 'ready';
+    log("Application initialization completed", "startup");
+  } catch (error) {
+    startupState = 'failed';
+    startupError = error instanceof Error ? error.message : String(error);
+    console.error('[STARTUP ERROR] Required initialization failed', error);
+  }
 })();

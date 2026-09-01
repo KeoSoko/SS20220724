@@ -157,6 +157,10 @@ export function isPaystackSubscriptionManagementLinkEnabled(): boolean {
   return process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED === "true";
 }
 
+export function isAutomaticSupersededSubscriptionRetirementEnabled(): boolean {
+  return process.env.PAYSTACK_AUTOMATIC_SUPERSEDED_RETIREMENT_ENABLED === "true";
+}
+
 /**
  * Fail-closed gate for Apple Pay on new recurring subscription checkout.
  *
@@ -2547,6 +2551,183 @@ export class BillingService {
     };
   }
 
+  /**
+   * Disable only an old subscription that was replaced by an exact, verified
+   * same-customer subscription on a different plan. This never changes local
+   * entitlement or cancellation state: the new identity already owns access.
+   */
+  async retireVerifiedSupersededSubscription(
+    userId: number,
+    authoritativeSubscriptionCode: string,
+  ) {
+    if (!isAutomaticSupersededSubscriptionRetirementEnabled()) {
+      return { outcome: "disabled_by_release_gate" as const, providerMutation: "none" as const };
+    }
+    await this.requirePaystackBillingSchema();
+    if (!this.paystack) {
+      return { outcome: "manual_review_required" as const, reason: "paystack_unavailable", providerMutation: "none" as const };
+    }
+
+    const claim = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+      const [review] = await tx.select().from(billingEvents).where(and(
+        eq(billingEvents.userId, userId),
+        eq(billingEvents.eventType, "paystack_superseded_subscription_review_required"),
+        eq(billingEvents.processed, false),
+        sql`${billingEvents.eventData}->>'authoritativeSubscriptionCode' = ${authoritativeSubscriptionCode}`,
+      )).orderBy(desc(billingEvents.createdAt)).limit(1);
+      if (!review) return { outcome: "not_required" as const };
+
+      const data = review.eventData && typeof review.eventData === "object"
+        ? review.eventData as Record<string, unknown>
+        : {};
+      const oldCode = typeof data.supersededSubscriptionCode === "string" ? data.supersededSubscriptionCode : null;
+      const oldPlan = typeof data.supersededPlanCode === "string" ? data.supersededPlanCode : null;
+      const newPlan = typeof data.authoritativePlanCode === "string" ? data.authoritativePlanCode : null;
+      const customerCode = typeof data.customerCode === "string" ? data.customerCode : null;
+      if (!oldCode || !oldPlan || !newPlan || !customerCode || oldPlan === newPlan || oldCode === authoritativeSubscriptionCode) {
+        return { outcome: "manual_review_required" as const, reason: "invalid_supersession_review" };
+      }
+
+      const identities = await tx.select().from(paystackSubscriptionIdentities).where(and(
+        eq(paystackSubscriptionIdentities.userId, userId),
+        inArray(paystackSubscriptionIdentities.subscriptionCode, [oldCode, authoritativeSubscriptionCode]),
+      ));
+      const oldIdentity = identities.find((identity) => identity.subscriptionCode === oldCode);
+      const newIdentity = identities.find((identity) => identity.subscriptionCode === authoritativeSubscriptionCode);
+      if (
+        !oldIdentity || oldIdentity.status !== "retired"
+        || !newIdentity || newIdentity.status !== "active" || newIdentity.recurringReadiness !== "ready"
+        || oldIdentity.customerCode !== customerCode || newIdentity.customerCode !== customerCode
+        || oldIdentity.planCode !== oldPlan || newIdentity.planCode !== newPlan
+      ) {
+        return { outcome: "manual_review_required" as const, reason: "local_identity_guard_failed" };
+      }
+
+      const [existingAttempt] = await tx.select().from(paystackCancellationAttempts).where(and(
+        eq(paystackCancellationAttempts.billingOwnerUserId, userId),
+        eq(paystackCancellationAttempts.subscriptionCode, oldCode),
+      )).orderBy(desc(paystackCancellationAttempts.createdAt)).limit(1);
+      if (existingAttempt) {
+        if (["provider_non_renewing", "provider_disabled", "completed"].includes(existingAttempt.status)) {
+          await tx.update(billingEvents).set({ processed: true }).where(eq(billingEvents.id, review.id));
+          return { outcome: "already_retired" as const };
+        }
+        return { outcome: "manual_review_required" as const, reason: "existing_retirement_attempt" };
+      }
+
+      const now = new Date();
+      const [attempt] = await tx.insert(paystackCancellationAttempts).values({
+        billingOwnerUserId: userId,
+        subscriptionCode: oldCode,
+        status: "provider_call_started",
+        requestedAt: now,
+        providerCallStartedAt: now,
+        attemptCount: 1,
+        updatedAt: now,
+      }).returning();
+      return { outcome: "claimed" as const, reviewId: review.id, attemptId: attempt.id, oldCode, oldPlan, newPlan, customerCode };
+    });
+
+    if (claim.outcome !== "claimed") {
+      return { ...claim, providerMutation: "none" as const };
+    }
+
+    const readExact = async (code: string) => {
+      const response = await this.paystack.subscription.get(code);
+      const data = response?.status ? response.data : null;
+      return {
+        data,
+        subscriptionCode: extractPaystackSubscriptionCode(data),
+        customerCode: extractPaystackCustomerCode(data),
+        planCode: extractPaystackPlanCode(data),
+        status: String(data?.status ?? "unknown").toLowerCase(),
+        emailToken: typeof data?.email_token === "string" && data.email_token.trim() ? data.email_token : null,
+      };
+    };
+
+    const finish = async (
+      success: boolean,
+      reason: string,
+      providerMutation: "subscription_disable" | "none" | "attempted",
+    ) => db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+      const now = new Date();
+      await tx.update(paystackCancellationAttempts).set({
+        status: success ? "provider_non_renewing" : "manual_review_required",
+        providerConfirmedAt: success ? now : null,
+        lastCheckedAt: now,
+        failureCode: success ? null : reason,
+        failureDetail: null,
+        updatedAt: now,
+      }).where(eq(paystackCancellationAttempts.id, claim.attemptId));
+      if (success) {
+        await tx.update(billingEvents).set({ processed: true }).where(eq(billingEvents.id, claim.reviewId));
+        await tx.insert(billingEvents).values({
+          userId,
+          eventType: "paystack_superseded_subscription_retired",
+          eventData: {
+            supersededSubscriptionCode: claim.oldCode,
+            authoritativeSubscriptionCode,
+            providerState: "non-renewing",
+          },
+          processed: true,
+        });
+      }
+      return success
+        ? { outcome: "retired" as const, providerMutation }
+        : { outcome: "manual_review_required" as const, reason, providerMutation };
+    });
+
+    try {
+      const [oldProvider, newProvider] = await Promise.all([
+        readExact(claim.oldCode),
+        readExact(authoritativeSubscriptionCode),
+      ]);
+      const exactOld = oldProvider.subscriptionCode === claim.oldCode
+        && oldProvider.customerCode === claim.customerCode
+        && oldProvider.planCode === claim.oldPlan;
+      const exactNew = newProvider.subscriptionCode === authoritativeSubscriptionCode
+        && newProvider.customerCode === claim.customerCode
+        && newProvider.planCode === claim.newPlan
+        && newProvider.status === "active";
+      if (!exactOld || !exactNew) return finish(false, "provider_identity_guard_failed", "none");
+      if (oldProvider.status === "non-renewing") return finish(true, "already_non_renewing", "none");
+      if (oldProvider.status !== "active" || !oldProvider.emailToken) {
+        return finish(false, "provider_state_not_retirable", "none");
+      }
+
+      await this.paystack.subscription.disable({ code: claim.oldCode, token: oldProvider.emailToken });
+      const readback = await readExact(claim.oldCode);
+      const confirmed = readback.subscriptionCode === claim.oldCode
+        && readback.customerCode === claim.customerCode
+        && readback.planCode === claim.oldPlan
+        && readback.status === "non-renewing";
+      return finish(
+        confirmed,
+        confirmed ? "confirmed_non_renewing" : "disable_readback_unconfirmed",
+        "subscription_disable",
+      );
+    } catch {
+      // A timeout or ambiguous provider response must never be retried blindly.
+      // One exact readback may prove success; otherwise support reviews it.
+      try {
+        const readback = await readExact(claim.oldCode);
+        const confirmed = readback.subscriptionCode === claim.oldCode
+          && readback.customerCode === claim.customerCode
+          && readback.planCode === claim.oldPlan
+          && readback.status === "non-renewing";
+        return finish(
+          confirmed,
+          confirmed ? "confirmed_after_ambiguous_response" : "provider_result_unknown",
+          "attempted",
+        );
+      } catch {
+        return finish(false, "provider_result_unknown", "attempted");
+      }
+    }
+  }
+
   private manualLegacyPaystackAccountingService(database: any) {
     return createManualLegacyPaystackAccountingSettlementService(
       this.manualLegacyPaystackAccountingRepository(database),
@@ -4195,6 +4376,16 @@ export class BillingService {
         throw new Error(
           `Verified Paystack payment requires financial review: ${result.reason}`,
         );
+      }
+      if (effectiveSubscriptionCode) {
+        try {
+          await this.retireVerifiedSupersededSubscription(userId, effectiveSubscriptionCode);
+        } catch (retirementError) {
+          // The paid replacement subscription remains authoritative. Failure to
+          // retire an old provider subscription is isolated to manual review and
+          // must never roll back the customer's successful payment or access.
+          log(`Superseded subscription retirement requires review for user ${userId}: ${retirementError}`, 'billing');
+        }
       }
       return result.subscription;
 

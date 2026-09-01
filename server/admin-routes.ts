@@ -135,11 +135,13 @@ export function registerAdminRoutes(app: Express) {
         db.select({ count: count() }).from(users),
         db.select({ count: count() }).from(users).where(eq(users.isEmailVerified, false)),
         db.select({ count: count() })
-          .from(users)
+          .from(userSubscriptions)
           .where(
             and(
-              isNotNull(users.trialEndDate),
-              lt(users.trialEndDate, thirtyDaysAgo)
+              eq(userSubscriptions.status, 'trial'),
+              isNotNull(userSubscriptions.trialEndDate),
+              gte(userSubscriptions.trialEndDate, thirtyDaysAgo),
+              lt(userSubscriptions.trialEndDate, now)
             )
           ),
         db.select({ count: count() })
@@ -310,11 +312,15 @@ export function registerAdminRoutes(app: Express) {
             break;
 
           case 'stuck_trials':
-            // Get total count
-            const stuckTrialsCountResult = await db.select({ count: count() }).from(users).where(
+            // Recent, genuinely expired trials only. Historical user-level trial
+            // dates are retained after conversion and must not classify paying
+            // customers or long-abandoned accounts as urgent churn.
+            const stuckTrialsCountResult = await db.select({ count: count() }).from(userSubscriptions).where(
               and(
-                isNotNull(users.trialEndDate),
-                lt(users.trialEndDate, thirtyDaysAgo)
+                eq(userSubscriptions.status, 'trial'),
+                isNotNull(userSubscriptions.trialEndDate),
+                gte(userSubscriptions.trialEndDate, thirtyDaysAgo),
+                lt(userSubscriptions.trialEndDate, now)
               )
             );
             totalCount = stuckTrialsCountResult[0]?.count || 0;
@@ -326,16 +332,19 @@ export function registerAdminRoutes(app: Express) {
               createdAt: users.createdAt,
               lastLogin: users.lastLogin,
               isEmailVerified: users.isEmailVerified,
-              trialEndDate: users.trialEndDate
+              trialEndDate: userSubscriptions.trialEndDate
             })
             .from(users)
+            .innerJoin(userSubscriptions, eq(userSubscriptions.userId, users.id))
             .where(
               and(
-                isNotNull(users.trialEndDate),
-                lt(users.trialEndDate, thirtyDaysAgo)
+                eq(userSubscriptions.status, 'trial'),
+                isNotNull(userSubscriptions.trialEndDate),
+                gte(userSubscriptions.trialEndDate, thirtyDaysAgo),
+                lt(userSubscriptions.trialEndDate, now)
               )
             )
-            .orderBy(desc(users.createdAt))
+            .orderBy(desc(userSubscriptions.trialEndDate))
             .limit(limit)
             .offset(offset);
             break;

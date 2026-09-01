@@ -257,7 +257,7 @@ type FilterType = 'all' | 'unverified' | 'stuck_trials' | 'failed_24h' | 'failed
 const FILTER_LABELS: Record<Exclude<FilterType, null>, string> = {
   'all': 'All Users',
   'unverified': 'Unverified Users',
-  'stuck_trials': 'Stuck Trials',
+  'stuck_trials': 'Recent Expired Trials',
   'failed_24h': 'Failed 24h',
   'failed_7d': 'Failed 7d',
   'webhooks_24h': 'Webhook Failures 24h',
@@ -270,7 +270,7 @@ const FILTER_LABELS: Record<Exclude<FilterType, null>, string> = {
 const CARD_SUBTITLES: Record<Exclude<FilterType, null>, string> = {
   'all': 'Total registered accounts',
   'unverified': 'Can\'t receive emails',
-  'stuck_trials': 'Trial ended, no conversion',
+  'stuck_trials': 'Ended in last 30 days',
   'failed_24h': 'Urgent - may lose access',
   'failed_7d': 'At risk of churning',
   'webhooks_24h': 'Payment data may be stale',
@@ -286,9 +286,9 @@ const RECOVERY_PLAYBOOKS: Record<Exclude<FilterType, null>, { what: string; acti
     what: 'These users haven\'t verified their email. They may have typos in their address or emails are being blocked.', 
     actions: ['Resend verification email', 'If older than 7 days, contact via alternative channel'] 
   },
-  'stuck_trials': { 
-    what: 'Trial period ended but they didn\'t convert. Often due to payment issues or forgotten accounts.', 
-    actions: ['Restart trial if engaged user', 'Check if payment was attempted but failed'] 
+  'stuck_trials': {
+    what: 'These accounts are still marked as trials and expired within the last 30 days. This is a follow-up list, not proof of payment failure or imminent churn.',
+    actions: ['Review recent engagement before outreach', 'Check payment evidence before changing access']
   },
   'failed_24h': { 
     what: 'Payment failed in the last 24 hours. User may be locked out or frustrated.', 
@@ -753,7 +753,7 @@ export default function CommandCenter() {
       {/* Today's Attention Strip */}
       {!healthLoading && health && (
         <div className="flex flex-wrap gap-3">
-          {(health.failedSubscriptions24h > 0 || (health.stuckTrialUsers > 0 && health.unverifiedUsers > 0)) && (
+          {health.failedSubscriptions24h > 0 && (
             <Alert 
               variant="destructive" 
               className="flex-1 min-w-[200px] cursor-pointer hover:bg-destructive/90 transition-colors"
@@ -761,10 +761,10 @@ export default function CommandCenter() {
             >
               <AlertCircle className="h-4 w-4" />
               <AlertTitle className="text-sm font-medium">
-                {health.failedSubscriptions24h + health.stuckTrialUsers} users likely to churn today
+                {health.failedSubscriptions24h} recent payment failure{health.failedSubscriptions24h > 1 ? 's' : ''} need attention
               </AlertTitle>
               <AlertDescription className="text-xs">
-                Payment failures and stuck trials need urgent attention
+                Review confirmed payment failures from the last 24 hours
               </AlertDescription>
             </Alert>
           )}
@@ -845,7 +845,7 @@ export default function CommandCenter() {
           <CardContent className="p-4 text-center">
             <Clock className="h-6 w-6 mx-auto mb-2 text-orange-500" />
             <div className="text-2xl font-bold">{healthLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : health?.stuckTrialUsers || 0}</div>
-            <div className="text-xs font-medium">Stuck Trials</div>
+            <div className="text-xs font-medium">Recent Expired Trials</div>
             <div className="text-[10px] text-muted-foreground mt-1">{CARD_SUBTITLES['stuck_trials']}</div>
           </CardContent>
         </Card>

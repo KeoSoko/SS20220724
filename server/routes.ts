@@ -61,6 +61,7 @@ import {
   billingService,
   isPaystackSubscriptionManagementLinkEnabled,
 } from "./billing-service";
+import { isDefinitivePaystackNonPaymentStatus } from "./paystack-checkout-status";
 import { resolveUserForReconciliation } from "./reconcile-user-resolver";
 import { smartReminderService } from "./smart-reminder-service";
 import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategorization } from "./receipt-flow-utils";
@@ -4282,7 +4283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      let attemptResult = await billingService.createOrReusePaystackCheckoutAttempt({
+      const checkoutAttemptInput = {
         billingOwnerUserId: billingOwner.billingOwnerUserId,
         requestedByUserId,
         planId: requestedPlan.id,
@@ -4291,7 +4292,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         paystackPlanCode: requestedPlan.paystackPlanCode,
         customerEmail: ownerUser.email,
         allowRenewalSetupRecovery: renewalRecoveryRequested,
-      });
+      };
+      let attemptResult = await billingService.createOrReusePaystackCheckoutAttempt(checkoutAttemptInput);
 
       if (attemptResult.outcome === "checkout_blocked") {
         const isRenewalRecovery = attemptResult.reason === "renewal_recovery_required";
@@ -4332,38 +4334,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        const isExpired = attempt.expiresAt.getTime() <= Date.now();
-        if (!isExpired) {
-          // A pending/failed provider result before the TTL reuses the same
-          // reference, so retries and multiple tabs cannot open a second charge.
-          outcome = "reused";
+        const definitiveNonPayment = isDefinitivePaystackNonPaymentStatus(verification.providerStatus);
+        if (definitiveNonPayment) {
+          const closedAttempt = await billingService.closePaystackCheckoutAttemptAfterDefinitiveNonPayment(
+            attempt.paystackReference,
+            verification.providerStatus!,
+          );
+          if (!closedAttempt) {
+            return res.status(409).json({
+              error: "The previous checkout changed while it was being verified. Please try again.",
+              code: "checkout_state_changed",
+              reference: attempt.paystackReference,
+            });
+          }
+          attemptResult = await billingService.createOrReusePaystackCheckoutAttempt(checkoutAttemptInput);
+          if (attemptResult.outcome === "checkout_blocked") {
+            return res.status(409).json({
+              error: "The account billing state changed while checkout was being recovered. No new payment was started.",
+              code: "checkout_recovery_blocked",
+            });
+          }
+          attempt = attemptResult.attempt;
+          outcome = attemptResult.outcome;
         } else {
-        // Only a provider response that definitively says no transaction exists
-        // permits a new opportunity. Network/auth ambiguity keeps the same attempt.
-        const verificationError = verification.error || "";
-        const definitivelyMissing = /not found|invalid reference|does not exist|no transaction/i.test(verificationError);
-        if (!definitivelyMissing) {
-          return res.status(409).json({
-            error: "We are still verifying the previous checkout. Please try again shortly.",
-            code: "checkout_verification_pending",
-            reference: attempt.paystackReference,
-          });
-        }
+          const isExpired = attempt.expiresAt.getTime() <= Date.now();
+          if (!isExpired) {
+            // A pending provider result before the TTL reuses the same reference,
+            // so retries and multiple tabs cannot open a second charge.
+            outcome = "reused";
+          } else {
+            // A missing provider transaction does not prove an already-open
+            // popup cannot still settle. Keep the same server reference.
+            // Network/auth ambiguity also remains blocked.
+            const verificationError = verification.error || "";
+            const definitivelyMissing = /not found|invalid reference|does not exist|no transaction/i.test(verificationError);
+            if (!definitivelyMissing) {
+              return res.status(409).json({
+                error: "We are still verifying the previous checkout. Please try again shortly.",
+                code: "checkout_verification_pending",
+                reference: attempt.paystackReference,
+              });
+            }
 
-        const refreshedAttempt = await billingService.refreshPaystackCheckoutAttemptAfterVerification(
-          attempt.paystackReference,
-        );
-        if (!refreshedAttempt) {
-          return res.status(409).json({
-            error: "The existing checkout could not be refreshed. Please try again shortly.",
-            code: "checkout_refresh_pending",
-            reference: attempt.paystackReference,
-          });
-        }
-        // Never rotate a checkout reference on TTL alone. A provider "not found"
-        // response does not prove an already-open popup can no longer settle.
-        attempt = refreshedAttempt;
-        outcome = "reused";
+            const refreshedAttempt = await billingService.refreshPaystackCheckoutAttemptAfterVerification(
+              attempt.paystackReference,
+            );
+            if (!refreshedAttempt) {
+              return res.status(409).json({
+                error: "The existing checkout could not be refreshed. Please try again shortly.",
+                code: "checkout_refresh_pending",
+                reference: attempt.paystackReference,
+              });
+            }
+            attempt = refreshedAttempt;
+            outcome = "reused";
+          }
         }
       }
 

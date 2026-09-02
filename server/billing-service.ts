@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { resolveBillingOwner } from "./billing-owner";
+import { isDefinitivePaystackNonPaymentStatus } from "./paystack-checkout-status";
 import {
   SubscriptionPlan,
   UserSubscription,
@@ -96,6 +97,7 @@ export interface PaystackVerificationResponse {
   valid: boolean;
   subscription?: any;
   error?: string;
+  providerStatus?: string;
 }
 
 export interface AppleReceiptData {
@@ -3214,7 +3216,10 @@ export class BillingService {
       } else {
         return {
           valid: false,
-          error: response.message || 'Transaction verification failed'
+          error: response.message || 'Transaction verification failed',
+          providerStatus: typeof response.data?.status === "string"
+            ? response.data.status.trim().toLowerCase()
+            : undefined,
         };
       }
 
@@ -3431,6 +3436,59 @@ export class BillingService {
       log(`Refreshed verified-unpaid Paystack checkout attempt ${refreshed.id} without rotating its reference`, "billing");
     }
     return refreshed ?? null;
+  }
+
+  async closePaystackCheckoutAttemptAfterDefinitiveNonPayment(
+    reference: string,
+    providerStatus: string,
+  ): Promise<PaystackCheckoutAttempt | null> {
+    await this.requirePaystackBillingSchema();
+    if (!isDefinitivePaystackNonPaymentStatus(providerStatus)) return null;
+
+    return db.transaction(async (tx) => {
+      const [snapshot] = await tx
+        .select()
+        .from(paystackCheckoutAttempts)
+        .where(eq(paystackCheckoutAttempts.paystackReference, reference))
+        .limit(1);
+      if (!snapshot || snapshot.status !== "pending") return null;
+
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${snapshot.billingOwnerUserId}, 41)`);
+      const [current] = await tx
+        .select()
+        .from(paystackCheckoutAttempts)
+        .where(eq(paystackCheckoutAttempts.paystackReference, reference))
+        .for("update")
+        .limit(1);
+      if (!current || current.status !== "pending") return null;
+      const now = new Date();
+      const [closed] = await tx
+        .update(paystackCheckoutAttempts)
+        .set({ status: "failed", updatedAt: now })
+        .where(and(
+          eq(paystackCheckoutAttempts.id, current.id),
+          eq(paystackCheckoutAttempts.status, "pending"),
+        ))
+        .returning();
+      if (closed) {
+        await tx.insert(billingEvents).values({
+          userId: current.billingOwnerUserId,
+          eventType: "paystack_checkout_definitive_non_payment",
+          eventData: {
+            reference,
+            providerStatus: providerStatus.trim().toLowerCase(),
+            previousAttemptStatus: current.status,
+            newAttemptStatus: "failed",
+          },
+          processed: true,
+        });
+        log(
+          `Closed Paystack checkout ${reference} after exact provider status ${providerStatus}`,
+          "billing",
+        );
+      }
+      return closed ?? null;
+    });
   }
 
   /**

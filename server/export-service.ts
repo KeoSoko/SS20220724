@@ -27,6 +27,15 @@ export interface ReceiptPdfExportResult {
   summary: ReceiptPdfExportSummary;
 }
 
+interface ReceiptExportSelection {
+  startDate?: Date;
+  endDateExclusive?: Date;
+  category?: string;
+  taxYear?: number;
+  deductibleOnly?: boolean;
+  order?: "ascending" | "source";
+}
+
 function formatJohannesburgDate(date: Date): string {
   return new Intl.DateTimeFormat('en-ZA', {
     timeZone: 'Africa/Johannesburg',
@@ -140,6 +149,25 @@ export class ExportService {
            normalizedFilter === formatReportingCategory(rawCategory).trim().toLowerCase();
   }
 
+  private async selectReceiptExportDataset(
+    userId: number,
+    selection: ReceiptExportSelection = {},
+  ): Promise<Receipt[]> {
+    const receipts = await storage.getReceiptsByUser(userId, 10000);
+    const selected = receipts.filter((receipt) => {
+      if (selection.deductibleOnly && !receipt.isTaxDeductible) return false;
+      if (!isReceiptWithinExportDateRange(receipt.date, selection)) return false;
+      if (!this.matchesCategoryFilter(receipt, selection.category)) return false;
+      if (!selection.startDate && !selection.endDateExclusive && selection.taxYear !== undefined) {
+        return receipt.date.getFullYear() === selection.taxYear;
+      }
+      return true;
+    });
+    return selection.order === "ascending"
+      ? selected.sort((left, right) => left.date.getTime() - right.date.getTime())
+      : selected;
+  }
+
   /**
    * Returns a sharp-compressed JPEG data URI (≤200×200 px) of the Simple Slips logo.
    * JPEG is critical here: jsPDF embeds raw JPEG bytes without decoding them, so it is
@@ -236,14 +264,7 @@ export class ExportService {
     includeTaxInfo?: boolean;
   } = {}): Promise<string> {
     try {
-      const receipts = await storage.getReceiptsByUser(userId, 10000);
-      
-      // Filter receipts based on options
-      const filteredReceipts = receipts.filter(receipt => {
-        if (!isReceiptWithinExportDateRange(receipt.date, options)) return false;
-        if (!this.matchesCategoryFilter(receipt, options.category)) return false;
-        return true;
-      });
+      const filteredReceipts = await this.selectReceiptExportDataset(userId, options);
 
       // Build CSV headers
       const headers = [
@@ -311,16 +332,11 @@ export class ExportService {
   } = {}): Promise<ReceiptPdfExportResult> {
     const exportStartedAt = Date.now();
     try {
-      const receipts = await storage.getReceiptsByUser(userId, 10000);
-      const user = await storage.getUser(userId);
+      const [filteredReceipts, user] = await Promise.all([
+        this.selectReceiptExportDataset(userId, { ...options, order: "ascending" }),
+        storage.getUser(userId),
+      ]);
       const dataLoadCompletedAt = Date.now();
-      
-      // Filter receipts
-      const filteredReceipts = receipts.filter(receipt => {
-        if (!isReceiptWithinExportDateRange(receipt.date, options)) return false;
-        if (!this.matchesCategoryFilter(receipt, options.category)) return false;
-        return true;
-      }).sort((a, b) => a.date.getTime() - b.date.getTime());
 
       const doc = new jsPDF();
       
@@ -893,18 +909,10 @@ export class ExportService {
     };
   }> {
     try {
-      const receipts = await storage.getReceiptsByUser(userId, 10000);
-      
-      // Filter for date range or tax year and deductible receipts
-      const taxReceipts = receipts.filter(receipt => {
-        if (!receipt.isTaxDeductible) return false;
-        if (!isReceiptWithinExportDateRange(receipt.date, options ?? {})) return false;
-        if (options?.category && !this.matchesCategoryFilter(receipt, options.category)) return false;
-        if (!options?.startDate && !options?.endDateExclusive) {
-          const receiptYear = receipt.date.getFullYear();
-          return receiptYear === taxYear;
-        }
-        return true;
+      const taxReceipts = await this.selectReceiptExportDataset(userId, {
+        ...options,
+        taxYear,
+        deductibleOnly: true,
       });
 
       const totalDeductible = taxReceipts.reduce((sum, receipt) => sum + parseFloat(receipt.total), 0);

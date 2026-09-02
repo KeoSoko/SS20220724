@@ -14,6 +14,11 @@ describe("billing operations dashboard", () => {
     expect(route).toContain("if (account.isAdmin) continue");
     expect(route).toContain("if (event.userIsAdmin) continue");
     expect(route).toContain("resolvedReferences.has");
+    expect(route).toContain("resolvedSubscriptionAt.get");
+    expect(route).toContain('"renewal_reconciliation_unresolved"');
+    expect(route).toContain("activeAccountByUserId.get");
+    expect(route).toContain("planName: currentAccount?.planName ?? null");
+    expect(route).toContain('"paystack_missing_customer_identity_reconciled"');
     expect(route).toContain('queue: "review", severity: "medium", title: "Billing date overdue; payment status is not yet verified"');
     expect(route).toContain('data.classification === "payment_and_entitlement_applied"');
     expect(route).not.toContain('queue: "urgent", severity: "critical", title: "Paid access boundary is overdue"');

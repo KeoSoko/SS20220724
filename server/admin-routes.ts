@@ -1894,6 +1894,7 @@ Respond ONLY with valid JSON.`;
         "renewal_reconciliation_unresolved",
         "paystack_successful_payment_requires_review",
         "paystack_manual_identity_reconciled",
+        "paystack_missing_customer_identity_reconciled",
         "admin_legacy_renewal_settled",
         "manual_accounting_settlement_entitlement_not_adjudicated",
       ];
@@ -1946,33 +1947,73 @@ Respond ONLY with valid JSON.`;
       }
 
       const repaired: any[] = [];
+      const repairEventTypes = [
+        "paystack_manual_identity_reconciled",
+        "paystack_missing_customer_identity_reconciled",
+        "admin_legacy_renewal_settled",
+        "manual_accounting_settlement_entitlement_not_adjudicated",
+      ];
+      const settlementEventTypes = [
+        "admin_legacy_renewal_settled",
+        "manual_accounting_settlement_entitlement_not_adjudicated",
+      ];
       const resolvedReferences = new Set(events
-        .filter(event => ["admin_legacy_renewal_settled", "manual_accounting_settlement_entitlement_not_adjudicated"].includes(event.eventType))
+        .filter(event => settlementEventTypes.includes(event.eventType))
         .map(event => {
           const data = (event.eventData ?? {}) as any;
           const reference = data.paymentReference ?? data.transactionReference ?? data.reference ?? null;
           return reference && event.userId ? `${event.userId}:${reference}` : null;
         })
         .filter((key): key is string => !!key));
+      const resolvedSubscriptionAt = new Map<string, number>();
+      for (const event of events) {
+        if (!repairEventTypes.includes(event.eventType) || !event.userId) continue;
+        const data = (event.eventData ?? {}) as any;
+        const subscriptionCode = data.subscriptionCode ?? data.authoritativeSubscriptionCode ?? null;
+        if (!subscriptionCode) continue;
+        const key = `${event.userId}:${subscriptionCode}`;
+        const repairedAt = new Date(event.createdAt).getTime();
+        resolvedSubscriptionAt.set(key, Math.max(resolvedSubscriptionAt.get(key) ?? 0, repairedAt));
+      }
+      const activeAccountByUserId = new Map(activeAccounts.map(account => [account.userId, account]));
       for (const event of events) {
         if (event.userIsAdmin) continue;
         const data = (event.eventData ?? {}) as any;
+        const currentAccount = event.userId ? activeAccountByUserId.get(event.userId) : null;
         const base = {
           eventId: event.id,
           userId: event.userId,
           username: event.username ?? "Unknown user",
           email: event.email,
+          planName: currentAccount?.planName ?? null,
           createdAt: event.createdAt,
           reference: data.paymentReference ?? data.transactionReference ?? data.reference ?? null,
-          subscriptionCode: data.subscriptionCode ?? data.authoritativeSubscriptionCode ?? null,
-          customerCode: data.customerCode ?? null,
-          planCode: data.planCode ?? data.authoritativePlanCode ?? null,
+          subscriptionCode: data.subscriptionCode ?? data.authoritativeSubscriptionCode
+            ?? currentAccount?.subscriptionCode ?? null,
+          customerCode: data.customerCode ?? currentAccount?.customerCode ?? null,
+          planCode: data.planCode ?? data.authoritativePlanCode ?? currentAccount?.planCode ?? null,
+          nextBillingDate: currentAccount?.nextBillingDate ?? null,
+          entitlementExpiresAt: currentAccount?.entitlementExpiresAt ?? null,
         };
-        if (["paystack_manual_identity_reconciled", "admin_legacy_renewal_settled", "manual_accounting_settlement_entitlement_not_adjudicated"].includes(event.eventType)) {
+        if (repairEventTypes.includes(event.eventType)) {
           repaired.push({ ...base, eventType: event.eventType });
           continue;
         }
         if (base.reference && event.userId && resolvedReferences.has(`${event.userId}:${base.reference}`)) {
+          continue;
+        }
+        const resolvedAt = event.userId && base.subscriptionCode
+          ? resolvedSubscriptionAt.get(`${event.userId}:${base.subscriptionCode}`)
+          : null;
+        if (
+          resolvedAt
+          && new Date(event.createdAt).getTime() <= resolvedAt
+          && [
+            "renewal_reconciliation_unresolved",
+            "paystack_successful_payment_requires_review",
+            "legacy_renewal_shadow_observed",
+          ].includes(event.eventType)
+        ) {
           continue;
         }
         if (event.eventType === "paystack_superseded_subscription_review_required") {

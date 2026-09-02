@@ -163,6 +163,10 @@ export function isAutomaticSupersededSubscriptionRetirementEnabled(): boolean {
   return process.env.PAYSTACK_AUTOMATIC_SUPERSEDED_RETIREMENT_ENABLED === "true";
 }
 
+export function isAutomaticLegacyRenewalSettlementEnabled(): boolean {
+  return process.env.PAYSTACK_AUTOMATIC_LEGACY_RENEWAL_SETTLEMENT_ENABLED === "true";
+}
+
 /**
  * Fail-closed gate for Apple Pay on new recurring subscription checkout.
  *
@@ -4857,6 +4861,28 @@ export class BillingService {
           classified.transactionReference,
           observation,
         );
+        if (isAutomaticLegacyRenewalSettlementEnabled()
+          && assessment.outcome === "payment_and_entitlement_applied"
+          && assessment.preview.executionPermitted) {
+          const fingerprint = legacyRenewalSettlementFingerprint(shadowInput, assessment);
+          const settlement = await db.transaction(async (tx) => ({
+            ...await this.legacyRenewalSettlementService(tx).execute(shadowInput, null, fingerprint),
+            providerMutation: "none" as const,
+          }));
+          if (settlement.outcome === "payment_and_entitlement_applied"
+            || settlement.outcome === "already_applied") {
+            return {
+              outcome: "reconciled_paid",
+              reason: `automatic_legacy_renewal_${settlement.outcome}`,
+              subscriptionCode: identity.subscriptionCode,
+            };
+          }
+          return {
+            outcome: "unresolved",
+            reason: `automatic_legacy_renewal_${settlement.outcome}`,
+            subscriptionCode: identity.subscriptionCode,
+          };
+        }
         return {
           outcome: "unresolved",
           reason: `legacy_renewal_shadow_${assessment.outcome}`,

@@ -187,9 +187,9 @@ export function legacyRenewalSettlementFingerprint(
 }
 
 export interface LegacyRenewalSettlementAuditEvent {
-  eventType: "admin_legacy_renewal_settled";
+  eventType: "admin_legacy_renewal_settled" | "automatic_legacy_renewal_settled";
   outcome: LegacyRenewalSettlementAppliedOutcome;
-  adminUserId: number;
+  adminUserId: number | null;
   billingOwnerUserId: number;
   localSubscriptionId: number;
   identityId: number;
@@ -481,7 +481,7 @@ export function createLegacyRenewalSettlementService(
 
     async execute(
       input: LegacyRenewalSettlementInput,
-      adminUserId: number,
+      adminUserId: number | null,
       previewFingerprint?: string,
     ): Promise<LegacyRenewalSettlementExecutionResult> {
       return repository.runAtomicallyWithBillingOwnerLock(input.billingOwnerUserId, async () => {
@@ -513,7 +513,9 @@ export function createLegacyRenewalSettlementService(
           await repository.applyPaymentForPreviouslyGrantedEntitlement(input, assessment);
         }
         await repository.recordAuditEvent({
-          eventType: "admin_legacy_renewal_settled",
+          eventType: adminUserId === null
+            ? "automatic_legacy_renewal_settled"
+            : "admin_legacy_renewal_settled",
           outcome: assessment.outcome,
           adminUserId,
           billingOwnerUserId: input.billingOwnerUserId,

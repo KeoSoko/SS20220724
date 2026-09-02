@@ -46,22 +46,28 @@ describe("automatic legacy renewal shadow mode", () => {
     });
   });
 
-  it("wires paid-invoice reconciliation to preview only and deduplicates by reference", () => {
+  it("executes only the strict ready classification behind the release gate", () => {
     const source = readFileSync(new URL("./billing-service.ts", import.meta.url), "utf8");
     const start = source.indexOf("async reconcilePaystackSubscriptionForUser");
     const end = source.indexOf("\n  /**", start);
     const reconciliation = source.slice(start, end);
     expect(reconciliation).toContain("previewLegacyPaystackRenewalSettlement(shadowInput)");
     expect(reconciliation).toContain("recordLegacyRenewalShadowObservationOnce");
-    expect(reconciliation).not.toContain("executeLegacyPaystackRenewalSettlement");
+    expect(reconciliation).toContain("isAutomaticLegacyRenewalSettlementEnabled()");
+    expect(reconciliation).toContain('assessment.outcome === "payment_and_entitlement_applied"');
+    expect(reconciliation).toContain("assessment.preview.executionPermitted");
+    expect(reconciliation).toContain("legacyRenewalSettlementFingerprint(shadowInput, assessment)");
+    expect(reconciliation).toContain(".execute(shadowInput, null, fingerprint)");
     expect(reconciliation).not.toContain("processPaystackSubscription(");
     expect(reconciliation).not.toContain("recoverPaystackRenewalRelationship(");
     expect(reconciliation).not.toContain("renewal_reconciled_paid");
   });
 
-  it("contains no automatic settlement enable flag in this checkpoint", () => {
+  it("requires an explicit production release flag", () => {
     const source = readFileSync(new URL("./billing-service.ts", import.meta.url), "utf8");
-    expect(source).not.toContain("AUTOMATIC_LEGACY_RENEWAL_SETTLEMENT_ENABLED");
+    const replit = readFileSync(new URL("../.replit", import.meta.url), "utf8");
+    expect(source).toContain('PAYSTACK_AUTOMATIC_LEGACY_RENEWAL_SETTLEMENT_ENABLED === "true"');
+    expect(replit).toContain('PAYSTACK_AUTOMATIC_LEGACY_RENEWAL_SETTLEMENT_ENABLED = "true"');
   });
 
   it("serializes duplicate observations with billing-owner lock 36", () => {

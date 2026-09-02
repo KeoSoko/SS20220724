@@ -67,6 +67,26 @@ function parseManualPaystackIdentityRepairInput(req: Request) {
   };
 }
 
+function parseMissingPaystackCustomerIdentityRepairInput(req: Request) {
+  const billingOwnerUserId = Number.parseInt(req.params.userId, 10);
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const allowedFields = new Set([
+    "billingOwnerUserId", "subscriptionCode", "customerCode", "planCode", "confirmed", "previewFingerprint",
+  ]);
+  if (!Number.isInteger(billingOwnerUserId) || billingOwnerUserId <= 0
+    || Object.keys(body).some((key) => !allowedFields.has(key))
+    || (body.billingOwnerUserId !== undefined && body.billingOwnerUserId !== billingOwnerUserId)
+    || typeof body.subscriptionCode !== "string"
+    || typeof body.customerCode !== "string"
+    || typeof body.planCode !== "string") return null;
+  return {
+    billingOwnerUserId,
+    subscriptionCode: body.subscriptionCode.trim(),
+    customerCode: body.customerCode.trim(),
+    planCode: body.planCode.trim(),
+  };
+}
+
 function parseManualLegacyPaystackAccountingInput(req: Request) {
   const billingOwnerUserId = Number.parseInt(req.params.userId, 10);
   const body = req.body && typeof req.body === "object" ? req.body : {};
@@ -936,6 +956,37 @@ export function registerAdminRoutes(app: Express) {
     } catch (error: any) {
       log(`Error executing manual Paystack identity repair: ${error.message}`, "admin");
       return res.status(500).json({ error: "Failed to record manual identity repair" });
+    }
+  });
+
+  // Repairs only the narrow case where a locally active subscription is
+  // missing its customer code. Both provider objects are read and verified;
+  // this endpoint never charges, disables, or otherwise mutates Paystack.
+  app.post("/api/admin/users/:userId/paystack-missing-customer-identity-repair/preview", requireAdmin, async (req, res) => {
+    const input = parseMissingPaystackCustomerIdentityRepairInput(req);
+    if (!input) return res.status(400).json({ error: "Invalid missing-customer repair input" });
+    try {
+      const result = await billingService.previewMissingPaystackCustomerIdentityRepair(input);
+      return res.status(result.outcome === "verified" ? 200 : 409).json(result);
+    } catch (error: any) {
+      log(`Error previewing missing Paystack customer repair: ${error.message}`, "admin");
+      return res.status(500).json({ error: "Failed to preview missing-customer repair" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/paystack-missing-customer-identity-repair/execute", requireAdmin, async (req, res) => {
+    const input = parseMissingPaystackCustomerIdentityRepairInput(req);
+    if (!input || req.body?.confirmed !== true || typeof req.body?.previewFingerprint !== "string") {
+      return res.status(400).json({ error: "Explicit confirmation of the exact preview is required" });
+    }
+    try {
+      const result = await billingService.executeMissingPaystackCustomerIdentityRepair(
+        input, req.user!.id, req.body.previewFingerprint,
+      );
+      return res.status(result.outcome === "repaired" ? 200 : 409).json(result);
+    } catch (error: any) {
+      log(`Error executing missing Paystack customer repair: ${error.message}`, "admin");
+      return res.status(500).json({ error: "Failed to execute missing-customer repair" });
     }
   });
 

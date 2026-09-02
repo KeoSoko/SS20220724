@@ -128,6 +128,13 @@ export interface PaystackReconciliationResult {
   subscriptionCode?: string;
 }
 
+export interface MissingPaystackCustomerIdentityRepairInput {
+  billingOwnerUserId: number;
+  subscriptionCode: string;
+  customerCode: string;
+  planCode: string;
+}
+
 export type PaystackRenewalState =
   | "not_due"
   | "reconciling"
@@ -2555,6 +2562,221 @@ export class BillingService {
         });
       },
     };
+  }
+
+  private async assessMissingPaystackCustomerIdentityRepair(
+    database: any,
+    input: MissingPaystackCustomerIdentityRepairInput,
+  ) {
+    const invalidInput = !Number.isInteger(input.billingOwnerUserId)
+      || input.billingOwnerUserId <= 0
+      || !/^SUB_[A-Za-z0-9_-]+$/.test(input.subscriptionCode)
+      || !/^CUS_[A-Za-z0-9_-]+$/.test(input.customerCode)
+      || !/^PLN_[A-Za-z0-9_-]+$/.test(input.planCode);
+    if (invalidInput) return { outcome: "manual_review_required" as const, reason: "invalid_input" };
+    if (!this.paystack) return { outcome: "manual_review_required" as const, reason: "paystack_unavailable" };
+
+    const [ownerResolution, userRows, subscriptionRows, activeIdentities, codeIdentities, pendingCheckouts] = await Promise.all([
+      resolveBillingOwner(input.billingOwnerUserId),
+      database.select({ id: users.id, email: users.email }).from(users)
+        .where(eq(users.id, input.billingOwnerUserId)).limit(1),
+      database.select({
+        id: userSubscriptions.id,
+        userId: userSubscriptions.userId,
+        status: userSubscriptions.status,
+        paystackCustomerCode: userSubscriptions.paystackCustomerCode,
+        planCode: subscriptionPlans.paystackPlanCode,
+        subscriptionStartDate: userSubscriptions.subscriptionStartDate,
+        nextBillingDate: userSubscriptions.nextBillingDate,
+      }).from(userSubscriptions)
+        .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+        .where(eq(userSubscriptions.userId, input.billingOwnerUserId)).limit(1),
+      database.select({ subscriptionCode: paystackSubscriptionIdentities.subscriptionCode })
+        .from(paystackSubscriptionIdentities).where(and(
+          eq(paystackSubscriptionIdentities.userId, input.billingOwnerUserId),
+          eq(paystackSubscriptionIdentities.status, "active"),
+        )),
+      database.select({ userId: paystackSubscriptionIdentities.userId })
+        .from(paystackSubscriptionIdentities)
+        .where(eq(paystackSubscriptionIdentities.subscriptionCode, input.subscriptionCode)).limit(1),
+      database.select({ id: paystackCheckoutAttempts.id }).from(paystackCheckoutAttempts).where(and(
+        eq(paystackCheckoutAttempts.billingOwnerUserId, input.billingOwnerUserId),
+        eq(paystackCheckoutAttempts.status, "pending"),
+      )),
+    ]);
+    const user = userRows[0] ?? null;
+    const local = subscriptionRows[0] ?? null;
+    const codeIdentity = codeIdentities[0] ?? null;
+    const localCustomerMissing = local?.paystackCustomerCode === null || local?.paystackCustomerCode === "";
+    const localValid = Boolean(
+      user
+      && ownerResolution.state === "resolved"
+      && ownerResolution.billingOwnerUserId === input.billingOwnerUserId
+      && local
+      && local.userId === input.billingOwnerUserId
+      && local.status === "active"
+      && local.planCode === input.planCode
+      && localCustomerMissing
+      && activeIdentities.length === 0
+      && !codeIdentity
+      && pendingCheckouts.length === 0,
+    );
+    if (!localValid) {
+      return {
+        outcome: "manual_review_required" as const,
+        reason: "local_state_not_eligible",
+        validation: {
+          billingOwnerIsCanonical: ownerResolution.state === "resolved"
+            && ownerResolution.billingOwnerUserId === input.billingOwnerUserId,
+          localSubscriptionIsActive: local?.status === "active",
+          localPlanMatches: local?.planCode === input.planCode,
+          localCustomerCodeIsMissing: localCustomerMissing,
+          noConflictingActiveIdentity: activeIdentities.length === 0,
+          subscriptionCodeAvailable: !codeIdentity,
+          noPendingCheckout: pendingCheckouts.length === 0,
+        },
+      };
+    }
+
+    const [providerSubscriptionResponse, providerCustomerResponse] = await Promise.all([
+      this.paystack.subscription.get(input.subscriptionCode),
+      this.paystack.customer.get(input.customerCode),
+    ]);
+    const providerSubscription = providerSubscriptionResponse?.status ? providerSubscriptionResponse.data : null;
+    const providerCustomer = providerCustomerResponse?.status ? providerCustomerResponse.data : null;
+    const providerEmail = typeof providerCustomer?.email === "string" ? providerCustomer.email.trim().toLowerCase() : null;
+    const localEmail = user!.email.trim().toLowerCase();
+    const providerStatus = String(providerSubscription?.status ?? "").toLowerCase();
+    const providerValid = Boolean(
+      providerSubscription
+      && providerCustomer
+      && extractPaystackSubscriptionCode(providerSubscription) === input.subscriptionCode
+      && extractPaystackCustomerCode(providerSubscription) === input.customerCode
+      && extractPaystackPlanCode(providerSubscription) === input.planCode
+      && providerCustomer.customer_code === input.customerCode
+      && providerEmail === localEmail
+      && providerStatus === "active",
+    );
+    if (!providerValid) {
+      return { outcome: "manual_review_required" as const, reason: "provider_relationship_mismatch" };
+    }
+
+    const preview = {
+      current: {
+        localSubscriptionId: local!.id,
+        paystackCustomerCode: local!.paystackCustomerCode,
+        status: local!.status,
+        planCode: local!.planCode,
+        subscriptionStartDate: local!.subscriptionStartDate,
+        nextBillingDate: local!.nextBillingDate,
+      },
+      proposed: {
+        paystackCustomerCode: input.customerCode,
+        subscriptionCode: input.subscriptionCode,
+        planCode: input.planCode,
+        identityStatus: "active" as const,
+        recurringReadiness: "unknown" as const,
+      },
+      providerEvidence: { status: providerStatus, emailMatches: true },
+      fieldsThatWouldChange: [
+        "user_subscriptions.paystack_customer_code",
+        "paystack_subscription_identities",
+        "billing_events",
+      ],
+      fieldsThatRemainUnchanged: [
+        "user_subscriptions.status",
+        "user_subscriptions.plan_id",
+        "user_subscriptions.subscription_start_date",
+        "user_subscriptions.next_billing_date",
+        "payment_transactions",
+        "entitlements",
+        "paystack_checkout_attempts",
+      ],
+    };
+    const confirmationFingerprint = crypto.createHash("sha256")
+      .update(JSON.stringify({ input, preview }))
+      .digest("hex");
+    return { outcome: "verified" as const, preview, confirmationFingerprint };
+  }
+
+  async previewMissingPaystackCustomerIdentityRepair(input: MissingPaystackCustomerIdentityRepairInput) {
+    await this.requirePaystackBillingSchema();
+    const result = await this.assessMissingPaystackCustomerIdentityRepair(db, input);
+    return { ...result, providerMutation: "none" as const, paystackRequest: "read_only" as const };
+  }
+
+  async executeMissingPaystackCustomerIdentityRepair(
+    input: MissingPaystackCustomerIdentityRepairInput,
+    adminUserId: number,
+    previewFingerprint: string,
+  ) {
+    await this.requirePaystackBillingSchema();
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.billingOwnerUserId}, 36)`);
+      const assessment = await this.assessMissingPaystackCustomerIdentityRepair(tx, input);
+      if (assessment.outcome !== "verified") {
+        return { ...assessment, providerMutation: "none" as const, paystackRequest: "read_only" as const };
+      }
+      if (assessment.confirmationFingerprint !== previewFingerprint) {
+        return {
+          outcome: "manual_review_required" as const,
+          reason: "preview_changed",
+          preview: assessment.preview,
+          confirmationFingerprint: assessment.confirmationFingerprint,
+          providerMutation: "none" as const,
+          paystackRequest: "read_only" as const,
+        };
+      }
+
+      const updated = await tx.update(userSubscriptions).set({
+        paystackCustomerCode: input.customerCode,
+      }).where(and(
+        eq(userSubscriptions.id, assessment.preview.current.localSubscriptionId),
+        eq(userSubscriptions.userId, input.billingOwnerUserId),
+        or(isNull(userSubscriptions.paystackCustomerCode), eq(userSubscriptions.paystackCustomerCode, "")),
+      )).returning({ id: userSubscriptions.id });
+      if (updated.length !== 1) {
+        return {
+          outcome: "manual_review_required" as const,
+          reason: "local_state_changed",
+          providerMutation: "none" as const,
+          paystackRequest: "read_only" as const,
+        };
+      }
+      await tx.insert(paystackSubscriptionIdentities).values({
+        userId: input.billingOwnerUserId,
+        subscriptionCode: input.subscriptionCode,
+        customerCode: input.customerCode,
+        planCode: input.planCode,
+        status: "active",
+        recurringReadiness: "unknown",
+        providerVerifiedAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await tx.insert(billingEvents).values({
+        userId: input.billingOwnerUserId,
+        eventType: "paystack_missing_customer_identity_reconciled",
+        eventData: {
+          adminUserId,
+          localSubscriptionId: assessment.preview.current.localSubscriptionId,
+          subscriptionCode: input.subscriptionCode,
+          customerCode: input.customerCode,
+          planCode: input.planCode,
+          providerStatus: assessment.preview.providerEvidence.status,
+          providerMutation: "none",
+          paystackRequest: "read_only",
+          historicalCollection: "none",
+          recordedAt: new Date().toISOString(),
+        },
+        processed: true,
+      });
+      return {
+        outcome: "repaired" as const,
+        preview: assessment.preview,
+        providerMutation: "none" as const,
+        paystackRequest: "read_only" as const,
+      };
+    });
   }
 
   /**

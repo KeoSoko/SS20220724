@@ -15,6 +15,8 @@ describe("background export architecture", () => {
   it("keeps stored blob names server-owned and download routes owner-scoped", () => {
     expect(service).toContain("`exports/${job.user_id}/${job.id}.${file.extension}`");
     expect(routes).toContain("getBackgroundExportJob(getUserId(req), req.params.jobId)");
+    expect(routes).toContain("azureStorage.downloadExportFile(job.blobName)");
+    expect(routes).not.toContain("res.redirect(302, sasUrl)");
     expect(routes).not.toContain("req.body.blobName");
   });
 

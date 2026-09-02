@@ -3445,9 +3445,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (job.expiresAt && job.expiresAt.getTime() <= Date.now()) {
         return res.status(410).json({ error: "Export has expired; please create it again" });
       }
-      const sasUrl = await azureStorage.generateSasUrl(job.blobName, 1);
-      if (!sasUrl) return res.status(404).json({ error: "Export file is unavailable" });
-      res.redirect(302, sasUrl);
+      const download = await azureStorage.downloadExportFile(job.blobName);
+      res.setHeader("Content-Type", job.contentType || download.contentType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${job.fileName.replace(/["\\\r\n]/g, "_")}"`);
+      res.setHeader("Cache-Control", "private, no-store");
+      if (download.contentLength !== undefined) {
+        res.setHeader("Content-Length", download.contentLength.toString());
+      }
+      download.stream.on("error", (streamError) => {
+        log(`Error streaming export ${job.id}: ${streamError}`, "express");
+        if (!res.headersSent) res.status(500).end();
+        else res.destroy(streamError as Error);
+      });
+      download.stream.pipe(res);
     } catch (error: any) {
       log(`Error downloading export: ${error.message}`, "express");
       res.status(500).json({ error: "Unable to download export" });

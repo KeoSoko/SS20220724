@@ -177,6 +177,27 @@ export class AzureBlobStorage {
     log(`Uploaded background export "${blobName}" (${buffer.length} bytes)`, "azure");
   }
 
+  /** Open a private export as a server-side stream, avoiding browser CORS. */
+  async downloadExportFile(blobName: string): Promise<{
+    stream: NodeJS.ReadableStream;
+    contentLength?: number;
+    contentType?: string;
+  }> {
+    await this.initialize();
+    if (!/^exports\/\d+\/[0-9a-f-]+\.(csv|pdf)$/i.test(blobName)) {
+      throw new Error("Invalid export blob path");
+    }
+    const response = await this.containerClient.getBlockBlobClient(blobName).download();
+    if (!response.readableStreamBody) {
+      throw new Error("Export file stream is unavailable");
+    }
+    return {
+      stream: response.readableStreamBody,
+      contentLength: response.contentLength,
+      contentType: response.contentType,
+    };
+  }
+
   /**
    * Delete a blob from Azure Blob Storage
    * @param blobName The name of the blob to delete

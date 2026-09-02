@@ -559,6 +559,28 @@ export const billingEvents = pgTable("billing_events", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Durable, owner-scoped jobs for exports that may take longer than an HTTP
+// request (especially PDFs containing receipt images).
+export const exportJobs = pgTable("export_jobs", {
+  id: uuid("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // csv, pdf, tax-report
+  status: text("status").notNull().default("queued"), // queued, processing, completed, failed
+  parameters: jsonb("parameters").$type<Record<string, unknown>>().notNull().default({}),
+  fileName: text("file_name"),
+  contentType: text("content_type"),
+  blobName: text("blob_name"),
+  resultSummary: jsonb("result_summary").$type<Record<string, unknown>>(),
+  errorMessage: text("error_message"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  leaseExpiresAt: timestamp("lease_expires_at"),
+  expiresAt: timestamp("expires_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Promo codes for trial extensions and special offers
 export const promoCodes = pgTable("promo_codes", {
   id: serial("id").primaryKey(),

@@ -52,6 +52,11 @@ import { imagePreprocessor } from "./image-preprocessing";
 import { smartSearchService } from "./smart-search";
 import { budgetService } from "./budget-service";
 import { exportService } from "./export-service";
+import {
+  createBackgroundExportJob,
+  getBackgroundExportJob,
+  listBackgroundExportJobs,
+} from "./background-export-service";
 import { emailService } from "./email-service";
 import { taxService } from "./tax-service";
 import { taxAIAssistant } from "./tax-ai-assistant";
@@ -3408,6 +3413,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Export Data (CSV)
   // Requires email verification - sensitive export action
+  app.post("/api/export/jobs", requireVerifiedEmail, async (req, res) => {
+    try {
+      const job = await createBackgroundExportJob(getUserId(req), req.body);
+      res.status(202).json({ job });
+    } catch (error: any) {
+      if (error?.name === "ZodError") {
+        return res.status(400).json({ error: "Invalid export request", details: error.issues });
+      }
+      log(`Error queueing export: ${error.message}`, "express");
+      res.status(500).json({ error: "Unable to queue export" });
+    }
+  });
+
+  app.get("/api/export/jobs", requireVerifiedEmail, async (req, res) => {
+    try {
+      res.json({ jobs: await listBackgroundExportJobs(getUserId(req)) });
+    } catch (error: any) {
+      log(`Error listing exports: ${error.message}`, "express");
+      res.status(500).json({ error: "Unable to list exports" });
+    }
+  });
+
+  app.get("/api/export/jobs/:jobId/download", requireVerifiedEmail, async (req, res) => {
+    try {
+      const job = await getBackgroundExportJob(getUserId(req), req.params.jobId);
+      if (!job) return res.status(404).json({ error: "Export not found" });
+      if (job.status !== "completed" || !job.blobName || !job.fileName) {
+        return res.status(409).json({ error: "Export is not ready" });
+      }
+      if (job.expiresAt && job.expiresAt.getTime() <= Date.now()) {
+        return res.status(410).json({ error: "Export has expired; please create it again" });
+      }
+      const sasUrl = await azureStorage.generateSasUrl(job.blobName, 1);
+      if (!sasUrl) return res.status(404).json({ error: "Export file is unavailable" });
+      res.redirect(302, sasUrl);
+    } catch (error: any) {
+      log(`Error downloading export: ${error.message}`, "express");
+      res.status(500).json({ error: "Unable to download export" });
+    }
+  });
+
   app.get("/api/export/csv", requireVerifiedEmail, async (req, res) => {
     
     try {

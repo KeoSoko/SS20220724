@@ -6,6 +6,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { azureStorage } from "./azure-storage";
 import { initializeSubscriptionPlans } from "./subscription-plans-seeder";
 import { runBillingIntegrityMigration } from "./billing-integrity-migration";
+import { startBackgroundExportWorker } from "./background-export-service";
 
 const app = express();
 
@@ -391,6 +392,7 @@ app.use((req, res, next) => {
     // traffic stays gated until both complete successfully.
     await initializeSubscriptionPlans();
     await runBillingIntegrityMigration();
+    startBackgroundExportWorker();
     startupState = 'ready';
     log("Application initialization completed", "startup");
   } catch (error) {

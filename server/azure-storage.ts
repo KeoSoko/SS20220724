@@ -156,6 +156,27 @@ export class AzureBlobStorage {
     }
   }
 
+  /** Upload a server-generated export to a private, short-lived blob path. */
+  async uploadExportFile(buffer: Buffer, blobName: string, contentType: string): Promise<void> {
+    await this.initialize();
+    if (!/^exports\/\d+\/[0-9a-f-]+\.(csv|pdf)$/i.test(blobName)) {
+      throw new Error("Invalid export blob path");
+    }
+    if (!['text/csv', 'application/pdf'].includes(contentType)) {
+      throw new Error("Invalid export content type");
+    }
+
+    const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
+    await blockBlobClient.upload(buffer, buffer.length, {
+      blobHTTPHeaders: {
+        blobContentType: contentType,
+        blobCacheControl: 'private, no-store',
+      },
+      tier: 'Hot',
+    });
+    log(`Uploaded background export "${blobName}" (${buffer.length} bytes)`, "azure");
+  }
+
   /**
    * Delete a blob from Azure Blob Storage
    * @param blobName The name of the blob to delete

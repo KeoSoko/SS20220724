@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Download, FileText, Receipt, Calendar, CalendarRange, Archive, Eye } from 'lucide-react';
+import { Download, FileText, Receipt, Calendar, CalendarRange, Archive, Eye, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { EXPENSE_CATEGORIES } from '@shared/schema';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,17 @@ import { dispatchVerificationRequiredEvent } from '@/lib/queryClient';
 
 const formatCategoryLabel = (slug: string) =>
   slug.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+interface BackgroundExportJob {
+  id: string;
+  type: 'csv' | 'pdf' | 'tax-report';
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  fileName?: string | null;
+  errorMessage?: string | null;
+  resultSummary?: { imagesUnavailable?: number } | null;
+  expiresAt?: string | null;
+  createdAt: string;
+}
 
 export default function ExportsPage() {
   const [isExporting, setIsExporting] = useState(false);
@@ -67,6 +78,18 @@ export default function ExportsPage() {
 
   const { data: customCategories = [] } = useQuery<{ id: number; name: string; displayName?: string }[]>({
     queryKey: ['/api/custom-categories'],
+  });
+  const { data: backgroundExports = [] } = useQuery<BackgroundExportJob[]>({
+    queryKey: ['/api/export/jobs'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('/api/export/jobs', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error('Unable to load export jobs');
+      return (await response.json()).jobs;
+    },
+    refetchInterval: 5000,
   });
 
   const closePreview = useCallback(() => {
@@ -255,42 +278,28 @@ export default function ExportsPage() {
     setExportType(type === 'csv' ? 'date-range-csv' : type === 'tax-report' ? 'date-range-tax' : 'date-range-pdf');
 
     try {
-      const dateRange = startDate && endDate ? `${startDate}-to-${endDate}` :
-                       startDate ? `from-${startDate}` :
-                       endDate ? `until-${endDate}` : 'all-dates';
-
-      let url: string;
-      let filename: string;
-
-      if (type === 'csv') {
-        const params = new URLSearchParams({
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Authentication required');
+      const response = await fetch('/api/export/jobs', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type,
           ...(startDate && { startDate }),
           ...(endDate && { endDate }),
           ...(category && category !== 'all' && { category }),
-        });
-        url = `/api/export/csv?${params.toString()}`;
-        filename = `receipts-${dateRange}.csv`;
-      } else {
-        url = buildPdfParams(type);
-        filename = type === 'tax-report' ? `tax-report-${dateRange}.pdf` : `receipts-${dateRange}.pdf`;
-      }
-
-      const result = await fetchPdf(url);
-      if (!result) return;
-      const { blob, imagesUnavailable } = result;
-
-      const link = document.createElement('a');
-      const objUrl = window.URL.createObjectURL(blob);
-      link.href = objUrl;
-      link.download = filename;
-      link.click();
-      window.URL.revokeObjectURL(objUrl);
-
+          ...(type === 'pdf' && {
+            includeSummary,
+            includeImages,
+            groupBy: groupByCategory ? 'category' : 'date',
+          }),
+          ...(type === 'tax-report' && { taxYear: new Date().getFullYear() }),
+        }),
+      });
+      if (!response.ok) throw new Error(`Unable to queue export (${response.status})`);
       toast({
-        title: "Export Successful",
-        description: imagesUnavailable > 0
-          ? `Your report downloaded. Some receipt images were unavailable (${imagesUnavailable}); placeholders were included.`
-          : `Your ${type.replace('-', ' ')} report has been downloaded.`,
+        title: "Export queued",
+        description: "You can leave this page while we prepare it. The finished file will appear under Recent exports.",
       });
     } catch (error) {
       toast({
@@ -301,6 +310,27 @@ export default function ExportsPage() {
     } finally {
       setIsExporting(false);
       setExportType('');
+    }
+  };
+
+  const downloadBackgroundExport = async (job: BackgroundExportJob) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('Authentication required');
+      const response = await fetch(`/api/export/jobs/${job.id}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error(`Download failed (${response.status})`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = job.fileName || `simple-slips-export.${job.type === 'csv' ? 'csv' : 'pdf'}`;
+      link.click();
+      URL.revokeObjectURL(objectUrl);
+      notifyUnavailableImages(job.resultSummary?.imagesUnavailable || 0);
+    } catch {
+      toast({ title: "Download failed", description: "Please refresh and try again.", variant: "destructive" });
     }
   };
 
@@ -452,12 +482,12 @@ export default function ExportsPage() {
                     {isExporting && exportType === 'date-range-pdf' ? (
                       <>
                         <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-white border-t-transparent" />
-                        Generating...
+                        Queueing...
                       </>
                     ) : (
                       <>
                         <FileText className="h-4 w-4 mr-2" />
-                        Download PDF
+                        Create PDF
                       </>
                     )}
                   </Button>
@@ -497,12 +527,12 @@ export default function ExportsPage() {
                     {isExporting && exportType === 'date-range-tax' ? (
                       <>
                         <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-white border-t-transparent" />
-                        Generating...
+                        Queueing...
                       </>
                     ) : (
                       <>
                         <Calendar className="h-4 w-4 mr-2" />
-                        Download Tax PDF
+                        Create Tax PDF
                       </>
                     )}
                   </Button>
@@ -523,16 +553,49 @@ export default function ExportsPage() {
                   {isExporting && exportType === 'date-range-csv' ? (
                     <>
                       <div className="animate-spin h-4 w-4 mr-2 rounded-none border-2 border-gray-500 border-t-transparent" />
-                      Generating...
+                      Queueing...
                     </>
                   ) : (
                     <>
                       <Download className="h-4 w-4 mr-2" />
-                      Download for Excel (CSV)
+                      Create Excel file (CSV)
                     </>
                   )}
                 </Button>
               </div>
+          </CardContent>
+        </Card>
+
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Recent exports</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {backgroundExports.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Created reports will appear here.</p>
+            ) : backgroundExports.map((job) => (
+              <div key={job.id} className="flex flex-col gap-2 border p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  {job.status === 'completed' ? <CheckCircle2 className="h-5 w-5 text-green-600" /> :
+                   job.status === 'failed' ? <AlertCircle className="h-5 w-5 text-red-600" /> :
+                   <Clock className="h-5 w-5 text-amber-600" />}
+                  <div>
+                    <p className="font-medium">{job.fileName || `${job.type.replace('-', ' ')} export`}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {job.status === 'queued' ? 'Waiting to start' :
+                       job.status === 'processing' ? 'Preparing your file' :
+                       job.status === 'failed' ? (job.errorMessage || 'Could not create this export') :
+                       `Ready to download${job.expiresAt ? ` until ${new Date(job.expiresAt).toLocaleDateString()}` : ''}`}
+                    </p>
+                  </div>
+                </div>
+                {job.status === 'completed' && (
+                  <Button size="sm" onClick={() => downloadBackgroundExport(job)}>
+                    <Download className="mr-2 h-4 w-4" /> Download
+                  </Button>
+                )}
+              </div>
+            ))}
           </CardContent>
         </Card>
 

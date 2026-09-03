@@ -1,0 +1,32 @@
+Run this exact transaction against the production database: BEGIN;
+
+WITH corrected AS ( UPDATE user_subscriptions SET status = 'cancelled', updated_at = NOW() WHERE id = 238 AND user_id = 268 AND plan_id = 2 AND status = 'active' AND cancelled_at = TIMESTAMP '2026-07-02 06:36:12.773' AND next_billing_date = TIMESTAMP '2026-08-02 06:36:43.498' AND last_payment_date = TIMESTAMP '2026-07-02 06:36:43.498' AND total_paid = 9800 AND paystack_reference = 'ss_1782974183213_0zv8w74h0' RETURNING id, user_id, plan_id, status, cancelled_at, next_billing_date, total_paid, last_payment_date ), audit AS ( INSERT INTO billing_events ( user_id, event_type, event_data, processed ) SELECT user_id, 'admin_expired_cancelled_subscription_normalized', jsonb_build_object( 'localSubscriptionId', id, 'previousStatus', 'active', 'correctedStatus', status, 'reason', 'expired_subscription_retained_active_status_after_cancellation', 'providerMutation', 'none', 'paymentMutation', 'none', 'entitlementExtension', 'none', 'recordedAt', NOW() ), TRUE FROM corrected RETURNING id AS audit_event_id ) SELECT corrected.*, audit.audit_event_id FROM corrected CROSS JOIN audit;
+
+COMMIT;
+
+2 minutes ago
+I couldn’t run it: production mutations are blocked in Plan mode, so the transaction was not executed. Switch to Build mode and resend the SQL to apply this production change.
+
+
+
+Worked for 4 seconds
+Switch to Build
+
+2 minutes ago
+Considering response options
+
+Considering response options
+Please use the mode selector to switch from Plan to Build, then resend the transaction. I can’t change the workspace mode from within this chat.
+
+
+
+Worked for 3 seconds
+replit is not allowing me
+
+Just now
+Considering task options for user
+
+Considering task options for user
+That’s expected here: I can’t change the workspace mode, and the production database tool is read-only even in Build mode—the transaction has not run.
+
+To apply it, use an authorized production database console or your deployment’s approved admin/runbook process. If you’d like, I can prepare a controlled repair task for an execution agent instead.

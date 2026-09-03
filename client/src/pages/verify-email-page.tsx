@@ -36,19 +36,9 @@ export function VerifyEmailPage() {
       }, 2500);
     },
     onError: (error: any) => {
-      // Check if token was already used (success case showing as error)
-      if (error.message?.includes('invalid or has expired') || 
-          error.message?.includes('Invalid token')) {
-        setVerificationStatus('success');
-        setMessage('Your email has already been verified! Redirecting to sign in...');
-        setRedirecting(true);
-        setTimeout(() => {
-          setLocation('/auth?verified=true&message=' + encodeURIComponent('Email already verified! You can sign in now.'));
-        }, 2500);
-      } else {
-        setVerificationStatus('error');
-        setMessage(error.message || 'Failed to verify email. Please try again.');
-      }
+      setVerificationStatus('error');
+      setMessage(error.message || 'Failed to verify email. Please try again or request a new verification email.');
+      setRedirecting(false);
     }
   });
 
@@ -130,7 +120,7 @@ export function VerifyEmailPage() {
             </p>
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
               <p className="text-sm text-blue-800 text-center">
-                <strong>Next step:</strong> Sign in with your username and password to access your account.
+                <strong>Next step:</strong> Sign in with your email and password to access your account.
               </p>
             </div>
             <p className="text-sm text-gray-500 text-center">

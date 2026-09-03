@@ -74,7 +74,7 @@ export class DatabaseStorage implements IStorage {
       tableName: 'sessions',
       createTableIfMissing: true
     });
-    
+
     // Startup owns the awaited connectivity probe. Starting a second probe
     // here races required initialization and consumes extra pool connections in
     // autoscaled deployments.
@@ -158,7 +158,7 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
   
-  async updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined> {
+  async updateUser(id: number, updates: Partial<User>): Promise<User | undefined> {
     const [user] = await db.update(users)
       .set({
         ...updates,
@@ -1720,13 +1720,12 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async usePromoCode(userId: number, code: string, trialDays: number): Promise<void> {
+  async usePromoCode(userId: number, code: string, trialDays: number, authoritativeTrialEndDate?: Date): Promise<void> {
     try {
       const upperCode = code.toUpperCase();
       
       // Calculate trial end date
-      const trialEndDate = new Date();
-      trialEndDate.setDate(trialEndDate.getDate() + trialDays);
+      const trialEndDate = authoritativeTrialEndDate || new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
       
       // Update user with promo code and trial end date
       await db

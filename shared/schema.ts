@@ -808,11 +808,31 @@ export const billingEventsRelations = relations(billingEvents, ({ one }) => ({
 }));
 
 // Define insertion schemas with validation
-// Password validation regex patterns
+// Shared password policy used by every account-creation surface.
 const LOWERCASE_REGEX = /[a-z]/;
 const UPPERCASE_REGEX = /[A-Z]/;
 const DIGIT_REGEX = /[0-9]/;
-const SPECIAL_CHAR_REGEX = /[!@#$%^&*(),.?":{}|<>]/;
+const SPECIAL_CHAR_REGEX = /[^a-zA-Z0-9\s]/;
+
+export const strongPasswordSchema = z.string()
+  .min(8, "Password must be at least 8 characters long")
+  .max(64, "Password must be at most 64 characters long")
+  .refine(
+    (password) => LOWERCASE_REGEX.test(password),
+    { message: "Password must contain at least one lowercase letter" }
+  )
+  .refine(
+    (password) => UPPERCASE_REGEX.test(password),
+    { message: "Password must contain at least one uppercase letter" }
+  )
+  .refine(
+    (password) => DIGIT_REGEX.test(password),
+    { message: "Password must contain at least one number" }
+  )
+  .refine(
+    (password) => SPECIAL_CHAR_REGEX.test(password),
+    { message: "Password must contain at least one special character" }
+  );
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -839,25 +859,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
     .max(30, "Username must be less than 30 characters")
     .regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
   
-  password: z.string()
-    .min(8, "Password must be at least 8 characters long")
-    .max(64, "Password must be less than 64 characters")
-    .refine(
-      (password) => LOWERCASE_REGEX.test(password),
-      { message: "Password must contain at least one lowercase letter" }
-    )
-    .refine(
-      (password) => UPPERCASE_REGEX.test(password),
-      { message: "Password must contain at least one uppercase letter" }
-    )
-    .refine(
-      (password) => DIGIT_REGEX.test(password),
-      { message: "Password must contain at least one number" }
-    )
-    .refine(
-      (password) => SPECIAL_CHAR_REGEX.test(password),
-      { message: "Password must contain at least one special character" }
-    ),
+  password: strongPasswordSchema,
   
   email: z.string().email("Please enter a valid email address").optional(),
   fullName: z.string().optional(),

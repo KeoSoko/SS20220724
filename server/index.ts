@@ -11,6 +11,7 @@ import {
 import { runBillingIntegrityMigration } from "./billing-integrity-migration";
 import { initializeDatabase } from "./db";
 import { startBackgroundExportWorker } from "./background-export-service";
+import { initializeDatabase } from "./db";
 
 const app = express();
 
@@ -397,6 +398,9 @@ app.use((req, res, next) => {
     if (!databaseReady) {
       throw new Error("Database connection failed after startup retries");
     }
+
+    // These database-backed initialization steps remain required. Application
+    // traffic stays gated until both complete successfully.
     await initializeSubscriptionPlans();
     await runBillingIntegrityMigration();
     startupState = 'ready';

@@ -17,6 +17,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { createClientLogger } from "@/lib/logger";
+import { strongPasswordSchema } from "@shared/schema";
 
 const logger = createClientLogger("auth-page");
 export default function AuthPage() {
@@ -119,9 +120,9 @@ export default function AuthPage() {
 
   // Register form schema
   const registerSchema = z.object({
-    username: z.string().min(3, "Username must be at least 3 characters"),
-    email: z.string().email("Please enter a valid email address"),
-    password: z.string().min(6, "Password must be at least 6 characters"),
+    username: z.string().trim().min(3, "Username must be at least 3 characters"),
+    email: z.string().trim().toLowerCase().email("Please enter a valid email address"),
+    password: strongPasswordSchema,
     confirmPassword: z.string().min(1, "Please confirm your password"),
     promoCode: z.string().optional(),
   }).refine((data) => data.password === data.confirmPassword, {
@@ -338,10 +339,14 @@ export default function AuthPage() {
 
     try {
       const { confirmPassword, ...userData } = data;
-      await registerMutation.mutateAsync(userData);
+      await registerMutation.mutateAsync({
+        ...userData,
+        agreedToTerms,
+        agreedToTaxDisclaimer,
+      });
       setErrorDetails({
         title: "Account Created Successfully!",
-        message: "Please check the email we have sent to you to verify your account. Once verified, you can sign in with your new credentials.",
+        message: "Please check the email we have sent to you to verify your account. Once verified, you can sign in with your email and password.",
         type: 'success'
       });
       setShowErrorDialog(true);

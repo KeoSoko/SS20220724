@@ -16,6 +16,12 @@ interface AuthResponse {
   expiresIn?: number;
 }
 
+type RegistrationData = Pick<InsertUser, "username" | "password" | "email" | "fullName"> & {
+  promoCode?: string;
+  agreedToTerms: boolean;
+  agreedToTaxDisclaimer: boolean;
+};
+
 type AuthContextType = {
   user: SelectUser | null;
   isLoading: boolean;
@@ -23,7 +29,7 @@ type AuthContextType = {
   token: string | null;
   loginMutation: UseMutationResult<AuthResponse, Error, LoginData>;
   logoutMutation: UseMutationResult<{ success: boolean }, Error, void>;
-  registerMutation: UseMutationResult<AuthResponse, Error, InsertUser>;
+  registerMutation: UseMutationResult<AuthResponse, Error, RegistrationData>;
   refreshTokenMutation: UseMutationResult<{ token: string }, Error, void>;
   invalidateTokensMutation: UseMutationResult<{ success: boolean; message: string }, Error, void>;
   logout: () => Promise<void>;
@@ -428,9 +434,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Registration mutation - no token needed since email verification required
   const registerMutation = useMutation({
-    mutationFn: async (credentials: InsertUser) => {
-      console.log("Attempting registration with:", credentials);
-
+    mutationFn: async (credentials: RegistrationData) => {
       // Use direct fetch approach for consistency
       const response = await fetch("/api/register", {
         method: "POST",

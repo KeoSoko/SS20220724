@@ -40,7 +40,7 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser?(id: number, updates: Partial<InsertUser>): Promise<User | undefined>;
+  updateUser?(id: number, updates: Partial<User>): Promise<User | undefined>;
   deleteUser?(id: number): Promise<void>;
   updateLastLogin?(id: number): Promise<void>;
   
@@ -129,7 +129,7 @@ export interface IStorage {
   getPromoCode?(code: string): Promise<PromoCode | null>;
   validatePromoCode?(code: string): Promise<PromoCode | null>;
   createPromoCode?(promoCode: InsertPromoCode): Promise<PromoCode>;
-  usePromoCode?(userId: number, code: string, trialDays: number): Promise<void>;
+  usePromoCode?(userId: number, code: string, trialDays: number, trialEndDate?: Date): Promise<void>;
   
   // Express session store
   sessionStore: session.Store;
@@ -283,7 +283,7 @@ export class MemStorage implements IStorage {
     return user;
   }
   
-  async updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined> {
+  async updateUser(id: number, updates: Partial<User>): Promise<User | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
     

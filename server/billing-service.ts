@@ -713,6 +713,14 @@ export class BillingService {
         throw new Error('User subscriptions not supported by current storage');
       }
       const subscription = await storage.createUserSubscription(subscriptionData);
+
+      await db
+        .update(users)
+        .set({
+          trialEndDate,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
       
       log(`Started free trial for user ${userId} with plan ${trialPlan.name}`, 'billing');
       

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 const source = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
 const planSeederSource = readFileSync(new URL('./subscription-plans-seeder.ts', import.meta.url), 'utf8');
 const routesSource = readFileSync(new URL('./routes.ts', import.meta.url), 'utf8');
+const databaseStorageSource = readFileSync(new URL('./database-storage.ts', import.meta.url), 'utf8');
 
 describe('deployment startup health gate', () => {
   it('answers Replit liveness probes while required initialization is running', () => {
@@ -15,7 +16,7 @@ describe('deployment startup health gate', () => {
   it('starts listening before awaiting slow external initialization', () => {
     const listen = source.indexOf('server.listen({');
     const azure = source.indexOf('await azureStorage.initialize()', listen);
-    const database = source.indexOf('await initializeDatabase()', listen);
+    const database = source.indexOf('await initializeDatabase()', azure);
     const plans = source.indexOf('await initializeSubscriptionPlans()', listen);
     const migration = source.indexOf('await runBillingIntegrityMigration()', listen);
 
@@ -30,6 +31,10 @@ describe('deployment startup health gate', () => {
     expect(source).toContain('const databaseReady = await initializeDatabase()');
     expect(source).toContain('if (!databaseReady)');
     expect(source).toContain('Database connection failed after startup retries');
+  });
+
+  it('does not start a competing database probe from the storage constructor', () => {
+    expect(databaseStorageSource).not.toContain('this.initialize().catch');
   });
 
   it('fails health checks when required initialization fails', () => {

@@ -6,7 +6,7 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import jwt from "jsonwebtoken";
 import { storage } from "./storage";
-import { User as SelectUser, users } from "@shared/schema";
+import { insertUserSchema, strongPasswordSchema, User as SelectUser, users } from "@shared/schema";
 import { log } from "./vite";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
@@ -29,6 +29,7 @@ if (!JWT_SECRET) {
 }
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "24h"; // 24 hours for financial app security
 const SESSION_MAX_AGE = 1000 * 60 * 60; // 1 hour
+const REGISTRATION_LEGAL_VERSION = "2026-09-03";
 
 // Helper for async password hashing
 const scryptAsync = promisify(scrypt);
@@ -675,31 +676,39 @@ export function setupAuth(app: Express) {
   // Register a new user
   app.post("/api/register", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Validate input
-      const { username, password, fullName, promoCode } = req.body;
-      const email = req.body.email?.toLowerCase().trim();
-      
-      if (!username) {
-        return res.status(400).json({ 
-          error: "Username required",
-          message: "Please choose a username for your account.",
-          userMessage: "Please enter a username."
+      const username = typeof req.body.username === "string" ? req.body.username.trim() : "";
+      const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+      const { password, fullName, promoCode } = req.body;
+
+      if (req.body.agreedToTerms !== true || req.body.agreedToTaxDisclaimer !== true) {
+        return res.status(400).json({
+          error: "Legal acknowledgements required",
+          message: "You must accept the terms and acknowledge the tax disclaimer before creating an account.",
+          field: req.body.agreedToTerms !== true ? "agreedToTerms" : "agreedToTaxDisclaimer",
         });
       }
-      
-      if (!password) {
-        return res.status(400).json({ 
-          error: "Password required",
-          message: "Please create a password for your account.",
-          userMessage: "Please enter a password."
+
+      const validatedPassword = strongPasswordSchema.safeParse(password);
+      if (!validatedPassword.success) {
+        return res.status(400).json({
+          error: "Invalid registration details",
+          message: validatedPassword.error.issues[0]?.message || "Please choose a stronger password.",
+          field: "password",
         });
       }
-      
-      if (!email) {
-        return res.status(400).json({ 
-          error: "Email required",
-          message: "We need your email address to send you important account notifications and to help you recover your account if needed.",
-          userMessage: "Please enter your email address."
+
+      const validatedRegistration = insertUserSchema.safeParse({
+        username,
+        password: validatedPassword.data,
+        email,
+        fullName,
+      });
+      if (!validatedRegistration.success) {
+        const issue = validatedRegistration.error.issues[0];
+        return res.status(400).json({
+          error: "Invalid registration details",
+          message: issue?.message || "Please check your registration details.",
+          field: issue?.path[0],
         });
       }
       
@@ -731,23 +740,24 @@ export function setupAuth(app: Express) {
 
       // Create user with hashed password and verification token
       const user = await storage.createUser({
+        ...validatedRegistration.data,
         username,
-        password: await hashPassword(password),
         email,
-        fullName,
+        password: await hashPassword(validatedRegistration.data.password),
         emailVerificationToken: verificationToken,
         isEmailVerified: false
       });
 
       // Validate and apply promo code if provided
       let trialDays = 30; // Default trial days
+      let validPromoCode: string | undefined;
       if (promoCode && storage.validatePromoCode && storage.usePromoCode) {
         try {
-          const validPromo = await storage.validatePromoCode(promoCode);
+          const validPromo = await storage.validatePromoCode(promoCode.trim());
           if (validPromo) {
             trialDays = validPromo.trialDays;
-            await storage.usePromoCode(user.id, promoCode, trialDays);
-            log(`Applied promo code ${promoCode} to user ${user.id} - ${trialDays} day trial`, 'auth');
+            validPromoCode = promoCode.trim();
+            log(`Validated promo code ${promoCode} for user ${user.id} - ${trialDays} day trial`, 'auth');
           } else {
             log(`Invalid promo code ${promoCode} provided during registration`, 'auth');
           }
@@ -756,46 +766,69 @@ export function setupAuth(app: Express) {
         }
       }
 
-      // Automatically start free trial for new users
-      try {
-        if (storage.createUserSubscription) {
-          // Get the free trial plan
-          const plans = await storage.getSubscriptionPlans?.() || [];
-          const trialPlan = plans.find(plan => plan.name === 'free_trial');
-          
-          if (trialPlan) {
-            const trialStartDate = new Date();
-            const trialEndDate = new Date();
-            trialEndDate.setDate(trialEndDate.getDate() + trialDays); // Use promo code trial days if available
-            
-            await storage.createUserSubscription({
-              userId: user.id,
-              planId: trialPlan.id,
-              status: 'trial',
-              trialStartDate,
-              trialEndDate,
-              subscriptionStartDate: null,
-              nextBillingDate: null,
-              cancelledAt: null,
-              googlePlayPurchaseToken: null,
-              googlePlayOrderId: null,
-              googlePlaySubscriptionId: null,
-              paystackReference: null,
-              paystackCustomerCode: null,
-              appleReceiptData: null,
-              appleTransactionId: null,
-              appleOriginalTransactionId: null,
-              totalPaid: 0,
-              lastPaymentDate: null,
-            });
-            
-            log(`Started ${trialDays}-day free trial for new user ${user.id} (${username})`, 'billing');
-          }
-        }
-      } catch (trialError) {
-        log(`Failed to start free trial for user ${user.id}: ${trialError}`, 'billing');
-        // Don't fail registration if trial start fails
+      if (!storage.createBillingEvent || !storage.createUserSubscription || !storage.updateUser) {
+        throw new Error("Registration billing integrity services are unavailable");
       }
+
+      const acceptedAt = new Date();
+      await storage.createBillingEvent({
+        userId: user.id,
+        eventType: "registration_legal_acceptance",
+        eventData: {
+          agreedToTerms: true,
+          agreedToTaxDisclaimer: true,
+          acceptedAt: acceptedAt.toISOString(),
+          version: REGISTRATION_LEGAL_VERSION,
+        },
+        processed: true,
+      });
+
+      const plans = await storage.getSubscriptionPlans?.() || [];
+      const trialPlan = plans.find(plan => plan.name === "free_trial");
+      if (!trialPlan) {
+        throw new Error("Free trial plan is unavailable");
+      }
+
+      const trialStartDate = new Date();
+      const trialEndDate = new Date(trialStartDate.getTime() + trialDays * 24 * 60 * 60 * 1000);
+      await storage.createUserSubscription({
+        userId: user.id,
+        planId: trialPlan.id,
+        status: "trial",
+        trialStartDate,
+        trialEndDate,
+        subscriptionStartDate: null,
+        nextBillingDate: null,
+        cancelledAt: null,
+        googlePlayPurchaseToken: null,
+        googlePlayOrderId: null,
+        googlePlaySubscriptionId: null,
+        paystackReference: null,
+        paystackCustomerCode: null,
+        appleReceiptData: null,
+        appleTransactionId: null,
+        appleOriginalTransactionId: null,
+        totalPaid: 0,
+        lastPaymentDate: null,
+      });
+      await storage.updateUser(user.id, { trialEndDate });
+
+      if (validPromoCode && storage.usePromoCode) {
+        await storage.usePromoCode(user.id, validPromoCode, trialDays, trialEndDate);
+      }
+
+      await storage.createBillingEvent({
+        userId: user.id,
+        eventType: "trial_started",
+        eventData: {
+          planId: trialPlan.id,
+          trialStartDate: trialStartDate.toISOString(),
+          trialEndDate: trialEndDate.toISOString(),
+          trialDays,
+        },
+        processed: true,
+      });
+      log(`Started ${trialDays}-day free trial for new user ${user.id} (${username})`, "billing");
 
       // Send verification email
       const emailService = new EmailService();
@@ -804,20 +837,6 @@ export function setupAuth(app: Express) {
       if (!emailSent) {
         log(`Failed to send verification email to ${email}`, 'auth');
         // Continue with registration even if email fails - user can request resend
-      }
-
-      // Start free trial automatically for new users
-      try {
-        if (storage.startFreeTrial) {
-          await storage.startFreeTrial(user.id);
-          log(`✅ Free trial automatically activated for new user: ${username} (${user.id})`, 'auth');
-        } else {
-          log(`⚠️ Trial creation not available - storage method missing for user ${user.id}`, 'auth');
-        }
-      } catch (trialError) {
-        log(`❌ FAILED to start trial for user ${user.id}: ${trialError}`, 'auth');
-        // Continue with registration but log detailed error for debugging
-        console.error('Trial creation error details:', trialError);
       }
 
       log(`User registered: ${username} (${user.id}) - verification email sent to ${email}`, 'auth');
@@ -1322,6 +1341,13 @@ export function setupAuth(app: Express) {
       }
       
       if (user.isEmailVerified) {
+        if (storage.updateUser && (user.emailVerificationToken !== null || user.emailVerifiedAt === null)) {
+          await storage.updateUser(user.id, {
+            emailVerificationToken: null,
+            emailVerifiedAt: user.emailVerifiedAt || new Date(),
+          });
+          log(`Repaired stale email verification metadata for user: ${user.id}`, "auth");
+        }
         return res.status(200).json({ 
           success: true, 
           message: "Email is already verified" 
@@ -1366,6 +1392,9 @@ export function setupAuth(app: Express) {
                     trialStartDate: newTrialStartDate,
                     trialEndDate: newTrialEndDate,
                     trialRestartedAt: now
+                  });
+                  await storage.updateUser(user.id, {
+                    trialEndDate: newTrialEndDate,
                   });
                   
                   // Audit log

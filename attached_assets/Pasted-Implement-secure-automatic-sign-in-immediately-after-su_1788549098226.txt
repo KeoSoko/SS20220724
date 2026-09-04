@@ -1,0 +1,21 @@
+Implement secure automatic sign-in immediately after successful Simple Slips registration.
+
+Confirmed product policy:
+- A newly registered, unverified user may enter the trial, use the app, and scan receipts.
+- Email verification remains mandatory before Paystack checkout/payment and other currently protected sensitive actions.
+- The user should not submit their password a second time after registration.
+
+Implementation requirements:
+1. Extract a shared authentication/session-establishment helper used by both successful login and registration.
+2. Preserve login security: regenerate session before req.login; fail closed on session/auth failure; issue a fresh JWT with current token version; create authentication-token/session record; enforce current concurrent-session/device policy; update last-login; registration uses rememberMe=false.
+3. After registration creates user/workspace/single trial, establish authentication and return login-compatible user, token, expiresIn, rememberMe:false while preserving useful registration fields.
+4. If the account committed but auth establishment fails, return explicit account_created_but_signin_required. Client must route that existing account to sign-in and never retry registration/create a duplicate.
+5. Extract/reuse one client auth-response installer for login and registration: existing token store, user/cache state, returning-browser boolean marker.
+6. After authenticated registration, navigate directly to a validated safe internal redirect or /home. Remove mandatory Continue to Sign In.
+7. Preserve password policy, normalization/uniqueness, legal consent/audit, exactly one trial/dates/promos, totalPaid=0, no provider identity, verification token/email, trial restart rules, every requireVerifiedEmail and checkout restriction, Paystack/provider behavior, receipts, deletion, and schema.
+8. Reject external/malformed redirects; never expose hashes/secrets; retain rate limits, enumeration protection, device limits.
+9. Add executable tests: regenerated Passport session/fresh JWT, auth-token row/device limits, identical client auth installation, unverified /home and /upload access, checkout verification gate unchanged, redirect safety, and post-commit auth failure without duplicates. Keep existing integrity/login tests passing.
+10. Run focused tests, TypeScript, production build, diff check, and non-mutating browser QA using mocks or a development-only disposable fixture. No production mutation, real email, or Paystack calls.
+11. Review security/failure behavior. Do not publish.
+
+Make the smallest robust change and report exact files plus results.

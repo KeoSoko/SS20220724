@@ -20,8 +20,8 @@ import {
   getCanonicalAuthLocation,
   getAuthModeFromLocation,
   readReturningUserMarker,
-  writeReturningUserMarker,
 } from "@/lib/auth-mode";
+import { getSafeAuthRedirect } from "@/lib/safe-auth-redirect";
 import { strongPasswordSchema } from "@shared/schema";
 
 const logger = createClientLogger("auth-page");
@@ -74,13 +74,6 @@ export default function AuthPage() {
       return getAuthModeFromLocation(value, false);
     }
   };
-  const markBrowserAsReturning = () => {
-    try {
-      writeReturningUserMarker(localStorage);
-    } catch {
-      // Authentication must still succeed when browser storage is unavailable.
-    }
-  };
   const getBrowserLocation = () => `${window.location.pathname}${window.location.search}`;
   const syncAndCanonicalizeMode = () => {
     const browserLocation = getBrowserLocation();
@@ -99,7 +92,6 @@ export default function AuthPage() {
   const [forgotUsernameMessage, setForgotUsernameMessage] = useState("");
   const [isSubmittingForgot, setIsSubmittingForgot] = useState(false);
   const [registerStep, setRegisterStep] = useState(1);
-  const [registrationSuccess, setRegistrationSuccess] = useState(false);
   const registrationSubmitStarted = useRef(false);
 
   // The URL is the source of truth for the focused flow, so refresh and
@@ -216,7 +208,7 @@ export default function AuthPage() {
 
   const getRedirectUrl = () => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("redirect") || "/home";
+    return getSafeAuthRedirect(params.get("redirect"));
   };
 
   useEffect(() => {
@@ -261,7 +253,6 @@ export default function AuthPage() {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         await loginMutation.mutateAsync(data);
-        markBrowserAsReturning();
         setLocation(getRedirectUrl());
         return;
       } catch (error: any) {
@@ -404,14 +395,23 @@ export default function AuthPage() {
 
     try {
       const { confirmPassword, ...userData } = data;
-      await registerMutation.mutateAsync({
+      const result = await registerMutation.mutateAsync({
         ...userData,
         agreedToTerms,
         agreedToTaxDisclaimer,
       });
-      markBrowserAsReturning();
       registrationSubmitStarted.current = false;
-      setRegistrationSuccess(true);
+      if (result.authenticated === false) {
+        setAuthMode("login");
+        setErrorDetails({
+          title: "Account created",
+          message: result.message,
+          type: "success",
+        });
+        setShowErrorDialog(true);
+        return;
+      }
+      setLocation(getRedirectUrl());
     } catch (error: any) {
       // Handle specific error cases
       if (error.field === 'email' && error.action === 'redirect_to_login') {
@@ -465,7 +465,7 @@ export default function AuthPage() {
     if (registrationSubmitStarted.current || registerMutation.isPending) return;
     registrationSubmitStarted.current = true;
     await registerForm.handleSubmit(onRegisterSubmit)(event);
-    if (!registerMutation.isPending && !registrationSuccess) {
+    if (!registerMutation.isPending) {
       registrationSubmitStarted.current = false;
     }
   };
@@ -698,20 +698,7 @@ export default function AuthPage() {
 
               {/* Register Tab */}
               {activeTab === "register" && <div className="space-y-4">
-                {registrationSuccess ? (
-                  <div className="space-y-6 text-center py-5" aria-live="polite">
-                    <CheckCircle className="mx-auto h-12 w-12 text-green-600" />
-                    <div className="space-y-2">
-                      <h2 className="text-2xl font-semibold text-gray-900">Welcome, {registerForm.getValues("username")}!</h2>
-                      <p className="text-gray-700">Your 30-day Simple Slips trial is ready.</p>
-                      <p className="text-sm text-gray-600">You can sign in now and start scanning. Please verify your email before subscribing or making a payment.</p>
-                    </div>
-                      <Button className="w-full min-h-11 text-white bg-primary hover:bg-primary/90" onClick={() => { setRegistrationSuccess(false); setRegisterStep(1); setAuthMode("login"); }}>
-                      Continue to Sign In
-                    </Button>
-                  </div>
-                ) : (
-                  <Form {...registerForm}>
+                <Form {...registerForm}>
                     <form onSubmit={handleRegisterStepSubmit} className="space-y-5" noValidate>
                       <p className="text-center text-sm font-medium text-gray-700">
                         New to Simple Slips? Let’s get started.
@@ -777,7 +764,6 @@ export default function AuthPage() {
                       <div className="flex gap-3 pt-2"><Button type="button" variant="ghost" className={`min-h-11 ${registerStep === 1 ? "invisible" : ""}`} onClick={() => setRegisterStep((step) => Math.max(1, step - 1))}>Back</Button><Button type="submit" className="min-h-11 flex-1 text-white bg-primary hover:bg-primary/90" disabled={registerMutation.isPending}>{registerStep === 4 ? (registerMutation.isPending ? "Creating account..." : "Create My Account") : "Continue"}</Button></div>
                     </form>
                   </Form>
-                )}
               </div>}
           </CardContent>
         </Card>

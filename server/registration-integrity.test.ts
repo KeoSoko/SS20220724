@@ -8,6 +8,7 @@ const verifyPageSource = readFileSync(
   new URL("../client/src/pages/verify-email-page.tsx", import.meta.url),
   "utf8",
 );
+const routesSource = readFileSync(new URL("./routes.ts", import.meta.url), "utf8");
 
 describe("registration integrity", () => {
   it("enforces the shared strong password policy", () => {
@@ -39,6 +40,13 @@ describe("registration integrity", () => {
     expect(registration).not.toContain("storage.startFreeTrial");
     expect(registration).toContain("await storage.updateUser(user.id, { trialEndDate })");
     expect(registration).toContain('eventType: "trial_started"');
+    expect(registration).toContain("establishAuthenticatedSession(req, user, false)");
+    expect(registration).toContain('"account_created_but_signin_required"');
+    expect(registration.match(/storage\.createUser\(/g)).toHaveLength(1);
+  });
+
+  it("keeps Paystack checkout behind verified email", () => {
+    expect(routesSource).toContain('app.post("/api/billing/paystack/checkout", requireVerifiedEmail');
   });
 
   it("keeps billing-service and late-verification trial expiries mirrored", () => {

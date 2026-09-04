@@ -83,13 +83,14 @@ async function comparePasswords(supplied: string, stored: string) {
  * @param rememberMe Whether to generate a long-lived token
  * @returns JWT token string and expiration time
  */
-function generateJWT(user: SelectUser, rememberMe = false): { token: string, expiresIn: number } {
+function generateJWT(user: SelectUser, rememberMe = false): { token: string, expiresIn: number, jti: string } {
   // Set token expiration time based on remember me preference
   // Use environment variable for regular sessions, 30 days for remember me
   const regularExpiration = JWT_EXPIRES_IN === "24h" ? 60 * 60 * 24 : 60 * 60 * 8; // 24 hours or 8 hours
   const expiresIn = rememberMe ? 60 * 60 * 24 * 30 : regularExpiration; // in seconds
   
-  const payload = { 
+  const jti = randomBytes(32).toString("hex");
+  const payload = {
     sub: user.id,         // Standard JWT claim for subject (user ID)
     username: user.username, // Directly embed username for verification
     iss: 'simple-slips-app', // Critical for validation - issuer
@@ -97,7 +98,8 @@ function generateJWT(user: SelectUser, rememberMe = false): { token: string, exp
     remember: rememberMe,
     // Add extra identity verification data
     userCheck: `${user.id}:${user.username}`, // Combined identity check
-    v: user.tokenVersion || 1 // Token version for invalidation
+    v: user.tokenVersion || 1,
+    jti,
   };
 
   // Use a safer approach for JWT tokens with explicit expiration
@@ -112,13 +114,13 @@ function generateJWT(user: SelectUser, rememberMe = false): { token: string, exp
   try {
     // @ts-ignore: JWT typing issues
     const token = jwt.sign(payload, JWT_SECRET, options);
-    return { token, expiresIn };
+    return { token, expiresIn, jti };
   } catch (error) {
     log(`Error generating JWT with string secret: ${error}`, 'auth');
     try {
       // @ts-ignore: JWT typing issues  
       const token = jwt.sign(payload, Buffer.from(JWT_SECRET, 'utf-8'), options);
-      return { token, expiresIn };
+      return { token, expiresIn, jti };
     } catch (bufferError) {
       log(`Error generating JWT with buffer secret: ${bufferError}`, 'auth');
       throw new Error('Failed to generate authentication token');
@@ -126,10 +128,85 @@ function generateJWT(user: SelectUser, rememberMe = false): { token: string, exp
   }
 }
 
+export class AuthenticationCleanupError extends Error {}
+
+export async function revokeBearerCredential(
+  token: string,
+  persistence = storage,
+): Promise<boolean> {
+  if (!persistence.getAuthTokenByToken || !persistence.revokeAuthToken) return false;
+  const secret = JWT_SECRET || process.env.JWT_SECRET || "default-secret-key";
+  const decoded = jwt.verify(token, secret) as jwt.JwtPayload;
+  const persistedTokenValue = typeof decoded.jti === "string" ? decoded.jti : token;
+  const authToken = await persistence.getAuthTokenByToken(persistedTokenValue);
+  if (!authToken || String(authToken.userId) !== String(decoded.sub)) return false;
+  await persistence.revokeAuthToken(authToken.id);
+  return true;
+}
+
+export async function establishAuthenticatedSession(
+  req: Request,
+  user: SelectUser,
+  rememberMe = false,
+  persistence = storage,
+): Promise<{ token: string; expiresIn: number; rememberMe: boolean }> {
+  let persistedAuthTokenId: string | undefined;
+  const clearAuthentication = async () => {
+    if (persistedAuthTokenId && persistence.revokeAuthToken) {
+      await persistence.revokeAuthToken(persistedAuthTokenId);
+    }
+    delete (req.session as any).passport;
+    delete (req.session as any).authTokenId;
+    delete (req as any).user;
+    await new Promise<void>((resolve, reject) => {
+      req.session.destroy((error) => error ? reject(error) : resolve());
+    });
+  };
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      req.logout((error) => error ? reject(error) : resolve());
+    });
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate((error) => error ? reject(error) : resolve());
+    });
+    await new Promise<void>((resolve, reject) => {
+      req.login(user, (error) => error ? reject(error) : resolve());
+    });
+
+    const tokenDays = rememberMe ? 30 : 1;
+    const { token, expiresIn, jti } = generateJWT(user, rememberMe);
+
+    if (!persistence.updateUser || !persistence.enforceSessionLimit || !persistence.createAuthToken ||
+        !persistence.getAuthTokenByToken || !persistence.revokeAuthToken || !persistence.updateLastLogin) {
+      throw new Error("Authentication persistence services are unavailable");
+    }
+    if (rememberMe) {
+      await persistence.updateUser(user.id, {
+        rememberMeToken: randomBytes(32).toString("hex"),
+      });
+    }
+    const persistedAuthToken = await persistence.createAuthToken(user.id, tokenDays, jti);
+    persistedAuthTokenId = persistedAuthToken.id;
+    await persistence.enforceSessionLimit(user.id, 2);
+    await persistence.updateLastLogin(user.id);
+    (req.session as any).authTokenId = jti;
+
+    return { token, expiresIn, rememberMe };
+  } catch (error) {
+    try {
+      await clearAuthentication();
+    } catch (cleanupError) {
+      throw new AuthenticationCleanupError(`Authentication failed and session cleanup could not be confirmed: ${cleanupError}`);
+    }
+    throw error;
+  }
+}
+
 /**
  * Authentication middleware for verifying JWT tokens
  */
-export function jwtAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+export function jwtAuthMiddleware(req: Request, res: Response, next: NextFunction, authStorage = storage) {
   // Skip JWT middleware for static assets and Vite development files
   if (req.path.startsWith('/@fs/') || 
       req.path.startsWith('/src/') || 
@@ -155,8 +232,16 @@ export function jwtAuthMiddleware(req: Request, res: Response, next: NextFunctio
   }
   
   if (!authHeader) {
-    // No JWT header, just continue to session authentication
-    return next(); 
+    const sessionTokenId = (req.session as any)?.authTokenId;
+    if (req.isAuthenticated() && sessionTokenId && authStorage.getAuthTokenByToken) {
+      authStorage.getAuthTokenByToken(sessionTokenId)
+        .then((activeToken) => activeToken
+          ? next()
+          : res.status(401).json({ error: "Session revoked", message: "Please sign in again." }))
+        .catch(next);
+      return;
+    }
+    return next();
   }
   
   // Extract token - format should be "Bearer <token>"
@@ -206,7 +291,7 @@ export function jwtAuthMiddleware(req: Request, res: Response, next: NextFunctio
     console.log(`[JWT] Token verification successful for user ID: ${userId}, username: ${tokenUsername}`);
     
     // Get the user from the database
-    storage.getUser(userId).then(user => {
+    authStorage.getUser(userId).then(async user => {
       if (!user) {
         console.log(`[JWT] User with ID ${userId} not found in database`);
         return res.status(401).json({ 
@@ -242,13 +327,23 @@ export function jwtAuthMiddleware(req: Request, res: Response, next: NextFunctio
           message: "This token has been invalidated. Please log in again."
         });
       }
+
+      if (decoded.jti && authStorage.getAuthTokenByToken) {
+        const activeToken = await authStorage.getAuthTokenByToken(decoded.jti);
+        if (!activeToken || activeToken.userId !== user.id) {
+          return res.status(401).json({
+            error: "Token revoked",
+            message: "This session is no longer active. Please sign in again.",
+          });
+        }
+      }
       
       // Successfully authenticated with JWT
       console.log(`[JWT] Successfully authenticated user ${user.username} (${user.id})`);
       
       // Update last login timestamp
-      if (storage.updateLastLogin) {
-        storage.updateLastLogin(user.id).catch(err => {
+      if (authStorage.updateLastLogin) {
+        authStorage.updateLastLogin(user.id).catch(err => {
           log(`Failed to update last login: ${err}`, 'auth');
         });
       }
@@ -841,18 +936,38 @@ export function setupAuth(app: Express) {
 
       log(`User registered: ${username} (${user.id}) - verification email sent to ${email}`, 'auth');
 
-      // Return registration success without auto-login (user must verify email first)
-      res.status(201).json({
-        success: true,
-        message: "Your account has been created! Please check the email we have sent to you to verify your account.",
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          fullName: user.fullName,
-          isEmailVerified: false
+      const safeUser = {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName,
+        isEmailVerified: false,
+        workspaceId: user.workspaceId,
+        trialEndDate,
+        tokenVersion: user.tokenVersion,
+      };
+      try {
+        const authentication = await establishAuthenticatedSession(req, user, false);
+        res.status(201).json({
+          success: true,
+          authenticated: true,
+          message: "Your account has been created and your trial is ready.",
+          user: safeUser,
+          ...authentication,
+        });
+      } catch (authenticationError) {
+        if (authenticationError instanceof AuthenticationCleanupError) {
+          return next(authenticationError);
         }
-      });
+        log(`Registration authentication failed for user ${user.id}: ${authenticationError}`, "auth");
+        res.status(201).json({
+          success: true,
+          authenticated: false,
+          code: "account_created_but_signin_required",
+          message: "Your account was created, but automatic sign-in was unavailable. Please sign in with the account you just created.",
+          user: safeUser,
+        });
+      }
     } catch (error) {
       log(`Registration error: ${error}`, 'auth');
       next(error);
@@ -861,20 +976,6 @@ export function setupAuth(app: Express) {
 
   app.post("/api/login", async (req: Request, res: Response, next: NextFunction) => {
     log(`Login attempt for: ${req.body.username}`, 'auth');
-    
-    await new Promise<void>((resolve) => {
-      req.logout((err) => {
-        if (err) log(`Session logout error: ${err}`, 'auth');
-        resolve();
-      });
-    });
-    
-    await new Promise<void>((resolve) => {
-      req.session.regenerate((err) => {
-        if (err) log(`Session regeneration failed: ${err}`, 'auth');
-        resolve();
-      });
-    });
     
     // Extract remember me preference
     const rememberMe = !!req.body.rememberMe;
@@ -991,104 +1092,9 @@ export function setupAuth(app: Express) {
         });
       }
       
-      // Special handling for test user to fix login issue
-      if (user.username === 'testuser') {
-        console.log('[AUTH] Detected testuser login, using direct login');
-        
-        // Login without session regeneration for testuser to prevent conflicts
-        req.login(user, async (loginErr) => {
-          if (loginErr) {
-            log(`Session login error: ${loginErr}`, 'auth');
-            return next(loginErr);
-          }
-          
-          log(`User session created successfully with id ${req.sessionID}`, 'auth');
-          
-          // Calculate token expiration based on remember me
-          const tokenDays = rememberMe ? 30 : 1; // 30 days for remember me, 1 day for regular
-          
-          // Generate JWT token with appropriate expiration and issuer claim
-          const { token, expiresIn } = generateJWT(user, rememberMe);
-          
-          // Update last login timestamp
-          if (storage.updateLastLogin) {
-            try {
-              await storage.updateLastLogin(user.id);
-            } catch (err) {
-              log(`Failed to update last login timestamp: ${err}`, 'auth');
-            }
-          }
-          
-          // Return user data, token, and expiration
-          res.status(200).json({
-            user,
-            token,
-            expiresIn,
-            rememberMe
-          });
-        });
-        
-        return;
-      }
-      
-      req.login(user, async (loginErr) => {
-        if (loginErr) {
-          log(`Session login error: ${loginErr}`, 'auth');
-          return next(loginErr);
-        }
-        
-        log(`User session created successfully with id ${req.sessionID}`, 'auth');
-        
-        // Calculate token expiration based on remember me
-        const tokenDays = rememberMe ? 30 : 1; // 30 days for remember me, 1 day for regular
-        
-        // Generate JWT token with appropriate expiration and issuer claim
-        const { token, expiresIn } = generateJWT(user, rememberMe);
-        
-        // Store remember me preference if enabled
-        if (rememberMe && storage.updateUser) {
-          // Generate a remember me token that could be used for automatic re-authentication
-          const rememberToken = randomBytes(32).toString('hex');
-          await storage.updateUser(user.id, { rememberMeToken: rememberToken });
-        }
-        
-        // Enforce max 2 concurrent sessions — revoke oldest if limit reached
-        if (storage.enforceSessionLimit) {
-          try {
-            await storage.enforceSessionLimit(user.id, 2);
-          } catch (limitErr) {
-            log(`Failed to enforce session limit: ${limitErr}`, 'auth');
-          }
-        }
-
-        // Create auth token in database if supported
-        if (storage.createAuthToken) {
-          try {
-            await storage.createAuthToken(user.id, tokenDays);
-            log(`Auth token created in database`, 'auth');
-          } catch (tokenErr) {
-            log(`Failed to create auth token: ${tokenErr}`, 'auth');
-          }
-        }
-        
-        // Update last login timestamp
-        if (storage.updateLastLogin) {
-          try {
-            await storage.updateLastLogin(user.id);
-          } catch (err) {
-            log(`Failed to update last login timestamp: ${err}`, 'auth');
-          }
-        }
-        
-        log(`Login successful: ${user.username} (ID: ${user.id})`, 'auth');
-        
-        res.status(200).json({
-          user,
-          token,
-          expiresIn,
-          rememberMe
-        });
-      });
+      const authentication = await establishAuthenticatedSession(req, user, rememberMe);
+      log(`Login successful: ${user.username} (ID: ${user.id})`, 'auth');
+      res.status(200).json({ user, ...authentication });
     } catch (error) {
       log(`Login error: ${error}`, 'auth');
       next(error);
@@ -1105,24 +1111,10 @@ export function setupAuth(app: Express) {
       const parts = authHeader.split(' ');
       if (parts.length === 2 && parts[0] === 'Bearer') {
         const token = parts[1];
-        
         try {
-          // Verify the token with proper JWT_SECRET handling
-          const secret = JWT_SECRET || process.env.JWT_SECRET || 'default-secret-key';
-          jwt.verify(token, secret);
-          
-          // If token is valid, revoke it in database
-          if (storage.getAuthTokenByToken) {
-            try {
-              const authToken = await storage.getAuthTokenByToken(token);
-              if (authToken && storage.revokeAuthToken) {
-                await storage.revokeAuthToken(authToken.id);
-                loggedOut = true;
-                log('Token successfully revoked', 'auth');
-              }
-            } catch (dbError) {
-              log(`Error revoking token in database: ${dbError}`, 'auth');
-            }
+          loggedOut = await revokeBearerCredential(token);
+          if (loggedOut) {
+            log('Token successfully revoked', 'auth');
           }
         } catch (err) {
           // Invalid token

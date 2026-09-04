@@ -8,13 +8,24 @@ import { insertUserSchema, User as SelectUser, InsertUser } from "@shared/schema
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { authStore } from "../lib/auth-store";
+import { writeReturningUserMarker } from "../lib/auth-mode";
 
 // Response types from authentication endpoints
 interface AuthResponse {
   user: SelectUser;
   token: string;
   expiresIn?: number;
+  rememberMe?: boolean;
+  authenticated?: true;
 }
+
+type RegistrationResponse = AuthResponse | {
+  success: true;
+  authenticated: false;
+  code: "account_created_but_signin_required";
+  message: string;
+  user: Partial<SelectUser>;
+};
 
 type RegistrationData = Pick<InsertUser, "username" | "password" | "email" | "fullName"> & {
   promoCode?: string;
@@ -29,7 +40,7 @@ type AuthContextType = {
   token: string | null;
   loginMutation: UseMutationResult<AuthResponse, Error, LoginData>;
   logoutMutation: UseMutationResult<{ success: boolean }, Error, void>;
-  registerMutation: UseMutationResult<AuthResponse, Error, RegistrationData>;
+  registerMutation: UseMutationResult<RegistrationResponse, Error, RegistrationData>;
   refreshTokenMutation: UseMutationResult<{ token: string }, Error, void>;
   invalidateTokensMutation: UseMutationResult<{ success: boolean; message: string }, Error, void>;
   logout: () => Promise<void>;
@@ -134,6 +145,24 @@ const setAuthToken = (token: string | null): void => {
     });
   } catch (err) {
     console.error("Error setting auth token:", err);
+  }
+};
+
+const installAuthResponse = (data: AuthResponse): void => {
+  storeToken(data.token, data.expiresIn, data.user.username);
+  setAuthToken(data.token);
+  sessionStorage.setItem("auth_username", data.user.username);
+  authStore.setCurrentUser(data.user);
+  queryClient.setQueryData(["/api/user"], data.user);
+  queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/analytics/monthly"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/analytics/categories"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/budgets"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/insights"] });
+  try {
+    writeReturningUserMarker(localStorage);
+  } catch {
+    // Authentication remains valid if browser storage for the marker is unavailable.
   }
 };
 
@@ -402,25 +431,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log("KeoSoko account detected in login - storing expected username");
       }
 
-      // Store the token with explicit username for validation
-      storeToken(data.token, data.expiresIn, data.user.username);
-      setAuthToken(data.token);
-
-      // Add username to sessionStorage as backup verification
-      sessionStorage.setItem('auth_username', data.user.username);
-
-      // IMMEDIATELY set user in auth store to prevent state resets
-      authStore.setCurrentUser(data.user);
-
-      // Also update React Query cache for data freshness
-      queryClient.setQueryData(["/api/user"], data.user);
-
-      // Force refresh all user-specific data after login
-      queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/analytics/monthly"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/analytics/categories"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/budgets"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/insights"] });
+      installAuthResponse(data);
     },
     onError: (error: Error) => {
       console.error("🚨 AUTH HOOK LOGIN MUTATION ERROR:", error);
@@ -432,7 +443,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  // Registration mutation - no token needed since email verification required
   const registerMutation = useMutation({
     mutationFn: async (credentials: RegistrationData) => {
       // Use direct fetch approach for consistency
@@ -467,14 +477,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       console.log("Registration successful:", data);
-      return data; // Return raw response without casting to AuthResponse since no token
+      return data as RegistrationResponse;
     },
-    onSuccess: (data: any) => {
-      // Registration successful - no token to store since email verification required
-      console.log("User registered successfully, awaiting email verification:", data.user?.username);
-
-      // Don't store token or update cache since user needs to verify email first
-      // The user will need to login after email verification
+    onSuccess: (data: RegistrationResponse) => {
+      if (data.authenticated !== false && "token" in data) {
+        installAuthResponse(data);
+      }
     },
     onError: (error: Error) => {
       console.error("Registration error:", error);

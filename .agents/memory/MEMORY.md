@@ -13,3 +13,4 @@
 - [Vitest mockImplementationOnce contamination](vitest-mock-contamination.md) — unused Once mocks accumulate across tests; spy private methods to control code paths instead of chaining many db.select mocks.
 - [Wouter query-mode synchronization](wouter-query-mode-sync.md) — query-driven auth modes must read browser location directly and listen to popstate; Wouter location can omit query changes.
 - [Protected-flow browser mocks](protected-flow-browser-mocks.md) — synthetic auth can destabilize mocked QA; reuse a validated context and mock all background reads with exact shapes.
+- [JWT session revocation](jwt-session-revocation.md) — new JWTs persist a random jti as the session record; revocation and limits must target that jti, never an unrelated token.

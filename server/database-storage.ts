@@ -987,9 +987,8 @@ export class DatabaseStorage implements IStorage {
   }
   
   // Auth token methods
-  async createAuthToken(userId: number, expiresInDays: number = 7): Promise<AuthToken> {
-    // Generate a secure random token
-    const tokenValue = randomBytes(32).toString('hex');
+  async createAuthToken(userId: number, expiresInDays: number = 7, providedTokenValue?: string): Promise<AuthToken> {
+    const tokenValue = providedTokenValue || randomBytes(32).toString('hex');
     
     // Calculate expiry date
     const expiresAt = new Date();
@@ -1066,8 +1065,8 @@ export class DatabaseStorage implements IStorage {
       ))
       .orderBy(asc(authTokens.createdAt));
 
-    if (activeSessions.length >= maxSessions) {
-      const toRevoke = activeSessions.slice(0, activeSessions.length - maxSessions + 1);
+    if (activeSessions.length > maxSessions) {
+      const toRevoke = activeSessions.slice(0, activeSessions.length - maxSessions);
       for (const session of toRevoke) {
         await db.update(authTokens)
           .set({ isRevoked: true })

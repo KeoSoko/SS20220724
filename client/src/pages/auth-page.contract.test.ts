@@ -30,13 +30,12 @@ describe("Simple Slips sign-up onboarding contract", () => {
     expect(source).toContain("await registerMutation.mutateAsync");
   });
 
-  it("preserves legal wording and the verification-first success message", () => {
+  it("preserves legal wording and removes the mandatory second sign-in", () => {
     expect(source).toContain("I agree to the");
     expect(source).toContain("terms and conditions");
     expect(source).toContain("Simple Slips is not a registered tax practitioner");
-    expect(source).toContain("Your 30-day Simple Slips trial is ready.");
-    expect(source).toContain("Please verify your email before subscribing or making a payment.");
-    expect(source).toContain("Continue to Sign In");
+    expect(source).toContain("setLocation(getRedirectUrl())");
+    expect(source).not.toContain("Continue to Sign In");
   });
 
   it("keeps a clear welcome, returning-user action, and new-user hierarchy", () => {
@@ -68,9 +67,7 @@ describe("Simple Slips sign-up onboarding contract", () => {
   });
 
   it("stores only a privacy-safe returning-browser boolean after successful authentication", () => {
-    expect(source).toContain("writeReturningUserMarker(localStorage)");
     expect(source).toContain("await loginMutation.mutateAsync(data);");
-    expect(source.indexOf("await loginMutation.mutateAsync(data);")).toBeLessThan(source.indexOf("markBrowserAsReturning();"));
     expect(source).not.toMatch(/localStorage\.(setItem|getItem)\([^)]*(email|username|password|token)/i);
   });
 

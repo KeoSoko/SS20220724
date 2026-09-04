@@ -77,7 +77,7 @@ export interface IStorage {
   getTagsForReceipt?(receiptId: number): Promise<Tag[]>;
   
   // Auth token methods
-  createAuthToken?(userId: number, expiresInDays?: number): Promise<AuthToken>;
+  createAuthToken?(userId: number, expiresInDays?: number, tokenValue?: string): Promise<AuthToken>;
   getAuthTokenByToken?(token: string): Promise<AuthToken | undefined>;
   revokeAuthToken?(tokenId: string): Promise<void>;
   cleanupExpiredTokens?(): Promise<number>;
@@ -656,9 +656,9 @@ export class MemStorage implements IStorage {
   }
   
   // Auth token methods
-  async createAuthToken(userId: number, expiresInDays: number = 7): Promise<AuthToken> {
+  async createAuthToken(userId: number, expiresInDays: number = 7, tokenValue?: string): Promise<AuthToken> {
     const id = randomBytes(16).toString('hex');
-    const token = randomBytes(32).toString('hex');
+    const token = tokenValue || randomBytes(32).toString('hex');
     
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expiresInDays);
@@ -713,6 +713,30 @@ export class MemStorage implements IStorage {
     });
     
     return tokensToDelete.length;
+  }
+
+  async getActiveSessionCount(userId: number): Promise<number> {
+    const now = new Date();
+    return Array.from(this.authTokens.values())
+      .filter(token => token.userId === userId && !token.isRevoked && token.expiresAt > now)
+      .length;
+  }
+
+  async enforceSessionLimit(userId: number, maxSessions: number = 3): Promise<void> {
+    const now = new Date();
+    const activeSessions = Array.from(this.authTokens.values())
+      .filter(token => token.userId === userId && !token.isRevoked && token.expiresAt > now)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    for (const session of activeSessions.slice(0, Math.max(0, activeSessions.length - maxSessions))) {
+      session.isRevoked = true;
+      this.authTokens.set(session.token, session);
+    }
+  }
+
+  async revokeAllUserSessions(userId: number): Promise<void> {
+    for (const token of Array.from(this.authTokens.values())) {
+      if (token.userId === userId && !token.isRevoked) token.isRevoked = true;
+    }
   }
 
   // Analytics methods

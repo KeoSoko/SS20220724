@@ -1,0 +1,31 @@
+Create and implement a separate account-deletion integrity task. A confirmed production deletion attempt for the disposable unverified trial account notifications@simpleslips.co.za / ss_smoke_20260903 failed with the generic “Failed to delete account” response. Do not retry or mutate that account, production data, Paystack, or Azure during this task. Do not publish.
+
+GOAL
+Repair DELETE /api/account so account deletion is complete, safe, transactional for local database state, and diagnosable. Preserve the existing password plus exact confirmation-phrase requirements and the current UI confirmation boundary.
+
+REQUIRED INVESTIGATION
+- Inspect the complete schema and enumerate every table that directly or indirectly references users, workspaces owned by the user, workspace memberships, receipts, business data, trials/subscriptions, sessions, checkout attempts, payment/billing records, audit data, invitations, email ingestion identities, and other user-owned data.
+- Reproduce the current failure in an isolated test database or mocked transaction and identify the exact foreign-key/dependency failure. Do not guess.
+- Review whether any external Azure objects or Paystack subscription relationship exists before local deletion.
+
+SAFETY CONTRACT
+- Password and confirmation phrase validation must occur before any mutation.
+- Database cleanup must execute in one transaction and in dependency-safe order. Any failure rolls back all database changes.
+- Never silently skip a required cleanup method because an optional storage function is absent.
+- A paid or provider-linked recurring subscription must fail closed unless its cancellation state is already conclusively safe or an explicitly designed provider-cancellation workflow completes. This task must not call Paystack in tests or production.
+- The disposable trial account has no payments/provider subscription, but implement general protection for real paid accounts.
+- Do not use broad force-delete SQL, disable constraints, or weaken foreign keys.
+- Keep enough non-user-bound operational evidence to diagnose completion/failure without retaining sensitive deleted-user data unnecessarily.
+- Session destruction happens only after the database transaction commits.
+- Make retries idempotent where practical.
+
+ERROR AND UI BEHAVIOUR
+- Return structured, non-sensitive codes and useful userMessage values for incorrect password, confirmation mismatch, active-provider-subscription block, dependency conflict, and unexpected deletion failure.
+- Log the precise server-side failure with sensitive values redacted.
+- Update the Profile deletion dialog only as needed to display the safe server userMessage. Do not redesign Profile or touch onboarding design.
+
+TESTS
+Add focused tests covering: incorrect password causes zero writes; wrong phrase causes zero writes; unverified trial account with workspace/session/subscription and no receipts deletes successfully; user with representative dependent records deletes successfully; provider-linked paid account is blocked before deletion/provider calls; transaction rollback leaves all records intact on an injected failure; successful deletion destroys the session only after commit; duplicate/retry behavior is safe. Assert zero Paystack/Azure calls unless an isolated mock explicitly tests a defined cleanup boundary.
+
+VALIDATION
+Run focused tests, npm run check, npm run build, and an isolated development smoke test using a newly created disposable fixture—not the production notifications account. Report the exact root cause, changed files, deletion order, tests, and remaining risks. Stop before publishing or touching production data. Preserve the completed onboarding changes and unrelated work exactly.

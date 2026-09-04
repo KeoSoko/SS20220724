@@ -81,6 +81,8 @@ import { generateUserManual } from "./user-manual";
 import { convertPdfToImage, isPdfData } from "./pdf-converter";
 import { getReportingCategory } from "./reporting-utils";
 import { normalizeMerchantName } from "./utils/merchant-normalizer";
+import { accountDeletionService } from "./account-deletion-service";
+import { handleAccountDeletionRequest } from "./account-deletion-handler";
 import { normalizeReceiptExportDateRange } from "./export-date-range";
 import {
   extractPaystackCustomerCode,
@@ -4963,144 +4965,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Account deletion endpoint
   app.delete("/api/account", async (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
-    
-    try {
-      const userId = getUserId(req);
-      const { password, confirmationText } = req.body;
-      
-      // Validate required fields
-      if (!password) {
-        return res.status(400).json({ 
-          error: "Password required",
-          message: "Please enter your password to confirm account deletion.",
-          userMessage: "Please enter your password to confirm."
-        });
-      }
-      
-      if (!confirmationText) {
-        return res.status(400).json({ 
-          error: "Confirmation required",
-          message: "Please type 'DELETE MY ACCOUNT' to confirm you want to delete your account.",
-          userMessage: "Please type 'DELETE MY ACCOUNT' in the confirmation box."
-        });
-      }
-      
-      // Verify confirmation text
-      if (confirmationText !== "DELETE MY ACCOUNT") {
-        return res.status(400).json({ 
-          error: "Confirmation text incorrect",
-          message: "Please type exactly 'DELETE MY ACCOUNT' (in capital letters) to confirm.",
-          userMessage: "Please type exactly 'DELETE MY ACCOUNT' to confirm."
-        });
-      }
-      
-      // Get user and verify password
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      
-      // Verify password using the same custom hashing system as auth
-      const isPasswordValid = await comparePasswordsForDeletion(password, user.password);
-      if (!isPasswordValid) {
-        return res.status(403).json({ 
-          error: "Incorrect password",
-          message: "The password you entered is incorrect. Please try again.",
-          userMessage: "The password you entered is incorrect."
-        });
-      }
-      
-      log(`Starting account deletion process for user ${userId}`, "api");
-      
-      // Delete all user-related data in the correct order (due to foreign key constraints)
-      try {
-        // 1. Delete receipt shares
-        if (storage.deleteReceiptSharesByUserId) {
-          await storage.deleteReceiptSharesByUserId(userId);
-        }
-        
-        // 2. Delete budgets
-        if (storage.deleteBudgetsByUserId) {
-          await storage.deleteBudgetsByUserId(userId);
-        }
-        
-        // 3. Delete tags
-        if (storage.deleteTagsByUserId) {
-          await storage.deleteTagsByUserId(userId);
-        }
-        
-        // 4. Delete custom categories
-        if (storage.deleteCustomCategoriesByUserId) {
-          await storage.deleteCustomCategoriesByUserId(userId);
-        }
-        
-        // 5. Delete receipts (this will also delete associated image files)
-        const userReceipts = await storage.getReceiptsByUser(userId);
-        for (const receipt of userReceipts) {
-          // Delete receipt image from storage if it exists
-          if (receipt.blobUrl) {
-            try {
-              if (receipt.blobUrl.includes('blob.core.windows.net')) {
-                // Azure storage - extract blob name and delete
-                const blobName = receipt.blobUrl.split('/').pop();
-                if (blobName) {
-                  await azureStorage.deleteFile(blobName);
-                }
-              }
-              // Note: Replit storage cleanup handled by deleteReceiptsByUserId
-            } catch (imageError) {
-              log(`Warning: Failed to delete image ${receipt.blobUrl}: ${imageError}`, "api");
-              // Continue with deletion even if image cleanup fails
-            }
-          }
-        }
-        
-        // Delete all receipts
-        if (storage.deleteReceiptsByUserId) {
-          await storage.deleteReceiptsByUserId(userId);
-        }
-        
-        // 6. Cancel any active subscriptions
-        try {
-          await billingService.cancelSubscription(userId);
-        } catch (billingError) {
-          log(`Warning: Failed to cancel subscription for user ${userId}: ${billingError}`, "api");
-          // Continue with deletion even if billing cancellation fails
-        }
-        
-        // 7. Finally, delete the user account
-        if (storage.deleteUser) {
-          await storage.deleteUser(userId);
-        }
-        
-        log(`Successfully deleted account for user ${userId}`, "api");
-        
-        // Clear the session
-        if (req.session) {
-          req.session.destroy((err) => {
-            if (err) {
-              log(`Error destroying session: ${err}`, "api");
-            }
-          });
-        }
-        
-        res.json({ 
-          message: "Account successfully deleted",
-          timestamp: new Date().toISOString()
-        });
-        
-      } catch (deletionError: any) {
-        log(`Error during account deletion for user ${userId}: ${deletionError.message}`, "api");
-        throw deletionError;
-      }
-      
-    } catch (error: any) {
-      log(`Error in /api/account DELETE: ${error.message}`, "api");
-      res.status(500).json({ 
-        error: "Failed to delete account",
-        message: "An error occurred while deleting your account. Please try again or contact support."
-      });
-    }
+    return handleAccountDeletionRequest(req, res, getUserId(req), {
+      getUser: storage.getUser.bind(storage),
+      comparePassword: comparePasswordsForDeletion,
+      deleteAccount: accountDeletionService.deleteAccount.bind(accountDeletionService),
+      log,
+    });
   });
 
   // Clear all user data (keeping account active)

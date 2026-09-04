@@ -581,6 +581,30 @@ export const exportJobs = pgTable("export_jobs", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Account deletion never calls object storage inline.  These records deliberately
+// have no user foreign key so that cleanup remains retryable after the user row is
+// gone.
+export const accountBlobCleanupJobs = pgTable("account_blob_cleanup_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  blobName: text("blob_name").notNull().unique(),
+  status: text("status").notNull().default("queued"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  lastErrorCode: text("last_error_code"),
+  nextAttemptAt: timestamp("next_attempt_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Intentionally contains identifiers and result codes only, never account PII.
+export const accountDeletionAudit = pgTable("account_deletion_audit", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  outcomeCode: text("outcome_code").notNull(),
+  aggregateCounts: jsonb("aggregate_counts").$type<Record<string, number>>().notNull().default({}),
+  blobCleanupCount: integer("blob_cleanup_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Promo codes for trial extensions and special offers
 export const promoCodes = pgTable("promo_codes", {
   id: serial("id").primaryKey(),

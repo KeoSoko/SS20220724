@@ -1,0 +1,61 @@
+Create a new implementation task for the Simple Slips registration onboarding. Implement the approved specification exactly; do not independently redesign anything.
+
+SCOPE
+Replace only the Sign Up tab's current single long registration form with a four-step conversational onboarding flow. Keep Sign In and all authenticated screens unchanged. Reuse the existing registration API contract, validation schemas, legal copy, trial logic, brand assets, components, and design tokens. Do not add or change database schema, billing logic, verification policy, global CSS, or unrelated code. Do not publish.
+
+APP POLICY
+Users may register, sign in, and use their trial before email verification. Verification remains required only for protected actions such as payment/checkout. Do not change this policy. Registration success must not falsely say users are blocked from signing in.
+
+LOCKED DESIGN RULES
+- Preserve the existing Simple Slips logo, typography, colours, button styling, borders, form components, and clean white layout with the existing blue accent.
+- No new design system, gradients, illustrations, stock images, decorative graphics, or elaborate animation.
+- Do not replace brand assets or modify global CSS.
+- Use one centered onboarding card, max-width approximately 480px, responsive and mobile-first.
+- Use a subtle accessible four-step progress indicator at the top, with current step and “Step X of 4” text.
+- One focused question per screen; primary existing-blue Continue button and quiet Back control.
+- Minimum 44px touch targets, visible focus states, semantic labels, keyboard navigation, and appropriate aria-live error feedback.
+- Preserve entered values when moving backward.
+- Prevent Enter from skipping invalid steps or submitting before Step 4.
+- No horizontal overflow at 320px width.
+- If a design decision is unspecified, preserve the current component/appearance; do not invent.
+
+EXACT FLOW AND COPY
+Step 1 heading: “What can I call you?”
+Supporting text: “Let’s start with the name you’d like to see inside Simple Slips.”
+Field: Username (use the existing username field and rules).
+Primary action: “Continue”.
+Include the existing “Already have an account? Sign in” route/action.
+
+Step 2 heading: “Hi, {username}. Where can we reach you?”
+Supporting text: “We’ll use this for important account and receipt updates.”
+Field: Email address (use existing validation and availability behaviour).
+Primary action: “Continue”; secondary: “Back”.
+
+Step 3 heading: “Let’s secure your account”
+Supporting text: “Create a strong password to keep your receipts and business information protected.”
+Fields: Password and Confirm password.
+Show the existing requirements as a compact live checklist: 8–64 characters, lowercase, uppercase, number, special character. Do not weaken or duplicate the shared schema.
+Primary action: “Continue”; secondary: “Back”.
+
+Step 4 heading: “One last thing”
+Supporting text: “Please review these details before we create your 30-day trial.”
+Keep the full existing Terms acceptance and tax disclaimer wording unchanged and both required. Keep Promo Code optional, visually secondary/collapsible only if this can be done with existing components; otherwise keep it plainly visible. Primary action: “Create My Account”; secondary: “Back”. Disable/deduplicate repeated submissions while pending.
+
+SUCCESS STATE
+Heading: “Welcome, {username}!”
+Copy: “Your 30-day Simple Slips trial is ready.”
+Copy: “You can sign in now and start scanning. Please verify your email before subscribing or making a payment.”
+Primary action: “Continue to Sign In”.
+Secondary action: “Resend verification email” only if the existing safe resend endpoint can be reused without changing its behaviour. Do not automatically resend an additional email.
+
+VALIDATION AND BEHAVIOUR
+- Validate each step before Continue, using existing/shared rules rather than creating divergent rules.
+- Keep server-side validation authoritative.
+- Normalize username/email as already implemented.
+- Preserve values and errors appropriately between steps.
+- Existing deep links to /auth and Sign Up tab behaviour must keep working.
+- Registration sends exactly one request and retains existing email/trial/legal audit behaviour.
+- Do not create any production account or touch production data.
+
+TESTS AND REVIEW
+Add focused component/contract tests for step progression, per-step validation, Back value preservation, Enter behaviour, single submission, exact required legal copy, and success-state verification wording. Run focused tests, npm run check, and npm run build. Test desktop and 320px mobile layout in the development preview. Stop before applying changes to main or publishing. Report changed files, test results, and any design deviation needed; if any requirement cannot be met exactly, stop and ask rather than improvising.

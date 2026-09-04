@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLocation } from "wouter";
@@ -66,6 +66,9 @@ export default function AuthPage() {
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState("");
   const [forgotUsernameMessage, setForgotUsernameMessage] = useState("");
   const [isSubmittingForgot, setIsSubmittingForgot] = useState(false);
+  const [registerStep, setRegisterStep] = useState(1);
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
+  const registrationSubmitStarted = useRef(false);
 
   // Email validation mutation
   const emailCheckMutation = useMutation({
@@ -344,14 +347,8 @@ export default function AuthPage() {
         agreedToTerms,
         agreedToTaxDisclaimer,
       });
-      setErrorDetails({
-        title: "Account Created Successfully!",
-        message: "Please check the email we have sent to you to verify your account. Once verified, you can sign in with your email and password.",
-        type: 'success'
-      });
-      setShowErrorDialog(true);
-      // Stay on auth page so user can sign in after verification
-      setLocation("/auth");
+      registrationSubmitStarted.current = false;
+      setRegistrationSuccess(true);
     } catch (error: any) {
       // Handle specific error cases
       if (error.field === 'email' && error.action === 'redirect_to_login') {
@@ -377,6 +374,36 @@ export default function AuthPage() {
         });
         setShowErrorDialog(true);
       }
+    }
+  };
+
+  const passwordChecklist = [
+    { label: "8–64 characters", valid: registerForm.watch("password").length >= 8 && registerForm.watch("password").length <= 64 },
+    { label: "A lowercase letter", valid: /[a-z]/.test(registerForm.watch("password")) },
+    { label: "An uppercase letter", valid: /[A-Z]/.test(registerForm.watch("password")) },
+    { label: "A number", valid: /\d/.test(registerForm.watch("password")) },
+    { label: "A special character", valid: /[^A-Za-z0-9]/.test(registerForm.watch("password")) },
+  ];
+
+  const handleRegisterStepSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (registerStep < 4) {
+      const fields = registerStep === 1
+        ? ["username" as const]
+        : registerStep === 2
+          ? ["email" as const]
+          : ["password" as const, "confirmPassword" as const];
+      const valid = await registerForm.trigger(fields);
+      if (valid && !(registerStep === 2 && emailValidation.status === "taken")) {
+        setRegisterStep((step) => step + 1);
+      }
+      return;
+    }
+    if (registrationSubmitStarted.current || registerMutation.isPending) return;
+    registrationSubmitStarted.current = true;
+    await registerForm.handleSubmit(onRegisterSubmit)(event);
+    if (!registerMutation.isPending && !registrationSuccess) {
+      registrationSubmitStarted.current = false;
     }
   };
 
@@ -594,258 +621,84 @@ export default function AuthPage() {
 
               {/* Register Tab */}
               <TabsContent value="register" className="space-y-4">
-                <Form {...registerForm}>
-                  <form onSubmit={registerForm.handleSubmit(onRegisterSubmit)} className="space-y-4">
-                    <FormField
-                      control={registerForm.control}
-                      name="username"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Username</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Choose a username"
-                              className="bg-white border-gray-200"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={registerForm.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                type="email"
-                                placeholder="Enter your email"
-                                className={`bg-white border-gray-200 pr-10 ${
-                                  emailValidation.status === 'available' ? 'border-green-500' :
-                                  emailValidation.status === 'taken' ? 'border-red-500' :
-                                  emailValidation.status === 'invalid' ? 'border-red-500' : ''
-                                }`}
-                                {...field}
-                                onChange={(e) => {
-                                  field.onChange(e);
-                                  debouncedEmailCheck(e.target.value);
-                                }}
-                              />
-                              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                                {emailValidation.status === 'checking' && (
-                                  <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                                )}
-                                {emailValidation.status === 'available' && (
-                                  <CheckCircle className="h-4 w-4 text-green-500" />
-                                )}
-                                {emailValidation.status === 'taken' && (
-                                  <XCircle className="h-4 w-4 text-red-500" />
-                                )}
-                                {emailValidation.status === 'invalid' && (
-                                  <AlertCircle className="h-4 w-4 text-red-500" />
-                                )}
-                              </div>
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                          {emailValidation.message && emailValidation.status !== 'idle' && (
-                            <p className={`text-xs mt-1 ${
-                              emailValidation.status === 'available' ? 'text-green-600' : 'text-red-600'
-                            }`}>
-                              {emailValidation.message}
-                              {emailValidation.status === 'taken' && (
-                                <Button
-                                  variant="link"
-                                  size="sm"
-                                  className="h-auto p-0 ml-2 text-xs text-primary underline"
-                                  onClick={() => setActiveTab("login")}
-                                >
-                                  Sign in instead
-                                </Button>
-                              )}
-                            </p>
-                          )}
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={registerForm.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                type={showPassword ? "text" : "password"}
-                                placeholder="Create a password"
-                                className="bg-white border-gray-200 pr-10"
-                                {...field}
-                              />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                                onClick={() => setShowPassword(!showPassword)}
-                              >
-                                {showPassword ? (
-                                  <EyeOff className="h-4 w-4 text-gray-400" />
-                                ) : (
-                                  <Eye className="h-4 w-4 text-gray-400" />
-                                )}
-                              </Button>
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={registerForm.control}
-                      name="confirmPassword"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Confirm Password</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                type={showConfirmPassword ? "text" : "password"}
-                                placeholder="Confirm your password"
-                                className="bg-white border-gray-200 pr-10"
-                                {...field}
-                              />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                              >
-                                {showConfirmPassword ? (
-                                  <EyeOff className="h-4 w-4 text-gray-400" />
-                                ) : (
-                                  <Eye className="h-4 w-4 text-gray-400" />
-                                )}
-                              </Button>
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={registerForm.control}
-                      name="promoCode"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-gray-700">
-                            Promo Code <span className="text-gray-400 text-xs">(Optional)</span>
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Enter promo code for extended trial"
-                              className="bg-white border-gray-200"
-                              {...field}
-                            />
-                          </FormControl>
-                          <p className="text-xs text-gray-500">
-                            Have a promo code? Enter it to extend your trial period.
-                          </p>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="space-y-3">
-                      <div className="flex items-start space-x-2">
-                        <Checkbox
-                          id="terms"
-                          checked={agreedToTerms}
-                          onCheckedChange={(checked) => setAgreedToTerms(checked === true)}
-                          className="mt-1"
-                          data-testid="checkbox-terms"
-                        />
-                        <label
-                          htmlFor="terms"
-                          className="text-sm text-gray-600 leading-tight peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                        >
-                          I agree to the{" "}
-                          <a
-                            href="https://simpleslips.co.za/terms"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:text-primary/80 underline"
-                          >
-                            terms and conditions
-                          </a>
-                        </label>
-                      </div>
-
-                      <div className="flex items-start space-x-2">
-                        <Checkbox
-                          id="taxDisclaimer"
-                          checked={agreedToTaxDisclaimer}
-                          onCheckedChange={(checked) => setAgreedToTaxDisclaimer(checked === true)}
-                          className="mt-1"
-                          data-testid="checkbox-tax-disclaimer"
-                        />
-                        <label
-                          htmlFor="taxDisclaimer"
-                          className="text-sm text-gray-600 leading-tight peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                        >
-                          I understand that Simple Slips is not a registered tax practitioner and provides expense tracking tools and tax information only. This is NOT professional tax advice. I remain responsible for my tax filings and will consult a registered tax practitioner for official advice.
-                        </label>
-                      </div>
+                {registrationSuccess ? (
+                  <div className="space-y-6 text-center py-5" aria-live="polite">
+                    <CheckCircle className="mx-auto h-12 w-12 text-green-600" />
+                    <div className="space-y-2">
+                      <h2 className="text-2xl font-semibold text-gray-900">Welcome, {registerForm.getValues("username")}!</h2>
+                      <p className="text-gray-700">Your 30-day Simple Slips trial is ready.</p>
+                      <p className="text-sm text-gray-600">You can sign in now and start scanning. Please verify your email before subscribing or making a payment.</p>
                     </div>
-
-                    <Button
-                      type="submit"
-                      className="w-full text-white py-6 bg-primary hover:bg-primary/90"
-                      disabled={registerMutation.isPending}
-                      data-testid="button-create-account"
-                    >
-                      {registerMutation.isPending ? "Creating account..." : "Create Account"}
-                    </Button>
-                  </form>
-                </Form>
-
-                {/* Already have an account section */}
-                <div className="mt-6 pt-4 border-t border-gray-200">
-                  <p className="text-sm text-gray-600 mb-3 text-center">Already have an account?</p>
-                  <div className="flex justify-between text-sm mb-3">
-                    <Button
-                      variant="link"
-                      className="p-0 h-auto text-primary"
-                      onClick={() => setShowForgotPassword(true)}
-                    >
-                      Forgot Password?
-                    </Button>
-                    <Button
-                      variant="link"
-                      className="p-0 h-auto text-primary"
-                      onClick={() => setShowForgotUsername(true)}
-                    >
-                      Forgot Username?
+                    <Button className="w-full min-h-11 text-white bg-primary hover:bg-primary/90" onClick={() => { setRegistrationSuccess(false); setRegisterStep(1); setActiveTab("login"); }}>
+                      Continue to Sign In
                     </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-primary border-primary/20 hover:bg-primary/5"
-                    onClick={() => setActiveTab("login")}
-                  >
-                    Sign In Instead
-                  </Button>
-                </div>
+                ) : (
+                  <Form {...registerForm}>
+                    <form onSubmit={handleRegisterStepSubmit} className="space-y-5" noValidate>
+                      <div className="space-y-3" aria-label="Registration progress">
+                        <div className="flex items-center justify-between text-xs text-gray-600">
+                          <span>Step {registerStep} of 4</span>
+                          <span aria-hidden="true">{registerStep === 4 ? "Review" : "Account setup"}</span>
+                        </div>
+                        <div className="flex gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={4} aria-valuenow={registerStep} aria-label={`Step ${registerStep} of 4`}>
+                          {[1, 2, 3, 4].map((step) => <div key={step} className={`h-1.5 flex-1 rounded-full ${step <= registerStep ? "bg-primary" : "bg-gray-200"}`} />)}
+                        </div>
+                      </div>
+
+                      {registerStep === 1 && (
+                        <section aria-labelledby="register-question">
+                          <h2 id="register-question" className="text-xl font-semibold text-gray-900">What can I call you?</h2>
+                          <p className="mt-1 text-sm text-gray-600">Let’s start with the name you’d like to see inside Simple Slips.</p>
+                          <FormField control={registerForm.control} name="username" render={({ field }) => (
+                            <FormItem className="mt-5"><FormLabel>Username</FormLabel><FormControl><Input autoFocus autoComplete="username" placeholder="Choose a username" className="min-h-11 bg-white border-gray-200" {...field} /></FormControl><FormMessage /></FormItem>
+                          )} />
+                          <p className="mt-5 text-sm text-gray-600">Already have an account?{" "}<Button type="button" variant="link" className="h-auto min-h-11 px-1 text-primary" onClick={() => setActiveTab("login")}>Sign in</Button></p>
+                        </section>
+                      )}
+
+                      {registerStep === 2 && (
+                        <section aria-labelledby="register-question">
+                          <h2 id="register-question" className="text-xl font-semibold text-gray-900">Hi, {registerForm.watch("username")}. Where can we reach you?</h2>
+                          <p className="mt-1 text-sm text-gray-600">We’ll use this for important account and receipt updates.</p>
+                          <FormField control={registerForm.control} name="email" render={({ field }) => (
+                            <FormItem className="mt-5"><FormLabel>Email address</FormLabel><FormControl><div className="relative"><Input autoFocus autoComplete="email" type="email" placeholder="Enter your email" className={`min-h-11 bg-white border-gray-200 pr-10 ${emailValidation.status === "available" ? "border-green-500" : emailValidation.status === "taken" || emailValidation.status === "invalid" ? "border-red-500" : ""}`} {...field} onChange={(e) => { field.onChange(e); debouncedEmailCheck(e.target.value); }} /><div className="absolute right-3 top-1/2 -translate-y-1/2">{emailValidation.status === "checking" && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}{emailValidation.status === "available" && <CheckCircle className="h-4 w-4 text-green-500" />}{emailValidation.status === "taken" && <XCircle className="h-4 w-4 text-red-500" />}{emailValidation.status === "invalid" && <AlertCircle className="h-4 w-4 text-red-500" />}</div></div></FormControl><FormMessage />{emailValidation.message && <p aria-live="polite" className={`text-xs mt-1 ${emailValidation.status === "available" ? "text-green-600" : "text-red-600"}`}>{emailValidation.message}{emailValidation.status === "taken" && <Button type="button" variant="link" className="h-auto min-h-11 p-0 ml-2 text-xs text-primary underline" onClick={() => setActiveTab("login")}>Sign in instead</Button>}</p>}</FormItem>
+                          )} />
+                        </section>
+                      )}
+
+                      {registerStep === 3 && (
+                        <section aria-labelledby="register-question">
+                          <h2 id="register-question" className="text-xl font-semibold text-gray-900">Let’s secure your account</h2>
+                          <p className="mt-1 text-sm text-gray-600">Create a strong password to keep your receipts and business information protected.</p>
+                          <FormField control={registerForm.control} name="password" render={({ field }) => (
+                            <FormItem className="mt-5"><FormLabel>Password</FormLabel><FormControl><div className="relative"><Input autoFocus autoComplete="new-password" type={showPassword ? "text" : "password"} placeholder="Create a password" className="min-h-11 bg-white border-gray-200 pr-10" {...field} /><Button type="button" variant="ghost" aria-label={showPassword ? "Hide password" : "Show password"} className="absolute right-0 top-0 h-full px-3" onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff className="h-4 w-4 text-gray-400" /> : <Eye className="h-4 w-4 text-gray-400" />}</Button></div></FormControl><FormMessage /></FormItem>
+                          )} />
+                          <ul className="mt-3 grid grid-cols-1 gap-1 text-xs text-gray-600" aria-live="polite">{passwordChecklist.map((item) => <li key={item.label} className={item.valid ? "text-green-600" : ""}>{item.valid ? "✓" : "○"} {item.label}</li>)}</ul>
+                          <FormField control={registerForm.control} name="confirmPassword" render={({ field }) => (
+                            <FormItem className="mt-4"><FormLabel>Confirm password</FormLabel><FormControl><div className="relative"><Input autoComplete="new-password" type={showConfirmPassword ? "text" : "password"} placeholder="Confirm your password" className="min-h-11 bg-white border-gray-200 pr-10" {...field} /><Button type="button" variant="ghost" aria-label={showConfirmPassword ? "Hide confirmed password" : "Show confirmed password"} className="absolute right-0 top-0 h-full px-3" onClick={() => setShowConfirmPassword(!showConfirmPassword)}>{showConfirmPassword ? <EyeOff className="h-4 w-4 text-gray-400" /> : <Eye className="h-4 w-4 text-gray-400" />}</Button></div></FormControl><FormMessage /></FormItem>
+                          )} />
+                        </section>
+                      )}
+
+                      {registerStep === 4 && (
+                        <section aria-labelledby="register-question">
+                          <h2 id="register-question" className="text-xl font-semibold text-gray-900">One last thing</h2>
+                          <p className="mt-1 text-sm text-gray-600">Please review these details before we create your 30-day trial.</p>
+                          <div className="mt-5 rounded-md bg-gray-50 p-3 text-sm text-gray-700"><p><strong>Username:</strong> {registerForm.watch("username")}</p><p className="mt-1"><strong>Email:</strong> {registerForm.watch("email")}</p></div>
+                          <FormField control={registerForm.control} name="promoCode" render={({ field }) => (
+                            <FormItem className="mt-4"><FormLabel>Promo code <span className="text-gray-400 text-xs">(Optional)</span></FormLabel><FormControl><Input placeholder="Enter promo code for extended trial" className="min-h-11 bg-white border-gray-200" {...field} /></FormControl><p className="text-xs text-gray-500">Have a promo code? Enter it to extend your trial period.</p><FormMessage /></FormItem>
+                          )} />
+                          <div className="mt-5 space-y-3">
+                            <div className="flex items-start gap-2"><Checkbox id="terms" checked={agreedToTerms} onCheckedChange={(checked) => setAgreedToTerms(checked === true)} className="mt-1" data-testid="checkbox-terms" /><label htmlFor="terms" className="text-sm text-gray-600 leading-tight">I agree to the{" "}<a href="https://simpleslips.co.za/terms" target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 underline">terms and conditions</a></label></div>
+                            <div className="flex items-start gap-2"><Checkbox id="taxDisclaimer" checked={agreedToTaxDisclaimer} onCheckedChange={(checked) => setAgreedToTaxDisclaimer(checked === true)} className="mt-1" data-testid="checkbox-tax-disclaimer" /><label htmlFor="taxDisclaimer" className="text-sm text-gray-600 leading-tight">I understand that Simple Slips is not a registered tax practitioner and provides expense tracking tools and tax information only. This is NOT professional tax advice. I remain responsible for my tax filings and will consult a registered tax practitioner for official advice.</label></div>
+                          </div>
+                        </section>
+                      )}
+                      <div className="flex gap-3 pt-2"><Button type="button" variant="ghost" className={`min-h-11 ${registerStep === 1 ? "invisible" : ""}`} onClick={() => setRegisterStep((step) => Math.max(1, step - 1))}>Back</Button><Button type="submit" className="min-h-11 flex-1 text-white bg-primary hover:bg-primary/90" disabled={registerMutation.isPending}>{registerStep === 4 ? (registerMutation.isPending ? "Creating account..." : "Create My Account") : "Continue"}</Button></div>
+                    </form>
+                  </Form>
+                )}
               </TabsContent>
             </Tabs>
           </CardContent>

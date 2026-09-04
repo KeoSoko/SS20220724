@@ -1497,7 +1497,7 @@ function DeleteAccountDialog({ user }: { user: any }) {
       
       // Redirect to login page
       setTimeout(() => {
-        navigate("/auth");
+        navigate("/auth?mode=signin");
       }, 1000);
     },
     onError: (error: any) => {
@@ -1619,7 +1619,7 @@ export default function ProfilePage() {
     mutationFn: () => apiRequest('POST', '/api/sessions/logout-all'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/sessions'] });
-      navigate('/auth');
+      navigate('/auth?mode=signin');
     },
     onError: () => {
       toast({ title: 'Error', description: 'Failed to log out other devices.', variant: 'destructive' });

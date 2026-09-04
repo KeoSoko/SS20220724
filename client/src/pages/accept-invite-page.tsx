@@ -71,7 +71,7 @@ export default function AcceptInvitePage() {
 
       if (!res.ok) {
         if (data.error === "login_required") {
-          setLocation(`/auth?redirect=${encodeURIComponent(`/accept-invite?token=${token}`)}`);
+          setLocation(`/auth?mode=signin&redirect=${encodeURIComponent(`/accept-invite?token=${token}`)}`);
           return;
         }
         setError(data.error || "Failed to accept invitation.");
@@ -221,7 +221,7 @@ export default function AcceptInvitePage() {
                 ) : (
                   <Button
                     className="flex-1 rounded-none bg-[#0073AA] hover:bg-[#005580]"
-                    onClick={() => setLocation(`/auth?redirect=${encodeURIComponent(`/accept-invite?token=${token}`)}`)}
+                    onClick={() => setLocation(`/auth?mode=signin&redirect=${encodeURIComponent(`/accept-invite?token=${token}`)}`)}
                   >
                     Log In to Accept
                   </Button>

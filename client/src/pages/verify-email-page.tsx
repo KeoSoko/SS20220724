@@ -32,7 +32,7 @@ export function VerifyEmailPage() {
       setRedirecting(true);
       
       setTimeout(() => {
-        setLocation('/auth?verified=true&message=' + encodeURIComponent('Email verified successfully! You can now sign in.'));
+        setLocation('/auth?mode=signin&verified=true&message=' + encodeURIComponent('Email verified successfully! You can now sign in.'));
       }, 2500);
     },
     onError: (error: any) => {
@@ -134,7 +134,7 @@ export function VerifyEmailPage() {
           </CardContent>
           <CardFooter>
             <Button 
-              onClick={() => setLocation('/auth?verified=true&message=' + encodeURIComponent('Email verified successfully! You can now sign in.'))} 
+              onClick={() => setLocation('/auth?mode=signin&verified=true&message=' + encodeURIComponent('Email verified successfully! You can now sign in.'))}
               className="w-full bg-[#0073AA] hover:bg-[#005a87]"
             >
               Sign In Now
@@ -243,7 +243,7 @@ export function VerifyEmailPage() {
         
         <CardFooter>
           <Button 
-            onClick={() => setLocation('/auth')}
+            onClick={() => setLocation('/auth?mode=signin')}
             variant="ghost"
             className="w-full"
           >

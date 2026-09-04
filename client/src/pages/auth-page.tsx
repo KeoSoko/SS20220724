@@ -17,6 +17,7 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { createClientLogger } from "@/lib/logger";
 import {
+  getCanonicalAuthLocation,
   getAuthModeFromLocation,
   readReturningUserMarker,
   writeReturningUserMarker,
@@ -81,6 +82,14 @@ export default function AuthPage() {
     }
   };
   const getBrowserLocation = () => `${window.location.pathname}${window.location.search}`;
+  const syncAndCanonicalizeMode = () => {
+    const browserLocation = getBrowserLocation();
+    const canonicalLocation = getCanonicalAuthLocation(browserLocation);
+    if (canonicalLocation) {
+      window.history.replaceState(window.history.state, "", canonicalLocation);
+    }
+    setActiveTabState(getModeFromLocation(canonicalLocation || browserLocation));
+  };
   const [activeTab, setActiveTabState] = useState(() => getModeFromLocation(getBrowserLocation()));
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [forgotUsernameEmail, setForgotUsernameEmail] = useState("");
@@ -96,13 +105,11 @@ export default function AuthPage() {
   // The URL is the source of truth for the focused flow, so refresh and
   // browser back/forward preserve the user's place without a modal or delay.
   useEffect(() => {
-    setActiveTabState(getModeFromLocation(getBrowserLocation()));
+    syncAndCanonicalizeMode();
   }, [location]);
 
   useEffect(() => {
-    const syncModeFromBrowserHistory = () => {
-      setActiveTabState(getModeFromLocation(`${window.location.pathname}${window.location.search}`));
-    };
+    const syncModeFromBrowserHistory = () => syncAndCanonicalizeMode();
     window.addEventListener("popstate", syncModeFromBrowserHistory);
     return () => window.removeEventListener("popstate", syncModeFromBrowserHistory);
   }, []);

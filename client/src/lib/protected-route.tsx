@@ -36,7 +36,7 @@ export function ProtectedRoute({
       {shouldShowLoading ? (
         <LoadingScreen message="Verifying your account..." />
       ) : !isAuthenticated ? (
-        <Redirect to="/auth" />
+        <Redirect to="/auth?mode=signin" />
       ) : (
         <Component />
       )}

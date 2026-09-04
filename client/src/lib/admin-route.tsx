@@ -37,7 +37,7 @@ export function AdminRoute({
       {shouldShowLoading ? (
         <LoadingScreen message="Verifying your account..." />
       ) : !isAuthenticated ? (
-        <Redirect to="/auth" />
+        <Redirect to="/auth?mode=signin" />
       ) : !isAdmin ? (
         <Redirect to="/" />
       ) : (

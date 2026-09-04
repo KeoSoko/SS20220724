@@ -59,7 +59,9 @@ describe("Simple Slips sign-up onboarding contract", () => {
     expect(source).toContain('params.set("mode", "register")');
     expect(source).toContain('params.delete("tab")');
     expect(source).toContain("setLocation(`${pathname || \"/auth\"}${query ? `?${query}` : \"\"}`)");
-    expect(source).toContain("setActiveTabState(getModeFromLocation(getBrowserLocation()))");
+    expect(source).toContain("getCanonicalAuthLocation(browserLocation)");
+    expect(source).toContain('window.history.replaceState(window.history.state, "", canonicalLocation)');
+    expect(source).toContain("setActiveTabState(getModeFromLocation(canonicalLocation || browserLocation))");
     expect(source).toContain('window.addEventListener("popstate", syncModeFromBrowserHistory)');
     expect(source).toContain('window.removeEventListener("popstate", syncModeFromBrowserHistory)');
     expect(source).not.toContain('setActiveTab("login")');

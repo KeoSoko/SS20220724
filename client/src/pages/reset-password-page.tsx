@@ -36,7 +36,7 @@ export default function ResetPasswordPage() {
         variant: "destructive",
         duration: 8000
       });
-      setTimeout(() => setLocation("/auth"), 4000);
+      setTimeout(() => setLocation("/auth?mode=signin"), 4000);
     }
   }, [toast, setLocation]);
 
@@ -94,7 +94,7 @@ export default function ResetPasswordPage() {
       });
       
       // Redirect to login after 3 seconds
-      setTimeout(() => setLocation("/auth"), 3000);
+      setTimeout(() => setLocation("/auth?mode=signin"), 3000);
     } catch (error: any) {
       const errorMessage = error.message || "Failed to reset password. The link may be expired.";
       
@@ -139,7 +139,7 @@ export default function ResetPasswordPage() {
                 Your password has been updated successfully. You will be redirected to the sign-in page.
               </p>
               <Button
-                onClick={() => setLocation("/auth")}
+                onClick={() => setLocation("/auth?mode=signin")}
                 className="w-full bg-primary hover:bg-primary/90"
               >
                 Go to Sign In
@@ -182,7 +182,7 @@ export default function ResetPasswordPage() {
         {/* Back button */}
         <Button
           variant="ghost"
-          onClick={() => setLocation("/auth")}
+          onClick={() => setLocation("/auth?mode=signin")}
           className="mb-4 hover:bg-white/50"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -286,7 +286,7 @@ export default function ResetPasswordPage() {
                       This password reset link has expired or is no longer valid. You'll need to request a new one.
                     </p>
                     <Button
-                      onClick={() => setLocation("/auth")}
+                      onClick={() => setLocation("/auth?mode=signin")}
                       variant="outline"
                       className="w-full border-red-300 text-red-700 hover:bg-red-50"
                     >

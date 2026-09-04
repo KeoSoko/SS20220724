@@ -160,7 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         removeToken();
         // Use a more graceful redirect that doesn't cause page reload
         if (window.location.pathname !== '/auth') {
-          window.location.href = "/auth?tab=login&reason=token_expired";
+          window.location.href = "/auth?mode=signin&reason=token_expired";
         }
         return;
       }
@@ -180,7 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Force logout and redirect
           removeToken();
           localStorage.setItem('auth_error', 'wrong_account_returned');
-          window.location.href = "/auth?tab=login&error=wrong_account";
+          window.location.href = "/auth?mode=signin&error=wrong_account";
           return;
         }
 
@@ -193,7 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("Token validation error:", err);
         authStore.clear();
         removeToken();
-        window.location.href = "/auth?tab=login&error=invalid_token";
+        window.location.href = "/auth?mode=signin&error=invalid_token";
       }
     } else if (authStore.getCurrentUser()) {
       // If we have user in store but no token, attempt to get a fresh token
@@ -519,7 +519,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Force reload the app to clear React state
       setTimeout(() => {
-        window.location.href = '/auth';
+        window.location.href = '/auth?mode=signin';
       }, 100);
 
       return { success: true };
@@ -532,7 +532,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // No error logging - all errors are handled gracefully above
       // Just ensure cleanup happens
       setTimeout(() => {
-        window.location.href = '/auth?force=true';
+        window.location.href = '/auth?mode=signin&force=true';
       }, 100);
     },
   });
@@ -594,7 +594,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Force immediate redirect to login page
       setTimeout(() => {
-        window.location.href = '/auth?tab=login&signedout=all';
+        window.location.href = '/auth?mode=signin&signedout=all';
       }, 1000);
     },
     onError: (error: Error) => {
@@ -652,7 +652,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Navigate immediately after cleanup - don't await anything
     console.log('Logout complete - navigating to login');
-    window.location.href = "/auth?tab=login";
+    window.location.href = "/auth?mode=signin";
   };
 
   // Check if token is expired

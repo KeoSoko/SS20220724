@@ -39,22 +39,43 @@ describe("Simple Slips sign-up onboarding contract", () => {
     expect(source).toContain("Continue to Sign In");
   });
 
-  it("defaults to registration and makes sign-in a secondary, reversible choice", () => {
+  it("keeps a clear welcome, returning-user action, and new-user hierarchy", () => {
     expect(source).toContain('useState(() => getModeFromLocation(getBrowserLocation()))');
-    expect(source).toContain('return params.get("mode") === "signin"');
     expect(source).toContain("Let’s get your slips organised");
-    expect(source).toContain("Already have an account?");
+    expect(source).toContain("Already use Simple Slips?");
+    expect(source).toContain("Sign in to your account");
+    expect(source).toContain("New to Simple Slips? Let’s get started.");
+    expect(source.indexOf("Sign in to your account")).toBeLessThan(source.indexOf("New to Simple Slips? Let’s get started."));
+    expect(source.indexOf("New to Simple Slips? Let’s get started.")).toBeLessThan(source.indexOf("What can I call you?"));
     expect(source).toContain("New to Simple Slips?");
     expect(source).toContain("Get started");
+    expect(source).not.toContain("Already have an account?");
+    expect(source).not.toContain("<Tabs");
   });
 
-  it("uses a stable sign-in query mode without dropping unrelated parameters", () => {
+  it("uses explicit modes as precedence and preserves unrelated parameters", () => {
+    expect(source).toContain("getAuthModeFromLocation(value, readReturningUserMarker(localStorage))");
     expect(source).toContain('params.set("mode", "signin")');
+    expect(source).toContain('params.set("mode", "register")');
     expect(source).toContain('params.delete("tab")');
     expect(source).toContain("setLocation(`${pathname || \"/auth\"}${query ? `?${query}` : \"\"}`)");
     expect(source).toContain("setActiveTabState(getModeFromLocation(getBrowserLocation()))");
     expect(source).toContain('window.addEventListener("popstate", syncModeFromBrowserHistory)');
     expect(source).toContain('window.removeEventListener("popstate", syncModeFromBrowserHistory)');
     expect(source).not.toContain('setActiveTab("login")');
+  });
+
+  it("stores only a privacy-safe returning-browser boolean after successful authentication", () => {
+    expect(source).toContain("writeReturningUserMarker(localStorage)");
+    expect(source).toContain("await loginMutation.mutateAsync(data);");
+    expect(source.indexOf("await loginMutation.mutateAsync(data);")).toBeLessThan(source.indexOf("markBrowserAsReturning();"));
+    expect(source).not.toMatch(/localStorage\.(setItem|getItem)\([^)]*(email|username|password|token)/i);
+  });
+
+  it("gives shared-browser new users an explicit registration escape route", () => {
+    expect(source).toContain("New to Simple Slips?");
+    expect(source).toMatch(/>\s*Get started\s*</);
+    expect(source).toContain('onClick={() => setAuthMode("register")}');
+    expect(source).toContain('params.set("mode", "register")');
   });
 });

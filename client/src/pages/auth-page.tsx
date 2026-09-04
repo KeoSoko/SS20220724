@@ -16,9 +16,15 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { createClientLogger } from "@/lib/logger";
+import {
+  getAuthModeFromLocation,
+  readReturningUserMarker,
+  writeReturningUserMarker,
+} from "@/lib/auth-mode";
 import { strongPasswordSchema } from "@shared/schema";
 
 const logger = createClientLogger("auth-page");
+
 export default function AuthPage() {
   const [location, setLocation] = useLocation();
   const { user, loginMutation, registerMutation } = useAuth();
@@ -61,10 +67,18 @@ export default function AuthPage() {
     type: 'email' | 'username' | 'general' | 'success';
   } | null>(null);
   const getModeFromLocation = (value: string) => {
-    const params = new URLSearchParams(value.split("?")[1] || "");
-    return params.get("mode") === "signin" || params.get("tab") === "login"
-      ? "login"
-      : "register";
+    try {
+      return getAuthModeFromLocation(value, readReturningUserMarker(localStorage));
+    } catch {
+      return getAuthModeFromLocation(value, false);
+    }
+  };
+  const markBrowserAsReturning = () => {
+    try {
+      writeReturningUserMarker(localStorage);
+    } catch {
+      // Authentication must still succeed when browser storage is unavailable.
+    }
   };
   const getBrowserLocation = () => `${window.location.pathname}${window.location.search}`;
   const [activeTab, setActiveTabState] = useState(() => getModeFromLocation(getBrowserLocation()));
@@ -100,7 +114,7 @@ export default function AuthPage() {
     if (mode === "login") {
       params.set("mode", "signin");
     } else {
-      params.delete("mode");
+      params.set("mode", "register");
     }
     const query = params.toString();
     setActiveTabState(mode);
@@ -240,6 +254,7 @@ export default function AuthPage() {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         await loginMutation.mutateAsync(data);
+        markBrowserAsReturning();
         setLocation(getRedirectUrl());
         return;
       } catch (error: any) {
@@ -387,6 +402,7 @@ export default function AuthPage() {
         agreedToTerms,
         agreedToTaxDisclaimer,
       });
+      markBrowserAsReturning();
       registrationSubmitStarted.current = false;
       setRegistrationSuccess(true);
     } catch (error: any) {
@@ -547,10 +563,23 @@ export default function AuthPage() {
 
         {/* Auth Card */}
         <Card className="shadow-xl border-0 bg-white/90 backdrop-blur-sm">
-          <CardHeader className="space-y-1 pb-4">
+          <CardHeader className={`pb-4 ${activeTab === "register" ? "space-y-5 border-b border-gray-200" : "space-y-1"}`}>
             <CardTitle className="text-2xl text-center text-gray-900">
               {activeTab === "register" ? "Let’s get your slips organised" : "Welcome back"}
             </CardTitle>
+            {activeTab === "register" && (
+              <div className="space-y-2 text-center">
+                <p className="text-sm text-gray-600">Already use Simple Slips?</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full min-h-11 border-primary text-primary hover:bg-primary/5 hover:text-primary"
+                  onClick={() => setAuthMode("login")}
+                >
+                  Sign in to your account
+                </Button>
+              </div>
+            )}
           </CardHeader>
           <CardContent>
               {/* Login Tab */}
@@ -621,7 +650,12 @@ export default function AuthPage() {
                   </form>
                 </Form>
 
-
+                <p className="text-center text-sm text-gray-600">
+                  New to Simple Slips?{" "}
+                  <Button type="button" variant="link" className="h-auto min-h-11 px-1 text-primary" onClick={() => setAuthMode("register")}>
+                    Get started
+                  </Button>
+                </p>
 
                 {/* Forgot Password/Username Links */}
                 <div className="flex flex-col min-[360px]:flex-row min-[360px]:justify-between gap-2 text-sm mt-4">
@@ -653,12 +687,6 @@ export default function AuthPage() {
                     Verify Email Address
                   </Button>
                 </div>
-                <p className="pt-4 text-center text-sm text-gray-600 border-t border-gray-200">
-                  New to Simple Slips?{" "}
-                  <Button type="button" variant="link" className="h-auto min-h-11 px-1 text-primary" onClick={() => setAuthMode("register")}>
-                    Get started
-                  </Button>
-                </p>
               </div>}
 
               {/* Register Tab */}
@@ -678,6 +706,9 @@ export default function AuthPage() {
                 ) : (
                   <Form {...registerForm}>
                     <form onSubmit={handleRegisterStepSubmit} className="space-y-5" noValidate>
+                      <p className="text-center text-sm font-medium text-gray-700">
+                        New to Simple Slips? Let’s get started.
+                      </p>
                       <div className="space-y-3" aria-label="Registration progress">
                         <div className="flex items-center justify-between text-xs text-gray-600">
                           <span>Step {registerStep} of 4</span>
@@ -695,7 +726,6 @@ export default function AuthPage() {
                           <FormField control={registerForm.control} name="username" render={({ field }) => (
                             <FormItem className="mt-5"><FormLabel>Username</FormLabel><FormControl><Input autoFocus autoComplete="username" placeholder="Choose a username" className="min-h-11 bg-white border-gray-200" {...field} /></FormControl><FormMessage /></FormItem>
                           )} />
-                          <p className="mt-5 text-sm text-gray-600">Already have an account?{" "}<Button type="button" variant="link" className="h-auto min-h-11 px-1 text-primary" onClick={() => setAuthMode("login")}>Sign in</Button></p>
                         </section>
                       )}
 

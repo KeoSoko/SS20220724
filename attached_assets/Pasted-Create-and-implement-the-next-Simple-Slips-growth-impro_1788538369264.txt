@@ -1,0 +1,32 @@
+Create and implement the next Simple Slips growth improvement: a first-login, first-slip activation journey.
+
+Product goal:
+Help a newly registered user reach one successful saved slip quickly, while avoiding a tutorial maze or blocking experienced users.
+
+Experience:
+- Eligibility must be derived safely from existing data: authenticated user with zero saved receipts/slips. Do not add database flags solely for onboarding.
+- On the first authenticated home/dashboard view with zero slips, show a calm, on-brand welcome card using their existing display name when available.
+- Primary message: “Let’s scan your first slip.”
+- Supporting copy should explain the immediate value in one sentence: photograph or upload a slip and Simple Slips will organise the important details.
+- One dominant CTA: “Scan your first slip”, using the existing upload/scanner route and existing navigation conventions.
+- Include a restrained secondary “I’ll do this later” dismissal for the current browser/session only. Do not permanently hide guidance for a zero-slip user across devices, and do not store personal data.
+- Do not use a modal, forced tour, carousel, confetti, emojis, or multiple competing CTAs.
+- On the scanner/upload page, only for eligible zero-slip users, add concise contextual guidance above the existing controls:
+  1. Take a clear photo or choose an image.
+  2. Keep the full slip visible.
+  3. We’ll extract and organise the details.
+- Preserve every existing scanner/upload/OCR/Azure/API behavior and validation. Do not change receipt-processing logic.
+- While the existing upload is processing, improve only the visible copy/status if needed so users understand the slip is being read; do not invent progress percentages.
+- After the existing system confirms the first receipt was successfully saved, show a one-time, accessible success panel/toast: “Your first slip is organised.” Include a clear route to view the saved receipt and a secondary path to scan another. Reuse the actual saved receipt identifier/result—do not fabricate success.
+- Once receipt count is greater than zero, the activation welcome/guidance must not display again.
+- Preserve email-verification policy: unverified trial users can scan; verification remains required only at payment checkout. Do not add a verification gate to scanning.
+- Preserve brand, global styles, navigation, responsive behavior, auth, trials, subscriptions, billing, Paystack, deletion, backend APIs, database schema, and production data.
+- Accessibility: semantic headings, visible focus, announced processing/success status, logical order, no color-only meaning.
+- Handle loading/error/offline states without falsely showing the activation card or claiming success.
+- Add focused tests for eligibility, loading behavior, dismissal scope, CTA navigation, zero-to-one success transition, count>0 suppression, and no verification gate.
+- Run focused tests, TypeScript, production build, and diff check.
+- Perform browser QA at desktop and exactly 320px mobile using mocked/non-mutating states if possible. Do not upload a real slip, create an account, or mutate production data.
+- Review screenshots for hierarchy, crowding, clipping, and overlap.
+- Do not publish.
+
+Start by inspecting the existing dashboard, upload page, receipt-count source, and success response contract. Make the smallest robust change.

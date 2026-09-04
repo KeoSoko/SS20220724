@@ -12,3 +12,4 @@
 - [Legacy no-identity subscriber state](legacy-no-identity-subscriber-state.md) — cohort of paying users with no identity row; use settlement evidence for neutral state; recoveryCheckoutEligible always false for this group.
 - [Vitest mockImplementationOnce contamination](vitest-mock-contamination.md) — unused Once mocks accumulate across tests; spy private methods to control code paths instead of chaining many db.select mocks.
 - [Wouter query-mode synchronization](wouter-query-mode-sync.md) — query-driven auth modes must read browser location directly and listen to popstate; Wouter location can omit query changes.
+- [Protected-flow browser mocks](protected-flow-browser-mocks.md) — synthetic auth can destabilize mocked QA; reuse a validated context and mock all background reads with exact shapes.

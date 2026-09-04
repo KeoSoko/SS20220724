@@ -43,6 +43,7 @@ import {
 import { UnifiedSmartSearch } from "@/components/ui/unified-smart-search";
 import { motion } from "framer-motion";
 import { RecurringExpenseDetector } from "@/components/recurring-expense-detector";
+import { getFirstSlipSuccessId, isFirstSlipEligible } from "@/utils/first-slip-activation";
 
 // Format currency for South African Rands
 const formatCurrency = (amount: string | number) => {
@@ -56,7 +57,7 @@ export default function UploadReceipt() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isMobile = useIsMobile();
-  const { isOnline, addPendingUpload } = useOfflineSync();
+  const { isOnline, pendingUploads, addPendingUpload } = useOfflineSync();
   const clientUploadIdRef = useRef<string>(crypto.randomUUID());
   
   // Scanning states
@@ -97,6 +98,7 @@ export default function UploadReceipt() {
   const [showCameraPermission, setShowCameraPermission] = useState(false);
   const [newReceiptId, setNewReceiptId] = useState<number | null>(null);
   const [entryMode, setEntryMode] = useState<ReceiptEntryMode>("scan");
+  const [firstSaveReceiptId, setFirstSaveReceiptId] = useState<number | null>(null);
   
   // Additional receipt properties for better UX
   const [isRecurring, setIsRecurring] = useState(false);
@@ -409,6 +411,20 @@ export default function UploadReceipt() {
     queryKey: ["/api/receipts/report-labels"],
     enabled: !!user,
   });
+  const { data: existingReceipts = [], isSuccess: receiptsLoaded, isError: receiptsError } = useQuery<any[]>({
+    queryKey: ["/api/receipts"],
+    enabled: !!user,
+  });
+  const firstSlipEligible = isFirstSlipEligible({
+    authenticated: !!user,
+    queryLoaded: receiptsLoaded,
+    queryError: receiptsError,
+    isOnline,
+    pendingUploads: pendingUploads.length,
+    receiptCount: existingReceipts.length,
+    sessionDismissed: false,
+  });
+  const showFirstSlipGuidance = firstSlipEligible && firstSaveReceiptId === null;
   const reportLabels = reportLabelsData?.reportLabels ?? [];
 
   // Query for pre-defined custom categories from the Categories page
@@ -830,7 +846,7 @@ export default function UploadReceipt() {
         const updatedPending = currentPending.slice(0, -1); // Remove the one we just added
         localStorage.setItem('pendingUploads', JSON.stringify(updatedPending));
         
-        return res;
+        return await res.json();
       } catch (error) {
         // If API call fails, just show success message for offline save
         console.log("[Upload] API call failed, keeping in offline storage:", error);
@@ -947,6 +963,15 @@ export default function UploadReceipt() {
       
       // Normal online success handling
       setAllowDuplicateSave(false);
+      const firstOnlineSaveId = getFirstSlipSuccessId({
+        wasEligible: firstSlipEligible,
+        isOnline,
+        savedReceiptId: data?.id,
+      });
+      const isFirstOnlineSave = firstOnlineSaveId !== null;
+      if (firstOnlineSaveId !== null) {
+        setFirstSaveReceiptId(firstOnlineSaveId);
+      }
       // Invalidate receipts query to refresh the list
       queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/receipts/report-labels"] });
@@ -1023,10 +1048,9 @@ export default function UploadReceipt() {
               description: description,
             });
             
-            // Redirect after a short delay to show the success state
-            setTimeout(() => {
-              setLocation("/home");
-            }, 1000);
+            if (!isFirstOnlineSave) {
+              setTimeout(() => setLocation("/home"), 1000);
+            }
           }, 300);
         }, 300);
       }
@@ -1487,6 +1511,33 @@ export default function UploadReceipt() {
         <p className="text-gray-500 mb-4">
           Upload a receipt image to scan and categorize your expenses
         </p>
+
+        {showFirstSlipGuidance && (
+          <ol className="mb-6 space-y-2 rounded-md border border-primary/15 bg-primary/[0.04] p-4 text-sm text-gray-700">
+            <li><span className="mr-2 font-semibold text-primary">1.</span>Take a clear photo or choose an image.</li>
+            <li><span className="mr-2 font-semibold text-primary">2.</span>Keep the full slip visible.</li>
+            <li><span className="mr-2 font-semibold text-primary">3.</span>We’ll extract and organise the details.</li>
+          </ol>
+        )}
+
+        {firstSaveReceiptId !== null && (
+          <section role="status" aria-live="polite" aria-labelledby="first-slip-success" className="mb-6 rounded-md border border-green-200 bg-green-50 p-5">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-700" aria-hidden="true" />
+              <div>
+                <h2 id="first-slip-success" className="font-semibold text-green-950">Your first slip is organised.</h2>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <Link href={`/receipt/${firstSaveReceiptId}`}>
+                    <Button size="sm" className="bg-green-800 text-white hover:bg-green-900">View saved receipt</Button>
+                  </Link>
+                  <Button size="sm" variant="outline" onClick={() => { setFirstSaveReceiptId(null); resetForAnotherScan(); }}>
+                    Scan another
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
         
         {/* Offline status indicator */}
         {!isOnline && (
@@ -1790,7 +1841,8 @@ export default function UploadReceipt() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 {/* Progress bar during processing */}
                 {(isScanning || uploadMutation.isPending) && (
-                  <div className="space-y-2 mb-4">
+                  <div className="space-y-2 mb-4" role="status" aria-live="polite" aria-atomic="true">
+                    <p className="text-sm font-semibold text-gray-900">Reading your slip…</p>
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">
                         {scanProgress}

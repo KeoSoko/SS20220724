@@ -11,3 +11,4 @@
 - [Durable diagnostic exports](durable-diagnostic-exports.md) — durable CodeExecution lacks common byte/clock globals; use SQL hex plus percent decoding for read-only export payloads.
 - [Legacy no-identity subscriber state](legacy-no-identity-subscriber-state.md) — cohort of paying users with no identity row; use settlement evidence for neutral state; recoveryCheckoutEligible always false for this group.
 - [Vitest mockImplementationOnce contamination](vitest-mock-contamination.md) — unused Once mocks accumulate across tests; spy private methods to control code paths instead of chaining many db.select mocks.
+- [Wouter query-mode synchronization](wouter-query-mode-sync.md) — query-driven auth modes must read browser location directly and listen to popstate; Wouter location can omit query changes.

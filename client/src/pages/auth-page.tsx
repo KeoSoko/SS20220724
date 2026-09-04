@@ -9,7 +9,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Eye, EyeOff, Receipt, ArrowLeft, CheckCircle, XCircle, AlertCircle, Loader2, Mail, KeyRound, User } from "lucide-react";
 // import { useToast } from "@/hooks/use-toast"; // REMOVED - using enhanced error dialogs only
@@ -39,8 +38,11 @@ export default function AuthPage() {
         type: 'general'
       });
       setShowErrorDialog(true);
-      // Clean up URL parameters
-      setLocation('/auth');
+      // Clean up only verification parameters; preserve redirect and mode.
+      params.delete('verified');
+      params.delete('message');
+      const query = params.toString();
+      setLocation(`/auth${query ? `?${query}` : ''}`);
     }
   }, [location, setLocation]);
   const isMobile = useIsMobile();
@@ -58,7 +60,14 @@ export default function AuthPage() {
     message: string;
     type: 'email' | 'username' | 'general' | 'success';
   } | null>(null);
-  const [activeTab, setActiveTab] = useState("login");
+  const getModeFromLocation = (value: string) => {
+    const params = new URLSearchParams(value.split("?")[1] || "");
+    return params.get("mode") === "signin" || params.get("tab") === "login"
+      ? "login"
+      : "register";
+  };
+  const getBrowserLocation = () => `${window.location.pathname}${window.location.search}`;
+  const [activeTab, setActiveTabState] = useState(() => getModeFromLocation(getBrowserLocation()));
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [forgotUsernameEmail, setForgotUsernameEmail] = useState("");
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -69,6 +78,37 @@ export default function AuthPage() {
   const [registerStep, setRegisterStep] = useState(1);
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
   const registrationSubmitStarted = useRef(false);
+
+  // The URL is the source of truth for the focused flow, so refresh and
+  // browser back/forward preserve the user's place without a modal or delay.
+  useEffect(() => {
+    setActiveTabState(getModeFromLocation(getBrowserLocation()));
+  }, [location]);
+
+  useEffect(() => {
+    const syncModeFromBrowserHistory = () => {
+      setActiveTabState(getModeFromLocation(`${window.location.pathname}${window.location.search}`));
+    };
+    window.addEventListener("popstate", syncModeFromBrowserHistory);
+    return () => window.removeEventListener("popstate", syncModeFromBrowserHistory);
+  }, []);
+
+  const setAuthMode = (mode: "login" | "register") => {
+    const pathname = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    params.delete("tab");
+    if (mode === "login") {
+      params.set("mode", "signin");
+    } else {
+      params.delete("mode");
+    }
+    const query = params.toString();
+    setActiveTabState(mode);
+    setLocation(`${pathname || "/auth"}${query ? `?${query}` : ""}`);
+  };
+
+  // Kept as a small compatibility seam for secondary recovery actions below.
+  const setActiveTab = (mode: "login" | "register") => setAuthMode(mode);
 
   // Email validation mutation
   const emailCheckMutation = useMutation({
@@ -509,18 +549,12 @@ export default function AuthPage() {
         <Card className="shadow-xl border-0 bg-white/90 backdrop-blur-sm">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-2xl text-center text-gray-900">
-              Get Started
+              {activeTab === "register" ? "Let’s get your slips organised" : "Welcome back"}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-6">
-                <TabsTrigger value="login">Sign In</TabsTrigger>
-                <TabsTrigger value="register">Sign Up</TabsTrigger>
-              </TabsList>
-
               {/* Login Tab */}
-              <TabsContent value="login" className="space-y-4">
+              {activeTab === "login" && <div className="space-y-4">
                 <Form {...loginForm}>
                   <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
                     <FormField
@@ -531,6 +565,7 @@ export default function AuthPage() {
                           <FormLabel>Username or Email</FormLabel>
                           <FormControl>
                             <Input
+                               autoComplete="username"
                               placeholder="Enter your username or email"
                               className="bg-white border-gray-200"
                               {...field}
@@ -551,6 +586,7 @@ export default function AuthPage() {
                             <div className="relative">
                               <Input
                                 type={showPassword ? "text" : "password"}
+                                 autoComplete="current-password"
                                 placeholder="Enter your password"
                                 className="bg-white border-gray-200 pr-10"
                                 {...field}
@@ -588,7 +624,7 @@ export default function AuthPage() {
 
 
                 {/* Forgot Password/Username Links */}
-                <div className="flex justify-between text-sm mt-4">
+                <div className="flex flex-col min-[360px]:flex-row min-[360px]:justify-between gap-2 text-sm mt-4">
                   <Button
                     variant="link"
                     className="p-0 h-auto text-primary"
@@ -617,10 +653,16 @@ export default function AuthPage() {
                     Verify Email Address
                   </Button>
                 </div>
-              </TabsContent>
+                <p className="pt-4 text-center text-sm text-gray-600 border-t border-gray-200">
+                  New to Simple Slips?{" "}
+                  <Button type="button" variant="link" className="h-auto min-h-11 px-1 text-primary" onClick={() => setAuthMode("register")}>
+                    Get started
+                  </Button>
+                </p>
+              </div>}
 
               {/* Register Tab */}
-              <TabsContent value="register" className="space-y-4">
+              {activeTab === "register" && <div className="space-y-4">
                 {registrationSuccess ? (
                   <div className="space-y-6 text-center py-5" aria-live="polite">
                     <CheckCircle className="mx-auto h-12 w-12 text-green-600" />
@@ -629,7 +671,7 @@ export default function AuthPage() {
                       <p className="text-gray-700">Your 30-day Simple Slips trial is ready.</p>
                       <p className="text-sm text-gray-600">You can sign in now and start scanning. Please verify your email before subscribing or making a payment.</p>
                     </div>
-                    <Button className="w-full min-h-11 text-white bg-primary hover:bg-primary/90" onClick={() => { setRegistrationSuccess(false); setRegisterStep(1); setActiveTab("login"); }}>
+                      <Button className="w-full min-h-11 text-white bg-primary hover:bg-primary/90" onClick={() => { setRegistrationSuccess(false); setRegisterStep(1); setAuthMode("login"); }}>
                       Continue to Sign In
                     </Button>
                   </div>
@@ -653,7 +695,7 @@ export default function AuthPage() {
                           <FormField control={registerForm.control} name="username" render={({ field }) => (
                             <FormItem className="mt-5"><FormLabel>Username</FormLabel><FormControl><Input autoFocus autoComplete="username" placeholder="Choose a username" className="min-h-11 bg-white border-gray-200" {...field} /></FormControl><FormMessage /></FormItem>
                           )} />
-                          <p className="mt-5 text-sm text-gray-600">Already have an account?{" "}<Button type="button" variant="link" className="h-auto min-h-11 px-1 text-primary" onClick={() => setActiveTab("login")}>Sign in</Button></p>
+                          <p className="mt-5 text-sm text-gray-600">Already have an account?{" "}<Button type="button" variant="link" className="h-auto min-h-11 px-1 text-primary" onClick={() => setAuthMode("login")}>Sign in</Button></p>
                         </section>
                       )}
 
@@ -662,7 +704,7 @@ export default function AuthPage() {
                           <h2 id="register-question" className="text-xl font-semibold text-gray-900">Hi, {registerForm.watch("username")}. Where can we reach you?</h2>
                           <p className="mt-1 text-sm text-gray-600">We’ll use this for important account and receipt updates.</p>
                           <FormField control={registerForm.control} name="email" render={({ field }) => (
-                            <FormItem className="mt-5"><FormLabel>Email address</FormLabel><FormControl><div className="relative"><Input autoFocus autoComplete="email" type="email" placeholder="Enter your email" className={`min-h-11 bg-white border-gray-200 pr-10 ${emailValidation.status === "available" ? "border-green-500" : emailValidation.status === "taken" || emailValidation.status === "invalid" ? "border-red-500" : ""}`} {...field} onChange={(e) => { field.onChange(e); debouncedEmailCheck(e.target.value); }} /><div className="absolute right-3 top-1/2 -translate-y-1/2">{emailValidation.status === "checking" && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}{emailValidation.status === "available" && <CheckCircle className="h-4 w-4 text-green-500" />}{emailValidation.status === "taken" && <XCircle className="h-4 w-4 text-red-500" />}{emailValidation.status === "invalid" && <AlertCircle className="h-4 w-4 text-red-500" />}</div></div></FormControl><FormMessage />{emailValidation.message && <p aria-live="polite" className={`text-xs mt-1 ${emailValidation.status === "available" ? "text-green-600" : "text-red-600"}`}>{emailValidation.message}{emailValidation.status === "taken" && <Button type="button" variant="link" className="h-auto min-h-11 p-0 ml-2 text-xs text-primary underline" onClick={() => setActiveTab("login")}>Sign in instead</Button>}</p>}</FormItem>
+                            <FormItem className="mt-5"><FormLabel>Email address</FormLabel><FormControl><div className="relative"><Input autoFocus autoComplete="email" type="email" placeholder="Enter your email" className={`min-h-11 bg-white border-gray-200 pr-10 ${emailValidation.status === "available" ? "border-green-500" : emailValidation.status === "taken" || emailValidation.status === "invalid" ? "border-red-500" : ""}`} {...field} onChange={(e) => { field.onChange(e); debouncedEmailCheck(e.target.value); }} /><div className="absolute right-3 top-1/2 -translate-y-1/2">{emailValidation.status === "checking" && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}{emailValidation.status === "available" && <CheckCircle className="h-4 w-4 text-green-500" />}{emailValidation.status === "taken" && <XCircle className="h-4 w-4 text-red-500" />}{emailValidation.status === "invalid" && <AlertCircle className="h-4 w-4 text-red-500" />}</div></div></FormControl><FormMessage />{emailValidation.message && <p aria-live="polite" className={`text-xs mt-1 ${emailValidation.status === "available" ? "text-green-600" : "text-red-600"}`}>{emailValidation.message}{emailValidation.status === "taken" && <Button type="button" variant="link" className="h-auto min-h-11 p-0 ml-2 text-xs text-primary underline" onClick={() => setAuthMode("login")}>Sign in instead</Button>}</p>}</FormItem>
                           )} />
                         </section>
                       )}
@@ -699,8 +741,7 @@ export default function AuthPage() {
                     </form>
                   </Form>
                 )}
-              </TabsContent>
-            </Tabs>
+              </div>}
           </CardContent>
         </Card>
 
@@ -768,7 +809,7 @@ export default function AuthPage() {
                 <Button
                   onClick={() => {
                     setShowErrorDialog(false);
-                    setActiveTab("register");
+                    setAuthMode("register");
                   }}
                   className="w-full"
                   variant="default"
@@ -801,7 +842,7 @@ export default function AuthPage() {
                 <Button
                   onClick={() => {
                     setShowErrorDialog(false);
-                    setActiveTab("login");
+                    setAuthMode("login");
                   }}
                   className="w-full"
                   variant="default"

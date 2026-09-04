@@ -1,0 +1,23 @@
+Create and implement the next Simple Slips onboarding improvement.
+
+Goal: First-time logged-out visitors must enter the existing storytelling registration journey automatically, without first choosing or switching to a Sign up tab.
+
+Design direction:
+- Replace the login-vs-sign-up tab/toggle as the dominant entry decision.
+- Default the logged-out auth page to a warm welcome-first registration experience using the existing brand and existing storytelling steps.
+- Use a concise welcome headline such as “Let’s get your slips organised” with supportive copy, then immediately show the existing first prompt “What can I call you?”
+- Keep returning-user access visible but secondary: “Already have an account? Sign in”.
+- In sign-in mode, show a similarly clear secondary route back: “New to Simple Slips? Get started”.
+- Preserve browser back/forward behavior and allow a stable URL/query mode for sign-in so links are predictable.
+- Do not introduce a modal, carousel, splash delay, or extra mandatory step.
+- Keep the current onboarding fields, validation, legal consent, registration endpoint, verification behavior, trials, subscriptions, billing, and backend logic unchanged.
+- Preserve the established Simple Slips visual system. Do not redesign global styles or unrelated pages.
+- Accessibility: semantic headings, visible keyboard focus, correct field labels, no color-only meaning, logical tab order.
+- Responsive QA at desktop and 320px mobile. Avoid clipped text, overlapping controls, horizontal scrolling, or awkward card heights.
+- Add/update focused tests covering: registration is default, sign-in switch works, get-started switch works, URL/back-forward mode behavior, and existing storytelling contract.
+- Run focused tests, TypeScript check, and production build.
+- Provide screenshots of registration-default and sign-in mode on desktop and 320px mobile.
+- Review your own diff for regressions.
+- Do not publish. Do not alter production data, billing, Paystack, account deletion, or database schema.
+
+Start by inspecting the current auth implementation and existing tests, then implement and verify.

@@ -38,4 +38,23 @@ describe("Simple Slips sign-up onboarding contract", () => {
     expect(source).toContain("Please verify your email before subscribing or making a payment.");
     expect(source).toContain("Continue to Sign In");
   });
+
+  it("defaults to registration and makes sign-in a secondary, reversible choice", () => {
+    expect(source).toContain('useState(() => getModeFromLocation(getBrowserLocation()))');
+    expect(source).toContain('return params.get("mode") === "signin"');
+    expect(source).toContain("Let’s get your slips organised");
+    expect(source).toContain("Already have an account?");
+    expect(source).toContain("New to Simple Slips?");
+    expect(source).toContain("Get started");
+  });
+
+  it("uses a stable sign-in query mode without dropping unrelated parameters", () => {
+    expect(source).toContain('params.set("mode", "signin")');
+    expect(source).toContain('params.delete("tab")');
+    expect(source).toContain("setLocation(`${pathname || \"/auth\"}${query ? `?${query}` : \"\"}`)");
+    expect(source).toContain("setActiveTabState(getModeFromLocation(getBrowserLocation()))");
+    expect(source).toContain('window.addEventListener("popstate", syncModeFromBrowserHistory)');
+    expect(source).toContain('window.removeEventListener("popstate", syncModeFromBrowserHistory)');
+    expect(source).not.toContain('setActiveTab("login")');
+  });
 });

@@ -23,7 +23,7 @@ describe("Simple Slips sign-up onboarding contract", () => {
     expect(source).toContain('name="confirmPassword"');
   });
 
-  it("preserves the form architecture for Back and prevents duplicate requests", () => {
+  it("preserves registration step navigation and prevents duplicate requests", () => {
     expect(source).toContain("setRegisterStep((step) => Math.max(1, step - 1))");
     expect(source).toContain("registrationSubmitStarted.current");
     expect(source).toContain("registerMutation.isPending");
@@ -76,5 +76,12 @@ describe("Simple Slips sign-up onboarding contract", () => {
     expect(source).toMatch(/>\s*Get started\s*</);
     expect(source).toContain('onClick={() => setAuthMode("register")}');
     expect(source).toContain('params.set("mode", "register")');
+  });
+
+  it("removes the ambiguous page-level Back control while keeping auth-mode switching", () => {
+    expect(source).not.toContain("ArrowLeft");
+    expect(source).not.toContain('onClick={() => setLocation("/")}');
+    expect(source).toContain("Sign in to your account");
+    expect(source).toMatch(/>\s*Get started\s*</);
   });
 });

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Eye, EyeOff, Receipt, ArrowLeft, CheckCircle, XCircle, AlertCircle, Loader2, Mail, KeyRound, User } from "lucide-react";
+import { Eye, EyeOff, Receipt, CheckCircle, XCircle, AlertCircle, Loader2, Mail, KeyRound, User } from "lucide-react";
 // import { useToast } from "@/hooks/use-toast"; // REMOVED - using enhanced error dialogs only
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useMutation } from "@tanstack/react-query";
@@ -557,16 +557,6 @@ export default function AuthPage() {
           </div>
           <p className="text-gray-600">Because admin should actually stay done.</p>
         </div>
-
-        {/* Back button */}
-        <Button
-          variant="ghost"
-          onClick={() => setLocation("/")}
-          className="mb-4 hover:bg-white/50"
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
-        </Button>
 
         {/* Auth Card */}
         <Card className="shadow-xl border-0 bg-white/90 backdrop-blur-sm">

@@ -50,6 +50,7 @@ import { log } from "./vite";
 import { randomBytes } from "crypto";
 import { IStorage } from "./storage";
 import { getReportingCategory } from "./reporting-utils";
+import { recordReceiptMilestones } from "./growth-event-service";
 
 // Create PostgreSQL session store
 const PostgresSessionStore = connectPg(session);
@@ -630,6 +631,9 @@ export class DatabaseStorage implements IStorage {
         // Return the newly created receipt
         const receipt = result.rows[0];
         log(`Receipt created successfully with ID: ${receipt?.id || 'unknown'}`, 'debug');
+        // Never make receipt persistence depend on optional product analytics.
+        recordReceiptMilestones(insertReceipt.userId).catch((error) =>
+          log(`Receipt growth milestone failed: ${error}`, "growth"));
         return receipt;
       } catch (sqlError) {
         log(`Direct SQL query failed: ${sqlError}`, 'db');

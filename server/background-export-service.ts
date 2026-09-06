@@ -7,6 +7,7 @@ import { azureStorage } from "./azure-storage";
 import { exportService } from "./export-service";
 import { normalizeReceiptExportDateRange } from "./export-date-range";
 import { createServerLogger } from "./logger";
+import { recordGrowthEventBestEffort } from "./growth-event-service";
 
 const logger = createServerLogger("background-export");
 const LEASE_MINUTES = 20;
@@ -199,6 +200,7 @@ async function processClaimedJob(job: any): Promise<boolean> {
              lease_expires_at = NULL, updated_at = now()
        WHERE id = ${job.id} AND status = 'processing'
     `);
+    recordGrowthEventBestEffort(Number(job.user_id), "first_report_exported", { type: job.type });
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

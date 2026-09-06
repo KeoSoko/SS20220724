@@ -85,6 +85,12 @@ import { accountDeletionService } from "./account-deletion-service";
 import { handleAccountDeletionRequest } from "./account-deletion-handler";
 import { normalizeReceiptExportDateRange } from "./export-date-range";
 import {
+  getActivation,
+  isClientGrowthEventName,
+  recordGrowthEvent,
+  recordGrowthEventBestEffort,
+} from "./growth-event-service";
+import {
   extractPaystackCustomerCode,
   extractPaystackPlanCode,
   extractPaystackRenewalEvidence,
@@ -1415,6 +1421,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ===== RECEIPT ENDPOINTS =====
 
+  // Growth endpoints are intentionally authenticated and only accept the
+  // server-owned milestone vocabulary. Product events never enter billing_events.
+  app.get("/api/growth/activation", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    try {
+      res.json(await getActivation(getUserId(req)));
+    } catch (error) {
+      log(`Error getting growth activation: ${error}`, "growth");
+      res.status(500).json({ error: "Unable to load activation progress" });
+    }
+  });
+
+  app.post("/api/growth/events", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    const { eventName, eventData } = req.body ?? {};
+    if (!isClientGrowthEventName(eventName)) {
+      return res.status(400).json({ error: "Unsupported growth event" });
+    }
+    if (eventData !== undefined && (typeof eventData !== "object" || eventData === null ||
+      Array.isArray(eventData) || JSON.stringify(eventData).length > 4096)) {
+      return res.status(400).json({ error: "Invalid growth event data" });
+    }
+    try {
+      const created = await recordGrowthEvent(getUserId(req), eventName, eventData);
+      res.status(created ? 201 : 200).json({ eventName, created });
+    } catch (error) {
+      log(`Error recording growth event: ${error}`, "growth");
+      res.status(500).json({ error: "Unable to record growth event" });
+    }
+  });
+
   // Get all receipts for the authenticated user
   app.get("/api/receipts", requireWorkspaceRole("owner", "editor", "viewer"), (req, res) => {
     if (!isAuthenticated(req)) return res.sendStatus(401);
@@ -2446,6 +2483,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update the receipt
       const updatedReceipt = await storage.updateReceipt(receiptId, updateData);
+      if ('reportLabel' in updateData || 'category' in updateData) {
+        recordGrowthEventBestEffort(userId, "categories_reviewed");
+      }
 
       // Learn from the edit: save a merchant rule when the user assigns a category label
       if ('reportLabel' in updateData && storage.upsertMerchantCategoryRule) {
@@ -3426,6 +3466,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/export/jobs", requireVerifiedEmail, async (req, res) => {
     try {
       const job = await createBackgroundExportJob(getUserId(req), req.body);
+      // Creation is confirmed synchronously; actual export completion is recorded by the worker.
+      recordGrowthEventBestEffort(getUserId(req), "first_report_created", { type: job.type });
       res.status(202).json({ job });
     } catch (error: any) {
       if (error?.name === "ZodError") {
@@ -3488,6 +3530,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const csv = await exportService.exportReceiptsToCSV(getUserId(req), options);
+      recordGrowthEventBestEffort(getUserId(req), "first_report_created", { type: "csv" });
+      recordGrowthEventBestEffort(getUserId(req), "first_report_exported", { type: "csv" });
       
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="receipts.csv"');
@@ -3519,6 +3563,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const result = await exportService.exportReceiptsToPDF(getUserId(req), options);
+      recordGrowthEventBestEffort(getUserId(req), "first_report_created", { type: "pdf" });
+      recordGrowthEventBestEffort(getUserId(req), "first_report_exported", { type: "pdf" });
       
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'attachment; filename="receipts.pdf"');
@@ -3550,6 +3596,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const report = await exportService.generateTaxReport(getUserId(req), year, options);
+      recordGrowthEventBestEffort(getUserId(req), "first_report_created", { type: "tax-report" });
+      recordGrowthEventBestEffort(getUserId(req), "first_report_exported", { type: "tax-report" });
       
       if (format === 'csv') {
         res.setHeader('Content-Type', 'text/csv');
@@ -6079,6 +6127,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         profile = created;
       }
 
+      recordGrowthEventBestEffort(userId, "business_profile_completed");
       res.status(existingProfile ? 200 : 201).json(profile);
     } catch (error: any) {
       log(`Error creating/updating business profile: ${error.message}`, 'business-hub');
@@ -6684,6 +6733,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return newQuotation;
       });
 
+      recordGrowthEventBestEffort(userId, "first_quote_or_invoice_created", { documentType: "quotation" });
       res.status(201).json(result);
     } catch (error: any) {
       log(`Error creating quotation: ${error.message}`, 'business-hub');
@@ -6971,6 +7021,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return newInvoice;
       });
 
+      recordGrowthEventBestEffort(userId, "first_quote_or_invoice_created", { documentType: "invoice" });
       res.status(201).json(result);
     } catch (error: any) {
       log(`Error converting quotation to invoice: ${error.message}`, 'business-hub');
@@ -7419,6 +7470,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return newInvoice;
       });
 
+      recordGrowthEventBestEffort(userId, "first_quote_or_invoice_created", { documentType: "invoice" });
       res.status(201).json(result);
     } catch (error: any) {
       log(`Error creating invoice: ${error.message}`, 'business-hub');
@@ -7928,6 +7980,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = getUserId(req);
       const stats = await smartReminderService.getDashboardStats(userId);
+      recordGrowthEventBestEffort(userId, "business_hub_viewed");
       res.json(stats);
     } catch (error: any) {
       log(`Error getting dashboard stats: ${error.message}`, 'smart-reminder');

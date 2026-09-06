@@ -20,6 +20,7 @@ import {
   users
 } from "@shared/schema";
 import { log } from "./vite";
+import { recordGrowthEventBestEffort } from "./growth-event-service";
 import Paystack from "paystack";
 import * as crypto from "crypto";
 import { emailService } from "./email-service";
@@ -4679,6 +4680,9 @@ export class BillingService {
           log(`Superseded subscription retirement requires review for user ${userId}: ${retirementError}`, 'billing');
         }
       }
+      // A paid subscription is a product milestone, not a billing_events row.
+      // The dedicated service makes repeated renewal/webhook deliveries harmless.
+      recordGrowthEventBestEffort(userId, "subscription_started");
       return result.subscription;
 
     } catch (error) {

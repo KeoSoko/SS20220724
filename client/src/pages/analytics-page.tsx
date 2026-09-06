@@ -1,4 +1,5 @@
 import React from "react";
+import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   TrendingUp, 
@@ -74,6 +75,7 @@ interface Receipt {
 export default function AnalyticsPage() {
   const isMobile = useIsMobile();
   const [, setLocation] = useLocation();
+  const spendingViewedRef = React.useRef(false);
   
   // Fetch data with error handling
   const { 
@@ -107,6 +109,15 @@ export default function AnalyticsPage() {
   const { data: insights } = useQuery({
     queryKey: ['/api/insights'],
   });
+
+  const analyticsReady = !isCategoryLoading && !isMonthlyLoading && !isReceiptsLoading &&
+    !categoryError && !monthlyError && !receiptsError;
+  React.useEffect(() => {
+    if (!analyticsReady || spendingViewedRef.current) return;
+    spendingViewedRef.current = true;
+    // Analytics is a product milestone, but it must never block the summary.
+    void apiRequest("POST", "/api/growth/events", { eventName: "spending_summary_viewed" }).catch(() => undefined);
+  }, [analyticsReady]);
 
   // Calculate analytics
   const totalSpending = categoryData.reduce((sum, cat) => sum + cat.total, 0);

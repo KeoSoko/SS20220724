@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, primaryKey, pgEnum, uuid, doublePrecision, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, primaryKey, pgEnum, uuid, doublePrecision, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 import { z } from "zod";
@@ -218,6 +218,20 @@ export const tags = pgTable("tags", {
   name: text("name").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// Product-analytics milestones are deliberately separate from billing_events.
+// Each event is a first occurrence per user, enforced by the database.
+export const growthEvents = pgTable("growth_events", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  eventName: text("event_name").notNull(),
+  occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+  eventData: jsonb("event_data"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserEvent: unique().on(table.userId, table.eventName),
+  eventOccurredAtIndex: index("growth_events_event_name_occurred_at_idx").on(table.eventName, table.occurredAt),
+}));
 
 // Many-to-many relationship table for receipt_tags
 export const receiptTags = pgTable("receipt_tags", {

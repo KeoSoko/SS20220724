@@ -99,6 +99,7 @@ export default function UploadReceipt() {
   const [newReceiptId, setNewReceiptId] = useState<number | null>(null);
   const [entryMode, setEntryMode] = useState<ReceiptEntryMode>("scan");
   const [firstSaveReceiptId, setFirstSaveReceiptId] = useState<number | null>(null);
+  const firstSaveStatusRef = useRef<HTMLElement | null>(null);
   
   // Additional receipt properties for better UX
   const [isRecurring, setIsRecurring] = useState(false);
@@ -106,6 +107,16 @@ export default function UploadReceipt() {
   
   // PDF processing state - PDFs can't be previewed until converted on server
   const [isPdfProcessing, setIsPdfProcessing] = useState(false);
+
+  useEffect(() => {
+    if (firstSaveReceiptId !== null) {
+      // The scan form is long; bring the meaningful result into view without
+      // taking the user away from the two next actions.
+      requestAnimationFrame(() => {
+        firstSaveStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+  }, [firstSaveReceiptId]);
 
   // Duplicate detection states
   interface DuplicateReceipt {
@@ -1521,7 +1532,7 @@ export default function UploadReceipt() {
         )}
 
         {firstSaveReceiptId !== null && (
-          <section role="status" aria-live="polite" aria-labelledby="first-slip-success" className="mb-6 rounded-md border border-green-200 bg-green-50 p-5">
+          <section ref={firstSaveStatusRef} role="status" aria-live="polite" aria-labelledby="first-slip-success" data-testid="receipt-save-success" className="mb-6 rounded-md border border-green-200 bg-green-50 p-5">
             <div className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-700" aria-hidden="true" />
               <div>

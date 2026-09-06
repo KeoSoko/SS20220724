@@ -77,7 +77,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { useMemo } from "react";
-import { isFirstSlipEligible, FIRST_SLIP_DISMISSED_KEY } from "@/utils/first-slip-activation";
+import { ActivationCard } from "@/components/activation-card";
 
 
 function HomePage() {
@@ -106,9 +106,6 @@ function HomePage() {
   const [bulkCategory, setBulkCategory] = useState('');
   const isMobile = useIsMobile();
   const { isOnline, pendingUploads } = useOfflineSync();
-  const [firstSlipDismissed, setFirstSlipDismissed] = useState(
-    () => sessionStorage.getItem(FIRST_SLIP_DISMISSED_KEY) === "true"
-  );
   
   // Smart Filters state - restore from sessionStorage if coming back from receipt detail
   const [showSmartFilters, setShowSmartFilters] = useState(() => {
@@ -133,18 +130,9 @@ function HomePage() {
   });
 
   // Fetch receipts
-  const { data: receipts = [], isLoading, error, isSuccess } = useQuery<Receipt[]>({
+  const { data: receipts = [], isLoading, error } = useQuery<Receipt[]>({
     queryKey: ["/api/receipts"],
     enabled: !!user,
-  });
-  const showFirstSlipActivation = isFirstSlipEligible({
-    authenticated: !!user,
-    queryLoaded: isSuccess,
-    queryError: !!error,
-    isOnline,
-    pendingUploads: pendingUploads.length,
-    receiptCount: receipts.length,
-    sessionDismissed: firstSlipDismissed,
   });
 
   // Fetch monthly data for analytics
@@ -632,38 +620,7 @@ function HomePage() {
               </div>
             )}
 
-            {showFirstSlipActivation && (
-              <Card className="mt-6 border-primary/20 bg-primary/[0.04] text-left shadow-sm">
-                <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-                  <div>
-                    <p className="text-sm font-medium text-primary">
-                      {user?.fullName || user?.username
-                        ? `A fresh start, ${(user.fullName || user.username).split(" ")[0]}.`
-                        : "A fresh start."}
-                    </p>
-                    <h2 className="mt-1 text-xl font-semibold text-gray-900">Let’s scan your first slip.</h2>
-                    <p className="mt-1 max-w-xl text-sm text-gray-600">
-                      Photograph or upload a slip and Simple Slips will organise the important details.
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-3">
-                    <Link href="/upload">
-                      <Button className="bg-primary text-white hover:bg-primary/90">Scan your first slip</Button>
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      className="text-gray-600"
-                      onClick={() => {
-                        sessionStorage.setItem(FIRST_SLIP_DISMISSED_KEY, "true");
-                        setFirstSlipDismissed(true);
-                      }}
-                    >
-                      I’ll do this later
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            <ActivationCard />
             
             {/* Smart Search Integration */}
             <div className="mt-6 max-w-4xl mx-auto px-4">

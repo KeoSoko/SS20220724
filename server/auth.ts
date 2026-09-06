@@ -11,6 +11,7 @@ import { log } from "./vite";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { EmailService } from "./email-service.js";
+import { recordGrowthEventBestEffort } from "./growth-event-service";
 
 // Extend Express User interface
 declare global {
@@ -907,6 +908,8 @@ export function setupAuth(app: Express) {
         lastPaymentDate: null,
       });
       await storage.updateUser(user.id, { trialEndDate });
+      // This is product activation analytics, distinct from the legal/billing audit above.
+      recordGrowthEventBestEffort(user.id, "signup_completed");
 
       if (validPromoCode && storage.usePromoCode) {
         await storage.usePromoCode(user.id, validPromoCode, trialDays, trialEndDate);

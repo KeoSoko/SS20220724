@@ -1,0 +1,18 @@
+IMPLEMENT SPRINT 1 IN DEVELOPMENT ONLY. The current Replit project is missing the locally designed post-onboarding activation journey. Build it against the current codebase, preserving all existing brand, authentication, email-verification, billing, subscription, workspace, receipt, reporting, and Business Hub behavior.
+
+Objective: increase new accounts reaching 3 saved receipts within 7 days.
+
+1. Add a dedicated growth_events table via a numbered SQL migration. Columns: id, user_id FK users ON DELETE CASCADE, event_name, occurred_at timestamp, event_data jsonb, created_at. Enforce UNIQUE(user_id,event_name) and index event_name+occurred_at. Apply this migration to the DEVELOPMENT database only. Do not access or change production.
+2. Implement a server growth-event service with an allowlist and idempotent first-occurrence writes (ON CONFLICT DO NOTHING) for signup_completed, first_receipt_saved, third_receipt_saved, categories_reviewed, spending_summary_viewed, business_hub_viewed, business_profile_completed, first_report_created, first_report_exported, first_quote_or_invoice_created, subscription_started, activation_journey_dismissed.
+3. Record signup_completed after successful registration. Record first/third receipt milestones server-side after receipt creation as best-effort so analytics failure never blocks saving. Record categories_reviewed after a user changes/confirms category or report label. Record report/business-profile/quote-or-invoice milestones at their successful server operations. Do not put product events into billing_events.
+4. Add authenticated GET /api/growth/activation returning accurate total receiptCount plus timestamp map. Derive historical signup/receipt/profile/export/document timestamps from real records when an event predates instrumentation. Add authenticated allowlisted POST /api/growth/events. Never accept arbitrary event names.
+5. Add a branded, responsive, dismissible Home card that exposes ONE stage at a time:
+Stage 1 Get started: Save first slip; Save 3 slips; Check categories.
+Stage 2 See the value (only after Stage 1): View spending summary; create/export report.
+Stage 3 Run the business (only after Stage 2): Explore Business Hub; complete business details; create first quote/invoice.
+Hide permanently after dismissal or full completion. One clear CTA at a time. Do not block scanning or require verification except where existing features already do.
+6. On receipt save, automatically scroll the long scan page to the visible success/status area and keep the success state visible long enough to be understood before existing navigation. Preserve View saved receipt and Scan another behavior if present.
+7. Add focused tests for uniqueness/idempotency, milestone hooks, progressive stage gating, dismissal, and endpoint allowlisting. Run TypeScript check, focused tests, and production build.
+8. Do NOT publish, do NOT migrate production, do NOT alter billing/provider data, and do NOT delete/reset test user notifications@simpleslips.co.za or its three development receipts.
+
+After implementation, report changed files, development migration result, exact test results, and how the existing development user should trigger Stage 2.

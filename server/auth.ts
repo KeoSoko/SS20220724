@@ -12,6 +12,7 @@ import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { EmailService } from "./email-service.js";
 import { recordGrowthEventBestEffort } from "./growth-event-service";
+import { buildPublicAppUrl } from "./public-app-origin.js";
 
 // Extend Express User interface
 declare global {
@@ -519,9 +520,9 @@ export function setupAuth(app: Express) {
         const { default: sgMail } = await import('@sendgrid/mail');
         sgMail.setApiKey(process.env.SENDGRID_API_KEY);
         
-        // Always use production domain for reset URLs
-        const baseUrl = 'https://simpleslips.app';
-        const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
+        const resetUrl = buildPublicAppUrl(
+          `/reset-password?token=${encodeURIComponent(resetToken)}`,
+        );
         
         const authFromEmail = process.env.AUTH_FROM_EMAIL || 'support@simpleslips.co.za';
         

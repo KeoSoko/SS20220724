@@ -2,6 +2,7 @@ import { MailService } from '@sendgrid/mail';
 import type { Receipt, ReceiptShare, EmailReceipt, Quotation, Invoice, Client, BusinessProfile, LineItem } from '../shared/schema.js';
 import { aiEmailAssistant } from './ai-email-assistant.js';
 import { createServerLogger } from "./logger";
+import { buildPublicAppUrl, resolvePublicAppOrigin } from "./public-app-origin.js";
 
 const logger = createServerLogger("email-service");
 if (!process.env.SENDGRID_API_KEY) {
@@ -51,7 +52,10 @@ async function withRetry<T>(
 
 export class EmailService {
   private fromEmail = 'notifications@simpleslips.co.za';
-  private appUrl = process.env.APP_URL || 'https://simpleslips.app';
+
+  private get appUrl(): string {
+    return resolvePublicAppOrigin();
+  }
 
   /**
    * Send email verification email
@@ -63,7 +67,10 @@ export class EmailService {
     }
 
     try {
-      const verificationUrl = `${this.appUrl}/verify-email?token=${verificationToken}`;
+      const appUrl = this.appUrl;
+      const verificationUrl = buildPublicAppUrl(
+        `/verify-email?token=${encodeURIComponent(verificationToken)}`,
+      );
       
       const authFromEmail = process.env.AUTH_FROM_EMAIL || this.fromEmail;
       
@@ -81,7 +88,7 @@ export class EmailService {
         dynamicTemplateData: {
           username: username,
           verificationUrl: verificationUrl,
-          appUrl: this.appUrl
+          appUrl
         },
         trackingSettings: {
           clickTracking: {
@@ -95,8 +102,7 @@ export class EmailService {
       };
       
       logger.info(`[EMAIL] Sending verification email to: ${email} from: ${this.fromEmail}`);
-      logger.info(`[EMAIL] Verification URL being sent: ${verificationUrl}`);
-      logger.info(`[EMAIL] App URL: ${this.appUrl}`);
+      logger.info(`[EMAIL] Verification link origin: ${appUrl}, path: /verify-email`);
       const result = await mailService.send(emailData);
       logger.info(`[EMAIL] SendGrid response:`, result);
       
@@ -240,7 +246,9 @@ Need help? Visit our Tax Professionals section to connect with certified account
     }
 
     try {
-      const resetUrl = `${this.appUrl}/reset-password?token=${resetToken}`;
+      const resetUrl = buildPublicAppUrl(
+        `/reset-password?token=${encodeURIComponent(resetToken)}`,
+      );
       
       await mailService.send({
         to: email,
@@ -586,7 +594,9 @@ If you have any questions or need help getting started, just reply to this email
       
       case 'verification': {
         const verificationToken = '[TOKEN_PLACEHOLDER]';
-        const verificationUrl = `${this.appUrl}/verify-email?token=${verificationToken}`;
+        const verificationUrl = buildPublicAppUrl(
+          `/verify-email?token=${encodeURIComponent(verificationToken)}`,
+        );
         return {
           subject: "(Subject from SendGrid template)",
           from: process.env.AUTH_FROM_EMAIL || this.fromEmail,

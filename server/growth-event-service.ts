@@ -71,6 +71,25 @@ export async function recordGrowthEventWithQuery(
   return result.rowCount === 1;
 }
 
+/** Removes only the current user's reversible activation-guide dismissal. */
+export async function restoreActivationJourney(userId: number): Promise<boolean> {
+  return restoreActivationJourneyWithQuery(pool, userId);
+}
+
+/** Injectable query boundary keeps restore isolation and idempotency testable without a database. */
+export async function restoreActivationJourneyWithQuery(
+  queryable: GrowthEventQuery,
+  userId: number,
+): Promise<boolean> {
+  const result = await queryable.query(
+    `DELETE FROM growth_events
+     WHERE user_id = $1 AND event_name = 'activation_journey_dismissed'
+     RETURNING id`,
+    [userId],
+  );
+  return result.rowCount === 1;
+}
+
 export function recordGrowthEventBestEffort(
   userId: number,
   eventName: GrowthEventName,

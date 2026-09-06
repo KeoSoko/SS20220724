@@ -10,7 +10,7 @@ describe("activation journey stage gating", () => {
   it("requires three slips and reviewed categories before stage two", () => {
     const threeSlips = { receiptCount: 3, timestamps: {} };
     expect(getActivationStage(threeSlips)).toBe(1);
-    expect(getActivationAction(threeSlips)).toMatchObject({ label: "Check categories", href: "/receipts" });
+    expect(getActivationAction(threeSlips)).toMatchObject({ label: "Review a receipt category", href: "/receipts" });
     expect(getActivationAction({ ...threeSlips, timestamps: { categories_reviewed: "2025-01-01" } })).toMatchObject({ label: "View spending summary" });
   });
 

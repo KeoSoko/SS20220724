@@ -6,6 +6,7 @@ import {
   isGrowthEventName,
   receiptMilestoneNames,
   recordGrowthEventWithQuery,
+  restoreActivationJourneyWithQuery,
 } from "../growth-event-service";
 
 test("growth event allowlist rejects arbitrary names", () => {
@@ -17,6 +18,7 @@ test("growth event allowlist rejects arbitrary names", () => {
 test("client event allowlist rejects forged server-owned milestones", () => {
   assert.equal(isClientGrowthEventName("activation_journey_dismissed"), true);
   assert.equal(isClientGrowthEventName("spending_summary_viewed"), true);
+  // Restoration has its own fixed-purpose endpoint; it must not broaden this allowlist.
   assert.equal(isClientGrowthEventName("categories_reviewed"), false);
   assert.equal(isClientGrowthEventName("business_hub_viewed"), false);
   assert.equal(isClientGrowthEventName("first_receipt_saved"), false);
@@ -46,6 +48,40 @@ test("first-occurrence writes use database conflict idempotency without user dat
   assert.equal(await recordGrowthEventWithQuery(queryable, 42, "signup_completed"), false);
   assert.equal(calls.length, 2);
   assert.match(calls[0].statement, /ON CONFLICT \(user_id, event_name\) DO NOTHING/);
+});
+
+test("activation restore deletes only the dismissal for the authenticated user and is idempotent", async () => {
+  const calls: Array<{ statement: string; values: unknown[] }> = [];
+  const queryable = {
+    query: async (statement: string, values: unknown[]) => {
+      calls.push({ statement, values });
+      return { rowCount: calls.length === 1 ? 1 : 0 };
+    },
+  };
+
+  assert.equal(await restoreActivationJourneyWithQuery(queryable, 42), true);
+  assert.equal(await restoreActivationJourneyWithQuery(queryable, 42), false);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].values, [42]);
+  assert.match(calls[0].statement, /DELETE FROM growth_events/);
+  assert.match(calls[0].statement, /WHERE user_id = \$1 AND event_name = 'activation_journey_dismissed'/);
+  assert.doesNotMatch(calls[0].statement, /event_name\s*!=|NOT IN/i);
+});
+
+test("activation restore query remains isolated to its supplied user", async () => {
+  const calls: Array<{ statement: string; values: unknown[] }> = [];
+  const queryable = {
+    query: async (statement: string, values: unknown[]) => {
+      calls.push({ statement, values });
+      return { rowCount: 1 };
+    },
+  };
+
+  await restoreActivationJourneyWithQuery(queryable, 42);
+  await restoreActivationJourneyWithQuery(queryable, 99);
+
+  assert.deepEqual(calls.map((call) => call.values), [[42], [99]]);
+  assert.equal(calls[0].statement, calls[1].statement);
 });
 
 test("activation response includes real receipt history and permanent dismissal", () => {

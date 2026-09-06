@@ -89,6 +89,7 @@ import {
   isClientGrowthEventName,
   recordGrowthEvent,
   recordGrowthEventBestEffort,
+  restoreActivationJourney,
 } from "./growth-event-service";
 import {
   extractPaystackCustomerCode,
@@ -1430,6 +1431,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       log(`Error getting growth activation: ${error}`, "growth");
       res.status(500).json({ error: "Unable to load activation progress" });
+    }
+  });
+
+  app.post("/api/growth/activation/restore", async (req, res) => {
+    if (!isAuthenticated(req)) return res.sendStatus(401);
+    try {
+      const restored = await restoreActivationJourney(getUserId(req));
+      res.json({ restored });
+    } catch (error) {
+      log(`Error restoring growth activation: ${error}`, "growth");
+      res.status(500).json({ error: "Unable to restore activation guide" });
     }
   });
 

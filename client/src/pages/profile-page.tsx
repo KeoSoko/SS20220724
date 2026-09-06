@@ -1611,6 +1611,35 @@ export default function ProfilePage() {
 
   const { toast } = useToast();
 
+  const restoreActivationGuideMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/growth/activation/restore"),
+    onSuccess: () => {
+      queryClient.setQueryData(["/api/growth/activation"], (old: {
+        dismissed?: boolean;
+        timestamps?: Record<string, string | null>;
+        events?: Record<string, string | null>;
+        [key: string]: unknown;
+      } | undefined) => {
+        if (!old) return old;
+        const timestamps = { ...old.timestamps };
+        const events = { ...old.events };
+        delete timestamps.activation_journey_dismissed;
+        delete events.activation_journey_dismissed;
+        return { ...old, dismissed: false, timestamps, events };
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/growth/activation"] });
+      try {
+        window.localStorage.removeItem("simple-slips:activation-collapsed");
+      } catch {
+        // Storage may be unavailable; Home still receives the restored server state.
+      }
+      toast({ title: "Setup guide restored", description: "Your guide will be expanded the next time you open Home." });
+    },
+    onError: () => {
+      toast({ title: "Could not restore setup guide", description: "Please try again.", variant: "destructive" });
+    },
+  });
+
   const { data: sessionData } = useQuery<{ activeSessionCount: number; maxSessions: number }>({
     queryKey: ['/api/sessions'],
   });
@@ -1966,6 +1995,25 @@ export default function ProfilePage() {
           <ContentCard>
             <div className="space-y-4">
               <ReceiptEmailSection />
+
+              <Button
+                variant="outline"
+                className="w-full justify-between border-[#d9d0c5] bg-[#fffdf8] p-4 h-auto"
+                onClick={() => restoreActivationGuideMutation.mutate()}
+                disabled={restoreActivationGuideMutation.isPending}
+                data-testid="button-show-setup-guide"
+              >
+                <div className="flex items-start gap-3 flex-1">
+                  <Settings className="h-5 w-5 text-[#365b52] mt-0.5 flex-shrink-0" />
+                  <div className="text-left flex-1 min-w-0">
+                    <p className="font-medium">Show setup guide</p>
+                    <p className="text-sm text-gray-600 break-words whitespace-normal">
+                      {restoreActivationGuideMutation.isPending ? "Restoring your guide…" : "Bring back the Simple Slips setup steps on Home"}
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
               
               <Button
                 variant="outline"

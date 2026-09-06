@@ -40,7 +40,7 @@ export function getActivationAction(snapshot: ActivationSnapshot): ActivationAct
   if (stage === 1) {
     if (receiptCount === 0) return { stage, label: "Save first slip", href: "/upload" };
     if (receiptCount < 3) return { stage, label: "Save 3 slips", href: "/upload" };
-    return { stage, label: "Check categories", href: "/receipts" };
+    return { stage, label: "Review a receipt category", href: "/receipts" };
   }
   if (stage === 2) {
     if (!has(timestamps, "spending_summary_viewed")) {

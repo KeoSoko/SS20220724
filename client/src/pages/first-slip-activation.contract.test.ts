@@ -11,6 +11,11 @@ describe("activation journey UI contract", () => {
     expect(home).toContain('<ActivationCard />');
     expect(activationCard).toContain('"/api/growth/activation"');
     expect(activationCard).toContain("activation_journey_dismissed");
+    expect(activationCard).toContain("Continue setup");
+    expect(activationCard).toContain("Hide setup guide");
+    expect(activationCard).toContain("Open one of your saved slips and confirm its category to continue.");
+    expect(activationCard).toContain('localStorage');
+    expect(readFileSync(new URL("./profile-page.tsx", import.meta.url), "utf8")).toContain('"/api/growth/activation/restore"');
     expect(activationJourney).toContain("Save first slip");
     expect(activationCard).toContain('<Link href={action.href}');
     expect(activationCard).not.toContain("spending_summary_viewed");

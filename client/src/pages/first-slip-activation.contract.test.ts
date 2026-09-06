@@ -28,6 +28,21 @@ describe("activation journey UI contract", () => {
     expect(upload).not.toMatch(/emailVerified|isEmailVerified|verification.*gate/i);
   });
 
+  it("uses the shared semantic brand treatment rather than the retired earthy palette", () => {
+    expect(activationCard).toContain("border-border");
+    expect(activationCard).toContain("bg-card");
+    expect(activationCard).toContain("text-card-foreground");
+    expect(activationCard).toContain("text-muted-foreground");
+    expect(activationCard).toContain("text-primary");
+    expect(activationCard).toContain("bg-primary/10");
+    expect(activationCard).toContain("<Progress");
+    expect(activationCard).toContain("activation-primary-cta");
+    expect(activationCard).toContain("flex-col items-stretch");
+    expect(activationCard).toContain("sm:flex-row");
+    expect(activationCard).not.toMatch(/#[0-9a-f]{3,8}/i);
+    expect(activationCard).not.toMatch(/amber-|sky-|violet-|brown|cream|earthy/i);
+  });
+
   it("scrolls the visible success state and preserves both next actions", () => {
     expect(upload).toContain("Your first slip is organised.");
     expect(upload).toContain('role="status" aria-live="polite"');

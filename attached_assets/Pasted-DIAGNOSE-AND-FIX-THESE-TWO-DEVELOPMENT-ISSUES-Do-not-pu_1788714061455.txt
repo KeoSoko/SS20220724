@@ -1,0 +1,13 @@
+DIAGNOSE AND FIX THESE TWO DEVELOPMENT ISSUES. Do not publish or touch production.
+
+Evidence from the user's development test:
+1. The Stage 2 activation card still looks visually out of place. Screenshot shows an off-white/cream card with brownish typography and a bright cyan/blue CTA. Do not assume the global shared primary Button is the correct Simple Slips activation palette. Inspect the actual established brand treatment used throughout Home, navigation, receipt success states, and the Simple Slips logo/theme. Identify the canonical colour tokens/classes and restyle the entire activation card cohesively (background, border, icon, eyebrow, progress bars, CTA, secondary text/actions, hover/focus) so it unmistakably belongs to Simple Slips. Avoid a one-off hardcoded palette if canonical semantic tokens can be used. Maintain accessible contrast and responsive layout.
+2. Creating/exporting a report fails with the UI toast: “Export failed — There was an error exporting your data. Please try again.” This occurred after clicking the report export in development. Inspect recent development server/workflow logs, failed export job records and processing_error for the current test account if safely identifiable, and trace the exact frontend request/backend route/background export path. Determine the concrete root cause; do not guess. Fix it without weakening authorization, validation, workspace isolation, plan limits, or email-verification rules. Do not create false growth milestones on a failed export. Verify first_report_created and first_report_exported are recorded only at their authoritative successful points.
+
+Requirements:
+- Preserve all existing auth, billing, workspace, receipt, report, and onboarding milestone behaviour except the necessary fixes.
+- Do not delete or alter notifications@simpleslips.co.za, its 3 receipts, or production data.
+- If reproducing needs data, use non-mutating inspection first and a synthetic/test fixture rather than the real account.
+- Add focused regression tests for the actual export failure cause and activation-card contract.
+- Run relevant tests, TypeScript, full build, restart development, inspect logs, and visually verify desktop + 360px mobile.
+- Report the exact root cause, exact code changes, test results, and safe manual retest steps. Do not publish.

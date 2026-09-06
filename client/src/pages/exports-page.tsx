@@ -14,6 +14,7 @@ import { Section } from '@/components/design-system';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { dispatchVerificationRequiredEvent } from '@/lib/queryClient';
+import { getVerificationRequiredResponse } from '@/lib/verification-required-response';
 
 const formatCategoryLabel = (slug: string) =>
   slug.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
@@ -296,7 +297,15 @@ export default function ExportsPage() {
           ...(type === 'tax-report' && { taxYear: new Date().getFullYear() }),
         }),
       });
-      if (!response.ok) throw new Error(`Unable to queue export (${response.status})`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        const verificationRequired = getVerificationRequiredResponse(response.status, errorData);
+        if (verificationRequired) {
+          dispatchVerificationRequiredEvent(verificationRequired.userEmail);
+          return;
+        }
+        throw new Error(`Unable to queue export (${response.status})`);
+      }
       toast({
         title: "Export queued",
         description: "You can leave this page while we prepare it. The finished file will appear under Recent exports.",

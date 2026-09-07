@@ -349,25 +349,25 @@ export async function initializeSubscriptionPlans() {
     await backfillPlanCodes(); // Ensure existing plan rows carry Paystack codes + max_seats
     await backfillAuthorizationCodes(); // Recover authorization codes for existing Paystack subscribers
     
-    // OPERATIONAL HARDENING: Start orphaned payment monitoring
-    // Checks every 5 minutes for payments that didn't create subscriptions
-    billingService.startOrphanedPaymentMonitoring(5);
-    
-    // RECONCILIATION: Query Paystack hourly for overdue renewals
-    billingService.startReconciliationMonitoring(1);
-    
-    // WEBHOOK HEALTH: Monitor Paystack webhook connectivity every 12 hours
-    billingService.startWebhookHealthMonitoring(12);
-    
-    // PAYMENT WARNINGS: Send trial expiry and renewal due warnings (3 days + 1 day before)
-    billingService.startPaymentWarningMonitoring(12);
-
-    // AZURE TIER MIGRATION: Move blobs to Hot/Cool/Cold based on receipt age (runs every 24h)
-    // Also runs once immediately at startup to backfill all existing blobs
-    startTierMigrationMonitoring(24);
-    
     log('Subscription plans initialization complete', 'billing');
   } catch (error) {
     log(`Failed to initialize subscription plans: ${error}`, 'billing');
+    throw error;
   }
+}
+
+let backgroundWorkersStarted = false;
+
+/** Start recurring work only after every required startup migration completed. */
+export function startSubscriptionBackgroundWorkers(): void {
+  if (backgroundWorkersStarted) return;
+  backgroundWorkersStarted = true;
+
+  billingService.startOrphanedPaymentMonitoring(5);
+  billingService.startReconciliationMonitoring(1);
+  billingService.startWebhookHealthMonitoring(12);
+  billingService.startPaymentWarningMonitoring(12);
+  startTierMigrationMonitoring(24);
+
+  log('Subscription background workers started', 'billing');
 }

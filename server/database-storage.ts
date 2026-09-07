@@ -75,10 +75,9 @@ export class DatabaseStorage implements IStorage {
       createTableIfMissing: true
     });
     
-    // Initialize database connection
-    this.initialize().catch(err => {
-      log(`Failed to initialize database: ${err}`, 'db');
-    });
+    // Startup owns the awaited connectivity probe. Starting a second probe
+    // here races required initialization and consumes extra pool connections in
+    // autoscaled deployments.
   }
   
   async initialize(): Promise<boolean> {

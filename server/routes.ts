@@ -819,10 +819,18 @@ function scheduleDeferredPaystackWebhookReplay(): void {
 }
 
 function startDeferredPaystackWebhookReplay(): void {
+  if (deferredPaystackReplayTimer) return;
   scheduleDeferredPaystackWebhookReplay();
-  setInterval(() => {
+  deferredPaystackReplayTimer = setInterval(() => {
     scheduleDeferredPaystackWebhookReplay();
   }, 15_000);
+  deferredPaystackReplayTimer.unref?.();
+}
+
+let deferredPaystackReplayTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startDeferredPaystackWebhookReplayWorker(): void {
+  startDeferredPaystackWebhookReplay();
 }
 
 // Security validation utilities
@@ -9034,7 +9042,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(404).json({ error: "API endpoint not found" });
   });
 
-  startDeferredPaystackWebhookReplay();
   const httpServer = createServer(app);
   return httpServer;
 }

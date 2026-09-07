@@ -1,11 +1,15 @@
 import express, { type Request, Response, NextFunction } from "express";
 import path from "path";
 import rateLimit from "express-rate-limit";
-import { registerRoutes } from "./routes";
+import { registerRoutes, startDeferredPaystackWebhookReplayWorker } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { azureStorage } from "./azure-storage";
-import { initializeSubscriptionPlans } from "./subscription-plans-seeder";
+import {
+  initializeSubscriptionPlans,
+  startSubscriptionBackgroundWorkers,
+} from "./subscription-plans-seeder";
 import { runBillingIntegrityMigration } from "./billing-integrity-migration";
+import { initializeDatabase } from "./db";
 import { startBackgroundExportWorker } from "./background-export-service";
 
 const app = express();
@@ -388,13 +392,30 @@ app.use((req, res, next) => {
       log(`Warning: Azure Storage initialization failed: ${error}`, "azure");
     }
 
-    // These database-backed initialization steps remain required. Application
-    // traffic stays gated until both complete successfully.
+    // Required database work must own the pool before recurring jobs start.
+    const databaseReady = await initializeDatabase();
+    if (!databaseReady) {
+      throw new Error("Database connection failed after startup retries");
+    }
     await initializeSubscriptionPlans();
     await runBillingIntegrityMigration();
-    startBackgroundExportWorker();
     startupState = 'ready';
     log("Application initialization completed", "startup");
+
+    // Workers are optional after readiness. A synchronous startup failure in
+    // one worker is contained and cannot take the application back down.
+    const workers: Array<[string, () => void]> = [
+      ['subscription background workers', startSubscriptionBackgroundWorkers],
+      ['deferred Paystack webhook replay', startDeferredPaystackWebhookReplayWorker],
+      ['background export worker', startBackgroundExportWorker],
+    ];
+    for (const [name, start] of workers) {
+      try {
+        start();
+      } catch (error) {
+        log(`Unable to start ${name}: ${error}`, "startup");
+      }
+    }
   } catch (error) {
     startupState = 'failed';
     startupError = error instanceof Error ? error.message : String(error);

@@ -89,8 +89,10 @@ export default function AuthPage() {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showForgotUsername, setShowForgotUsername] = useState(false);
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState("");
+  const [forgotPasswordError, setForgotPasswordError] = useState(false);
   const [forgotUsernameMessage, setForgotUsernameMessage] = useState("");
   const [isSubmittingForgot, setIsSubmittingForgot] = useState(false);
+  const [passwordResetSucceeded, setPasswordResetSucceeded] = useState(false);
   const [registerStep, setRegisterStep] = useState(1);
   const registrationSubmitStarted = useRef(false);
 
@@ -98,6 +100,8 @@ export default function AuthPage() {
   // browser back/forward preserve the user's place without a modal or delay.
   useEffect(() => {
     syncAndCanonicalizeMode();
+    const params = new URLSearchParams(window.location.search);
+    setPasswordResetSucceeded(params.get("passwordReset") === "success");
   }, [location]);
 
   useEffect(() => {
@@ -474,6 +478,7 @@ export default function AuthPage() {
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmittingForgot(true);
+    setForgotPasswordError(false);
 
     try {
       const response = await fetch("/api/forgot-password", {
@@ -485,10 +490,13 @@ export default function AuthPage() {
       });
 
       const data = await response.json();
-
+      if (!response.ok) {
+        throw new Error(data.message || "Password reset is temporarily unavailable. Please try again.");
+      }
       setForgotPasswordMessage(data.message);
       setForgotPasswordEmail("");
     } catch (error: any) {
+      setForgotPasswordError(true);
       setForgotPasswordMessage(error.message || "Failed to send reset email. Please try again.");
     } finally {
       setIsSubmittingForgot(false);
@@ -581,6 +589,11 @@ export default function AuthPage() {
           <CardContent>
               {/* Login Tab */}
               {activeTab === "login" && <div className="space-y-4">
+                {passwordResetSucceeded && (
+                  <div role="status" className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+                    Password updated. Welcome back—sign in with your new password.
+                  </div>
+                )}
                 <Form {...loginForm}>
                   <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
                     <FormField
@@ -927,12 +940,16 @@ export default function AuthPage() {
           </DialogHeader>
 
           {forgotPasswordMessage ? (
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-sm text-green-800">{forgotPasswordMessage}</p>
+            <div
+              role={forgotPasswordError ? "alert" : "status"}
+              className={`p-4 rounded-lg border ${forgotPasswordError ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}
+            >
+              <p className={`text-sm ${forgotPasswordError ? "text-red-800" : "text-green-800"}`}>{forgotPasswordMessage}</p>
               <Button
                 onClick={() => {
                   setShowForgotPassword(false);
                   setForgotPasswordMessage("");
+                  setForgotPasswordError(false);
                 }}
                 className="mt-3 w-full"
               >

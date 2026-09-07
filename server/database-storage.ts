@@ -51,6 +51,7 @@ import { randomBytes } from "crypto";
 import { IStorage } from "./storage";
 import { getReportingCategory } from "./reporting-utils";
 import { recordReceiptMilestones } from "./growth-event-service";
+import { hashPasswordResetToken } from "./password-reset-security";
 
 // Create PostgreSQL session store
 const PostgresSessionStore = connectPg(session);
@@ -194,11 +195,15 @@ export class DatabaseStorage implements IStorage {
 
   async findUserByResetToken(token: string): Promise<User | undefined> {
     try {
+      const tokenHash = hashPasswordResetToken(token);
       const result = await db.select()
         .from(users)
         .where(
           and(
-            eq(users.passwordResetToken, token),
+            or(
+              eq(users.passwordResetToken, tokenHash),
+              eq(users.passwordResetToken, token),
+            ),
             gte(users.passwordResetExpires, new Date())
           )
         )
@@ -222,7 +227,7 @@ export class DatabaseStorage implements IStorage {
     try {
       await db.update(users)
         .set({ 
-          passwordResetToken: token, 
+          passwordResetToken: hashPasswordResetToken(token),
           passwordResetExpires: expires 
         })
         .where(eq(users.id, userId));
@@ -231,6 +236,35 @@ export class DatabaseStorage implements IStorage {
       log(`Error storing password reset token: ${error}`, 'database');
       throw error;
     }
+  }
+
+  async consumePasswordResetToken(token: string, hashedPassword: string): Promise<User | undefined> {
+    const tokenHash = hashPasswordResetToken(token);
+    return db.transaction(async (transaction) => {
+      const [user] = await transaction.update(users)
+        .set({
+          password: hashedPassword,
+          passwordResetToken: null,
+          passwordResetExpires: null,
+          failedLoginAttempts: 0,
+          accountLockedUntil: null,
+          tokenVersion: sql`${users.tokenVersion} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          or(
+            eq(users.passwordResetToken, tokenHash),
+            eq(users.passwordResetToken, token),
+          ),
+          gte(users.passwordResetExpires, new Date()),
+        ))
+        .returning();
+
+      if (user) {
+        await transaction.delete(authTokens).where(eq(authTokens.userId, user.id));
+      }
+      return user;
+    });
   }
 
   // Update user password

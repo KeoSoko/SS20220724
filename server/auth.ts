@@ -13,6 +13,10 @@ import { eq } from "drizzle-orm";
 import { EmailService } from "./email-service.js";
 import { recordGrowthEventBestEffort } from "./growth-event-service";
 import { buildPublicAppUrl } from "./public-app-origin.js";
+import {
+  generatePasswordResetToken,
+  getPasswordResetExpiry,
+} from "./password-reset-security";
 
 // Extend Express User interface
 declare global {
@@ -209,6 +213,10 @@ export async function establishAuthenticatedSession(
  * Authentication middleware for verifying JWT tokens
  */
 export function jwtAuthMiddleware(req: Request, res: Response, next: NextFunction, authStorage = storage) {
+  if (req.path === "/api/forgot-password" || req.path === "/api/reset-password") {
+    return next();
+  }
+
   // Skip JWT middleware for static assets and Vite development files
   if (req.path.startsWith('/@fs/') || 
       req.path.startsWith('/src/') || 
@@ -249,7 +257,7 @@ export function jwtAuthMiddleware(req: Request, res: Response, next: NextFunctio
   // Extract token - format should be "Bearer <token>"
   const parts = authHeader.split(' ');
   if (parts.length !== 2 || parts[0] !== 'Bearer') {
-    console.log(`[JWT] Invalid header format: ${authHeader}`);
+    console.log('[JWT] Invalid authorization header format');
     return res.status(401).json({ 
       error: "Invalid authorization header format",
       message: "Authorization header must be in the format: Bearer <token>"
@@ -257,7 +265,6 @@ export function jwtAuthMiddleware(req: Request, res: Response, next: NextFunctio
   }
   
   const token = parts[1];
-  console.log(`[JWT] Token extracted (first 10 chars): ${token.substring(0, 10)}...`);
   
   try {
     // Verify the JWT token with the enhanced options
@@ -507,13 +514,14 @@ export function setupAuth(app: Express) {
       }
       
       // Generate reset token
-      const resetToken = randomBytes(32).toString('hex');
-      const resetExpires = new Date(Date.now() + 3600000); // 1 hour
+      const resetToken = generatePasswordResetToken();
+      const resetExpires = getPasswordResetExpiry();
       
       // Store reset token (you'll need to add this to your schema)
-      if (storage.storePasswordResetToken) {
-        await storage.storePasswordResetToken(user.id, resetToken, resetExpires);
+      if (!storage.storePasswordResetToken) {
+        throw new Error("Password reset persistence is unavailable");
       }
+      await storage.storePasswordResetToken(user.id, resetToken, resetExpires);
       
       // Send email using SendGrid
       if (process.env.SENDGRID_API_KEY) {
@@ -559,9 +567,9 @@ export function setupAuth(app: Express) {
         
         try {
           const result = await sgMail.send(msg);
-          log(`Password reset email sent successfully to ${email}. SendGrid response: ${JSON.stringify(result[0]?.statusCode)}`, 'auth');
+          log(`Password reset email accepted by email provider. Status: ${JSON.stringify(result[0]?.statusCode)}`, 'auth');
         } catch (emailError) {
-          log(`Failed to send password reset email to ${email}: ${JSON.stringify(emailError)}`, 'auth');
+          log(`Failed to send password reset email: ${JSON.stringify(emailError)}`, 'auth');
           // Don't throw error - still return success to user for security
         }
       }
@@ -648,17 +656,20 @@ export function setupAuth(app: Express) {
         });
       }
       
-      if (newPassword.length < 6) {
+      const passwordValidation = strongPasswordSchema.safeParse(newPassword);
+      if (!passwordValidation.success) {
         return res.status(400).json({ 
-          error: "Password too short",
-          message: "Your new password must be at least 6 characters long for security.",
-          userAction: "Please choose a longer password and try again."
+          error: "Weak password",
+          message: passwordValidation.error.issues[0]?.message || "Password does not meet the security requirements.",
+          userAction: "Choose a password that meets every requirement and try again."
         });
       }
-      
-      // Find user by reset token
-      const user = storage.findUserByResetToken ? await storage.findUserByResetToken(token) : null;
-      
+
+      if (!storage.consumePasswordResetToken) {
+        throw new Error("Secure password reset persistence is unavailable");
+      }
+      const hashedPassword = await hashPassword(newPassword);
+      const user = await storage.consumePasswordResetToken(token, hashedPassword);
       if (!user) {
         return res.status(400).json({ 
           error: "Reset link expired or invalid",
@@ -667,25 +678,20 @@ export function setupAuth(app: Express) {
           canRetry: true
         });
       }
-      
-      // Hash new password
-      const hashedPassword = await hashPassword(newPassword);
-      
-      // Update password and clear reset token
-      if (storage.updateUserPassword) {
-        await storage.updateUserPassword(user.id, hashedPassword);
-      }
-      
-      if (storage.clearPasswordResetToken) {
-        await storage.clearPasswordResetToken(user.id);
-      }
 
-      if (storage.updateUser) {
-        await storage.updateUser(user.id, {
-          failedLoginAttempts: 0,
-          accountLockedUntil: null,
-        } as any);
-      }
+      await new Promise<void>((resolve) => {
+        req.logout((logoutError) => {
+          if (logoutError) log(`Unable to clear reset request authentication: ${logoutError}`, "auth");
+          resolve();
+        });
+      });
+      await new Promise<void>((resolve) => {
+        req.session.destroy((sessionError) => {
+          if (sessionError) log(`Unable to destroy reset request session: ${sessionError}`, "auth");
+          resolve();
+        });
+      });
+      res.clearCookie("connect.sid");
       
       log(`Password reset successful for user: ${user.username}`, 'auth');
       
@@ -1237,76 +1243,6 @@ export function setupAuth(app: Express) {
     }
   });
   
-  // REMOVED: Duplicate password reset endpoint - use /api/forgot-password instead
-  
-  // Reset password with token
-  app.post("/api/reset-password", async (req: Request, res: Response) => {
-    try {
-      const { token, newPassword } = req.body;
-      
-      if (!token || !newPassword) {
-        return res.status(400).json({ 
-          error: "Invalid request", 
-          message: "Reset token and new password are required" 
-        });
-      }
-      
-      // Find user with this reset token
-      if (!storage.findUserByResetToken) {
-        return res.status(400).json({ 
-          error: "Not supported", 
-          message: "Password reset is not supported in this environment" 
-        });
-      }
-
-      const user = await storage.findUserByResetToken(token);
-      
-      if (!user) {
-        return res.status(400).json({ 
-          error: "Invalid token", 
-          message: "Password reset token is invalid or has expired" 
-        });
-      }
-      
-      // Check if token is expired
-      if (!user.passwordResetExpires || new Date(user.passwordResetExpires) < new Date()) {
-        return res.status(400).json({ 
-          error: "Token expired", 
-          message: "Password reset token has expired" 
-        });
-      }
-      
-      // Hash the new password
-      const hashedPassword = await hashPassword(newPassword);
-      
-      // Update user with new password and clear reset token
-      if (storage.updateUser) {
-        await storage.updateUser(user.id, {
-          password: hashedPassword,
-          passwordResetToken: null,
-          passwordResetExpires: null,
-          failedLoginAttempts: 0, // Reset failed login attempts
-          accountLockedUntil: null // Remove account lock if present
-        });
-        
-        log(`Password reset successful for user: ${user.id}`, 'auth');
-        
-        return res.status(200).json({ 
-          success: true, 
-          message: "Password has been reset successfully" 
-        });
-      } else {
-        throw new Error("Storage implementation doesn't support updating users");
-      }
-    } catch (error) {
-      log(`Password reset error: ${error}`, 'auth');
-      return res.status(500).json({ 
-        error: "Server error", 
-        message: "Failed to reset password" 
-      });
-    }
-  });
-
   // Email verification endpoint
   app.post("/api/verify-email", async (req: Request, res: Response) => {
     try {

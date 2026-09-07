@@ -29,6 +29,7 @@ import createMemoryStore from "memorystore";
 import { log } from "./vite";
 import { randomBytes } from "crypto";
 import { getReportingCategory } from "./reporting-utils";
+import { hashPasswordResetToken } from "./password-reset-security";
 
 const MemoryStore = createMemoryStore(session);
 
@@ -49,6 +50,7 @@ export interface IStorage {
   findUserByResetToken?(token: string): Promise<User | undefined>;
   findUserByVerificationToken?(token: string): Promise<User | undefined>;
   storePasswordResetToken?(userId: number, token: string, expires: Date): Promise<void>;
+  consumePasswordResetToken?(token: string, hashedPassword: string): Promise<User | undefined>;
   updateUserPassword?(userId: number, hashedPassword: string): Promise<void>;
   clearPasswordResetToken?(userId: number): Promise<void>;
   incrementLoginAttempts?(id: number): Promise<number>;
@@ -382,8 +384,36 @@ export class MemStorage implements IStorage {
   }
   
   async findUserByResetToken(token: string): Promise<User | undefined> {
+    const tokenHash = hashPasswordResetToken(token);
+    const now = new Date();
     return Array.from(this.users.values())
-      .find(user => user.passwordResetToken === token);
+      .find(user =>
+        (user.passwordResetToken === tokenHash || user.passwordResetToken === token) &&
+        !!user.passwordResetExpires &&
+        new Date(user.passwordResetExpires) >= now
+      );
+  }
+
+  async storePasswordResetToken(userId: number, token: string, expires: Date): Promise<void> {
+    const user = this.users.get(userId);
+    if (!user) throw new Error(`User not found: ${userId}`);
+    user.passwordResetToken = hashPasswordResetToken(token);
+    user.passwordResetExpires = expires;
+    this.users.set(userId, user);
+  }
+
+  async consumePasswordResetToken(token: string, hashedPassword: string): Promise<User | undefined> {
+    const user = await this.findUserByResetToken(token);
+    if (!user) return undefined;
+    user.password = hashedPassword;
+    user.passwordResetToken = null;
+    user.passwordResetExpires = null;
+    user.failedLoginAttempts = 0;
+    user.accountLockedUntil = null;
+    user.tokenVersion = (user.tokenVersion || 1) + 1;
+    user.updatedAt = new Date();
+    this.users.set(user.id, user);
+    return user;
   }
   
   async findUserByVerificationToken(token: string): Promise<User | undefined> {

@@ -9,8 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff, ArrowLeft, CheckCircle, XCircle, KeyRound } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { queryClient, setAuthToken } from "@/lib/queryClient";
 import { createClientLogger } from "@/lib/logger";
+import { authStore } from "@/lib/auth-store";
+import { strongPasswordSchema } from "@shared/schema";
 
 const logger = createClientLogger("reset-password-page");
 export default function ResetPasswordPage() {
@@ -42,7 +44,7 @@ export default function ResetPasswordPage() {
 
   // Password reset form schema
   const resetSchema = z.object({
-    password: z.string().min(6, "Password must be at least 6 characters"),
+    password: strongPasswordSchema,
     confirmPassword: z.string().min(1, "Please confirm your password"),
   }).refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
@@ -86,7 +88,9 @@ export default function ResetPasswordPage() {
       }
 
       const result = await response.json();
-      
+      setAuthToken(null);
+      authStore.clear();
+      queryClient.removeQueries({ queryKey: ["/api/user"] });
       setIsSuccess(true);
       toast({
         title: "Password Reset Successful",
@@ -94,7 +98,7 @@ export default function ResetPasswordPage() {
       });
       
       // Redirect to login after 3 seconds
-      setTimeout(() => setLocation("/auth?mode=signin"), 3000);
+      setTimeout(() => setLocation("/auth?mode=signin&passwordReset=success"), 1500);
     } catch (error: any) {
       const errorMessage = error.message || "Failed to reset password. The link may be expired.";
       
@@ -139,7 +143,7 @@ export default function ResetPasswordPage() {
                 Your password has been updated successfully. You will be redirected to the sign-in page.
               </p>
               <Button
-                onClick={() => setLocation("/auth?mode=signin")}
+                onClick={() => setLocation("/auth?mode=signin&passwordReset=success")}
                 className="w-full bg-primary hover:bg-primary/90"
               >
                 Go to Sign In
@@ -210,6 +214,7 @@ export default function ResetPasswordPage() {
                         <div className="relative">
                           <Input
                             type={showPassword ? "text" : "password"}
+                             autoComplete="new-password"
                             placeholder="Enter your new password"
                             className="bg-white border-gray-200 pr-10"
                             {...field}
@@ -218,6 +223,7 @@ export default function ResetPasswordPage() {
                             type="button"
                             variant="ghost"
                             size="sm"
+                             aria-label={showPassword ? "Hide new password" : "Show new password"}
                             className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                             onClick={() => setShowPassword(!showPassword)}
                           >
@@ -234,6 +240,15 @@ export default function ResetPasswordPage() {
                   )}
                 />
 
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm" aria-live="polite">
+                  <p className="font-medium text-gray-800">Your password must include:</p>
+                  <ul className="mt-2 grid gap-1 text-gray-600">
+                    <li>8–64 characters</li>
+                    <li>At least one lowercase and one uppercase letter</li>
+                    <li>At least one number and one special character</li>
+                  </ul>
+                </div>
+
                 <FormField
                   control={resetForm.control}
                   name="confirmPassword"
@@ -244,6 +259,7 @@ export default function ResetPasswordPage() {
                         <div className="relative">
                           <Input
                             type={showConfirmPassword ? "text" : "password"}
+                             autoComplete="new-password"
                             placeholder="Confirm your new password"
                             className="bg-white border-gray-200 pr-10"
                             {...field}
@@ -252,6 +268,7 @@ export default function ResetPasswordPage() {
                             type="button"
                             variant="ghost"
                             size="sm"
+                             aria-label={showConfirmPassword ? "Hide confirmed password" : "Show confirmed password"}
                             className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                             onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                           >
@@ -299,10 +316,6 @@ export default function ResetPasswordPage() {
           </CardContent>
         </Card>
 
-        {/* Footer */}
-        <div className="text-center mt-6 text-sm text-gray-500">
-          Your new password must be at least 6 characters long
-        </div>
       </div>
     </div>
   );

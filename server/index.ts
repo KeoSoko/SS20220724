@@ -43,6 +43,7 @@ const authEndpoints = new Set([
   '/api/login',
   '/api/register',
   '/api/logout',
+  '/api/forgot-password',
   '/api/reset-password',
   '/api/verify-email',
   '/api/resend-verification',

@@ -12,7 +12,6 @@ import { runBillingIntegrityMigration } from "./billing-integrity-migration";
 import { initializeDatabase } from "./db";
 import { startBackgroundExportWorker } from "./background-export-service";
 import { startAccountBlobCleanupWorker } from "./account-blob-cleanup-worker";
-import { initializeDatabase } from "./db";
 
 const app = express();
 

@@ -43,7 +43,8 @@ import {
   Download,
   FileText,
   FileSpreadsheet,
-  Images
+  Images,
+  BarChart3
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -732,6 +733,12 @@ export default function CommandCenter() {
             <Button variant="outline">
               <Images className="h-4 w-4 mr-2" />
               Receipt Image Health
+            </Button>
+          </Link>
+          <Link href="/command-center/growth">
+            <Button variant="outline">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Growth Dashboard
             </Button>
           </Link>
           <Button

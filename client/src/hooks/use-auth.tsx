@@ -9,6 +9,7 @@ import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { authStore } from "../lib/auth-store";
 import { writeReturningUserMarker } from "../lib/auth-mode";
+import { getAttributionVisitorIdForRegistration } from "../lib/attribution";
 
 // Response types from authentication endpoints
 interface AuthResponse {
@@ -445,11 +446,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerMutation = useMutation({
     mutationFn: async (credentials: RegistrationData) => {
+      const attributionVisitorId = await getAttributionVisitorIdForRegistration();
       // Use direct fetch approach for consistency
       const response = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credentials),
+        body: JSON.stringify({
+          ...credentials,
+          ...(attributionVisitorId ? { attributionVisitorId } : {}),
+        }),
         credentials: "include"
       });
 

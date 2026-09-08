@@ -143,6 +143,21 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at"),
 });
 
+// Anonymous, first-party acquisition record. Touch data is deliberately a
+// small allowlisted JSON shape; it must never contain a full referrer URL.
+export const attributionVisitors = pgTable("attribution_visitors", {
+  visitorId: uuid("visitor_id").primaryKey(),
+  userId: integer("user_id").unique().references(() => users.id, { onDelete: "set null" }),
+  firstTouch: jsonb("first_touch").notNull(),
+  latestTouch: jsonb("latest_touch").notNull(),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  latestSeenAt: timestamp("latest_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  sessionStartedAt: timestamp("session_started_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  unattachedRecent: index("attribution_visitors_unattached_recent_idx").on(table.userId, table.latestSeenAt),
+  firstSeen: index("attribution_visitors_first_seen_idx").on(table.firstSeenAt),
+}));
+
 // Define the receipts table with enhanced metadata
 export const receipts = pgTable("receipts", {
   id: serial("id").primaryKey(),

@@ -73,6 +73,7 @@ import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategori
 import { runWorkspaceIntegrityValidator } from "./workspace-integrity-validator";
 import { profitLossService } from "./profit-loss-service";
 import { registerAdminRoutes } from "./admin-routes";
+import { registerAttributionRoutes } from "./attribution";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus, getEffectiveSubscriptionStatus } from "./subscription-middleware";
 import { getWorkspaceSeatInfo } from "./workspace-seats";
 import { resolveBillingOwner } from "./billing-owner";
@@ -1050,6 +1051,7 @@ const validateReceiptId = (receiptId: string): number => {
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up passport authentication (includes JWT auth middleware)
   setupAuth(app);
+  registerAttributionRoutes(app);
   registerAdminRoutes(app);
 
   // ===== HEALTH CHECK ENDPOINT =====

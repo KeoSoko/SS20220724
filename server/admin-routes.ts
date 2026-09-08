@@ -20,6 +20,11 @@ import { exportService } from "./export-service";
 import { classifyReceiptImageHealth } from "./receipt-image-health";
 import { azureStorage } from "./azure-storage";
 import OpenAI from "openai";
+import {
+  GROWTH_BASELINE_DATE,
+  growthPercent,
+  parseGrowthDashboardInput,
+} from "./growth-dashboard-metrics";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -31,6 +36,128 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
     return res.status(403).json({ error: "Forbidden - Admin access required" });
   }
   next();
+}
+
+function growthMetric(value: number | null, numerator: number | null, denominator: number | null, note?: string, unit?: "percent") {
+  return { available: value !== null, value, numerator, denominator, note: note ?? null, ...(unit ? { unit } : {}) };
+}
+// This endpoint deliberately uses aggregate rows only. It is kept separate
+// from operational dashboards so no user identifiers, emails, or URLs escape.
+export async function growthDashboard(req: Request, res: Response) {
+  const input = parseGrowthDashboardInput(req.query as Record<string, unknown>);
+  if ("error" in input) return res.status(400).json({ error: input.error });
+  const { from, to, timezone, cohort } = input;
+  const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000 + 1;
+  try {
+    const result = await pool.query<{
+      signups: string; first7: string; third7: string; verified: string; paid: string; paid_active: string;
+      paid_0: string; paid_1_2: string; paid_3plus: string; segment_0: string; segment_1_2: string; segment_3plus: string;
+      d1: string; d7: string; d30: string; d1_den: string; d7_den: string; d30_den: string;
+      median_first_receipt_hours: string | null;
+    }>(`
+      WITH cohort AS (
+        SELECT u.id, u.created_at, u.email_verified_at, av.visitor_id IS NOT NULL AS attributed
+        FROM users u LEFT JOIN attribution_visitors av ON av.user_id = u.id
+        WHERE NOT u.is_admin
+          AND u.created_at >= ($1::date::timestamp AT TIME ZONE $3)
+          AND u.created_at < (($2::date + 1)::timestamp AT TIME ZONE $3)
+      ), filtered AS (
+        SELECT * FROM cohort WHERE $4 = 'all' OR ($4 = 'attributed' AND attributed) OR ($4 = 'unattributed' AND NOT attributed)
+      ), receipt_counts AS (
+        SELECT f.id, COUNT(r.id)::int AS total_receipts,
+          MIN(r.created_at) AS first_receipt_at,
+          (ARRAY_AGG(r.created_at ORDER BY r.created_at))[3] AS third_receipt_at
+        FROM filtered f LEFT JOIN receipts r ON r.user_id = f.id GROUP BY f.id
+      ), paid AS (
+        SELECT DISTINCT pt.user_id FROM payment_transactions pt
+        WHERE pt.status = 'completed' AND pt.amount > 0
+      )
+      SELECT COUNT(*)::text signups,
+        COUNT(*) FILTER (WHERE rc.first_receipt_at < f.created_at + INTERVAL '7 days')::text first7,
+        COUNT(*) FILTER (WHERE rc.third_receipt_at < f.created_at + INTERVAL '7 days')::text third7,
+        COUNT(*) FILTER (WHERE f.email_verified_at IS NOT NULL)::text verified,
+        COUNT(*) FILTER (WHERE p.user_id IS NOT NULL)::text paid,
+        COUNT(*) FILTER (WHERE p.user_id IS NOT NULL AND rc.first_receipt_at < f.created_at + INTERVAL '7 days')::text paid_active,
+        COUNT(*) FILTER (WHERE p.user_id IS NOT NULL AND rc.total_receipts = 0)::text paid_0,
+        COUNT(*) FILTER (WHERE p.user_id IS NOT NULL AND rc.total_receipts BETWEEN 1 AND 2)::text paid_1_2,
+        COUNT(*) FILTER (WHERE p.user_id IS NOT NULL AND rc.total_receipts >= 3)::text paid_3plus,
+        COUNT(*) FILTER (WHERE rc.total_receipts = 0)::text segment_0,
+        COUNT(*) FILTER (WHERE rc.total_receipts BETWEEN 1 AND 2)::text segment_1_2,
+        COUNT(*) FILTER (WHERE rc.total_receipts >= 3)::text segment_3plus,
+        COUNT(*) FILTER (WHERE (f.created_at AT TIME ZONE $3)::date <= LEAST((NOW() AT TIME ZONE $3)::date, $2::date) - 1 AND EXISTS (SELECT 1 FROM receipts r WHERE r.user_id=f.id AND (r.created_at AT TIME ZONE $3)::date = (f.created_at AT TIME ZONE $3)::date + 1))::text d1,
+        COUNT(*) FILTER (WHERE (f.created_at AT TIME ZONE $3)::date <= LEAST((NOW() AT TIME ZONE $3)::date, $2::date) - 7 AND EXISTS (SELECT 1 FROM receipts r WHERE r.user_id=f.id AND (r.created_at AT TIME ZONE $3)::date = (f.created_at AT TIME ZONE $3)::date + 7))::text d7,
+        COUNT(*) FILTER (WHERE (f.created_at AT TIME ZONE $3)::date <= LEAST((NOW() AT TIME ZONE $3)::date, $2::date) - 30 AND EXISTS (SELECT 1 FROM receipts r WHERE r.user_id=f.id AND (r.created_at AT TIME ZONE $3)::date = (f.created_at AT TIME ZONE $3)::date + 30))::text d30,
+        COUNT(*) FILTER (WHERE (f.created_at AT TIME ZONE $3)::date <= LEAST((NOW() AT TIME ZONE $3)::date, $2::date) - 1)::text d1_den,
+        COUNT(*) FILTER (WHERE (f.created_at AT TIME ZONE $3)::date <= LEAST((NOW() AT TIME ZONE $3)::date, $2::date) - 7)::text d7_den,
+        COUNT(*) FILTER (WHERE (f.created_at AT TIME ZONE $3)::date <= LEAST((NOW() AT TIME ZONE $3)::date, $2::date) - 30)::text d30_den,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (rc.first_receipt_at - f.created_at)) / 3600)
+          FILTER (WHERE rc.first_receipt_at IS NOT NULL)::text median_first_receipt_hours
+      FROM filtered f JOIN receipt_counts rc ON rc.id=f.id LEFT JOIN paid p ON p.user_id=f.id`,
+      [from, to, timezone, cohort],
+    );
+    const r = result.rows[0];
+    const n = (key: keyof typeof r) => Number(r?.[key] ?? 0);
+    const signups = n("signups"), first7 = n("first7"), third7 = n("third7"), paid = n("paid");
+    const attribution = await pool.query<{ source: string; medium: string; campaign: string; visitors: string; signups: string; activated: string; paid: string }>(
+      `SELECT COALESCE(NULLIF(av.first_touch->>'utm_source',''), CASE WHEN av.first_touch->>'channel' = 'direct' THEN 'direct' ELSE 'unknown' END) AS source,
+              COALESCE(NULLIF(av.first_touch->>'utm_medium',''), 'unknown') AS medium,
+              COALESCE(NULLIF(av.first_touch->>'utm_campaign',''), 'unknown') AS campaign,
+              COUNT(*)::text visitors, COUNT(av.user_id)::text signups,
+              COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM receipts r WHERE r.user_id=av.user_id AND r.created_at < u.created_at + INTERVAL '7 days'))::text activated,
+              COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM payment_transactions pt WHERE pt.user_id=av.user_id AND pt.status='completed' AND pt.amount > 0))::text paid
+       FROM attribution_visitors av
+       LEFT JOIN users u ON u.id=av.user_id AND NOT u.is_admin
+       WHERE av.first_seen_at >= ($1::date::timestamp AT TIME ZONE $3)
+         AND av.first_seen_at < (($2::date + 1)::timestamp AT TIME ZONE $3)
+         AND av.first_seen_at >= ($4::date::timestamp AT TIME ZONE $3)
+       GROUP BY 1,2,3 ORDER BY 4 DESC LIMIT 50`, [from, to, timezone, GROWTH_BASELINE_DATE],
+    );
+    const retentionNote = "Only cohort members mature by the report end/current local day are included.";
+    const percent = (numerator: number, denominator: number) =>
+      growthMetric(denominator > 0 ? growthPercent(numerator, denominator) : null, numerator, denominator, denominator > 0 ? undefined : "No eligible cohort members.", "percent");
+    const visitorPartial = from < GROWTH_BASELINE_DATE;
+    const measuredVisitors = attribution.rows.reduce((total, row) => total + Number(row.visitors), 0);
+    return res.json({
+      meta: { from, to, timezone, baselineDate: GROWTH_BASELINE_DATE, incomplete: visitorPartial, notes: visitorPartial ? ["Attribution collection began 2026-09-08; visitor data is partial before that date."] : [] },
+      summary: {
+        measuredVisitors: growthMetric(measuredVisitors, null, null, visitorPartial ? "Partial: captured attribution begins on baseline date." : "Unique first-party visitors captured in the selected range."),
+        signups: growthMetric(signups, signups, signups),
+        firstReceiptWithin7Days: percent(first7, signups),
+        thirdReceiptWithin7Days: percent(third7, signups),
+        verifiedEmail: percent(n("verified"), signups),
+        paidConversionOverall: percent(paid, signups),
+        activationToPaid: percent(n("paid_active"), first7),
+        medianTimeToFirstReceiptHours: growthMetric(r?.median_first_receipt_hours === null ? null : Number(r?.median_first_receipt_hours), null, null, "Hours from signup to the first persisted receipt."),
+      },
+      funnel: [
+        { key: "visitors", label: "Measured visitors", count: measuredVisitors, available: true, denominator: measuredVisitors },
+        { key: "signups", label: "Signups", count: signups, available: true, denominator: visitorPartial || measuredVisitors === 0 ? null : measuredVisitors },
+        { key: "firstReceipt7d", label: "First receipt within 7 days", count: first7, available: true, denominator: signups },
+        { key: "thirdReceipt7d", label: "Third receipt within 7 days", count: third7, available: true, denominator: signups },
+        { key: "paid", label: "Paid", count: paid, available: true, denominator: signups },
+      ],
+      retention: [["D1", "d1", "d1_den"], ["D7", "d7", "d7_den"], ["D30", "d30", "d30_den"]].map(([day, numerator, denominator]) => ({ day, ...percent(n(numerator as keyof typeof r), n(denominator as keyof typeof r)), note: retentionNote })),
+      paidByReceiptSegment: [
+        { segment: "0 receipts", ...percent(n("paid_0"), n("segment_0")) },
+        { segment: "1–2 receipts (explicitly resolves requested 1 segment)", ...percent(n("paid_1_2"), n("segment_1_2")) },
+        { segment: "3+ receipts", ...percent(n("paid_3plus"), n("segment_3plus")) },
+      ],
+      breakdown: attribution.rows.map((x) => ({ source: x.source, medium: x.medium, campaign: x.campaign, visitors: Number(x.visitors), signups: Number(x.signups), activated: Number(x.activated), paid: Number(x.paid) })),
+      definitions: [
+        { key: "cohort", label: "Signup cohort", definition: "Non-admin users whose account was created inside the selected local-calendar range.", denominator: "All eligible signups after the selected attribution filter." },
+        { key: "activation", label: "First-slip activation", definition: "The first persisted receipt was saved within 7 × 24 hours after signup.", denominator: "Eligible signups in the selected cohort." },
+        { key: "coreActivation", label: "Three-slip core activation", definition: "The third persisted receipt was saved within 7 × 24 hours after signup.", denominator: "Eligible signups in the selected cohort." },
+        { key: "verified", label: "Verified-email rate", definition: "Email verification has a server-owned completion timestamp.", denominator: "Eligible signups in the selected cohort." },
+        { key: "paid", label: "Paid conversion", definition: "At least one completed positive-amount payment transaction; free trials never qualify.", denominator: "Eligible signups, or the displayed receipt segment for segmented rates." },
+        { key: "activationPaid", label: "Activation-to-paid", definition: "Paid users among accounts that reached first-slip activation within seven days.", denominator: "Users reaching first-slip activation within seven days." },
+        { key: "retention", label: "D1 / D7 / D30 retention", definition: "At least one receipt saved on the exact Johannesburg-local calendar day 1, 7, or 30 after signup. Only cohorts mature enough to reach that day are included.", denominator: "Eligible cohort members mature for the selected retention day." },
+        { key: "visitors", label: "Measured visitors", definition: "First-party visitor IDs recorded after the attribution baseline. No cookie, full referrer URL, query string, or PII is stored.", denominator: "Not a percentage." },
+      ],
+    });
+  } catch (error) {
+    log(`Growth dashboard failed: ${error}`, "admin");
+    return res.status(500).json({ error: "Failed to retrieve growth dashboard" });
+  }
 }
 
 function parseManualPaystackIdentityRepairInput(req: Request) {
@@ -127,6 +254,8 @@ function parseManualLegacyPaystackAccountingInput(req: Request) {
 const parseLegacyPaystackRenewalSettlementInput = parseManualLegacyPaystackAccountingInput;
 
 export function registerAdminRoutes(app: Express) {
+  app.get("/api/admin/growth-dashboard", requireAdmin, growthDashboard);
+
   
   // ========================================
   // SYSTEM HEALTH METRICS

@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { EmailService } from "./email-service.js";
 import { recordGrowthEventBestEffort } from "./growth-event-service";
 import { buildPublicAppUrl } from "./public-app-origin.js";
+import { attachAttributionVisitor, isAttributionVisitorId } from "./attribution";
 import {
   generatePasswordResetToken,
   getPasswordResetExpiry,
@@ -782,6 +783,12 @@ export function setupAuth(app: Express) {
       const username = typeof req.body.username === "string" ? req.body.username.trim() : "";
       const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
       const { password, fullName, promoCode } = req.body;
+      // The browser may provide only this opaque identifier. Touch fields are
+      // accepted exclusively by the public attribution endpoint.
+      const attributionVisitorId = req.body.attributionVisitorId;
+      if (attributionVisitorId !== undefined && !isAttributionVisitorId(attributionVisitorId)) {
+        return res.status(400).json({ error: "Invalid registration details", field: "attributionVisitorId" });
+      }
 
       if (req.body.agreedToTerms !== true || req.body.agreedToTaxDisclaimer !== true) {
         return res.status(400).json({
@@ -850,6 +857,11 @@ export function setupAuth(app: Express) {
         emailVerificationToken: verificationToken,
         isEmailVerified: false
       });
+      // A conditional DB update is idempotent: an expired, missing, or already
+      // attached visitor cannot be associated with this (or another) user.
+      if (attributionVisitorId) {
+        await attachAttributionVisitor(attributionVisitorId, user.id);
+      }
 
       // Validate and apply promo code if provided
       let trialDays = 30; // Default trial days

@@ -11,8 +11,20 @@ import { recordGrowthEventBestEffort } from "./growth-event-service";
 
 const logger = createServerLogger("background-export");
 const LEASE_MINUTES = 20;
+const LEASE_HEARTBEAT_MS = 5 * 60 * 1000;
 const FILE_LIFETIME_DAYS = 7;
 const MAX_ATTEMPTS = 3;
+
+class ExportLeaseLostError extends Error {
+  constructor(jobId: string) {
+    super(`Export job ${jobId} lease ownership was lost`);
+    this.name = "ExportLeaseLostError";
+  }
+}
+
+function updatedAnyRow(result: any): boolean {
+  return Array.isArray(result?.rows) && result.rows.length > 0;
+}
 
 const requestSchema = z.object({
   type: z.enum(["csv", "pdf", "tax-report"]),
@@ -177,6 +189,7 @@ async function generateJobFile(job: any) {
     includeSummary: parameters.includeSummary,
     includeImages: parameters.includeImages,
     groupBy: parameters.groupBy,
+    imageRetrievalMode: "background",
   });
   return {
     buffer: report.pdf,
@@ -188,31 +201,65 @@ async function generateJobFile(job: any) {
 }
 
 async function processClaimedJob(job: any): Promise<boolean> {
+  let ownershipLost = false;
+  const renewLease = async () => {
+    const result = await db.execute(sql`
+      UPDATE export_jobs
+         SET lease_expires_at = now() + (${LEASE_MINUTES} * interval '1 minute'),
+             updated_at = now()
+       WHERE id = ${job.id} AND status = 'processing' AND attempt_count = ${job.attempt_count}
+       RETURNING id
+    `);
+    if (!updatedAnyRow(result)) {
+      ownershipLost = true;
+      throw new ExportLeaseLostError(job.id);
+    }
+  };
+  const heartbeat = setInterval(() => {
+    void renewLease().catch(error => {
+      logger.error(`Unable to renew lease for export ${job.id}: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }, LEASE_HEARTBEAT_MS);
+  heartbeat.unref?.();
   try {
     const file = await generateJobFile(job);
-    const blobName = `exports/${job.user_id}/${job.id}.${file.extension}`;
+    await renewLease();
+    if (ownershipLost) throw new ExportLeaseLostError(job.id);
+    const blobName = `exports/${job.user_id}/${job.id}-${job.attempt_count}.${file.extension}`;
     await azureStorage.uploadExportFile(file.buffer, blobName, file.contentType);
-    await db.execute(sql`
+    const completion = await db.execute(sql`
       UPDATE export_jobs
          SET status = 'completed', file_name = ${file.fileName}, content_type = ${file.contentType},
              blob_name = ${blobName}, result_summary = ${JSON.stringify(file.summary)}::jsonb,
              completed_at = now(), expires_at = now() + (${FILE_LIFETIME_DAYS} * interval '1 day'),
              lease_expires_at = NULL, updated_at = now()
-       WHERE id = ${job.id} AND status = 'processing'
+       WHERE id = ${job.id} AND status = 'processing' AND attempt_count = ${job.attempt_count}
+       RETURNING id
     `);
+    if (!updatedAnyRow(completion)) {
+      ownershipLost = true;
+      await azureStorage.deleteFile(blobName).catch(() => undefined);
+      throw new ExportLeaseLostError(job.id);
+    }
     recordGrowthEventBestEffort(Number(job.user_id), "first_report_exported", { type: job.type });
     return true;
   } catch (error) {
+    if (ownershipLost || error instanceof ExportLeaseLostError) {
+      logger.warn(`Stale export worker stopped for job ${job.id}; the active attempt was left unchanged`);
+      return false;
+    }
     const message = error instanceof Error ? error.message : String(error);
     const finalFailure = Number(job.attempt_count) >= MAX_ATTEMPTS;
     await db.execute(sql`
       UPDATE export_jobs
          SET status = ${finalFailure ? "failed" : "queued"}, error_message = ${message.slice(0, 500)},
              lease_expires_at = NULL, updated_at = now()
-       WHERE id = ${job.id}
+       WHERE id = ${job.id} AND status = 'processing' AND attempt_count = ${job.attempt_count}
     `);
     logger.error(`Export job ${job.id} failed${finalFailure ? " permanently" : "; queued for retry"}: ${message}`);
     return false;
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 

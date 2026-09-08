@@ -12,6 +12,7 @@ import { emailDocuments } from '../shared/schema.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { createServerLogger } from "./logger";
 import { isReceiptWithinExportDateRange } from "./export-date-range";
+import { mapAzureRetrievalFailure } from "./export-image-resolution";
 
 const logger = createServerLogger("export-service");
 
@@ -20,6 +21,8 @@ export interface ReceiptPdfExportSummary {
   imagesIncluded: number;
   imagesUnavailable: number;
   imageBudgetExceeded: boolean;
+  imageOutcomes: Record<ReceiptImageOutcome, number>;
+  completion: "complete" | "partial";
 }
 
 export interface ReceiptPdfExportResult {
@@ -35,6 +38,22 @@ interface ReceiptExportSelection {
   deductibleOnly?: boolean;
   order?: "ascending" | "source";
 }
+
+export type ReceiptImageOutcome =
+  | "included"
+  | "missing_identity"
+  | "missing_object"
+  | "archived"
+  | "rehydrating"
+  | "timeout"
+  | "temporarily_unavailable"
+  | "unsupported_document"
+  | "inaccessible"
+  | "decode_failed";
+
+type ReceiptImageResult =
+  | { outcome: "included"; dataUri: string }
+  | { outcome: Exclude<ReceiptImageOutcome, "included"> };
 
 function formatJohannesburgDate(date: Date): string {
   return new Intl.DateTimeFormat('en-ZA', {
@@ -78,34 +97,14 @@ async function compressLogoForPDF(imageBuffer: Buffer): Promise<string> {
  * Returns base64 data URI or null if the fetch fails or times out.
  * Cold-tier blobs can take 30+ seconds each — this prevents the export from hanging.
  */
-async function fetchAzureImageWithTimeout(blobName: string, timeoutMs = 8000): Promise<string | null> {
-  if (blobName.toLowerCase().endsWith('.pdf')) return null;
-  try {
-    const imageUrl = await azureStorage.generateSasUrl(blobName, 1);
-    if (!imageUrl) return null;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetch(imageUrl, { signal: controller.signal });
-      clearTimeout(timer);
-      if (!response.ok) return null;
-      const arrayBuffer = await response.arrayBuffer();
-      const base64 = Buffer.from(arrayBuffer).toString('base64');
-      return `data:image/jpeg;base64,${base64}`;
-    } catch (err: any) {
-      clearTimeout(timer);
-      if (err.name === 'AbortError') {
-        logger.warn(`[export] Image fetch timed out after ${timeoutMs}ms: ${blobName}`);
-      } else {
-        logger.error(`[export] Failed to fetch Azure image: ${blobName}`, err);
-      }
-      return null;
-    }
-  } catch (err) {
-    logger.error(`[export] Failed to generate SAS URL for: ${blobName}`, err);
-    return null;
+async function fetchAzureImageForExport(blobName: string, timeoutMs: number): Promise<ReceiptImageResult> {
+  if (blobName.toLowerCase().endsWith(".pdf")) return { outcome: "unsupported_document" };
+  const result = await azureStorage.retrieveReceiptImage(blobName, timeoutMs);
+  if (result.status === "available") {
+    if (!result.contentType.toLowerCase().startsWith("image/")) return { outcome: "unsupported_document" };
+    return { outcome: "included", dataUri: `data:${result.contentType};base64,${result.buffer.toString("base64")}` };
   }
+  return { outcome: mapAzureRetrievalFailure(result.status) };
 }
 
 /**
@@ -329,6 +328,7 @@ export class ExportService {
     includeSummary?: boolean;
     includeImages?: boolean;
     groupBy?: 'category' | 'date';
+    imageRetrievalMode?: "preview" | "background";
   } = {}): Promise<ReceiptPdfExportResult> {
     const exportStartedAt = Date.now();
     try {
@@ -469,6 +469,10 @@ export class ExportService {
       let imagesIncluded = 0;
       let imagesUnavailable = 0;
       let imageBudgetExceeded = false;
+      const imageOutcomes = Object.fromEntries([
+        "included", "missing_identity", "missing_object", "archived", "rehydrating",
+        "timeout", "temporarily_unavailable", "unsupported_document", "inaccessible", "decode_failed",
+      ].map(key => [key, 0])) as Record<ReceiptImageOutcome, number>;
 
       // Add individual receipts with images if requested
       if (options.includeImages) {
@@ -504,21 +508,29 @@ export class ExportService {
         // long enough to trip a client or proxy timeout. This replaces sequential
         // fetching which would hang for minutes on Cold-tier blobs.
         const IMAGE_BATCH_SIZE = 10;
-        const IMAGE_PHASE_BUDGET_MS = 20000;
-        const imageCache = new Map<number, string | null>();
+        const isBackground = options.imageRetrievalMode === "background";
+        const IMAGE_PHASE_BUDGET_MS = isBackground ? Number.POSITIVE_INFINITY : 20000;
+        const IMAGE_FETCH_TIMEOUT_MS = isBackground ? 60000 : 8000;
+        const imageCache = new Map<number, ReceiptImageResult>();
         const azurePrefetchStartedAt = Date.now();
         const receiptsNeedingAzureFetch = filteredReceipts.filter(
-          r => r.blobName && !r.imageData && !((r.blobUrl as string | null)?.startsWith('/uploads/'))
+          r => !r.imageData && !((r.blobUrl as string | null)?.startsWith('/uploads/')) &&
+            Boolean(r.blobName || (r.blobUrl && azureStorage.resolveReceiptBlobName(r.blobUrl)))
         );
         for (let i = 0; i < receiptsNeedingAzureFetch.length; i += IMAGE_BATCH_SIZE) {
           if (Date.now() - azurePrefetchStartedAt > IMAGE_PHASE_BUDGET_MS) {
             imageBudgetExceeded = true;
+            for (const receipt of receiptsNeedingAzureFetch.slice(i)) {
+              imageCache.set(receipt.id, { outcome: "timeout" });
+            }
             break;
           }
           const batch = receiptsNeedingAzureFetch.slice(i, i + IMAGE_BATCH_SIZE);
           await Promise.all(batch.map(async (r) => {
-            const data = await fetchAzureImageWithTimeout(r.blobName as string, 5000);
-            imageCache.set(r.id, data);
+            const blobName = (r.blobName as string | null) || azureStorage.resolveReceiptBlobName(r.blobUrl as string);
+            imageCache.set(r.id, blobName
+              ? await fetchAzureImageForExport(blobName, IMAGE_FETCH_TIMEOUT_MS)
+              : { outcome: "missing_identity" });
           }));
         }
         const azurePrefetchCompletedAt = Date.now();
@@ -536,9 +548,6 @@ export class ExportService {
         const receiptRenderStartedAt = Date.now();
         for (const receipt of filteredReceipts) {
           const isEmailHtml = receipt.source === 'email' && emailHtmlReceiptIds.has(receipt.id);
-          const hasRenderable = receipt.imageData || receipt.blobUrl || receipt.blobName || isEmailHtml;
-
-          if (!hasRenderable) continue;
 
           try {
             doc.addPage();
@@ -584,11 +593,14 @@ export class ExportService {
             } else {
               const contentStartY = metaY + 5;
               let imageData: string | null = null;
+              let imageOutcome: ReceiptImageOutcome | null = null;
 
               if (receipt.imageData) {
                 imageData = receipt.imageData as string;
+                imageOutcome = "included";
               } else if (receipt.blobUrl && (receipt.blobUrl as string).startsWith('/uploads/')) {
                 const filePath = path.join(process.cwd(), receipt.blobUrl as string);
+                imageOutcome = "missing_object";
                 try {
                   if (fs.existsSync(filePath)) {
                     const fileBuffer = fs.readFileSync(filePath);
@@ -596,12 +608,15 @@ export class ExportService {
                     const ext = path.extname(filePath).toLowerCase();
                     const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
                     imageData = `data:${mimeType};base64,${base64}`;
+                    imageOutcome = "included";
                   }
                 } catch (fileError) {
                   logger.error(`Failed to read local file: ${filePath}`, fileError);
                 }
-              } else if (receipt.blobName) {
-                imageData = imageCache.get(receipt.id) ?? null;
+              } else {
+                const fetched = imageCache.get(receipt.id);
+                if (fetched?.outcome === "included") imageData = fetched.dataUri;
+                imageOutcome = fetched?.outcome ?? "missing_identity";
               }
 
               let yPos = contentStartY;
@@ -610,18 +625,22 @@ export class ExportService {
                 try {
                   doc.addImage(imageData, 'JPEG', 20, yPos, 120, 160);
                   imagesIncluded += 1;
+                  imageOutcomes.included += 1;
                   yPos += 165;
                 } catch (imgError) {
                   imagesUnavailable += 1;
+                  imageOutcomes.decode_failed += 1;
                   logger.error('Failed to add image to PDF:', imgError);
                   doc.setFontSize(10);
                   doc.text('Receipt image could not be loaded', 20, yPos);
                   yPos += 15;
                 }
               } else {
-                const blobNameStr = (receipt.blobName as string) || '';
-                const isPdfSource = blobNameStr.toLowerCase().endsWith('.pdf');
+                const blobNameStr = (receipt.blobName as string) || azureStorage.resolveReceiptBlobName((receipt.blobUrl as string) || "") || "";
+                const isPdfSource = imageOutcome === "unsupported_document" || blobNameStr.toLowerCase().endsWith('.pdf');
                 if (isPdfSource) {
+                  imagesUnavailable += 1;
+                  imageOutcomes.unsupported_document += 1;
                   doc.setFillColor(240, 248, 255);
                   doc.rect(15, yPos - 5, 180, 20, 'F');
                   doc.setDrawColor(0, 115, 170);
@@ -636,8 +655,19 @@ export class ExportService {
                   yPos += 25;
                 } else {
                   imagesUnavailable += 1;
+                  const outcome = imageOutcome || "missing_identity";
+                  imageOutcomes[outcome] += 1;
                   doc.setFontSize(10);
-                  doc.text('Receipt image not available', 20, yPos);
+                  const messages: Record<Exclude<ReceiptImageOutcome, "included" | "decode_failed" | "unsupported_document">, string> = {
+                    missing_identity: "Receipt image has no recoverable storage reference.",
+                    missing_object: "Receipt image is missing from storage.",
+                    archived: "Receipt image is archived. Recovery has started; retry later.",
+                    rehydrating: "Receipt image is being recovered from archive; retry later.",
+                    timeout: "Receipt image retrieval timed out. Retry using a background export.",
+                    temporarily_unavailable: "Receipt image storage is temporarily unavailable. Please retry later.",
+                    inaccessible: "Receipt image storage is inaccessible. Please contact support.",
+                  };
+                  doc.text(messages[outcome as keyof typeof messages] || "Receipt image format is unsupported.", 20, yPos);
                   yPos += 15;
                 }
               }
@@ -689,6 +719,8 @@ export class ExportService {
         imagesIncluded,
         imagesUnavailable,
         imageBudgetExceeded,
+        imageOutcomes,
+        completion: imagesUnavailable > 0 || imageBudgetExceeded ? "partial" : "complete",
       };
 
       logger.info(JSON.stringify({
@@ -854,12 +886,11 @@ export class ExportService {
           } catch (fileError) {
             logger.error(`Failed to read local file: ${filePath}`, fileError);
           }
-        } else if (receipt.blobName) {
-          const blobNameStr = receipt.blobName as string;
-          const isPdfBlob = blobNameStr.toLowerCase().endsWith('.pdf');
-
-          if (!isPdfBlob) {
-            imageData = await fetchAzureImageWithTimeout(blobNameStr, 5000);
+        } else {
+          const blobNameStr = receipt.blobName || azureStorage.resolveReceiptBlobName(receipt.blobUrl || "");
+          if (blobNameStr) {
+            const fetched = await fetchAzureImageForExport(blobNameStr, 8000);
+            if (fetched.outcome === "included") imageData = fetched.dataUri;
           }
         }
 

@@ -1,9 +1,15 @@
 import { BlobServiceClient, ContainerClient, StorageSharedKeyCredential, generateBlobSASQueryParameters, BlobSASPermissions } from "@azure/storage-blob";
 import { log } from "./vite";
 import { classifyAzureBlobInspectionError, classifyAzureBlobProperties, type AzureBlobInspectionResult } from "./azure-blob-inspection";
+import { resolveLegacyReceiptBlobName, supportedImageContentType } from "./export-image-resolution";
+import { isValidExportBlobPath } from "./export-blob-path";
 
 // Container name for receipts
 const CONTAINER_NAME = "receipt-images";
+
+export type AzureExportImageResult =
+  | { status: "available"; buffer: Buffer; contentType: string }
+  | { status: "missing" | "archived" | "rehydrating" | "inaccessible" | "timeout" | "temporarily_unavailable" };
 
 export class AzureBlobStorage {
   private blobServiceClient: BlobServiceClient;
@@ -159,7 +165,7 @@ export class AzureBlobStorage {
   /** Upload a server-generated export to a private, short-lived blob path. */
   async uploadExportFile(buffer: Buffer, blobName: string, contentType: string): Promise<void> {
     await this.initialize();
-    if (!/^exports\/\d+\/[0-9a-f-]+\.(csv|pdf)$/i.test(blobName)) {
+    if (!isValidExportBlobPath(blobName)) {
       throw new Error("Invalid export blob path");
     }
     if (!['text/csv', 'application/pdf'].includes(contentType)) {
@@ -184,7 +190,7 @@ export class AzureBlobStorage {
     contentType?: string;
   }> {
     await this.initialize();
-    if (!/^exports\/\d+\/[0-9a-f-]+\.(csv|pdf)$/i.test(blobName)) {
+    if (!isValidExportBlobPath(blobName)) {
       throw new Error("Invalid export blob path");
     }
     const response = await this.containerClient.getBlockBlobClient(blobName).download();
@@ -288,6 +294,44 @@ export class AzureBlobStorage {
     } catch (error) {
       log(`Error generating SAS URL: ${error}`, "azure");
       return null;
+    }
+  }
+
+  resolveReceiptBlobName(blobUrl: string): string | null {
+    return resolveLegacyReceiptBlobName(blobUrl, this.accountName, CONTAINER_NAME);
+  }
+
+  async retrieveReceiptImage(blobName: string, timeoutMs: number): Promise<AzureExportImageResult> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const client = this.containerClient.getBlockBlobClient(blobName);
+      const properties = await client.getProperties({ abortSignal: controller.signal });
+      const inspection = classifyAzureBlobProperties(properties);
+      if (inspection.status === "archived" || inspection.status === "rehydrating") {
+        if (inspection.status === "archived") {
+          await client.setAccessTier("Hot", { abortSignal: controller.signal });
+        }
+        return { status: inspection.status };
+      }
+      const response = await client.downloadToBuffer(0, undefined, { abortSignal: controller.signal });
+      const contentType = supportedImageContentType(blobName, properties.contentType)
+        || properties.contentType
+        || "application/octet-stream";
+      return {
+        status: "available",
+        buffer: response,
+        contentType,
+      };
+    } catch (error: any) {
+      if (error?.name === "AbortError" || error?.code === "ABORT_ERR") return { status: "timeout" };
+      const inspection = classifyAzureBlobInspectionError(error);
+      if (inspection.status === "missing" || inspection.status === "inaccessible") {
+        return { status: inspection.status };
+      }
+      return { status: "temporarily_unavailable" };
+    } finally {
+      clearTimeout(timer);
     }
   }
 

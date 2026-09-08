@@ -25,7 +25,7 @@ interface BackgroundExportJob {
   status: 'queued' | 'processing' | 'completed' | 'failed';
   fileName?: string | null;
   errorMessage?: string | null;
-  resultSummary?: { imagesUnavailable?: number } | null;
+  resultSummary?: { imagesUnavailable?: number; imageOutcomes?: Record<string, number>; completion?: 'complete' | 'partial' } | null;
   expiresAt?: string | null;
   createdAt: string;
 }
@@ -131,7 +131,7 @@ export default function ExportsPage() {
     return true;
   };
 
-  const fetchPdf = async (url: string): Promise<{ blob: Blob; imagesUnavailable: number } | null> => {
+  const fetchPdf = async (url: string): Promise<{ blob: Blob; summary: NonNullable<BackgroundExportJob['resultSummary']> } | null> => {
     const token = localStorage.getItem('auth_token');
     if (!token) {
       toast({ title: "Authentication required", description: "Please log in again.", variant: "destructive" });
@@ -155,17 +155,32 @@ export default function ExportsPage() {
       throw new Error(`Request failed: ${response.status} - ${errorText}`);
     }
     const imagesUnavailable = Number.parseInt(response.headers.get('X-Export-Images-Unavailable') || '0', 10);
+    let imageOutcomes: Record<string, number> = {};
+    try {
+      const encoded = response.headers.get('X-Export-Image-Outcomes');
+      if (encoded) imageOutcomes = JSON.parse(encoded);
+    } catch {}
     return {
       blob: await response.blob(),
-      imagesUnavailable: Number.isFinite(imagesUnavailable) ? imagesUnavailable : 0,
+      summary: { imagesUnavailable: Number.isFinite(imagesUnavailable) ? imagesUnavailable : 0, imageOutcomes },
     };
   };
 
-  const notifyUnavailableImages = (imagesUnavailable: number) => {
+  const notifyUnavailableImages = (imagesUnavailable: number, outcomes: Record<string, number> = {}) => {
     if (imagesUnavailable <= 0) return;
     toast({
-      title: "Report created with placeholders",
-      description: `${imagesUnavailable} ${imagesUnavailable === 1 ? 'receipt image was' : 'receipt images were'} unavailable. The rest of the report was included.`,
+      title: "Report created with image issues",
+      description: outcomes.archived || outcomes.rehydrating
+        ? `${imagesUnavailable} image(s) are being recovered from archive. Please retry the background export later.`
+        : outcomes.timeout
+          ? `${imagesUnavailable} image(s) could not be retrieved in time. Use Download to run the longer background export.`
+          : outcomes.temporarily_unavailable
+            ? `${imagesUnavailable} image(s) could not be retrieved because storage is temporarily unavailable. Please retry later.`
+          : outcomes.missing_object || outcomes.missing_identity
+            ? `${imagesUnavailable} image(s) are missing or have no recoverable storage reference.`
+            : outcomes.unsupported_document
+              ? `${imagesUnavailable} source document(s) use a format that cannot be embedded as an image.`
+              : `${imagesUnavailable} receipt image(s) could not be decoded or accessed.`,
     });
   };
 
@@ -179,7 +194,7 @@ export default function ExportsPage() {
       const url = buildPdfParams(type);
       const result = await fetchPdf(url);
       if (!result) return;
-      const { blob, imagesUnavailable } = result;
+      const { blob, summary } = result;
 
       if (prevBlobUrlRef.current) {
         URL.revokeObjectURL(prevBlobUrlRef.current);
@@ -191,7 +206,7 @@ export default function ExportsPage() {
       setPreviewUrl(blobUrl);
       setPreviewTitle(type === 'tax-report' ? `Tax Report ${new Date().getFullYear()}` : 'Receipts Report');
       setIsPreviewOpen(true);
-      notifyUnavailableImages(imagesUnavailable);
+      notifyUnavailableImages(summary.imagesUnavailable || 0, summary.imageOutcomes);
     } catch (error) {
       toast({
         title: "Preview failed",
@@ -337,7 +352,7 @@ export default function ExportsPage() {
       link.download = job.fileName || `simple-slips-export.${job.type === 'csv' ? 'csv' : 'pdf'}`;
       link.click();
       URL.revokeObjectURL(objectUrl);
-      notifyUnavailableImages(job.resultSummary?.imagesUnavailable || 0);
+      notifyUnavailableImages(job.resultSummary?.imagesUnavailable || 0, job.resultSummary?.imageOutcomes);
     } catch {
       toast({ title: "Download failed", description: "Please refresh and try again.", variant: "destructive" });
     }
@@ -594,7 +609,7 @@ export default function ExportsPage() {
                       {job.status === 'queued' ? 'Waiting to start' :
                        job.status === 'processing' ? 'Preparing your file' :
                        job.status === 'failed' ? (job.errorMessage || 'Could not create this export') :
-                       `Ready to download${job.expiresAt ? ` until ${new Date(job.expiresAt).toLocaleDateString()}` : ''}`}
+                       `${job.resultSummary?.completion === 'partial' ? 'Ready with image issues' : 'Ready to download'}${job.expiresAt ? ` until ${new Date(job.expiresAt).toLocaleDateString()}` : ''}`}
                     </p>
                   </div>
                 </div>

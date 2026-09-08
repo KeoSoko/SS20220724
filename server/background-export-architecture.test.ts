@@ -10,10 +10,17 @@ describe("background export architecture", () => {
     expect(service).toContain("FOR UPDATE SKIP LOCKED");
     expect(service).toContain("lease_expires_at < now()");
     expect(service).toContain("attempt_count <");
+    expect(service).toContain("LEASE_HEARTBEAT_MS");
+    expect(service).toContain("lease_expires_at = now() +");
+    expect(service).toContain("clearInterval(heartbeat)");
+    expect(service).toContain("attempt_count = ${job.attempt_count}");
+    expect(service).toContain("RETURNING id");
+    expect(service).toContain("${job.id}-${job.attempt_count}");
+    expect(service).toContain("ExportLeaseLostError");
   });
 
   it("keeps stored blob names server-owned and download routes owner-scoped", () => {
-    expect(service).toContain("`exports/${job.user_id}/${job.id}.${file.extension}`");
+    expect(service).toContain("`exports/${job.user_id}/${job.id}-${job.attempt_count}.${file.extension}`");
     expect(routes).toContain("getBackgroundExportJob(getUserId(req), req.params.jobId)");
     expect(routes).toContain("azureStorage.downloadExportFile(job.blobName)");
     expect(routes).not.toContain("res.redirect(302, sasUrl)");

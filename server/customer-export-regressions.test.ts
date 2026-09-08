@@ -19,7 +19,7 @@ describe("customer export discoverability", () => {
 
   it("keeps Excel / CSV and its plain-language download action immediately visible", () => {
     expect(exportsPage).toContain("Excel / CSV");
-    expect(exportsPage).toContain("Download for Excel (CSV)");
+    expect(exportsPage).toContain("Download {option.title}");
     expect(exportsPage).not.toContain("showDateRangeExport");
     expect(exportsPage).not.toContain("setShowDateRangeExport");
     expect(exportsPage).not.toContain("from '@/components/export-menu'");
@@ -27,25 +27,32 @@ describe("customer export discoverability", () => {
 });
 
 describe("image-heavy PDF reliability contract", () => {
-  it("keeps bounded parallel image fetching and placeholder degradation", () => {
+  it("keeps bounded parallel image fetching for previews and a complete background path", () => {
     expect(exportService).toContain("const IMAGE_BATCH_SIZE = 10");
-    expect(exportService).toContain("const IMAGE_PHASE_BUDGET_MS = 20000");
+    expect(exportService).toContain("isBackground ? Number.POSITIVE_INFINITY : 20000");
     expect(exportService).toContain("await Promise.all(batch.map");
-    expect(exportService).toContain("fetchAzureImageWithTimeout(r.blobName as string, 5000)");
+    expect(exportService).toContain('const isBackground = options.imageRetrievalMode === "background"');
+    expect(exportService).toContain("isBackground ? 60000 : 8000");
+    expect(exportService).toContain("fetchAzureImageForExport(blobName, IMAGE_FETCH_TIMEOUT_MS)");
     expect(exportService).toContain("Receipt image could not be loaded");
-    expect(exportService).toContain("Receipt image not available");
+    expect(exportService).toContain("Receipt image is missing from storage.");
   });
 
   it("uses the bounded image fetch helper for single-receipt PDFs too", () => {
-    expect(exportService).toContain("fetchAzureImageWithTimeout(blobNameStr, 5000)");
-    expect(exportService).not.toContain("const response = await fetch(imageUrl);");
+    expect(exportService).toContain("fetchAzureImageForExport");
+    expect(exportService).not.toContain("fetchAzureImageWithTimeout");
   });
 
   it("returns machine-readable partial export diagnostics without failing the download", () => {
     expect(exportService).toContain("imagesUnavailable");
     expect(routes).toContain("X-Export-Receipt-Count");
     expect(routes).toContain("X-Export-Images-Unavailable");
-    expect(exportsPage).toContain("Some receipt images were unavailable");
+    expect(exportsPage).toContain("Report created with image issues");
+    expect(exportService).toContain("missing_identity");
+    expect(exportService).toContain("missing_object");
+    expect(exportService).toContain("rehydrating");
+    expect(exportService).toContain("unsupported_document");
+    expect(exportService).toContain("decode_failed");
   });
 
   it("logs both successful and failed PDF export outcomes", () => {

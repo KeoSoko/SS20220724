@@ -3584,6 +3584,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader('X-Export-Images-Included', result.summary.imagesIncluded.toString());
       res.setHeader('X-Export-Images-Unavailable', result.summary.imagesUnavailable.toString());
       res.setHeader('X-Export-Image-Budget-Exceeded', result.summary.imageBudgetExceeded.toString());
+      res.setHeader('X-Export-Image-Outcomes', JSON.stringify(result.summary.imageOutcomes));
       res.send(result.pdf);
     } catch (error: any) {
       log(`Error exporting PDF: ${error.message}`, 'express');

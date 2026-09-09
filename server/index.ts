@@ -12,6 +12,7 @@ import { runBillingIntegrityMigration } from "./billing-integrity-migration";
 import { initializeDatabase } from "./db";
 import { startBackgroundExportWorker } from "./background-export-service";
 import { startAccountBlobCleanupWorker } from "./account-blob-cleanup-worker";
+import { startLifecycleEmailWorker } from "./lifecycle-email-scheduler";
 
 const app = express();
 
@@ -414,6 +415,7 @@ app.use((req, res, next) => {
       ['deferred Paystack webhook replay', startDeferredPaystackWebhookReplayWorker],
       ['background export worker', startBackgroundExportWorker],
       ['account blob cleanup worker', startAccountBlobCleanupWorker],
+      ['lifecycle email worker', startLifecycleEmailWorker],
     ];
     for (const [name, start] of workers) {
       try {

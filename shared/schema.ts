@@ -248,6 +248,53 @@ export const growthEvents = pgTable("growth_events", {
   eventOccurredAtIndex: index("growth_events_event_name_occurred_at_idx").on(table.eventName, table.occurredAt),
 }));
 
+// Lifecycle email state is deliberately separate from ordinary email events.  It
+// is an auditable, idempotent ledger: a campaign version can only ever have one
+// row for a user.
+export const lifecycleDeliveries = pgTable("lifecycle_deliveries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  campaignKey: text("campaign_key").notNull(),
+  campaignVersion: integer("campaign_version").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("eligible"),
+  eligibleAt: timestamp("eligible_at", { withTimezone: true }).notNull().defaultNow(),
+  claimAt: timestamp("claim_at", { withTimezone: true }),
+  sendStartedAt: timestamp("send_started_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  suppressedAt: timestamp("suppressed_at", { withTimezone: true }),
+  failedAt: timestamp("failed_at", { withTimezone: true }),
+  retryAt: timestamp("retry_at", { withTimezone: true }),
+  auditedAt: timestamp("audited_at", { withTimezone: true }),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  errorClass: text("error_class"),
+  errorCode: text("error_code"),
+  dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  campaignUserUnique: unique("lifecycle_campaign_version_user_unique").on(table.campaignKey, table.campaignVersion, table.userId),
+  statusDue: index("lifecycle_deliveries_status_due_idx").on(table.status, table.dueAt),
+  claim: index("lifecycle_deliveries_claim_idx").on(table.claimAt),
+  user: index("lifecycle_deliveries_user_idx").on(table.userId),
+}));
+
+export const lifecyclePreferences = pgTable("lifecycle_preferences", {
+  userId: integer("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  marketingOptedOut: boolean("marketing_opted_out").notNull().default(false),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const lifecycleSchedulerRuns = pgTable("lifecycle_scheduler_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  eligibleCount: integer("eligible_count").notNull().default(0),
+  claimedCount: integer("claimed_count").notNull().default(0),
+  sentCount: integer("sent_count").notNull().default(0),
+  suppressedCount: integer("suppressed_count").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+});
+
 // Many-to-many relationship table for receipt_tags
 export const receiptTags = pgTable("receipt_tags", {
   receiptId: integer("receipt_id").notNull().references(() => receipts.id, { onDelete: "cascade" }),

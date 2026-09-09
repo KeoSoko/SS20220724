@@ -3,6 +3,7 @@ import type { Receipt, ReceiptShare, EmailReceipt, Quotation, Invoice, Client, B
 import { aiEmailAssistant } from './ai-email-assistant.js';
 import { createServerLogger } from "./logger";
 import { buildPublicAppUrl, resolvePublicAppOrigin } from "./public-app-origin.js";
+import { CAMPAIGN_REGISTRY, buildCopy, safeUsername, unsubscribeUrl, type LifecycleCampaign } from "./lifecycle-emails.js";
 
 const logger = createServerLogger("email-service");
 if (!process.env.SENDGRID_API_KEY) {
@@ -55,6 +56,34 @@ export class EmailService {
 
   private get appUrl(): string {
     return resolvePublicAppOrigin();
+  }
+
+  /** Lifecycle-only adapter. Callers must supply a server-created verification
+   * link; this method never creates authentication tokens. */
+  async sendLifecycleEmail(input: {
+    campaign: LifecycleCampaign; userId: number; email: string; username?: string;
+    subject: string; text: string; html: string; verificationUrl?: string;
+  }): Promise<"sent" | "transient" | "permanent" | "uncertain"> {
+    if (!process.env.SENDGRID_API_KEY || CAMPAIGN_REGISTRY[input.campaign].managedExternally) return "permanent";
+    const marketing = CAMPAIGN_REGISTRY[input.campaign].kind === "marketing";
+    const headers = marketing ? {
+      "List-Unsubscribe": `<${unsubscribeUrl(input.userId)}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    } : undefined;
+    try {
+      const copy = buildCopy(input.campaign, input.username, resolvePublicAppOrigin());
+      const templateId = process.env[CAMPAIGN_REGISTRY[input.campaign].templateEnv];
+      await mailService.send({
+        to: input.email, from: { email: this.fromEmail, name: "Simple Slips" },
+        ...(templateId ? { templateId, dynamicTemplateData: { username: safeUsername(input.username), appUrl: this.appUrl } } : { subject: copy.subject, text: copy.text, html: copy.html }),
+        ...(headers ? { headers } : {}),
+      } as any);
+      return "sent";
+    } catch (error: any) {
+      const status = Number(error?.code || error?.response?.statusCode);
+      if (!Number.isFinite(status) || status === 0) return "uncertain";
+      return status >= 400 && status < 500 && status !== 429 ? "permanent" : "transient";
+    }
   }
 
   /**

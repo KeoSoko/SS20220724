@@ -1423,7 +1423,7 @@ export function setupAuth(app: Express) {
       
       // Update user with new token
       if (storage.updateUser) {
-        log(`Updating user ${user.id} with new verification token: ${verificationToken}`, 'auth');
+        log(`Updating user ${user.id} with a new verification token`, 'auth');
         const updatedUser = await storage.updateUser(user.id, {
           emailVerificationToken: verificationToken
         });

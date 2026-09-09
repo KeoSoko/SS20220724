@@ -25,6 +25,8 @@ import {
   growthPercent,
   parseGrowthDashboardInput,
 } from "./growth-dashboard-metrics";
+import { CAMPAIGN_REGISTRY, LIFECYCLE_CAMPAIGNS, buildCopy, verifyUnsubscribeToken } from "./lifecycle-emails";
+import { resolvePublicAppOrigin } from "./public-app-origin";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -255,6 +257,45 @@ const parseLegacyPaystackRenewalSettlementInput = parseManualLegacyPaystackAccou
 
 export function registerAdminRoutes(app: Express) {
   app.get("/api/admin/growth-dashboard", requireAdmin, growthDashboard);
+  app.get("/api/admin/lifecycle-email/status", requireAdmin, async (_req, res) => {
+    try {
+      const rows = await pool.query<{ campaign_key: string; status: string; count: string }>(
+        "SELECT campaign_key,status,COUNT(*)::text count FROM lifecycle_deliveries GROUP BY campaign_key,status");
+      const latest = await pool.query<{ started_at: Date; completed_at: Date | null }>(
+        "SELECT started_at,completed_at FROM lifecycle_scheduler_runs ORDER BY started_at DESC LIMIT 1");
+      const next = await pool.query<{ due_at: Date | null }>(
+        "SELECT MIN(due_at) due_at FROM lifecycle_deliveries WHERE status IN ('eligible','retry')");
+      const countFor = (key: string, status: string) => Number(rows.rows.find(r => r.campaign_key === key && r.status === status)?.count || 0);
+      return res.json({
+        meta: { masterEnabled: process.env.LIFECYCLE_EMAILS_ENABLED === "true", rolloutBaseline: "2026-09-09T00:00:00.000Z", timezone: "Africa/Johannesburg", quietHours: "20:00–08:00", marketingCap: "Maximum 2 lifecycle marketing emails per rolling 7 days", lastRunAt: latest.rows[0]?.started_at ?? null, nextRunAt: next.rows[0]?.due_at ?? null },
+        campaigns: LIFECYCLE_CAMPAIGNS.map(key => {
+          const campaign = CAMPAIGN_REGISTRY[key];
+          return { key, name: campaign.name, version: campaign.version, classification: campaign.kind, enabled: process.env.LIFECYCLE_EMAILS_ENABLED === "true" && process.env[campaign.envFlag] === "true", managedExternally: !!campaign.managedExternally, trigger: campaign.trigger, delay: campaign.delay, eligible: countFor(key, "eligible"), sent: countFor(key, "sent"), suppressed: countFor(key, "suppressed"), failed: countFor(key, "failed") + countFor(key, "uncertain"), lastRunAt: latest.rows[0]?.started_at ?? null, nextRunAt: next.rows[0]?.due_at ?? null, definition: campaign.definition };
+        }),
+        definitions: [
+          { label: "Transactional", definition: "Account-access mail such as verification is not blocked by lifecycle marketing opt-out. Existing password-reset, security, receipt, billing and legal mail remains unchanged." },
+          { label: "Marketing suppression", definition: "Lifecycle marketing honours opt-out, unsubscribe, complaint, hard-bounce, quiet-hour and frequency-cap rules." },
+          { label: "Uncertain delivery", definition: "If a worker loses certainty after an external send begins, the row is never automatically retried, preventing duplicate mail." },
+          { label: "Rollout cohort", definition: "Only accounts created on or after 9 September 2026 are eligible unless a deliberate future backfill is designed." },
+        ],
+      });
+    } catch { return res.status(503).json({ error: "Lifecycle status unavailable" }); }
+  });
+  app.post("/api/admin/lifecycle-email/preview", requireAdmin, (req, res) => {
+    const campaign = req.body?.campaignKey as typeof LIFECYCLE_CAMPAIGNS[number];
+    if (!LIFECYCLE_CAMPAIGNS.includes(campaign)) return res.status(400).json({ error: "Invalid campaign" });
+    const copy = buildCopy(campaign, "Thandi", resolvePublicAppOrigin());
+    return res.json({ subject: copy.subject, preheader: copy.preheader, text: copy.text, html: copy.html, templateMode: process.env[CAMPAIGN_REGISTRY[campaign].templateEnv] ? "Configured dynamic template" : "Safe inline fallback", syntheticDataNotice: "Synthetic preview only. No customer data was loaded and no email was sent." });
+  });
+  // Public one-click endpoint only changes lifecycle marketing preference.
+  const unsubscribeLifecycleMarketing = async (req: Request, res: Response) => {
+    const userId = verifyUnsubscribeToken(String(req.query.token || ""));
+    if (!userId) return res.status(400).send("Invalid unsubscribe link");
+    await pool.query("INSERT INTO lifecycle_preferences (user_id,marketing_opted_out,updated_at) VALUES ($1,true,now()) ON CONFLICT (user_id) DO UPDATE SET marketing_opted_out=true,updated_at=now()", [userId]);
+    return res.status(200).send("You have been unsubscribed from marketing emails.");
+  };
+  app.get("/api/lifecycle-email/unsubscribe", unsubscribeLifecycleMarketing);
+  app.post("/api/lifecycle-email/unsubscribe", unsubscribeLifecycleMarketing);
 
   
   // ========================================

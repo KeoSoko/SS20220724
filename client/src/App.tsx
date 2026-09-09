@@ -41,6 +41,7 @@ import CommandCenter from "@/pages/command-center";
 import BillingOperations from "@/pages/billing-operations";
 import ReceiptImageHealth from "@/pages/receipt-image-health";
 import GrowthDashboard from "@/pages/growth-dashboard";
+import LifecycleEmailPage from "@/pages/lifecycle-email";
 import BusinessHubPage from "@/pages/business-hub-page";
 import BusinessProfilePage from "@/pages/business-profile-page";
 import ProfitLossPage from "@/pages/profit-loss-page";
@@ -83,6 +84,7 @@ function Router() {
       <AdminRoute path="/command-center/billing" component={BillingOperations} />
       <AdminRoute path="/command-center/receipt-images" component={ReceiptImageHealth} />
       <AdminRoute path="/command-center/growth" component={GrowthDashboard} />
+      <AdminRoute path="/command-center/lifecycle" component={LifecycleEmailPage} />
       <AdminRoute path="/command-center" component={CommandCenter} />
       <ProtectedRoute path="/business-hub" component={BusinessHubPage} />
       <ProtectedRoute path="/business-profile" component={BusinessProfilePage} />

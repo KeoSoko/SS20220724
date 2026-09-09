@@ -9,7 +9,7 @@ vi.mock("./export-service", () => ({ exportService: {} }));
 vi.mock("./vite", () => ({ log: vi.fn() }));
 vi.mock("openai", () => ({ default: class OpenAI {} }));
 
-import { growthDashboard, requireAdmin } from "./admin-routes";
+import { growthDashboard, registerAdminRoutes, requireAdmin } from "./admin-routes";
 import { pool } from "./db";
 
 function response() {
@@ -22,6 +22,32 @@ function response() {
 }
 
 describe("admin authorization for manual identity repair", () => {
+  it("returns aggregate-only lifecycle status to an admin route", async () => {
+    const routes = new Map<string, any[]>();
+    const register = vi.fn((path: string, ...handlers: any[]) => routes.set(path, handlers));
+    const app = { get: register, post: register, put: register, patch: register, delete: register } as any;
+    registerAdminRoutes(app);
+    const handlers = routes.get("/api/admin/lifecycle-email/status");
+    expect(handlers?.[0]).toBe(requireAdmin);
+
+    vi.mocked(pool.query)
+      .mockResolvedValueOnce({ rows: [
+        { campaign_key: "first-slip-encouragement", status: "eligible", count: "3" },
+        { campaign_key: "first-slip-encouragement", status: "sent", count: "2" },
+      ] } as any)
+      .mockResolvedValueOnce({ rows: [{ started_at: new Date("2026-09-09T10:00:00Z"), completed_at: new Date("2026-09-09T10:01:00Z") }] } as any)
+      .mockResolvedValueOnce({ rows: [{ due_at: new Date("2026-09-10T08:00:00Z") }] } as any);
+    const res = response();
+    await handlers[1]({}, res);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      meta: expect.objectContaining({ masterEnabled: false, timezone: "Africa/Johannesburg" }),
+      campaigns: expect.arrayContaining([
+        expect.objectContaining({ key: "first-slip-encouragement", eligible: 3, sent: 2, enabled: false }),
+      ]),
+    }));
+  });
+
   it("allows an admin through the shared boundary and returns aggregate growth data", async () => {
     const res = response();
     const next = vi.fn();
@@ -84,6 +110,14 @@ describe("admin authorization for manual identity repair", () => {
     );
     expect(source).toContain("req.body?.confirmed !== true");
     expect(source).toContain("paystackRequest: \"none\"");
+  });
+
+  it("keeps lifecycle status and synthetic preview admin-only with no send endpoint", () => {
+    const source = readFileSync(new URL("./admin-routes.ts", import.meta.url), "utf8");
+    expect(source).toContain('app.get("/api/admin/lifecycle-email/status", requireAdmin');
+    expect(source).toContain('app.post("/api/admin/lifecycle-email/preview", requireAdmin');
+    expect(source).not.toContain('app.post("/api/admin/lifecycle-email/test-send"');
+    expect(source).toContain("Synthetic preview only");
   });
 
   it("uses the shared Paystack billing-owner lock for local repair execution", () => {

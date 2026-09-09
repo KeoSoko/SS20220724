@@ -741,6 +741,12 @@ export default function CommandCenter() {
               Growth Dashboard
             </Button>
           </Link>
+          <Link href="/command-center/lifecycle">
+            <Button variant="outline">
+              <Mail className="h-4 w-4 mr-2" />
+              Lifecycle Emails
+            </Button>
+          </Link>
           <Button
             variant="outline"
             onClick={() => repairWorkspaceMutation.mutate()}

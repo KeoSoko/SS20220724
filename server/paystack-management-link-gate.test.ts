@@ -119,4 +119,11 @@ describe("Paystack management-link release gate", () => {
     expect(paymentAttentionBranch).not.toContain("handleSubscribe");
     expect(paymentAttentionBranch).not.toContain("Restore automatic renewal");
   });
+
+  it("does not mislabel or offer an unverified new checkout as a card update", () => {
+    expect(subscriptionPage).toContain("paymentActuallyFailed && !recoveryCheckoutEligible ? (");
+    expect(subscriptionPage).toContain("Please contact support before starting another checkout.");
+    expect(subscriptionPage).toContain("Start a new secure checkout");
+    expect(subscriptionPage).not.toContain("? 'Update payment method'\n                          : subscription?.status");
+  });
 });

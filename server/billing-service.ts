@@ -1,6 +1,7 @@
 import { storage } from "./storage";
 import { resolveBillingOwner } from "./billing-owner";
 import { isDefinitivePaystackNonPaymentStatus } from "./paystack-checkout-status";
+import { isCatchupReference } from "./paystack-catchup";
 import {
   SubscriptionPlan,
   UserSubscription,
@@ -2962,6 +2963,7 @@ export class BillingService {
   }
 
   async previewManualLegacyPaystackAccountingSettlement(input: ManualLegacyPaystackAccountingInput) {
+    if (isCatchupReference(input.reference)) throw new Error("Catch-up payments require their dedicated reconciliation workflow");
     await this.requirePaystackBillingSchema();
     return this.manualLegacyPaystackAccountingService(db).preview(input);
   }
@@ -2971,6 +2973,7 @@ export class BillingService {
     adminUserId: number,
     confirmation: { confirmed: boolean; previewFingerprint: string },
   ) {
+    if (isCatchupReference(input.reference)) throw new Error("Catch-up payments require their dedicated reconciliation workflow");
     await this.requirePaystackBillingSchema();
     return db.transaction(async (tx) => (
       this.manualLegacyPaystackAccountingService(tx).execute(input, adminUserId, confirmation)
@@ -3133,6 +3136,7 @@ export class BillingService {
   }
 
   async previewLegacyPaystackRenewalSettlement(input: LegacyRenewalSettlementInput) {
+    if (isCatchupReference(input.reference)) throw new Error("Catch-up payments require their dedicated reconciliation workflow");
     await this.requirePaystackBillingSchema();
     const assessment = await this.legacyRenewalSettlementService(db).preview(input);
     const confirmationFingerprint = legacyRenewalSettlementFingerprint(input, assessment);
@@ -3144,6 +3148,7 @@ export class BillingService {
     adminUserId: number,
     previewFingerprint: string,
   ) {
+    if (isCatchupReference(input.reference)) throw new Error("Catch-up payments require their dedicated reconciliation workflow");
     await this.requirePaystackBillingSchema();
     return db.transaction(async (tx) => ({
       ...await this.legacyRenewalSettlementService(tx).execute(input, adminUserId, previewFingerprint),
@@ -4082,6 +4087,9 @@ export class BillingService {
     transactionReference: string,
     context: PaystackProcessingContext = {},
   ): Promise<UserSubscription> {
+    if (isCatchupReference(transactionReference)) {
+      throw new Error("Catch-up payments require their dedicated reconciliation workflow");
+    }
     await this.requirePaystackBillingSchema();
     log(`Processing Paystack subscription for user ${userId}, reference: ${transactionReference}`, 'billing');
 

@@ -27,6 +27,7 @@ import {
 } from "./growth-dashboard-metrics";
 import { CAMPAIGN_REGISTRY, LIFECYCLE_CAMPAIGNS, buildCopy, verifyUnsubscribeToken } from "./lifecycle-emails";
 import { resolvePublicAppOrigin } from "./public-app-origin";
+import { catchupRuntime, catchupEnabledFor } from "./paystack-catchup-runtime";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -256,6 +257,35 @@ function parseManualLegacyPaystackAccountingInput(req: Request) {
 const parseLegacyPaystackRenewalSettlementInput = parseManualLegacyPaystackAccountingInput;
 
 export function registerAdminRoutes(app: Express) {
+  // Feature and owner allowlist are disabled by default. Preview never charges.
+  for (const operation of ["preview", "execute"] as const) {
+    app.post(`/api/admin/users/:userId/paystack-catchup/${operation}`, requireAdmin, async (req, res) => {
+      const userId = Number(req.params.userId);
+      const subscriptionId = req.body?.subscriptionId;
+      const invoiceCode = req.body?.invoiceCode;
+      if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(subscriptionId) || subscriptionId <= 0
+        || typeof invoiceCode !== "string" || !/^INV_[A-Za-z0-9]+$/.test(invoiceCode)) {
+        return res.status(400).json({ error: "Invalid catch-up payment target" });
+      }
+      if (!catchupEnabledFor(userId)) return res.status(503).json({ error: "Catch-up payments are disabled for this account" });
+      if (operation === "execute" && (req.body?.confirmed !== true || typeof req.body?.confirmationToken !== "string")) {
+        return res.status(400).json({ error: "Explicit confirmation and a current preview token are required" });
+      }
+      try {
+        const input = { userId, subscriptionId, invoiceCode };
+        const service = await catchupRuntime(input);
+        const result = operation === "preview" ? await service.preview(input)
+          : await service.execute(input, req.body.confirmationToken, req.body.confirmed, req.user!.id);
+        return res.json(result);
+      } catch (error) {
+        // Never echo provider responses, authorization codes, secrets, or raw
+        // database errors. Only our controlled reason codes may leave here.
+        const reason = error instanceof Error && /^[a-z_]+$/.test(error.message) ? error.message : "catchup_preflight_or_verification_failed";
+        return res.status(409).json({ outcome: "manual_review_required", reason,
+          message: "No automatic retry will be made. Verify the stable reference before any further collection." });
+      }
+    });
+  }
   app.get("/api/admin/growth-dashboard", requireAdmin, growthDashboard);
   app.get("/api/admin/lifecycle-email/status", requireAdmin, async (_req, res) => {
     try {

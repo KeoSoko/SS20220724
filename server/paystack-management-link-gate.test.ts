@@ -184,6 +184,15 @@ describe("Paystack management-link release gate", () => {
     });
   });
 
+  it("keeps Simple Slips open and refreshes billing state after Paystack management", () => {
+    expect(subscriptionPage).toContain("window.open('about:blank', 'paystack-subscription-management')");
+    expect(subscriptionPage).toContain("paystackWindow.location.replace(url)");
+    expect(subscriptionPage).toContain("window.addEventListener('focus', refreshSubscriptionAfterPaystack)");
+    expect(subscriptionPage).toContain("document.addEventListener('visibilitychange', refreshSubscriptionAfterPaystack)");
+    expect(subscriptionPage).toContain("queryKey: ['/api/billing/subscription']");
+    expect(subscriptionPage).toContain("queryKey: ['/api/subscription/status']");
+  });
+
   it("does not mislabel or offer an unverified new checkout as a card update", () => {
     expect(subscriptionPage).toContain("paymentActuallyFailed && !recoveryCheckoutEligible ? (");
     expect(subscriptionPage).toContain("Please contact support before starting another checkout.");

@@ -500,9 +500,6 @@ export function SubscriptionPage() {
       'POST',
       '/api/billing/paystack/subscription/manage-link',
     )).json() as Promise<{ url: string }>,
-    onSuccess: ({ url }) => {
-      window.location.assign(url);
-    },
     onError: (error: any) => {
       toast({
         title: "Unable to open Paystack",
@@ -511,6 +508,43 @@ export function SubscriptionPage() {
       });
     },
   });
+
+  const openPaymentMethodManager = () => {
+    // Opening the tab during the click keeps browsers from treating it as an
+    // unsolicited popup while the server verifies the Paystack relationship.
+    const paystackWindow = window.open('about:blank', 'paystack-subscription-management');
+    if (paystackWindow) {
+      paystackWindow.opener = null;
+      paystackWindow.document.title = 'Opening secure Paystack page…';
+    }
+
+    managePaymentMethodMutation.mutate(undefined, {
+      onSuccess: ({ url }) => {
+        if (paystackWindow && !paystackWindow.closed) {
+          paystackWindow.location.replace(url);
+        } else {
+          window.location.assign(url);
+        }
+      },
+      onError: () => paystackWindow?.close(),
+    });
+  };
+
+  useEffect(() => {
+    const refreshSubscriptionAfterPaystack = () => {
+      if (document.visibilityState !== 'visible') return;
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/transactions'] });
+    };
+
+    window.addEventListener('focus', refreshSubscriptionAfterPaystack);
+    document.addEventListener('visibilitychange', refreshSubscriptionAfterPaystack);
+    return () => {
+      window.removeEventListener('focus', refreshSubscriptionAfterPaystack);
+      document.removeEventListener('visibilitychange', refreshSubscriptionAfterPaystack);
+    };
+  }, [queryClient]);
 
   // Show errors if any critical API calls fail
   if (plansError) {
@@ -670,7 +704,7 @@ export function SubscriptionPage() {
                     {paymentMethodNeedsAttention && statusData?.renewalManagementLinkEligible && (
                       <Button
                         size="sm"
-                        onClick={() => managePaymentMethodMutation.mutate()}
+                        onClick={openPaymentMethodManager}
                         disabled={managePaymentMethodMutation.isPending}
                         data-testid="button-update-paystack-payment-method"
                       >
@@ -684,7 +718,7 @@ export function SubscriptionPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => managePaymentMethodMutation.mutate()}
+                        onClick={openPaymentMethodManager}
                         disabled={managePaymentMethodMutation.isPending}
                         data-testid="button-change-paystack-payment-card"
                       >
@@ -792,7 +826,7 @@ export function SubscriptionPage() {
                        statusData?.renewalManagementLinkEligible ? (
                          <Button
                            className="w-full"
-                           onClick={() => managePaymentMethodMutation.mutate()}
+                           onClick={openPaymentMethodManager}
                            disabled={managePaymentMethodMutation.isPending}
                            data-testid="button-update-paystack-payment-method-plan"
                          >

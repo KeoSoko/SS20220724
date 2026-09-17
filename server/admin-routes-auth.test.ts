@@ -6,6 +6,8 @@ vi.mock("./db", () => ({ db: {}, pool: { query: vi.fn() } }));
 vi.mock("./billing-service", () => ({ billingService: {} }));
 vi.mock("./email-service", () => ({ emailService: {} }));
 vi.mock("./export-service", () => ({ exportService: {} }));
+vi.mock("./azure-storage", () => ({ azureStorage: {} }));
+vi.mock("./paystack-catchup-runtime", () => ({ catchupRuntime: vi.fn(), catchupEnabledFor: vi.fn(() => false) }));
 vi.mock("./vite", () => ({ log: vi.fn() }));
 vi.mock("openai", () => ({ default: class OpenAI {} }));
 
@@ -22,6 +24,18 @@ function response() {
 }
 
 describe("admin authorization for manual identity repair", () => {
+  it("guards both catch-up operations and refuses a disabled account before provider execution", async () => {
+    const routes = new Map<string, any[]>();
+    const register = vi.fn((path: string, ...handlers: any[]) => routes.set(path, handlers));
+    registerAdminRoutes({ get: register, post: register, put: register, patch: register, delete: register } as any);
+    for (const operation of ["preview", "execute"]) {
+      const handlers = routes.get(`/api/admin/users/:userId/paystack-catchup/${operation}`)!;
+      expect(handlers[0]).toBe(requireAdmin);
+      const res = response();
+      await handlers[1]({ params: { userId: "385" }, body: { subscriptionId: 354, invoiceCode: "INV_example" } }, res);
+      expect(res.status).toHaveBeenCalledWith(503);
+    }
+  });
   it("returns aggregate-only lifecycle status to an admin route", async () => {
     const routes = new Map<string, any[]>();
     const register = vi.fn((path: string, ...handlers: any[]) => routes.set(path, handlers));

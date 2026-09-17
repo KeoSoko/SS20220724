@@ -85,6 +85,7 @@ import { normalizeMerchantName } from "./utils/merchant-normalizer";
 import { accountDeletionService } from "./account-deletion-service";
 import { handleAccountDeletionRequest } from "./account-deletion-handler";
 import { normalizeReceiptExportDateRange } from "./export-date-range";
+import { isCatchupReference } from "./paystack-catchup";
 import {
   getActivation,
   isClientGrowthEventName,
@@ -246,6 +247,15 @@ async function resolvePaystackRenewalIdentity(
 
 async function handlePaystackChargeSuccess(data: any) {
   try {
+    if (isCatchupReference(data.reference)) {
+      // A catch-up payment is NOT a new checkout or an automatic renewal.
+      // Verification and access restoration belong exclusively to the durable
+      // catch-up intent. Repeating execute only verifies/settles; never charges.
+      await billingService.recordBillingEvent(null, "paystack_catchup_charge_observed", {
+        reference: data.reference, providerTransactionId: String(data.id ?? ""),
+      });
+      return;
+    }
     log(`Processing Paystack charge success: ${data.reference}`, 'billing');
 
     // A server-owned checkout attempt is authoritative for initial checkout
@@ -4719,12 +4729,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       if (result.outcome === "ready") {
         return res.json({ url: result.url });
-      }
-      if (result.outcome === "automatic_renewal_active") {
-        return res.status(409).json({
-          error: "Your automatic renewal is already active. No payment update is required.",
-          code: "automatic_renewal_active",
-        });
       }
       if (result.outcome === "manual_review_required") {
         return res.status(409).json({

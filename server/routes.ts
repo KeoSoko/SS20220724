@@ -4720,12 +4720,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (result.outcome === "ready") {
         return res.json({ url: result.url });
       }
-      if (result.outcome === "automatic_renewal_active") {
-        return res.status(409).json({
-          error: "Your automatic renewal is already active. No payment update is required.",
-          code: "automatic_renewal_active",
-        });
-      }
       if (result.outcome === "manual_review_required") {
         return res.status(409).json({
           error: "We need to confirm your automatic renewal before a payment method can be updated.",

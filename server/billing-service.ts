@@ -198,7 +198,6 @@ export function isPaystackApplePaySubscriptionsEnabled(): boolean {
 
 export type PaystackManagementLinkResult =
   | { outcome: "ready"; url: string }
-  | { outcome: "automatic_renewal_active" }
   | { outcome: "manual_review_required"; reason: string }
   | { outcome: "reconciling"; reason: string };
 
@@ -2086,15 +2085,6 @@ export class BillingService {
           outcome: "manual_review_required",
           reason: "provider_subscription_relationship_ambiguous",
         };
-      }
-
-      if (subscription.status !== "paused" && providerStatus === "active" && hasExactPaystackRecurringRelationship(
-        evidence,
-        subscription.paystackCustomerCode,
-        plan.paystackPlanCode,
-        identity.subscriptionCode,
-      )) {
-        return { outcome: "automatic_renewal_active" };
       }
 
       let response: Response;
@@ -5340,7 +5330,11 @@ export class BillingService {
           };
         }
         if (identity.recurringReadiness === "ready") {
-          return { state: "automatic_renewal_active", recoveryCheckoutEligible: false, managementLinkEligible: false };
+          return {
+            state: "automatic_renewal_active",
+            recoveryCheckoutEligible: false,
+            managementLinkEligible: isPaystackSubscriptionManagementLinkEnabled(),
+          };
         }
         if (identity.recurringReadiness === "not_ready") {
           return {

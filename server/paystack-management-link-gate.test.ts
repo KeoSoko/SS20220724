@@ -43,6 +43,20 @@ async function renewalStatusWithNotReadyIdentity() {
   return service.getPaystackRenewalStatus(42);
 }
 
+async function renewalStatusWithReadyIdentity() {
+  const service = new BillingService();
+  (service as any).getUserSubscription = vi.fn().mockResolvedValue({
+    status: "active",
+    nextBillingDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    paystackReference: "reference",
+  });
+  (service as any).getPaystackBillingSchemaReadiness = vi.fn().mockResolvedValue({ ready: true });
+  (service as any).getActivePaystackSubscriptionIdentity = vi.fn().mockResolvedValue({
+    recurringReadiness: "ready",
+  });
+  return service.getPaystackRenewalStatus(42);
+}
+
 function managementRouteSource() {
   const start = routes.indexOf('app.post("/api/billing/paystack/subscription/manage-link"');
   const end = routes.indexOf('app.post("/api/billing/paystack/verify"', start);
@@ -118,6 +132,19 @@ describe("Paystack management-link release gate", () => {
     expect(paymentAttentionBranch).toContain("<Alert");
     expect(paymentAttentionBranch).not.toContain("handleSubscribe");
     expect(paymentAttentionBranch).not.toContain("Restore automatic renewal");
+  });
+
+  it("offers the guarded card-change path to a healthy active subscriber", async () => {
+    process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED = "true";
+
+    await expect(renewalStatusWithReadyIdentity()).resolves.toMatchObject({
+      state: "automatic_renewal_active",
+      managementLinkEligible: true,
+      recoveryCheckoutEligible: false,
+    });
+    expect(subscriptionPage).toContain("healthyCardChangeEligible");
+    expect(subscriptionPage).toContain("Change payment card");
+    expect(subscriptionPage).toContain('data-testid="button-change-paystack-payment-card"');
   });
 
   it("does not mislabel or offer an unverified new checkout as a card update", () => {

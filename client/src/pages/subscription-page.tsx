@@ -245,6 +245,8 @@ export function SubscriptionPage() {
   const renewalReconciling = statusData?.renewalState === 'reconciling';
   const subscriptionActiveUnknownRenewal = statusData?.renewalState === 'subscription_active';
   const paymentMethodNeedsAttention = statusData?.renewalState === 'payment_method_needs_attention';
+  const healthyCardChangeEligible = statusData?.renewalState === 'automatic_renewal_active'
+    && statusData?.renewalManagementLinkEligible === true;
   const manualReviewRequired = statusData?.renewalState === 'manual_review_required';
   const paymentActuallyFailed = !!(
     statusData?.renewalState === 'payment_failed'
@@ -673,6 +675,20 @@ export function SubscriptionPage() {
                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
                         )}
                         Update payment method
+                      </Button>
+                    )}
+                    {healthyCardChangeEligible && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => managePaymentMethodMutation.mutate()}
+                        disabled={managePaymentMethodMutation.isPending}
+                        data-testid="button-change-paystack-payment-card"
+                      >
+                        {managePaymentMethodMutation.isPending && (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        )}
+                        Change payment card
                       </Button>
                     )}
                   </div>

@@ -2088,7 +2088,7 @@ export class BillingService {
         };
       }
 
-      if (hasExactPaystackRecurringRelationship(
+      if (subscription.status !== "paused" && providerStatus === "active" && hasExactPaystackRecurringRelationship(
         evidence,
         subscription.paystackCustomerCode,
         plan.paystackPlanCode,
@@ -5301,13 +5301,11 @@ export class BillingService {
       return { state: "not_due", recoveryCheckoutEligible: false, managementLinkEligible: false };
     }
 
-    if (subscription.status === "paused") {
-      return { state: "payment_failed", recoveryCheckoutEligible: false, managementLinkEligible: false };
-    }
-
-    if (subscription.status !== "active") {
+    if (subscription.status !== "active" && subscription.status !== "paused") {
       return { state: "not_due", recoveryCheckoutEligible: false, managementLinkEligible: false };
     }
+
+    const paymentPaused = subscription.status === "paused";
 
     // Other billing platforms own their own renewal lifecycle. Do not infer a
     // Paystack setup problem from an overdue App Store or Google Play plan.
@@ -5317,7 +5315,11 @@ export class BillingService {
       || subscription.authorizationCode
     );
     if (!hasPaystackRelationship) {
-      return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
+      return {
+        state: paymentPaused ? "payment_failed" : "reconciling",
+        recoveryCheckoutEligible: false,
+        managementLinkEligible: false,
+      };
     }
 
     try {
@@ -5327,6 +5329,16 @@ export class BillingService {
       }
       const identity = await this.getActivePaystackSubscriptionIdentity(userId);
       if (identity) {
+        // A failed renewal supersedes any earlier "ready" snapshot. The
+        // management-link action re-verifies the canonical relationship with
+        // Paystack before returning a hosted URL; this page read does not.
+        if (paymentPaused) {
+          return {
+            state: "payment_method_needs_attention",
+            recoveryCheckoutEligible: false,
+            managementLinkEligible: isPaystackSubscriptionManagementLinkEnabled(),
+          };
+        }
         if (identity.recurringReadiness === "ready") {
           return { state: "automatic_renewal_active", recoveryCheckoutEligible: false, managementLinkEligible: false };
         }
@@ -5364,6 +5376,12 @@ export class BillingService {
       }
     } catch {
       return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
+    }
+
+    if (paymentPaused) {
+      // Without a trusted identity, do not offer a provider management link
+      // or infer that opening another checkout is safe.
+      return { state: "payment_failed", recoveryCheckoutEligible: false, managementLinkEligible: false };
     }
 
     // No identity row. Check whether the subscription's billing date is still

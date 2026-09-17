@@ -592,7 +592,7 @@ export function SubscriptionPage() {
                            ? 'We couldn’t process your latest renewal payment. Update your payment method securely with Paystack to continue your subscription.'
                            : 'Your payment method needs attention. Please contact support while we confirm the safest way to update your automatic renewal.'
                          : paymentActuallyFailed
-                         ? 'We couldn’t process your latest renewal payment. Update your payment method securely with Paystack to continue your subscription.'
+                         ? 'We couldn’t process your latest renewal payment. A new checkout may be needed; please review the payment option below before continuing.'
                         : recoveryCheckoutEligible
                           ? 'Automatic renewal needs to be set up again. No new payment has been attempted yet. Continue below to deliberately open a new secure Paystack checkout.'
                           : 'Automatic renewal needs to be set up again. We need to confirm the previous Paystack relationship before a new payment can be started.'}
@@ -795,6 +795,12 @@ export function SubscriptionPage() {
                       <Badge variant="default" className="w-full justify-center py-2">
                         Current Plan
                       </Badge>
+                    ) : paymentActuallyFailed && !recoveryCheckoutEligible ? (
+                      <Alert className="border-amber-300 bg-amber-50">
+                        <AlertDescription className="text-amber-900 text-sm">
+                          Your renewal needs review. Please contact support before starting another checkout.
+                        </AlertDescription>
+                      </Alert>
                     ) : (
                       <Button
                         className="w-full"
@@ -809,7 +815,7 @@ export function SubscriptionPage() {
                               : 'Switch to this plan'
                             : 'Renewal needs review'
                           : needsPaymentRecovery
-                          ? 'Update payment method'
+                          ? 'Start a new secure checkout'
                           : subscription?.status === 'cancelled'
                             ? 'Resubscribe Now'
                             : 'Subscribe Now'}

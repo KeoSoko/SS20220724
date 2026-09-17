@@ -273,6 +273,34 @@ describe("automatic legacy renewal relationship recovery", () => {
     });
   });
 
+  it("offers verified management-link recovery for a paused subscriber with a trusted identity", async () => {
+    const previousFlag = process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED;
+    process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED = "true";
+    try {
+      vi.mocked(storage.getUserSubscription).mockResolvedValue({
+        ...localSubscription,
+        status: "paused",
+      } as any);
+      const service = new BillingService();
+      vi.spyOn(service as any, "getActivePaystackSubscriptionIdentity").mockResolvedValue({
+        subscriptionCode: "SUB_attention",
+        recurringReadiness: "ready", // stale after the failed renewal
+      });
+
+      await expect(service.getPaystackRenewalStatus(42)).resolves.toEqual({
+        state: "payment_method_needs_attention",
+        recoveryCheckoutEligible: false,
+        managementLinkEligible: true,
+      });
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED;
+      } else {
+        process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED = previousFlag;
+      }
+    }
+  });
+
   it("records exactly one verified provider relationship without creating a charge or subscription", async () => {
     const { provider, charge, create, disable } = setupProvider();
     const service = new BillingService();

@@ -245,7 +245,10 @@ export function SubscriptionPage() {
   const renewalReconciling = statusData?.renewalState === 'reconciling';
   const subscriptionActiveUnknownRenewal = statusData?.renewalState === 'subscription_active';
   const paymentMethodNeedsAttention = statusData?.renewalState === 'payment_method_needs_attention';
-  const healthyCardChangeEligible = statusData?.renewalState === 'automatic_renewal_active'
+  const cardChangeEligible = (
+    statusData?.renewalState === 'automatic_renewal_active'
+    || statusData?.renewalState === 'subscription_active'
+  )
     && statusData?.renewalManagementLinkEligible === true;
   const manualReviewRequired = statusData?.renewalState === 'manual_review_required';
   const paymentActuallyFailed = !!(
@@ -677,7 +680,7 @@ export function SubscriptionPage() {
                         Update payment method
                       </Button>
                     )}
-                    {healthyCardChangeEligible && (
+                    {cardChangeEligible && (
                       <Button
                         variant="outline"
                         size="sm"

@@ -4,6 +4,19 @@ import { readFileSync } from "node:fs";
 vi.mock("./vite", () => ({ log: vi.fn() }));
 vi.mock("./email-service", () => ({ emailService: null }));
 vi.mock("./storage", () => ({ storage: {} }));
+vi.mock("./db", () => ({
+  db: {
+    select: () => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        orderBy: () => chain,
+        limit: async () => [],
+      };
+      return chain;
+    },
+  },
+}));
 
 import {
   BillingService,
@@ -53,6 +66,20 @@ async function renewalStatusWithReadyIdentity() {
   (service as any).getPaystackBillingSchemaReadiness = vi.fn().mockResolvedValue({ ready: true });
   (service as any).getActivePaystackSubscriptionIdentity = vi.fn().mockResolvedValue({
     recurringReadiness: "ready",
+  });
+  return service.getPaystackRenewalStatus(42);
+}
+
+async function renewalStatusWithUnknownIdentity() {
+  const service = new BillingService();
+  (service as any).getUserSubscription = vi.fn().mockResolvedValue({
+    status: "active",
+    nextBillingDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    paystackReference: "reference",
+  });
+  (service as any).getPaystackBillingSchemaReadiness = vi.fn().mockResolvedValue({ ready: true });
+  (service as any).getActivePaystackSubscriptionIdentity = vi.fn().mockResolvedValue({
+    recurringReadiness: "unknown",
   });
   return service.getPaystackRenewalStatus(42);
 }
@@ -142,9 +169,19 @@ describe("Paystack management-link release gate", () => {
       managementLinkEligible: true,
       recoveryCheckoutEligible: false,
     });
-    expect(subscriptionPage).toContain("healthyCardChangeEligible");
+    expect(subscriptionPage).toContain("cardChangeEligible");
     expect(subscriptionPage).toContain("Change payment card");
     expect(subscriptionPage).toContain('data-testid="button-change-paystack-payment-card"');
+  });
+
+  it("offers card management for an active trusted identity with legacy readiness", async () => {
+    process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED = "true";
+
+    await expect(renewalStatusWithUnknownIdentity()).resolves.toMatchObject({
+      state: "subscription_active",
+      managementLinkEligible: true,
+      recoveryCheckoutEligible: false,
+    });
   });
 
   it("does not mislabel or offer an unverified new checkout as a card update", () => {

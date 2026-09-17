@@ -5361,7 +5361,14 @@ export class BillingService {
             .orderBy(desc(billingEvents.createdAt))
             .limit(1);
           if (!pendingReconciliation) {
-            return { state: "subscription_active", recoveryCheckoutEligible: false, managementLinkEligible: false };
+            return {
+              state: "subscription_active",
+              recoveryCheckoutEligible: false,
+              // The identity is trusted even though historic authorization
+              // readiness was never recorded. The action endpoint performs a
+              // fresh provider verification before returning a hosted link.
+              managementLinkEligible: isPaystackSubscriptionManagementLinkEnabled(),
+            };
           }
           return { state: "reconciling", recoveryCheckoutEligible: false, managementLinkEligible: false };
         }

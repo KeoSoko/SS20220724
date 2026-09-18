@@ -28,6 +28,7 @@ import {
 import { CAMPAIGN_REGISTRY, LIFECYCLE_CAMPAIGNS, buildCopy, verifyUnsubscribeToken } from "./lifecycle-emails";
 import { resolvePublicAppOrigin } from "./public-app-origin";
 import { catchupRuntime, catchupEnabledFor } from "./paystack-catchup-runtime";
+import { grantComplimentaryAccess } from "./complimentary-access";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -257,6 +258,12 @@ function parseManualLegacyPaystackAccountingInput(req: Request) {
 const parseLegacyPaystackRenewalSettlementInput = parseManualLegacyPaystackAccountingInput;
 
 export function registerAdminRoutes(app: Express) {
+  app.post("/api/admin/users/:userId/complimentary-access", requireAdmin, async (req, res) => {
+    const userId = Number(req.params.userId);
+    if (!Number.isSafeInteger(userId) || userId <= 0) return res.status(400).json({ error: "invalid_user" });
+    try { return res.json(await grantComplimentaryAccess(userId, req.body, req.user!.id)); }
+    catch { return res.status(409).json({ error: "complimentary_access_not_applied", message: "Grant stopped. Check account status, date, reason and production write permissions." }); }
+  });
   // Feature and owner allowlist are disabled by default. Preview never charges.
   for (const operation of ["preview", "execute"] as const) {
     app.post(`/api/admin/users/:userId/paystack-catchup/${operation}`, requireAdmin, async (req, res) => {

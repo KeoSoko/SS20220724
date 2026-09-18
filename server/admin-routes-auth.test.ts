@@ -112,6 +112,10 @@ describe("admin authorization for manual identity repair", () => {
     expect(res.status).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
   });
+  it("protects complimentary grants with admin authentication", () => {
+    const source = readFileSync(new URL("./admin-routes.ts", import.meta.url), "utf8");
+    expect(source).toContain('app.post("/api/admin/users/:userId/complimentary-access", requireAdmin');
+  });
 
   it("keeps the preview and execute endpoints behind admin middleware and explicit confirmation", () => {
     const source = readFileSync(new URL("./admin-routes.ts", import.meta.url), "utf8");

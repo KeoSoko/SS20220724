@@ -5190,6 +5190,10 @@ export class BillingService {
       if (!subscription) {
         return false;
       }
+      if (subscription.status === 'paused') {
+        const { complimentaryExpiry } = await import('./complimentary-access');
+        return !!await complimentaryExpiry(userId, subscription.id);
+      }
 
       // Check trial expiration
       if (subscription.status === 'trial') {

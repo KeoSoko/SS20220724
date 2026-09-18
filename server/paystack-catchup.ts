@@ -139,7 +139,7 @@ export function createCatchupService(
       requireGuard(intent.userId === input.userId && intent.subscriptionId === input.subscriptionId
         && intent.invoiceCode === input.invoiceCode && intent.mode === provider.mode, "attempt_owner_mismatch");
       return { outcome: prior ? "verify_previous_attempt_only" : "ready_for_confirmation",
-        amount: intent.amount, currency: intent.currency, reference, invoiceCode: intent.invoiceCode,
+        amount: intent.amount, currency: intent.currency, mode: intent.mode, reference, invoiceCode: intent.invoiceCode,
         userId: intent.userId, subscriptionId: intent.subscriptionId,
         periodEnd: intent.periodEnd, recurringSubscriptionMutation: "none",
         confirmationToken: token(intent) };

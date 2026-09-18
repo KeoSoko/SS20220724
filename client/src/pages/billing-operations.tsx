@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { AdminCatchupPanel } from "@/components/admin-catchup-panel";
 
 type Queue = "urgent" | "identity" | "superseded" | "failed" | "review";
 interface BillingItem { eventId?: number; userId: number; username: string; email: string | null; planName?: string | null; queue: Queue; severity: string; title: string; recommendedAction: string; nextBillingDate?: string | null; entitlementExpiresAt?: string | null; reference?: string | null; subscriptionCode?: string | null; customerCode?: string | null; planCode?: string | null; }
@@ -131,6 +132,7 @@ export default function BillingOperations() {
       <Button variant="outline" onClick={() => refetch()} disabled={isFetching}><RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />Refresh</Button>
     </div>
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"><strong>Queue discovery is read-only.</strong> Provider inspection cannot charge or change Paystack. Identity repair requires individual confirmation and changes only the verified local identity plus its audit trail—never payments or customer access.</div>
+    <AdminCatchupPanel />
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       {(Object.keys(labels) as Queue[]).map(key => <Card key={key} className={`cursor-pointer ${queue === key ? "ring-2 ring-primary" : ""}`} onClick={() => setQueue(key)}><CardContent className="p-4"><p className="text-sm text-muted-foreground">{labels[key]}</p><p className="text-3xl font-bold mt-1">{data?.summary[key] ?? 0}</p></CardContent></Card>)}
     </div>

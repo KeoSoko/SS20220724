@@ -77,7 +77,9 @@ function providerWithStoredCredential(): { provider: CatchupProvider; signingKey
       // Never interpret timeouts, auth errors, rate limits, invalid JSON, or
       // arbitrary provider failures as proof that a reference does not exist.
       if ([400, 404].includes(response.status) && data?.status === false
-        && ["Transaction reference not found", "Transaction not found"].includes(data.message)) return { kind: "absent" };
+        && ["Transaction reference not found", "Transaction reference not found.", "Transaction not found"].includes(data.message)) {
+        return { kind: "absent" };
+      }
       throw new Error("provider_reference_verification_unavailable");
     },
     async successfulPayments(customerId, since) {

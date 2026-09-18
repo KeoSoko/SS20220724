@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ events:[] as any[], payments:[] as any[], operations:[] as string[], providerPayment:null as any,
+  verifyResponse:null as null | {status:number;data:any}, verifyThrows:false,
   nextDate:"2026-09-15T10:00:00.000Z", status:"paused" }));
 const query = vi.hoisted(() => vi.fn(async (sql:string, values:any[] = []) => {
   state.operations.push(sql);
@@ -34,6 +35,7 @@ const env={...process.env};
 beforeEach(()=>{
   vi.useFakeTimers();vi.setSystemTime(new Date("2026-09-17T12:00:00Z"));
   state.events=[];state.payments=[];state.operations=[];state.providerPayment=null;
+  state.verifyResponse=null;state.verifyThrows=false;
   state.nextDate="2026-09-15T10:00:00.000Z";state.status="paused";
   process.env.PAYSTACK_ADMIN_CATCHUP_ENABLED="true";process.env.PAYSTACK_ADMIN_CATCHUP_USER_IDS="385";
   process.env.PAYSTACK_SECRET_KEY="sk_test_fake";process.env.NODE_ENV="test";
@@ -47,6 +49,8 @@ beforeEach(()=>{
         period_start:"2026-09-15T10:00:00.000Z",period_end:"2026-10-15T10:00:00.000Z"}}};
     else if(url.includes("/transaction/verify/")) {
       if(state.providerPayment)data={status:true,data:state.providerPayment};
+      else if(state.verifyThrows) throw new Error("request timed out");
+      else if(state.verifyResponse) ({status,data}=state.verifyResponse);
       else {status=400;data={status:false,message:"Transaction reference not found"};}
     } else if(url.includes("/transaction/charge_authorization")) {
       const body=JSON.parse(options.body);
@@ -86,5 +90,25 @@ describe("catch-up production adapter (mocked provider/database)",()=>{
     const service=await catchupRuntime(input);
     await expect(service.preview(input)).rejects.toThrow("provider_mode_mismatch");
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/subscription/"),expect.objectContaining({method:"GET"}));
+  });
+  it("accepts Paystack's exact not-found message with a trailing period",async()=>{
+    state.verifyResponse={status:400,data:{status:false,message:"Transaction reference not found."}};
+    const service=await catchupRuntime(input);
+    await expect(service.preview(input)).resolves.toMatchObject({outcome:"ready_for_confirmation"});
+  });
+  it.each([
+    ["authentication failure",401,{status:false,message:"Invalid key"}],
+    ["rate limit",429,{status:false,message:"Too many requests"}],
+    ["unknown 400 response",400,{status:false,message:"Reference unavailable"}],
+    ["not-found message with successful API status",404,{status:true,message:"Transaction reference not found."}],
+  ])("keeps %s blocked during reference verification",async(_label,status,data)=>{
+    state.verifyResponse={status,data};
+    const service=await catchupRuntime(input);
+    await expect(service.preview(input)).rejects.toThrow("provider_reference_verification_unavailable");
+  });
+  it("keeps reference verification timeouts blocked",async()=>{
+    state.verifyThrows=true;
+    const service=await catchupRuntime(input);
+    await expect(service.preview(input)).rejects.toThrow("request timed out");
   });
 });

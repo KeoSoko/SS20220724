@@ -86,6 +86,7 @@ import { accountDeletionService } from "./account-deletion-service";
 import { handleAccountDeletionRequest } from "./account-deletion-handler";
 import { normalizeReceiptExportDateRange } from "./export-date-range";
 import { isCatchupReference } from "./paystack-catchup";
+import { getPaystackSecretKey } from "./paystack-credential";
 import {
   getActivation,
   isClientGrowthEventName,
@@ -4779,7 +4780,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     log(`[WEBHOOK_ARRIVAL] timestamp=${webhookReceivedAt} event=${event || 'missing'} reference=${reference} has_metadata_user_id=${hasMetadataUserId}`, 'billing');
 
     // Verify signature BEFORE acknowledging - reject bad actors immediately
-    const webhookSecret = process.env.PAYSTACK_SECRET_KEY;
+    const webhookSecret = getPaystackSecretKey();
     const receivedSignature = req.headers['x-paystack-signature'];
     const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
     if (!webhookSecret || typeof receivedSignature !== 'string' || !rawBody) {

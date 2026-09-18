@@ -2,6 +2,7 @@ import { storage } from "./storage";
 import { resolveBillingOwner } from "./billing-owner";
 import { isDefinitivePaystackNonPaymentStatus } from "./paystack-checkout-status";
 import { isCatchupReference } from "./paystack-catchup";
+import { getPaystackSecretKey } from "./paystack-credential";
 import {
   SubscriptionPlan,
   UserSubscription,
@@ -595,8 +596,9 @@ export class BillingService {
 
   constructor() {
     // Initialize Paystack if secret key is available
-    if (process.env.PAYSTACK_SECRET_KEY) {
-      this.paystack = Paystack(process.env.PAYSTACK_SECRET_KEY);
+    const paystackSecretKey = getPaystackSecretKey();
+    if (paystackSecretKey) {
+      this.paystack = Paystack(paystackSecretKey);
     }
   }
 
@@ -2003,7 +2005,8 @@ export class BillingService {
     userId: number,
   ): Promise<PaystackManagementLinkResult> {
     await this.requirePaystackBillingSchema();
-    if (!this.paystack || !process.env.PAYSTACK_SECRET_KEY) {
+    const paystackSecretKey = getPaystackSecretKey();
+    if (!this.paystack || !paystackSecretKey) {
       return { outcome: "reconciling", reason: "paystack_unavailable" };
     }
 
@@ -2095,7 +2098,7 @@ export class BillingService {
           {
             method: "GET",
             headers: {
-              Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+              Authorization: `Bearer ${paystackSecretKey}`,
               Accept: "application/json",
             },
           },

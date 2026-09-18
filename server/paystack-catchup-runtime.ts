@@ -2,6 +2,7 @@ import { pool } from "./db";
 import { resolveBillingOwner } from "./billing-owner";
 import { requirePaystackBillingSchema } from "./paystack-billing-schema";
 import { createCatchupService, sameCatchupState, type CatchupInput, type CatchupIntent, type CatchupLocal, type CatchupProvider } from "./paystack-catchup";
+import { getPaystackSecretKey } from "./paystack-credential";
 
 const attemptType = "admin_paystack_catchup_attempt";
 export const catchupEnabledFor = (userId: number) =>
@@ -51,7 +52,7 @@ async function ownerTransaction<T>(userId: number, callback: (client: any) => Pr
 }
 
 function providerWithStoredCredential(): { provider: CatchupProvider; signingKey: string } {
-  const key = process.env.PAYSTACK_SECRET_KEY;
+  const key = getPaystackSecretKey();
   if (!key || !/^sk_(live|test)_/.test(key)) throw new Error("paystack_credential_unavailable");
   const mode = key.startsWith("sk_live_") ? "live" : "test";
   if (process.env.NODE_ENV === "production" && mode !== "live") throw new Error("production_live_credential_required");

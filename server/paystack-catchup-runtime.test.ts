@@ -81,4 +81,10 @@ describe("catch-up production adapter (mocked provider/database)",()=>{
     process.env.NODE_ENV="production";
     await expect(catchupRuntime(input)).rejects.toThrow("production_live_credential_required");expect(fetch).not.toHaveBeenCalled();
   });
+  it("accepts the canonical live credential in production and evaluates provider evidence in live mode",async()=>{
+    process.env.NODE_ENV="production";process.env.PAYSTACK_SECRET_KEY="sk_live_fake";
+    const service=await catchupRuntime(input);
+    await expect(service.preview(input)).rejects.toThrow("provider_mode_mismatch");
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/subscription/"),expect.objectContaining({method:"GET"}));
+  });
 });

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("./complimentary-access", () => ({ complimentaryExpiry: vi.fn().mockResolvedValue(null) }));
 
 vi.mock("./storage", () => ({
   storage: {

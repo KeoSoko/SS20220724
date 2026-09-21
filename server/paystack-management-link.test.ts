@@ -115,6 +115,34 @@ beforeEach(() => {
 });
 
 describe("Paystack hosted subscription management", () => {
+  it("returns a hosted link for a healthy active subscription so the customer can change cards proactively", async () => {
+    const provider = providerFor({
+      subscription_code: "SUB_owner",
+      customer: { customer_code: "CUS_owner" },
+      plan: { plan_code: "PLN_monthly" },
+      status: "active",
+      authorization: { authorization_code: "AUTH_current", reusable: true },
+    });
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      status: true,
+      data: { link: "https://paystack.com/manage/subscriptions/SUB_owner?subscription_token=healthy-token" },
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const service = new BillingService();
+    (service as any).paystack = provider;
+
+    await expect(service.createPaystackSubscriptionManagementLink(42)).resolves.toEqual({
+      outcome: "ready",
+      url: "https://paystack.com/manage/subscriptions/SUB_owner?subscription_token=healthy-token",
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.paystack.co/subscription/SUB_owner/manage/link",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(provider.subscription.create).not.toHaveBeenCalled();
+    expect(provider.transaction.charge).not.toHaveBeenCalled();
+  });
+
   it("allows a paused renewal to update a reusable card instead of claiming renewal is healthy", async () => {
     vi.mocked(storage.getUserSubscription).mockResolvedValue({
       ...localSubscription, status: "paused",

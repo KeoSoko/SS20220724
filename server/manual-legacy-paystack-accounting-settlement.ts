@@ -64,6 +64,20 @@ export interface ManualLegacyPaystackAccountingSnapshot {
     planCode: string | null;
     status: string;
     nextPaymentDate?: string | null;
+    recentInvoice?: {
+      valid: boolean;
+      invoiceCode: string | null;
+      state: string;
+      transactionReference: string | null;
+      sourceSubscriptionCode: string;
+      subscriptionCode: string | null;
+      customerCode: string | null;
+      planCode: string | null;
+      amount: number;
+      currency: string | null;
+      periodStart: string | null;
+      periodEnd: string | null;
+    } | null;
   } | null;
   providerInspection?: {
     available: boolean;

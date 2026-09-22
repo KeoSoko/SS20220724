@@ -14,3 +14,9 @@ Support may resolve an ambiguous identity only from read-only provider candidate
 **Why:** Customer-level Paystack lists can contain old same-plan subscriptions, and an inconsistent provider detail must not turn an explicit choice of one `SUB_*` into a different local identity. Support resolution is an ownership decision, not a payment or cancellation action.
 
 **How to apply:** Fail closed when the local Paystack plan code is absent, provider detail lookup fails, a candidate’s detail mismatches customer, plan, or `SUB_*`, or confirmation is not literal. Provider calls in this flow stay limited to customer and subscription reads; preserve access while it remains unresolved.
+
+Renewal entitlement must be based on the provider invoice period, not payment time, and every applying path must link one logical paid invoice to the verified transaction.
+
+**Why:** Payment time and the billed service period can differ. Treating them as interchangeable can grant the wrong interval or weaken duplicate protection.
+
+**How to apply:** Keep normal boundary matching exact. Any exception requires explicit, freshly revalidated invoice and boundary evidence. Missing optional provider fields are neutral; present conflicts fail closed.

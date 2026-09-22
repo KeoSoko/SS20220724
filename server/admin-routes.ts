@@ -255,7 +255,57 @@ function parseManualLegacyPaystackAccountingInput(req: Request) {
   };
 }
 
-const parseLegacyPaystackRenewalSettlementInput = parseManualLegacyPaystackAccountingInput;
+function parseLegacyPaystackRenewalSettlementInput(req: Request) {
+  const billingOwnerUserId = Number.parseInt(req.params.userId, 10);
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const allowedFields = new Set([
+    "billingOwnerUserId", "localSubscriptionId", "identityId", "reference",
+    "subscriptionCode", "customerCode", "planCode", "reviewedBoundary",
+    "confirmed", "previewFingerprint",
+  ]);
+  if (!Number.isInteger(billingOwnerUserId)
+    || billingOwnerUserId <= 0
+    || Object.keys(body).some((key) => !allowedFields.has(key))
+    || (body.billingOwnerUserId !== undefined && body.billingOwnerUserId !== billingOwnerUserId)
+    || !Number.isInteger(body.localSubscriptionId)
+    || !Number.isInteger(body.identityId)
+    || typeof body.reference !== "string"
+    || typeof body.subscriptionCode !== "string"
+    || typeof body.customerCode !== "string"
+    || typeof body.planCode !== "string") return null;
+  const base = {
+    billingOwnerUserId,
+    localSubscriptionId: body.localSubscriptionId,
+    identityId: body.identityId,
+    reference: body.reference.trim(),
+    subscriptionCode: body.subscriptionCode.trim(),
+    customerCode: body.customerCode.trim(),
+    planCode: body.planCode.trim(),
+  };
+  if (body.reviewedBoundary === undefined) return base;
+  if (!body.reviewedBoundary || typeof body.reviewedBoundary !== "object") return null;
+  const review = body.reviewedBoundary as Record<string, unknown>;
+  const allowedReviewFields = new Set([
+    "reason", "invoiceCode", "expectedLocalBoundary",
+    "expectedProviderPeriodStart", "expectedProviderPeriodEnd",
+  ]);
+  if (Object.keys(review).some((key) => !allowedReviewFields.has(key))
+    || review.reason !== "legacy_paid_at_boundary_drift"
+    || typeof review.invoiceCode !== "string"
+    || typeof review.expectedLocalBoundary !== "string"
+    || typeof review.expectedProviderPeriodStart !== "string"
+    || typeof review.expectedProviderPeriodEnd !== "string") return null;
+  return {
+    ...base,
+    reviewedBoundary: {
+      reason: "legacy_paid_at_boundary_drift" as const,
+      invoiceCode: review.invoiceCode.trim(),
+      expectedLocalBoundary: review.expectedLocalBoundary,
+      expectedProviderPeriodStart: review.expectedProviderPeriodStart,
+      expectedProviderPeriodEnd: review.expectedProviderPeriodEnd,
+    },
+  };
+}
 
 export function registerAdminRoutes(app: Express) {
   app.post("/api/admin/users/:userId/complimentary-access", requireAdmin, async (req, res) => {

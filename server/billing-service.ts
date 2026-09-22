@@ -26,7 +26,7 @@ import { recordGrowthEventBestEffort } from "./growth-event-service";
 import Paystack from "paystack";
 import * as crypto from "crypto";
 import { emailService } from "./email-service";
-import { db } from "./db";
+import { db, databasePoolSnapshot } from "./db";
 import { and, eq, inArray, isNull, like, lte, ne, or, sql, desc } from "drizzle-orm";
 import {
   advanceBillingDate,
@@ -36,6 +36,7 @@ import {
   extractPaystackPlanCode,
   extractPaystackAuthorizationEvidence,
   extractPaystackSubscriptionCode,
+  getPaystackInvoices,
   getMostRecentPaystackInvoice,
   hasExactPaystackRecurringRelationship,
   isViablePaystackSubscriptionCandidate,
@@ -412,6 +413,8 @@ export function validateCurrentTrackedCheckoutAttempt(
 
 export class BillingService {
   private paystack: any;
+  private orphanMonitorInFlight = false;
+  private reconciliationMonitorInFlight = false;
 
   /**
    * Serializes concurrent Paystack initialization within this process.
@@ -2480,6 +2483,52 @@ export class BillingService {
             planCode: providerCandidate.planCode,
             status: providerCandidate.status,
             nextPaymentDate: providerCandidate.nextPaymentDate?.toISOString() ?? null,
+            recentInvoice: (() => {
+              const matchingInvoices = getPaystackInvoices(providerCandidate.providerData)
+                .map((rawInvoice) => ({
+                  rawInvoice,
+                  classified: classifyPaystackInvoice(rawInvoice, localSubscription?.nextBillingDate),
+                }))
+                .filter(({ classified }) => classified.transactionReference === input.reference);
+              const logicalInvoiceCodes = new Set(
+                matchingInvoices.map(({ classified }) => classified.invoiceCode).filter(Boolean),
+              );
+              if (matchingInvoices.length === 0 || logicalInvoiceCodes.size !== 1) return null;
+              const { rawInvoice, classified } = matchingInvoices[0];
+              const criticalEvidence = (entry: typeof matchingInvoices[number]) => JSON.stringify({
+                invoiceCode: entry.classified.invoiceCode,
+                state: entry.classified.state,
+                transactionReference: entry.classified.transactionReference,
+                sourceSubscriptionCode: providerCandidate.subscriptionCode,
+                subscriptionCode: entry.classified.subscriptionCode,
+                customerCode: entry.classified.customerCode,
+                planCode: extractPaystackPlanCode(entry.rawInvoice),
+                amount: Number(entry.rawInvoice.amount ?? 0),
+                currency: typeof entry.rawInvoice.currency === "string"
+                  ? entry.rawInvoice.currency
+                  : null,
+                periodStart: iso(entry.rawInvoice.period_start ?? entry.rawInvoice.periodStart),
+                periodEnd: iso(entry.rawInvoice.period_end ?? entry.rawInvoice.periodEnd),
+              });
+              const expectedEvidence = criticalEvidence(matchingInvoices[0]);
+              if (matchingInvoices.some((entry) => criticalEvidence(entry) !== expectedEvidence)) return null;
+              return {
+                valid: !providerCandidate.providerLookupFailed,
+                invoiceCode: classified.invoiceCode,
+                state: classified.state,
+                transactionReference: classified.transactionReference,
+                sourceSubscriptionCode: providerCandidate.subscriptionCode,
+                subscriptionCode: classified.subscriptionCode,
+                customerCode: classified.customerCode,
+                planCode: extractPaystackPlanCode(rawInvoice),
+                amount: Number(rawInvoice.amount ?? 0),
+                currency: typeof rawInvoice.currency === "string"
+                  ? rawInvoice.currency
+                  : null,
+                periodStart: iso(rawInvoice.period_start ?? rawInvoice.periodStart),
+                periodEnd: iso(rawInvoice.period_end ?? rawInvoice.periodEnd),
+              };
+            })(),
           } : null,
           providerInspection: providerInspection.available ? {
             available: true,
@@ -3004,8 +3053,8 @@ export class BillingService {
         ]);
 
         const candidate = base.providerSubscription;
-        const periodStart = base.localSubscription?.nextBillingDate ?? null;
-        const periodEnd = candidate?.nextPaymentDate ?? null;
+        const periodStart = candidate?.recentInvoice?.periodStart ?? null;
+        const periodEnd = candidate?.recentInvoice?.periodEnd ?? null;
         const paidAt = base.providerPayment?.paidAt ?? null;
         const startCloseToPayment = periodStart && paidAt
           ? Math.abs(Date.parse(periodStart) - Date.parse(paidAt)) <= 24 * 60 * 60 * 1000
@@ -3026,6 +3075,7 @@ export class BillingService {
             renewalPeriodStart: periodStart,
             renewalPeriodEnd: periodEnd,
           } : null,
+          providerInvoice: candidate?.recentInvoice ?? null,
           structuredCompensationEvents: events
             .filter((event: any) => event.eventType === "admin_verified_renewal_entitlement_compensation")
             .map((event: any) => ({ ...event.eventData, billingEventId: event.id })),
@@ -3074,6 +3124,7 @@ export class BillingService {
             customerCode: input.customerCode,
             planCode: input.planCode,
             providerMutation: "none",
+            reviewedBoundaryRepair: input.reviewedBoundary ?? null,
           },
           description: "Verified legacy Paystack renewal settlement",
         }).onConflictDoNothing().returning({ id: paymentTransactions.id });
@@ -5900,7 +5951,9 @@ export class BillingService {
               const relatedWithUser = await db.select()
                 .from(billingEvents)
                 .where(sql`
-                  (event_data->>'reference' = ${reference} OR event_data->>'paystackReference' = ${reference})
+                  (event_data->>'reference' = ${reference}
+                    OR event_data->>'paystackReference' = ${reference}
+                    OR event_data->>'transactionReference' = ${reference})
                   AND user_id IS NOT NULL
                 `)
                 .orderBy(desc(billingEvents.createdAt))
@@ -6043,7 +6096,12 @@ This will safely verify the payment with Paystack and create the subscription if
   startOrphanedPaymentMonitoring(intervalMinutes: number = 5): void {
     log(`[ORPHAN_MONITOR] Starting orphaned payment monitoring (every ${intervalMinutes} minutes)`, 'billing');
     
-    setInterval(async () => {
+    const timer = setInterval(async () => {
+      if (this.orphanMonitorInFlight) {
+        log(`[ORPHAN_MONITOR] Skipping overlapping monitoring cycle`, "billing");
+        return;
+      }
+      this.orphanMonitorInFlight = true;
       try {
         const orphanedPayments = await this.detectOrphanedPayments(5); // 5-min grace period
         
@@ -6056,8 +6114,11 @@ This will safely verify the payment with Paystack and create the subscription if
         }
       } catch (error) {
         log(`[ORPHAN_MONITOR] Error in monitoring cycle: ${error}`, 'billing');
+      } finally {
+        this.orphanMonitorInFlight = false;
       }
     }, intervalMinutes * 60 * 1000);
+    timer.unref?.();
   }
 
   async runSubscriptionReconciliation(): Promise<Array<{
@@ -6121,8 +6182,11 @@ This will safely verify the payment with Paystack and create the subscription if
           await this.logBillingEvent(sub.userId, "renewal_reconciliation_unresolved", {
             reason: "provider_reconciliation_error",
             error: message,
+            databasePool: databasePoolSnapshot(),
+          }).catch((eventError) => {
+            log(`[RECONCILIATION] Could not persist failure event for user ${sub.userId}: ${eventError}; pool=${JSON.stringify(databasePoolSnapshot())}`, "billing");
           });
-          log(`[RECONCILIATION] User ${sub.userId} failed without aborting remaining users: ${message}`, 'billing');
+          log(`[RECONCILIATION] User ${sub.userId} failed without aborting remaining users: ${message}; pool=${JSON.stringify(databasePoolSnapshot())}`, 'billing');
         }
         if (reconciliation.outcome === "reconciled_paid" || reconciliation.outcome === "current") {
           log(`[RECONCILIATION] User ${sub.userId}: ${reconciliation.outcome} (${reconciliation.reason})`, 'billing');
@@ -6205,7 +6269,7 @@ Action Required:
 
       return overdueUsers;
     } catch (error) {
-      log(`[RECONCILIATION] Error running reconciliation: ${error}`, 'billing');
+      log(`[RECONCILIATION] Error running reconciliation: ${error}; pool=${JSON.stringify(databasePoolSnapshot())}`, 'billing');
       return [];
     }
   }
@@ -6214,17 +6278,26 @@ Action Required:
     log(`[RECONCILIATION] Starting subscription reconciliation monitoring (every ${intervalHours} hours)`, 'billing');
 
     const runReconciliation = async () => {
+      if (this.reconciliationMonitorInFlight) {
+        log(`[RECONCILIATION] Skipping overlapping monitoring cycle; pool=${JSON.stringify(databasePoolSnapshot())}`, "billing");
+        return;
+      }
+      this.reconciliationMonitorInFlight = true;
       try {
         await this.runSubscriptionReconciliation();
       } catch (error) {
-        log(`[RECONCILIATION] Error in monitoring cycle: ${error}`, 'billing');
+        log(`[RECONCILIATION] Error in monitoring cycle: ${error}; pool=${JSON.stringify(databasePoolSnapshot())}`, 'billing');
+      } finally {
+        this.reconciliationMonitorInFlight = false;
       }
     };
 
     // Run shortly after startup as well as on the interval so a missed webhook
     // does not wait for the next full scheduler cycle.
-    setTimeout(runReconciliation, 60 * 1000);
-    setInterval(runReconciliation, intervalHours * 60 * 60 * 1000);
+    const startupTimer = setTimeout(runReconciliation, 60 * 1000);
+    const intervalTimer = setInterval(runReconciliation, intervalHours * 60 * 60 * 1000);
+    startupTimer.unref?.();
+    intervalTimer.unref?.();
   }
 
   async checkWebhookHealth(): Promise<void> {

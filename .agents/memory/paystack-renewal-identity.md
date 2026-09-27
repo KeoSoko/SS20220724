@@ -20,3 +20,9 @@ Renewal entitlement must be based on the provider invoice period, not payment ti
 **Why:** Payment time and the billed service period can differ. Treating them as interchangeable can grant the wrong interval or weaken duplicate protection.
 
 **How to apply:** Keep normal boundary matching exact. Any exception requires explicit, freshly revalidated invoice and boundary evidence. Missing optional provider fields are neutral; present conflicts fail closed.
+
+Live recurring transaction payloads may have only `invoice_action` metadata and no direct subscription relationship, even when verification exposes a plan code. The subscription's detailed paid invoice can still link the transaction by numeric ID; Paystack may report its invoice period end one second before the next payment date.
+
+**Why:** Treating an absent direct transaction subscription as an absent subscription produced false orphan alerts for paid renewals. Conflating the invoice's inclusive period end with the next payment instant creates a one-second entitlement ambiguity.
+
+**How to apply:** Resolve the verified customer to subscriptions using the numeric customer ID, then match exactly one paid invoice to the verified transaction ID, customer, plan, and subscription. Present both period end and next payment date explicitly in settlement previews; do not infer entitlement from payment time.

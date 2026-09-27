@@ -3055,6 +3055,7 @@ export class BillingService {
         const candidate = base.providerSubscription;
         const periodStart = candidate?.recentInvoice?.periodStart ?? null;
         const periodEnd = candidate?.recentInvoice?.periodEnd ?? null;
+        const nextPaymentDate = candidate?.nextPaymentDate ?? null;
         const paidAt = base.providerPayment?.paidAt ?? null;
         const startCloseToPayment = periodStart && paidAt
           ? Math.abs(Date.parse(periodStart) - Date.parse(paidAt)) <= 24 * 60 * 60 * 1000
@@ -3074,6 +3075,7 @@ export class BillingService {
             status: candidate.status,
             renewalPeriodStart: periodStart,
             renewalPeriodEnd: periodEnd,
+            nextPaymentDate,
           } : null,
           providerInvoice: candidate?.recentInvoice ?? null,
           structuredCompensationEvents: events

@@ -134,6 +134,7 @@ export interface LegacyRenewalSettlementSnapshot {
     status: string;
     renewalPeriodStart: string | null;
     renewalPeriodEnd: string | null;
+    nextPaymentDate: string | null;
   } | null;
   providerInvoice: {
     valid: boolean;
@@ -354,10 +355,10 @@ function previewFor(
     current,
     proposed: {
       nextBillingDate: appliesEntitlement
-        ? snapshot.providerSubscription?.renewalPeriodEnd ?? current.nextBillingDate
+        ? snapshot.providerSubscription?.nextPaymentDate ?? current.nextBillingDate
         : current.nextBillingDate,
       entitlementExpiresAt: appliesEntitlement
-        ? snapshot.providerSubscription?.renewalPeriodEnd ?? current.entitlementExpiresAt
+        ? snapshot.providerSubscription?.nextPaymentDate ?? current.entitlementExpiresAt
         : current.entitlementExpiresAt,
       totalPaid: appliesPayment && current.totalPaid !== null && payment
         ? current.totalPaid + payment.amount
@@ -444,7 +445,9 @@ export function classifyLegacyRenewalSettlement(
   }
   if (!isIsoDate(providerSubscription.renewalPeriodStart)
     || !isIsoDate(providerSubscription.renewalPeriodEnd)
-    || Date.parse(providerSubscription.renewalPeriodStart) >= Date.parse(providerSubscription.renewalPeriodEnd)) {
+    || !isIsoDate(providerSubscription.nextPaymentDate)
+    || Date.parse(providerSubscription.renewalPeriodStart) >= Date.parse(providerSubscription.renewalPeriodEnd)
+    || Date.parse(providerSubscription.nextPaymentDate) - Date.parse(providerSubscription.renewalPeriodEnd) !== 1000) {
     return review("provider_period_invalid");
   }
 
@@ -532,8 +535,8 @@ export function classifyLegacyRenewalSettlement(
       || !sameInstant(compensation.previousEntitlementExpiresAt, providerSubscription.renewalPeriodStart)
       || !sameInstant(compensation.grantedPeriodStart, providerSubscription.renewalPeriodStart)
       || !sameInstant(compensation.grantedPeriodEnd, providerSubscription.renewalPeriodEnd)
-      || !sameInstant(compensation.resultingNextBillingDate, providerSubscription.renewalPeriodEnd)
-      || !sameInstant(compensation.resultingEntitlementExpiresAt, providerSubscription.renewalPeriodEnd)) {
+      || !sameInstant(compensation.resultingNextBillingDate, providerSubscription.nextPaymentDate)
+      || !sameInstant(compensation.resultingEntitlementExpiresAt, providerSubscription.nextPaymentDate)) {
       return review("compensation_interval_mismatch");
     }
     if (!sameInstant(subscription.nextBillingDate, compensation.resultingNextBillingDate)

@@ -26,3 +26,9 @@ Live recurring transaction payloads may have only `invoice_action` metadata and 
 **Why:** Treating an absent direct transaction subscription as an absent subscription produced false orphan alerts for paid renewals. Conflating the invoice's inclusive period end with the next payment instant creates a one-second entitlement ambiguity.
 
 **How to apply:** Resolve the verified customer to subscriptions using the numeric customer ID, then match exactly one paid invoice to the verified transaction ID, customer, plan, and subscription. Present both period end and next payment date explicitly in settlement previews; do not infer entitlement from payment time.
+
+For legacy renewal settlement, treat the verified next-payment instant as the exclusive stored billing/entitlement boundary. An invoice's inclusive period end is evidence about the service interval, not the timestamp to persist as the next boundary. Require the provider's next-payment instant to be exactly one second after that invoice's end; missing or inconsistent evidence fails closed, not through a wider boundary tolerance.
+
+**Why:** Adjacent monthly invoices have inclusive ends immediately before their next period starts. Persisting the end as an exclusive boundary cuts entitlement short by one second and conflicts with the previously settled adjacent August/September renewal example.
+
+**How to apply:** Keep invoice-specific short drift review separate from the verified one-second end/next-payment relationship. A previously granted entitlement or compensation recorded at the inclusive end is not automatically equivalent to one at the exclusive boundary; review it instead of silently normalizing it.

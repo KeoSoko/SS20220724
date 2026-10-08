@@ -3,6 +3,7 @@ import { log } from "./vite";
 import { classifyAzureBlobInspectionError, classifyAzureBlobProperties, type AzureBlobInspectionResult } from "./azure-blob-inspection";
 import { resolveLegacyReceiptBlobName, supportedImageContentType } from "./export-image-resolution";
 import { isValidExportBlobPath } from "./export-blob-path";
+import type { ReceiptImageLinkResult } from "@shared/receipt-image-access";
 
 // Container name for receipts
 const CONTAINER_NAME = "receipt-images";
@@ -12,13 +13,14 @@ export type AzureExportImageResult =
   | { status: "missing" | "archived" | "rehydrating" | "inaccessible" | "timeout" | "temporarily_unavailable" };
 
 export class AzureBlobStorage {
-  private blobServiceClient: BlobServiceClient;
-  private containerClient: ContainerClient;
+  private blobServiceClient!: BlobServiceClient;
+  private containerClient!: ContainerClient;
   private sharedKeyCredential: StorageSharedKeyCredential | null = null;
   private accountName: string = '';
   private initialized: boolean = false;
 
   constructor() {
+    try {
     // Try connection string first, then fall back to account name/key
     const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
     // Prioritize slipsstor1 credentials if available
@@ -41,7 +43,7 @@ export class AzureBlobStorage {
           );
         }
       } catch (error) {
-        log(`Warning: Unable to extract credentials for SAS generation: ${error}`, "azure");
+        log("Unable to extract credentials for SAS generation", "azure");
       }
       
       this.blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
@@ -63,6 +65,50 @@ export class AzureBlobStorage {
     }
     
     this.containerClient = this.blobServiceClient.getContainerClient(CONTAINER_NAME);
+    } catch {
+      // Keep the app usable when storage is absent or invalid. Never log credentials.
+      this.sharedKeyCredential = null;
+      log("Azure receipt storage configuration unavailable", "azure");
+    }
+  }
+
+  /** Read-only, bounded resolution for receipt detail; no container/tier changes. */
+  async resolveReceiptImageLink(blobName: string, timeoutMs = 5000): Promise<ReceiptImageLinkResult> {
+    if (!this.containerClient || !this.sharedKeyCredential || !this.accountName) {
+      return { status: "configuration_unavailable" };
+    }
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const timeout = new Promise<ReceiptImageLinkResult>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve({ status: "temporarily_unavailable" });
+      }, Math.min(Math.max(timeoutMs, 1), 10000));
+    });
+    const resolveLink = async (): Promise<ReceiptImageLinkResult> => {
+      try {
+        const client = this.containerClient.getBlockBlobClient(blobName);
+        const properties = await client.getProperties({ abortSignal: controller.signal });
+        const inspection = classifyAzureBlobProperties(properties);
+        if (inspection.status !== "available") return { status: inspection.status };
+        if (controller.signal.aborted) return { status: "temporarily_unavailable" };
+        const token = generateBlobSASQueryParameters({
+          containerName: CONTAINER_NAME,
+          blobName,
+          permissions: BlobSASPermissions.parse("r"),
+          startsOn: new Date(Date.now() - 5 * 60 * 1000),
+          expiresOn: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        }, this.sharedKeyCredential!).toString();
+        return { status: "available", imageUrl: `${client.url}?${token}` };
+      } catch (error) {
+        return { status: classifyAzureBlobInspectionError(error).status as Exclude<ReceiptImageLinkResult["status"], "available"> };
+      }
+    };
+    try {
+      return await Promise.race([resolveLink(), timeout]);
+    } finally {
+      clearTimeout(timer!);
+    }
   }
 
   async initialize(): Promise<void> {
@@ -262,7 +308,7 @@ export class AzureBlobStorage {
         
         log(`Blob exists, proceeding with SAS URL generation: ${blobName}`, "azure");
       } catch (existsError) {
-        log(`Error checking blob existence: ${existsError}`, "azure");
+        log("Error checking blob existence", "azure");
         return null;
       }
       
@@ -287,12 +333,11 @@ export class AzureBlobStorage {
       const blobUrl = `https://${this.accountName}.blob.core.windows.net/${CONTAINER_NAME}/${blobName}`;
       const sasUrl = `${blobUrl}?${sasToken}`;
       
-      log(`Generated SAS URL: ${sasUrl.substring(0, 100)}...`, "azure");
       log(`Successfully generated SAS URL for blob: ${blobName}`, "azure");
       
       return sasUrl;
     } catch (error) {
-      log(`Error generating SAS URL: ${error}`, "azure");
+      log("Error generating SAS URL", "azure");
       return null;
     }
   }

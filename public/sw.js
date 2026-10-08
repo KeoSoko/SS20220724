@@ -1,6 +1,6 @@
-const CACHE_NAME = 'simple-slips-v11';
-const STATIC_CACHE = 'simple-slips-static-v11';
-const DYNAMIC_CACHE = 'simple-slips-dynamic-v11';
+const CACHE_NAME = 'simple-slips-v12';
+const STATIC_CACHE = 'simple-slips-static-v12';
+const DYNAMIC_CACHE = 'simple-slips-dynamic-v12';
 
 const STATIC_FILES = [
   '/manifest.json?v=2.0',
@@ -15,7 +15,7 @@ const STATIC_FILES = [
   '/splash-1536x2048.png'
 ];
 
-const SW_VERSION = '11.0.0';
+const SW_VERSION = '12.0.0';
 
 const CRITICAL_API_PATHS = [
   '/api/login',
@@ -89,6 +89,11 @@ self.addEventListener('fetch', (event) => {
   if (!url.protocol.startsWith('http')) return;
 
   if (request.method !== 'GET') {
+    return;
+  }
+
+  // Signed receipt links are ephemeral and private; never persist or replay them.
+  if (/^\/api\/receipts\/[^/]+\/refresh-image-url$/.test(url.pathname)) {
     return;
   }
 

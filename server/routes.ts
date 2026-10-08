@@ -44,6 +44,7 @@ import {
   customCategories as customCategoriesTable
 } from "@shared/schema";
 import { azureStorage } from "./azure-storage";
+import { receiptImageMessages } from "@shared/receipt-image-access";
 import { azureFormRecognizer } from "./azure-form-recognizer";
 import { localOcrFallback } from "./ocr-fallback";
 import { replitStorage } from "./replit-storage";
@@ -3218,6 +3219,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/receipts/:id/refresh-image-url", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
+    res.setHeader("Cache-Control", "private, no-store");
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3233,27 +3235,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if this receipt has a blob
       if (!receipt.blobName) {
-        return res.status(404).json({ error: "Receipt has no associated image" });
+        return res.status(404).json({ status: "missing", error: receiptImageMessages.missing });
       }
 
       // Generate a fresh SAS URL for the blob (works for both old and new storage accounts)
-      log(`Attempting to generate SAS URL for blob: ${receipt.blobName}`, "azure");
-      const sasUrl = await azureStorage.generateSasUrl(receipt.blobName, 24);
-      if (!sasUrl) {
-        log(`Failed to generate SAS URL for blob: ${receipt.blobName}. Azure storage may not be available.`, "azure");
-        return res.status(404).json({ error: "Image not available. Azure storage not configured." });
+      const result = await azureStorage.resolveReceiptImageLink(receipt.blobName);
+      log(`Receipt image link resolution: ${result.status}`, "azure");
+      if (result.status !== "available") {
+        const httpStatus = result.status === "missing" ? 404
+          : result.status === "inaccessible" ? 403
+          : result.status === "archived" || result.status === "rehydrating" ? 409 : 503;
+        return res.status(httpStatus).json({ ...result, error: receiptImageMessages[result.status] });
       }
-      log(`Successfully generated SAS URL for blob: ${receipt.blobName}`, "azure");
 
       // Intentionally do NOT persist this SAS URL back onto the receipt.
       // It is a short-lived, ephemeral access URL derived from the durable
       // `blobName` reference; writing it into `blobUrl` would overwrite the
       // long-lived URL stored at upload time with one that expires sooner,
       // causing the stored link to go stale again after this token expires.
-      res.json({ imageUrl: sasUrl });
+      res.json(result);
     } catch (error: any) {
-      log(`Error refreshing image URL: ${error}`, "api");
-      res.status(500).json({ error: "Failed to refresh image URL" });
+      log("Receipt image link resolution failed", "api");
+      res.status(503).json({ status: "temporarily_unavailable", error: receiptImageMessages.temporarily_unavailable });
     }
   });
 

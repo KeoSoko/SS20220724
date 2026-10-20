@@ -32,7 +32,7 @@ describe("automatic superseded Paystack retirement", () => {
   it("requires exact provider reads before and after mutation and fails closed", () => {
     expect(method).toContain('const [oldProvider, newProvider] = await Promise.all');
     expect(method).toContain('newProvider.status === "active"');
-    expect(method).toContain('readback.status === "non-renewing"');
+    expect(method).toContain('isNonRenewing(readback.status)');
     expect(method).toContain('return finish(false, "provider_result_unknown", "attempted")');
   });
 

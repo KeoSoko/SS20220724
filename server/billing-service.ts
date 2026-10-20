@@ -37,6 +37,8 @@ import {
   extractPaystackAuthorizationEvidence,
   extractPaystackSubscriptionCode,
   getPaystackInvoices,
+  extractPaystackTransactionReference,
+  isPaystackInvoicePaid,
   getMostRecentPaystackInvoice,
   hasExactPaystackRecurringRelationship,
   isViablePaystackSubscriptionCandidate,
@@ -2893,7 +2895,15 @@ export class BillingService {
           await tx.update(billingEvents).set({ processed: true }).where(eq(billingEvents.id, review.id));
           return { outcome: "already_retired" as const };
         }
-        return { outcome: "manual_review_required" as const, reason: "existing_retirement_attempt" };
+        // A prior process may have stopped after Paystack accepted disable.
+        // Reconcile by reading only; a webhook retry must never disable twice.
+        return {
+          outcome: "claimed" as const,
+          reviewId: review.id,
+          attemptId: existingAttempt.id,
+          oldCode, oldPlan, newPlan, customerCode,
+          readOnly: true,
+        };
       }
 
       const now = new Date();
@@ -2906,7 +2916,7 @@ export class BillingService {
         attemptCount: 1,
         updatedAt: now,
       }).returning();
-      return { outcome: "claimed" as const, reviewId: review.id, attemptId: attempt.id, oldCode, oldPlan, newPlan, customerCode };
+      return { outcome: "claimed" as const, reviewId: review.id, attemptId: attempt.id, oldCode, oldPlan, newPlan, customerCode, readOnly: false };
     });
 
     if (claim.outcome !== "claimed") {
@@ -2925,6 +2935,8 @@ export class BillingService {
         emailToken: typeof data?.email_token === "string" && data.email_token.trim() ? data.email_token : null,
       };
     };
+    // Only the state confirmed by the provider contract proves retirement.
+    const isNonRenewing = (status: string) => status === "non-renewing";
 
     const finish = async (
       success: boolean,
@@ -2932,6 +2944,13 @@ export class BillingService {
       providerMutation: "subscription_disable" | "none" | "attempted",
     ) => db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+      const [openReview] = await tx.select().from(billingEvents).where(and(
+        eq(billingEvents.id, claim.reviewId),
+        eq(billingEvents.processed, false),
+      )).limit(1);
+      if (!openReview) {
+        return { outcome: "already_retired" as const, providerMutation };
+      }
       const now = new Date();
       await tx.update(paystackCancellationAttempts).set({
         status: success ? "provider_non_renewing" : "manual_review_required",
@@ -2971,8 +2990,18 @@ export class BillingService {
         && newProvider.customerCode === claim.customerCode
         && newProvider.planCode === claim.newPlan
         && newProvider.status === "active";
-      if (!exactOld || !exactNew) return finish(false, "provider_identity_guard_failed", "none");
-      if (oldProvider.status === "non-renewing") return finish(true, "already_non_renewing", "none");
+      if (!exactOld || !exactNew) {
+        if (claim.readOnly) {
+          return { outcome: "manual_review_required" as const, reason: "provider_identity_guard_failed", providerMutation: "none" as const };
+        }
+        return finish(false, "provider_identity_guard_failed", "none");
+      }
+      if (isNonRenewing(oldProvider.status)) return finish(true, "already_non_renewing", "none");
+      if (claim.readOnly) {
+        // Leave the durable in-flight state untouched: another delivery may
+        // still be doing its first provider call. Only readback can complete it.
+        return { outcome: "manual_review_required" as const, reason: "existing_retirement_attempt", providerMutation: "none" as const };
+      }
       if (oldProvider.status !== "active" || !oldProvider.emailToken) {
         return finish(false, "provider_state_not_retirable", "none");
       }
@@ -2982,7 +3011,7 @@ export class BillingService {
       const confirmed = readback.subscriptionCode === claim.oldCode
         && readback.customerCode === claim.customerCode
         && readback.planCode === claim.oldPlan
-        && readback.status === "non-renewing";
+        && isNonRenewing(readback.status);
       return finish(
         confirmed,
         confirmed ? "confirmed_non_renewing" : "disable_readback_unconfirmed",
@@ -2996,13 +3025,19 @@ export class BillingService {
         const confirmed = readback.subscriptionCode === claim.oldCode
           && readback.customerCode === claim.customerCode
           && readback.planCode === claim.oldPlan
-          && readback.status === "non-renewing";
+          && isNonRenewing(readback.status);
+        if (claim.readOnly && !confirmed) {
+          return { outcome: "manual_review_required" as const, reason: "provider_result_unknown", providerMutation: "none" as const };
+        }
         return finish(
           confirmed,
           confirmed ? "confirmed_after_ambiguous_response" : "provider_result_unknown",
-          "attempted",
+          claim.readOnly ? "none" : "attempted",
         );
       } catch {
+        if (claim.readOnly) {
+          return { outcome: "manual_review_required" as const, reason: "provider_result_unknown", providerMutation: "none" as const };
+        }
         return finish(false, "provider_result_unknown", "attempted");
       }
     }
@@ -3230,6 +3265,7 @@ export class BillingService {
       expectedCustomerCode?: string | null;
       expectedPlanCode?: string | null;
       authorizationBoundToSubscription?: boolean;
+      promoteExistingUnresolved?: boolean;
     } = {},
   ): Promise<{ subscriptionCode: string; status: string }> {
     const subscriptionCode = extractPaystackSubscriptionCode(data);
@@ -3296,6 +3332,12 @@ export class BillingService {
 
     let identityStatus = existingCode?.status
       ?? (options.allowNewActive ? "active" : "unresolved");
+    // Only paid-upgrade completion can authorize promotion of a SUB_* that
+    // arrived before payment. A generic lifecycle event must not do this.
+    if (options.promoteExistingUnresolved && options.allowNewActive
+      && existingCode?.status === "unresolved") {
+      identityStatus = "active";
+    }
     if (activeIdentity && activeIdentity.subscriptionCode !== subscriptionCode) {
       const existingProviderTime = activeIdentity.providerCreatedAt?.getTime();
       const incomingProviderTime = providerCreatedAt?.getTime();
@@ -3410,6 +3452,118 @@ export class BillingService {
       subscriptionCode,
       status: identity?.status ?? identityStatus,
     };
+  }
+
+  /**
+   * Checkout verification can precede subscription.create and omit SUB_*.
+   * Resolve only one exact provider relationship for the paid checkout's plan;
+   * retain the old identity snapshot until that relationship is available.
+   */
+  async completePendingPaystackUpgradeIdentity(userId: number) {
+    await this.requirePaystackBillingSchema();
+    const [pending] = await db.select().from(billingEvents).where(and(
+      eq(billingEvents.userId, userId),
+      eq(billingEvents.eventType, "paystack_upgrade_identity_pending"),
+      eq(billingEvents.processed, false),
+    )).orderBy(desc(billingEvents.createdAt)).limit(1);
+    if (!pending) return;
+    const data = pending.eventData as {
+      transactionReference: string;
+      previousIdentity: { userId: number; subscriptionCode: string; customerCode: string; planCode: string };
+    };
+    const inspection = await this.loadPaystackSubscriptionCandidates(userId);
+    if (!inspection.available || inspection.candidates.length !== 1) return;
+    const candidate = inspection.candidates[0];
+    const createdAt = parsePaystackDate(candidate.providerData?.created_at ?? candidate.providerData?.createdAt ?? candidate.providerData?.created);
+    const evidence = extractPaystackAuthorizationEvidence(candidate.providerData, new Date(), {
+      authorizationBoundToSubscription: true,
+    });
+    const readiness = hasExactPaystackRecurringRelationship(
+      evidence, inspection.customerCode, inspection.expectedPlanCode, candidate.subscriptionCode,
+    ) ? "ready" : "unknown";
+    if (candidate.providerLookupFailed || candidate.providerData?.status !== "active" || !createdAt
+      || extractPaystackSubscriptionCode(candidate.providerData) !== candidate.subscriptionCode
+      || applyPaystackApplePayGate(evidence, readiness, isPaystackApplePaySubscriptionsEnabled()) !== "ready") return;
+
+    // Customer/plan/time matching cannot link a subscription to this payment:
+    // another subscription may have been created while checkout was open.
+    const verification = await this.verifyPaystackTransaction(data.transactionReference);
+    if (!verification.valid) return;
+    const payment = verification.subscription;
+    if (payment?.reference !== data.transactionReference
+      || extractPaystackCustomerCode(payment) !== inspection.customerCode
+      || extractPaystackPlanCode(payment) !== inspection.expectedPlanCode) return;
+    const paymentSubscriptionCode = extractPaystackSubscriptionCode(payment);
+    const paymentId = payment?.id == null ? null : String(payment.id);
+    const linkedInvoices = getPaystackInvoices(candidate.providerData).filter((invoice) => {
+      const reference = extractPaystackTransactionReference(invoice);
+      const rawId = invoice?.transaction?.id
+        ?? (["number", "string"].includes(typeof invoice?.transaction) ? invoice.transaction : null);
+      const transactionId = rawId == null ? null : String(rawId);
+      const code = extractPaystackSubscriptionCode(invoice);
+      const customer = extractPaystackCustomerCode(invoice);
+      const plan = extractPaystackPlanCode(invoice);
+      return isPaystackInvoicePaid(invoice)
+        && ((reference === data.transactionReference) || (!!paymentId && transactionId === paymentId))
+        && (!reference || reference === data.transactionReference)
+        && (!transactionId || transactionId === paymentId)
+        && (!code || code === candidate.subscriptionCode)
+        && (!customer || customer === inspection.customerCode)
+        && (!plan || plan === inspection.expectedPlanCode);
+    });
+    if (paymentSubscriptionCode
+      ? paymentSubscriptionCode !== candidate.subscriptionCode
+      : linkedInvoices.length !== 1) return;
+
+    const identity = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
+      const [currentPending] = await tx.select().from(billingEvents)
+        .where(and(eq(billingEvents.id, pending.id), eq(billingEvents.processed, false))).limit(1);
+      if (!currentPending) return null;
+      const [subscription] = await tx.select().from(userSubscriptions)
+        .where(eq(userSubscriptions.userId, userId)).limit(1);
+      const [checkout] = await tx.select().from(paystackCheckoutAttempts)
+        .where(eq(paystackCheckoutAttempts.paystackReference, data.transactionReference)).limit(1);
+      if (!subscription || !checkout || checkout.status !== "completed"
+        || createdAt.getTime() < checkout.createdAt.getTime()
+        || checkout.billingOwnerUserId !== userId
+        || subscription.status !== "active" || subscription.cancelledAt || subscription.cancellationRequestedAt
+        || subscription.paystackReference !== data.transactionReference
+        || subscription.planId !== checkout.planId
+        || inspection.customerCode !== subscription.paystackCustomerCode
+        || inspection.expectedPlanCode !== checkout.paystackPlanCode
+        || extractPaystackCustomerCode(candidate.providerData) !== inspection.customerCode
+        || extractPaystackPlanCode(candidate.providerData) !== checkout.paystackPlanCode) return null;
+      if (!validateTrackedCheckoutTerms(checkout, {
+        id: checkout.planId, paystackPlanCode: checkout.paystackPlanCode,
+      } as SubscriptionPlan, payment).valid) return null;
+      const review = classifySupersededPaystackSubscription(userId, data.previousIdentity, {
+        userId,
+        subscriptionCode: candidate.subscriptionCode,
+        customerCode: inspection.customerCode,
+        planCode: checkout.paystackPlanCode,
+      });
+      if (!review) return null;
+      const recorded = await this.recordPaystackSubscriptionIdentityInTransaction(tx, userId, candidate.providerData, {
+        allowNewActive: true,
+        rejectExistingActive: true,
+        expectedCustomerCode: inspection.customerCode,
+        expectedPlanCode: checkout.paystackPlanCode,
+        authorizationBoundToSubscription: true,
+        auditSource: "paid_upgrade_identity_completion",
+        promoteExistingUnresolved: true,
+      });
+      if (recorded.status !== "active") return null;
+      await tx.insert(billingEvents).values({
+        userId,
+        eventType: "paystack_superseded_subscription_review_required",
+        eventData: review,
+        processed: false,
+      });
+      await tx.update(billingEvents).set({ processed: true }).where(eq(billingEvents.id, pending.id));
+      return recorded;
+    });
+    if (identity) await this.retireVerifiedSupersededSubscription(userId, identity.subscriptionCode);
   }
 
   async recordPaystackSubscriptionIdentity(
@@ -4680,9 +4834,30 @@ export class BillingService {
           } else {
             // Do not leave an older SUB_* trusted during the gap before
             // subscription.create identifies the new checkout's subscription.
+            const [previousIdentity] = await tx.select().from(paystackSubscriptionIdentities)
+              .where(and(
+                eq(paystackSubscriptionIdentities.userId, userId),
+                eq(paystackSubscriptionIdentities.status, "active"),
+              )).limit(1);
+            if (previousIdentity && previousIdentity.planCode !== plan.paystackPlanCode) {
+              await tx.insert(billingEvents).values({
+                userId,
+                eventType: "paystack_upgrade_identity_pending",
+                eventData: {
+                  transactionReference,
+                  previousIdentity: {
+                    userId,
+                    subscriptionCode: previousIdentity.subscriptionCode,
+                    customerCode: previousIdentity.customerCode,
+                    planCode: previousIdentity.planCode,
+                  },
+                },
+                processed: false,
+              });
+            }
             await tx
               .update(paystackSubscriptionIdentities)
-              .set({ status: "unresolved", updatedAt: now })
+              .set({ status: "retired", retiredAt: now, updatedAt: now })
               .where(and(
                 eq(paystackSubscriptionIdentities.userId, userId),
                 eq(paystackSubscriptionIdentities.status, "active"),
@@ -4724,15 +4899,17 @@ export class BillingService {
           `Verified Paystack payment requires financial review: ${result.reason}`,
         );
       }
-      if (effectiveSubscriptionCode) {
-        try {
+      try {
+        if (effectiveSubscriptionCode) {
           await this.retireVerifiedSupersededSubscription(userId, effectiveSubscriptionCode);
-        } catch (retirementError) {
-          // The paid replacement subscription remains authoritative. Failure to
-          // retire an old provider subscription is isolated to manual review and
-          // must never roll back the customer's successful payment or access.
-          log(`Superseded subscription retirement requires review for user ${userId}: ${retirementError}`, 'billing');
+        } else if (checkoutAttempt) {
+          await this.completePendingPaystackUpgradeIdentity(userId);
         }
+      } catch (retirementError) {
+        // The paid replacement subscription remains authoritative. Failure to
+        // retire an old provider subscription is isolated to manual review and
+        // must never roll back the customer's successful payment or access.
+        log(`Superseded subscription retirement requires review for user ${userId}: ${retirementError}`, 'billing');
       }
       // A paid subscription is a product milestone, not a billing_events row.
       // The dedicated service makes repeated renewal/webhook deliveries harmless.

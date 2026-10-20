@@ -352,6 +352,12 @@ async function handlePaystackSubscriptionCreate(data: any) {
       `Paystack subscription identity ${identity.subscriptionCode} recorded for user ${resolved.user.id} as ${identity.status}`,
       'billing',
     );
+    // A checkout can settle before Paystack exposes its SUB_* relationship.
+    // Its durable prior-identity snapshot is resolved by exact provider reads.
+    await billingService.completePendingPaystackUpgradeIdentity(resolved.user.id);
+    if (identity.status === "active") {
+      await billingService.retireVerifiedSupersededSubscription(resolved.user.id, identity.subscriptionCode);
+    }
   } catch (error) {
     log(`Error handling Paystack subscription create: ${error}`, 'billing');
     throw error;

@@ -14,3 +14,9 @@ Growth reporting starts at the explicit instrumentation baseline of 2026-09-08. 
 **Why:** Historical business records can support some downstream metrics, but visitor attribution did not exist before the baseline and immature cohorts would bias retention downward.
 
 **How to apply:** Show numerator and denominator, mark unavailable evidence honestly, use local-calendar retention buckets, and keep paid receipt-depth segment denominators separate.
+
+Explicitly type PostgreSQL timestamp bind parameters before subtracting intervals.
+
+**Why:** PostgreSQL can infer an otherwise untyped bind as an interval, causing a timestamp-versus-interval operator error. During signup this can leave an account created while subsequent verification-email work never runs.
+
+**How to apply:** Use explicit timestamp casts in attribution expiry/session arithmetic; preserve the existing attribution retention and session limits. Test the parameterized arithmetic, not just mocked query success.

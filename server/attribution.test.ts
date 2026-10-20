@@ -37,6 +37,8 @@ describe("attribution input boundary", () => {
     vi.mocked(pool.query).mockResolvedValueOnce({ rowCount: 1 } as any);
     await recordAttributionVisit("8b9c0d1e-1234-4abc-8def-123456789abc", { channel: "direct" });
     expect(vi.mocked(pool.query).mock.calls[0][0]).toContain("$4 AND attribution_visitors.latest_seen_at");
+    expect(vi.mocked(pool.query).mock.calls[0][0]).toContain("$3::timestamptz - INTERVAL '30 minutes'");
+    expect(vi.mocked(pool.query).mock.calls[0][0]).not.toContain("$3 - INTERVAL");
     expect(vi.mocked(pool.query).mock.calls[0][1]?.[3]).toBe(false);
     vi.mocked(pool.query).mockClear();
     vi.mocked(pool.query).mockResolvedValueOnce({ rowCount: 1 } as any);
@@ -51,5 +53,7 @@ describe("attribution input boundary", () => {
     const sql = String(vi.mocked(pool.query).mock.calls[0][0]);
     expect(sql).toContain("user_id IS NULL");
     expect(sql).toContain("INTERVAL '90 days'");
+    expect(sql).toContain("first_seen_at >= $3::timestamptz - INTERVAL '90 days'");
+    expect(sql).not.toContain("$3 - INTERVAL");
   });
 });

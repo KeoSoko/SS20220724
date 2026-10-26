@@ -73,6 +73,12 @@ export async function processAccountBlobCleanupQueue(deps: CleanupWorkerDependen
         break;
       }
     }
+  } catch {
+    // A failed claim or status write must not reject a fire-and-forget run and
+    // terminate the web process. Leave durable jobs untouched for the next
+    // scheduled run (including stale-processing recovery); never log raw
+    // database/provider errors, which may contain customer data.
+    log("Account blob cleanup run failed code=WORKER_RUN_FAILED; retry on next scheduled run", "cleanup");
   } finally {
     running = false;
   }

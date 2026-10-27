@@ -17,3 +17,4 @@
 - [Background job lease fencing](background-job-lease-fencing.md) — heartbeats and terminal writes must be attempt-fenced; attempt-specific outputs prevent stale workers overwriting active work.
 - [Growth attribution policy](growth-attribution-policy.md) — first-party capture has strict privacy/session rules; dashboard cohorts and denominators must preserve the instrumentation baseline.
 - [Lifecycle email safety](lifecycle-email-safety.md) — lifecycle campaigns are baseline-gated, default-off, suppression-aware, and quarantine uncertain sends rather than risking duplicates.
+- [Receipt image access](receipt-image-access-boundaries.md) — link generation is not browser recovery; neutral load failures, sanitized diagnostics and explicit archive-restoration approval.

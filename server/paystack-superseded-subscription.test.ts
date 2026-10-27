@@ -34,7 +34,7 @@ describe("superseded Paystack subscription review", () => {
   it("wires detection only to the existing supersede transition and performs no Paystack mutation", () => {
     const source = readFileSync(new URL("./billing-service.ts", import.meta.url), "utf8");
     const start = source.indexOf("private async recordPaystackSubscriptionIdentityInTransaction");
-    const end = source.indexOf("\n  async recordPaystackSubscriptionIdentity", start);
+    const end = source.indexOf("\n  /**", start);
     const identityWriter = source.slice(start, end);
     expect(identityWriter).toContain("classifySupersededPaystackSubscription");
     expect(identityWriter).toContain("paystack_superseded_subscription_review_required");

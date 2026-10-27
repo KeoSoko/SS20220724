@@ -54,6 +54,7 @@ The system is built as a full-stack TypeScript application within a monorepo str
 ### Cloud Services
 - **Azure Form Recognizer**: Primary OCR service for receipt text extraction.
 - **Azure Blob Storage**: Cloud storage for receipt images.
+  - Receipt image deployment verification: see `docs/receipt-image-access-checklist.md`. Browser load failures alone do not establish missing configuration or blob existence.
 - **OpenAI API**: Powers AI categorization, smart search, and the AI Tax Assistant chatbot.
 - **SendGrid**: Used for email notifications and email event tracking.
 - **Neon Database**: Provides serverless PostgreSQL database instance.

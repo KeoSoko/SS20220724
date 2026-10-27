@@ -44,6 +44,7 @@ import {
   customCategories as customCategoriesTable
 } from "@shared/schema";
 import { azureStorage } from "./azure-storage";
+import { receiptImageMessages } from "@shared/receipt-image-access";
 import { azureFormRecognizer } from "./azure-form-recognizer";
 import { localOcrFallback } from "./ocr-fallback";
 import { replitStorage } from "./replit-storage";
@@ -85,6 +86,8 @@ import { normalizeMerchantName } from "./utils/merchant-normalizer";
 import { accountDeletionService } from "./account-deletion-service";
 import { handleAccountDeletionRequest } from "./account-deletion-handler";
 import { normalizeReceiptExportDateRange } from "./export-date-range";
+import { isCatchupReference } from "./paystack-catchup";
+import { getPaystackSecretKey } from "./paystack-credential";
 import {
   getActivation,
   isClientGrowthEventName,
@@ -246,6 +249,15 @@ async function resolvePaystackRenewalIdentity(
 
 async function handlePaystackChargeSuccess(data: any) {
   try {
+    if (isCatchupReference(data.reference)) {
+      // A catch-up payment is NOT a new checkout or an automatic renewal.
+      // Verification and access restoration belong exclusively to the durable
+      // catch-up intent. Repeating execute only verifies/settles; never charges.
+      await billingService.recordBillingEvent(null, "paystack_catchup_charge_observed", {
+        reference: data.reference, providerTransactionId: String(data.id ?? ""),
+      });
+      return;
+    }
     log(`Processing Paystack charge success: ${data.reference}`, 'billing');
 
     // A server-owned checkout attempt is authoritative for initial checkout
@@ -340,6 +352,12 @@ async function handlePaystackSubscriptionCreate(data: any) {
       `Paystack subscription identity ${identity.subscriptionCode} recorded for user ${resolved.user.id} as ${identity.status}`,
       'billing',
     );
+    // A checkout can settle before Paystack exposes its SUB_* relationship.
+    // Its durable prior-identity snapshot is resolved by exact provider reads.
+    await billingService.completePendingPaystackUpgradeIdentity(resolved.user.id);
+    if (identity.status === "active") {
+      await billingService.retireVerifiedSupersededSubscription(resolved.user.id, identity.subscriptionCode);
+    }
   } catch (error) {
     log(`Error handling Paystack subscription create: ${error}`, 'billing');
     throw error;
@@ -3207,6 +3225,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/receipts/:id/refresh-image-url", requireWorkspaceRole("owner", "editor", "viewer"), async (req, res) => {
+    res.setHeader("Cache-Control", "private, no-store");
     if (!isAuthenticated(req)) return res.sendStatus(401);
 
     try {
@@ -3222,27 +3241,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if this receipt has a blob
       if (!receipt.blobName) {
-        return res.status(404).json({ error: "Receipt has no associated image" });
+        return res.status(404).json({ status: "missing", error: receiptImageMessages.missing });
       }
 
       // Generate a fresh SAS URL for the blob (works for both old and new storage accounts)
-      log(`Attempting to generate SAS URL for blob: ${receipt.blobName}`, "azure");
-      const sasUrl = await azureStorage.generateSasUrl(receipt.blobName, 24);
-      if (!sasUrl) {
-        log(`Failed to generate SAS URL for blob: ${receipt.blobName}. Azure storage may not be available.`, "azure");
-        return res.status(404).json({ error: "Image not available. Azure storage not configured." });
+      const result = await azureStorage.resolveReceiptImageLink(receipt.blobName);
+      log(`Receipt image link resolution: ${result.status}`, "azure");
+      if (result.status !== "available") {
+        const httpStatus = result.status === "missing" ? 404
+          : result.status === "inaccessible" ? 403
+          : result.status === "archived" || result.status === "rehydrating" ? 409 : 503;
+        return res.status(httpStatus).json({ ...result, error: receiptImageMessages[result.status] });
       }
-      log(`Successfully generated SAS URL for blob: ${receipt.blobName}`, "azure");
 
       // Intentionally do NOT persist this SAS URL back onto the receipt.
       // It is a short-lived, ephemeral access URL derived from the durable
       // `blobName` reference; writing it into `blobUrl` would overwrite the
       // long-lived URL stored at upload time with one that expires sooner,
       // causing the stored link to go stale again after this token expires.
-      res.json({ imageUrl: sasUrl });
+      res.json(result);
     } catch (error: any) {
-      log(`Error refreshing image URL: ${error}`, "api");
-      res.status(500).json({ error: "Failed to refresh image URL" });
+      log("Receipt image link resolution failed", "api");
+      res.status(503).json({ status: "temporarily_unavailable", error: receiptImageMessages.temporarily_unavailable });
     }
   });
 
@@ -4720,12 +4740,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (result.outcome === "ready") {
         return res.json({ url: result.url });
       }
-      if (result.outcome === "automatic_renewal_active") {
-        return res.status(409).json({
-          error: "Your automatic renewal is already active. No payment update is required.",
-          code: "automatic_renewal_active",
-        });
-      }
       if (result.outcome === "manual_review_required") {
         return res.status(409).json({
           error: "We need to confirm your automatic renewal before a payment method can be updated.",
@@ -4775,7 +4789,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     log(`[WEBHOOK_ARRIVAL] timestamp=${webhookReceivedAt} event=${event || 'missing'} reference=${reference} has_metadata_user_id=${hasMetadataUserId}`, 'billing');
 
     // Verify signature BEFORE acknowledging - reject bad actors immediately
-    const webhookSecret = process.env.PAYSTACK_SECRET_KEY;
+    const webhookSecret = getPaystackSecretKey();
     const receivedSignature = req.headers['x-paystack-signature'];
     const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
     if (!webhookSecret || typeof receivedSignature !== 'string' || !rawBody) {

@@ -425,7 +425,7 @@ export default function AuthPage() {
           type: 'email'
         });
         setShowErrorDialog(true);
-      } else if (error.field === 'username') {
+      } else if (error.field === 'username' && error.status === 409) {
         setErrorDetails({
           title: "Cannot create account",
           message: "This username is already taken. Please choose a different username.",
@@ -812,7 +812,7 @@ export default function AuthPage() {
                 <Button
                   onClick={() => {
                     setShowErrorDialog(false);
-                    // Could implement resend verification here
+                    setLocation("/verify-email");
                   }}
                   className="w-full"
                   variant="default"

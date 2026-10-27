@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { authStore } from "../lib/auth-store";
 import { writeReturningUserMarker } from "../lib/auth-mode";
 import { getAttributionVisitorIdForRegistration } from "../lib/attribution";
+import { registrationErrorFromResponse } from "../lib/registration-error";
 
 // Response types from authentication endpoints
 interface AuthResponse {
@@ -462,22 +463,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const errorText = await response.text();
         console.error("Registration failed:", response.status, errorText);
 
-        // Parse error for better user feedback
-        try {
-          const errorData = JSON.parse(errorText);
-          // Create a structured error object that maintains all the server response data
-          const error = new Error(errorData.error || `Registration failed: ${response.status}`);
-          // Attach additional properties for the frontend to use
-          (error as any).field = errorData.field;
-          (error as any).action = errorData.action;
-          (error as any).message = errorData.message || errorData.error;
-          (error as any).suggestion = errorData.suggestion;
-          (error as any).status = response.status;
-          throw error;
-        } catch (parseError) {
-          // If JSON parsing fails, throw a basic error
-          throw new Error(`Registration failed: ${response.status} ${response.statusText}`);
-        }
+        throw registrationErrorFromResponse(response.status, response.statusText, errorText);
       }
 
       const data = await response.json();

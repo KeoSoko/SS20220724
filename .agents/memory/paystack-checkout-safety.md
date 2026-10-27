@@ -15,6 +15,12 @@ Generic checkout must fail closed while an existing paid subscription or unresol
 
 **How to apply:** Do not offer a second generic checkout for active, paid-grace, paused, failed, or past-due recurring states; retire competing pending attempts when another verified payment wins.
 
+An explicitly purchased plan replacement is different from generic recovery: after verified settlement, retire the old provider subscription only against exact same-owner/customer, different-plan evidence. Ambiguous disable outcomes permit read-only confirmation, not another disable call.
+
+**Why:** Keeping both recurring subscriptions permits duplicate renewals; blindly repeating an uncertain provider mutation can race another delivery. Generic recovery remains blocked and is not approval to cancel an existing subscription.
+
+**How to apply:** Preserve the prior trusted relationship even if checkout verification precedes the new subscription identity. Resolve only an unambiguous, ready provider relationship linked by transaction verification or a paid invoice to the settled payment. Customer, plan, and creation time alone cannot establish that link; uncertain relationships stay in financial review without reverting entitlement.
+
 Server-issued checkout identity includes immutable commercial terms, not only a reference.
 
 **Why:** A public checkout client can alter amount, plan metadata, currency, or customer fields. A server reference alone does not prove what was purchased.

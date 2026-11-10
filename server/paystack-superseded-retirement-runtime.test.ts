@@ -190,14 +190,16 @@ describe("superseded subscription provider retirement", () => {
   });
 });
 
-function pendingIdentityHarness() {
+function pendingIdentityHarness(initialPurchase = false) {
   let newIdentity: any = null;
   let identityReads = 0;
   const pending = {
     id: 9, processed: false,
     eventData: {
       transactionReference: "ss_srv_paid_upgrade",
-      previousIdentity: { userId: 7, subscriptionCode: "SUB_old", customerCode: "CUS_owner", planCode: "PLN_individual" },
+      ...(initialPurchase ? {} : {
+        previousIdentity: { userId: 7, subscriptionCode: "SUB_old", customerCode: "CUS_owner", planCode: "PLN_individual" },
+      }),
     },
   };
   const subscription: any = {
@@ -286,6 +288,46 @@ function pendingIdentityHarness() {
 }
 
 describe("checkout settlement before subscription.create", () => {
+  it.each(["webhook before verification", "delayed webhook"])(
+    "persists a first subscriber identity for %s without retirement or a new subscription",
+    async (ordering) => {
+      const h = pendingIdentityHarness(true);
+      h.record.mockRestore();
+      if (ordering === "webhook before verification") {
+        await h.service.recordPaystackSubscriptionIdentity(7, h.candidate.providerData);
+        expect(h.getNewIdentity().status).toBe("unresolved");
+      }
+      await h.service.completePendingPaystackUpgradeIdentity(7);
+      expect(h.getNewIdentity()).toMatchObject({
+        status: "active", subscriptionCode: "SUB_team", customerCode: "CUS_owner",
+      });
+      expect(h.pending.processed).toBe(true);
+      expect(h.retire).not.toHaveBeenCalled();
+      expect(h.inserted.some(event => event.eventType === "paystack_superseded_subscription_review_required")).toBe(false);
+      // Reload and duplicate delivery reuse persisted trust.
+      await h.service.recordPaystackSubscriptionIdentity(7, h.candidate.providerData);
+      await h.service.completePendingPaystackUpgradeIdentity(7);
+      expect(h.getNewIdentity().status).toBe("active");
+      expect(h.retire).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["ambiguous", "unlinked", "cross customer", "wrong plan", "cancelled", "another owner"])(
+    "leaves a first subscriber unavailable for %s evidence", async (condition) => {
+      const h = pendingIdentityHarness(true);
+      if (condition === "ambiguous") h.inspection.candidates.push({ ...h.candidate });
+      if (condition === "unlinked") h.candidate.providerData.most_recent_invoice.transaction.id = 999;
+      if (condition === "cross customer") h.candidate.providerData.customer.customer_code = "CUS_other";
+      if (condition === "wrong plan") h.candidate.providerData.plan.plan_code = "PLN_other";
+      if (condition === "cancelled") h.subscription.cancelledAt = new Date();
+      if (condition === "another owner") h.checkout.billingOwnerUserId = 99;
+      await h.service.completePendingPaystackUpgradeIdentity(7);
+      expect(h.record).not.toHaveBeenCalled();
+      expect(h.pending.processed).toBe(false);
+      expect(h.retire).not.toHaveBeenCalled();
+    },
+  );
+
   it("promotes an early unresolved subscription.create only after exact paid-invoice linkage, once", async () => {
     const h = pendingIdentityHarness();
     h.record.mockRestore(); // Exercise the real identity writer, not a stub.

@@ -73,6 +73,7 @@ import {
 } from "./legacy-paystack-renewal-settlement";
 import { buildLegacyRenewalShadowObservation } from "./legacy-renewal-shadow";
 import { classifySupersededPaystackSubscription } from "./paystack-superseded-subscription";
+import type { PaystackCardManagementState } from "@shared/paystack-card-management";
 
 export interface GooglePlayPurchase {
   purchaseToken: string;
@@ -2018,6 +2019,11 @@ export class BillingService {
     return db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, 36)`);
       const subscription = await this.getUserSubscription(userId);
+      if (subscription && (!["active", "paused"].includes(subscription.status)
+        || subscription.cancelledAt || subscription.cancellationRequestedAt
+        || subscription.googlePlayPurchaseToken || subscription.appleOriginalTransactionId)) {
+        return { outcome: "manual_review_required", reason: "subscription_not_manageable" };
+      }
       if (!subscription?.paystackCustomerCode) {
         return { outcome: "reconciling", reason: "missing_paystack_customer_code" };
       }
@@ -3332,7 +3338,7 @@ export class BillingService {
 
     let identityStatus = existingCode?.status
       ?? (options.allowNewActive ? "active" : "unresolved");
-    // Only paid-upgrade completion can authorize promotion of a SUB_* that
+    // Only verified paid-checkout completion can authorize promotion of a SUB_* that
     // arrived before payment. A generic lifecycle event must not do this.
     if (options.promoteExistingUnresolved && options.allowNewActive
       && existingCode?.status === "unresolved") {
@@ -3455,7 +3461,7 @@ export class BillingService {
   }
 
   /**
-   * Checkout verification can precede subscription.create and omit SUB_*.
+   * First-purchase or upgrade verification can precede subscription.create and omit SUB_*.
    * Resolve only one exact provider relationship for the paid checkout's plan;
    * retain the old identity snapshot until that relationship is available.
    */
@@ -3463,13 +3469,13 @@ export class BillingService {
     await this.requirePaystackBillingSchema();
     const [pending] = await db.select().from(billingEvents).where(and(
       eq(billingEvents.userId, userId),
-      eq(billingEvents.eventType, "paystack_upgrade_identity_pending"),
+      inArray(billingEvents.eventType, ["paystack_upgrade_identity_pending", "paystack_initial_identity_pending"]),
       eq(billingEvents.processed, false),
     )).orderBy(desc(billingEvents.createdAt)).limit(1);
     if (!pending) return;
     const data = pending.eventData as {
       transactionReference: string;
-      previousIdentity: { userId: number; subscriptionCode: string; customerCode: string; planCode: string };
+      previousIdentity?: { userId: number; subscriptionCode: string; customerCode: string; planCode: string };
     };
     const inspection = await this.loadPaystackSubscriptionCandidates(userId);
     if (!inspection.available || inspection.candidates.length !== 1) return;
@@ -3483,7 +3489,8 @@ export class BillingService {
     ) ? "ready" : "unknown";
     if (candidate.providerLookupFailed || candidate.providerData?.status !== "active" || !createdAt
       || extractPaystackSubscriptionCode(candidate.providerData) !== candidate.subscriptionCode
-      || applyPaystackApplePayGate(evidence, readiness, isPaystackApplePaySubscriptionsEnabled()) !== "ready") return;
+      || (data.previousIdentity
+        && applyPaystackApplePayGate(evidence, readiness, isPaystackApplePaySubscriptionsEnabled()) !== "ready")) return;
 
     // Customer/plan/time matching cannot link a subscription to this payment:
     // another subscription may have been created while checkout was open.
@@ -3537,24 +3544,24 @@ export class BillingService {
       if (!validateTrackedCheckoutTerms(checkout, {
         id: checkout.planId, paystackPlanCode: checkout.paystackPlanCode,
       } as SubscriptionPlan, payment).valid) return null;
-      const review = classifySupersededPaystackSubscription(userId, data.previousIdentity, {
+      const review = data.previousIdentity ? classifySupersededPaystackSubscription(userId, data.previousIdentity, {
         userId,
         subscriptionCode: candidate.subscriptionCode,
         customerCode: inspection.customerCode,
         planCode: checkout.paystackPlanCode,
-      });
-      if (!review) return null;
+      }) : null;
+      if (data.previousIdentity && !review) return null;
       const recorded = await this.recordPaystackSubscriptionIdentityInTransaction(tx, userId, candidate.providerData, {
         allowNewActive: true,
         rejectExistingActive: true,
         expectedCustomerCode: inspection.customerCode,
         expectedPlanCode: checkout.paystackPlanCode,
         authorizationBoundToSubscription: true,
-        auditSource: "paid_upgrade_identity_completion",
+        auditSource: data.previousIdentity ? "paid_upgrade_identity_completion" : "paid_initial_identity_completion",
         promoteExistingUnresolved: true,
       });
       if (recorded.status !== "active") return null;
-      await tx.insert(billingEvents).values({
+      if (review) await tx.insert(billingEvents).values({
         userId,
         eventType: "paystack_superseded_subscription_review_required",
         eventData: review,
@@ -3563,7 +3570,9 @@ export class BillingService {
       await tx.update(billingEvents).set({ processed: true }).where(eq(billingEvents.id, pending.id));
       return recorded;
     });
-    if (identity) await this.retireVerifiedSupersededSubscription(userId, identity.subscriptionCode);
+    if (identity && data.previousIdentity) {
+      await this.retireVerifiedSupersededSubscription(userId, identity.subscriptionCode);
+    }
   }
 
   async recordPaystackSubscriptionIdentity(
@@ -4854,6 +4863,16 @@ export class BillingService {
                 },
                 processed: false,
               });
+            } else if (!previousIdentity) {
+              // Preserve the settled reference even for the first subscriber.
+              // A later signed event can complete only an exactly payment-linked
+              // provider relationship, never a customer/plan/time guess.
+              await tx.insert(billingEvents).values({
+                userId,
+                eventType: "paystack_initial_identity_pending",
+                eventData: { transactionReference },
+                processed: false,
+              });
             }
             await tx
               .update(paystackSubscriptionIdentities)
@@ -5530,6 +5549,44 @@ export class BillingService {
    * subscription and trusted identity data; it intentionally does not change
    * entitlement, charge a card, or contact Paystack while a page is loading.
    */
+  async getPaystackCardManagementStatus(userId: number): Promise<PaystackCardManagementState> {
+    const subscription = await this.getUserSubscription(userId);
+    if (!subscription || !["active", "paused"].includes(subscription.status)
+      || subscription.cancelledAt || subscription.cancellationRequestedAt
+      || subscription.googlePlayPurchaseToken || subscription.appleOriginalTransactionId
+      || !(subscription.paystackReference || subscription.paystackCustomerCode)
+      || !subscription.lastPaymentDate) return "hidden";
+    if (!isPaystackSubscriptionManagementLinkEnabled()) return "disabled";
+    try {
+      if (!(await this.getPaystackBillingSchemaReadiness()).ready) return "unavailable";
+      const identities = await db.select().from(paystackSubscriptionIdentities)
+        .where(and(
+          eq(paystackSubscriptionIdentities.userId, userId),
+          inArray(paystackSubscriptionIdentities.status, ["active", "unresolved"]),
+        )).limit(2);
+      if (identities.length > 1 || identities.some(identity => identity.status === "unresolved")) {
+        // An unresolved webhook may simply precede completion of a first
+        // payment. Only its durable pending evidence permits bounded waiting.
+        const [pending] = await db.select().from(billingEvents).where(and(
+          eq(billingEvents.userId, userId),
+          inArray(billingEvents.eventType, ["paystack_initial_identity_pending", "paystack_upgrade_identity_pending"]),
+          eq(billingEvents.processed, false),
+          sql`${billingEvents.eventData}->>'transactionReference' = ${subscription.paystackReference}`,
+        )).limit(1);
+        if (identities.length <= 1 && pending) return "pending";
+        return "review_required";
+      }
+      if (!identities.length) return "pending";
+      const plan = await storage.getSubscriptionPlan?.(subscription.planId);
+      if (!plan?.paystackPlanCode
+        || identities[0].customerCode !== subscription.paystackCustomerCode
+        || identities[0].planCode !== plan.paystackPlanCode) return "review_required";
+      return "ready";
+    } catch {
+      return "unavailable";
+    }
+  }
+
   async getPaystackRenewalStatus(userId: number): Promise<PaystackRenewalStatus> {
     const subscription = await this.getUserSubscription(userId);
     if (!subscription || subscription.status === "cancelled" || !subscription.nextBillingDate) {

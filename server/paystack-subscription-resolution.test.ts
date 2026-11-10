@@ -120,6 +120,9 @@ function setupProvider() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Expectations below exercise the default-off gate, independent of the
+  // development workflow's explicitly enabled release configuration.
+  vi.stubEnv("PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED", "false");
   state.transactionInserts.length = 0;
   state.billingEventInserts.length = 0;
   vi.mocked(storage.getUserSubscription).mockResolvedValue(localSubscription as any);

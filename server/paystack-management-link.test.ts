@@ -115,6 +115,28 @@ beforeEach(() => {
 });
 
 describe("Paystack hosted subscription management", () => {
+  it.each([
+    { status: "trial" },
+    { status: "cancelled" },
+    { cancellationRequestedAt: new Date() },
+    { cancelledAt: new Date() },
+    { googlePlayPurchaseToken: "play-token" },
+    { appleOriginalTransactionId: "apple-id" },
+  ])("rejects non-manageable local subscriptions before provider access %#", async (overrides) => {
+    vi.mocked(storage.getUserSubscription).mockResolvedValue({ ...localSubscription, ...overrides } as any);
+    const provider = providerFor({});
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const service = new BillingService();
+    (service as any).paystack = provider;
+    expect(await service.createPaystackSubscriptionManagementLink(42)).toEqual({
+      outcome: "manual_review_required", reason: "subscription_not_manageable",
+    });
+    expect(provider.subscription.get).not.toHaveBeenCalled();
+    expect(provider.subscription.create).not.toHaveBeenCalled();
+    expect(provider.transaction.charge).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
   it("returns a hosted link for a healthy active subscription so the customer can change cards proactively", async () => {
     const provider = providerFor({
       subscription_code: "SUB_owner",

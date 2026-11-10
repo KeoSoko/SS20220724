@@ -27,7 +27,8 @@ describe("Paystack checkout migration safety", () => {
 
   it("registers identity, checkout, recurring-readiness, and access-code migrations in order", () => {
     const parsed = JSON.parse(journal);
-    expect(parsed.entries.slice(-4).map((entry: any) => entry.tag)).toEqual([
+    expect(parsed.entries.filter((entry: any) => entry.idx >= 2 && entry.idx <= 5)
+      .map((entry: any) => entry.tag)).toEqual([
       "0002_add_paystack_subscription_identities",
       "0003_add_paystack_checkout_attempts",
       "0004_add_paystack_recurring_readiness",

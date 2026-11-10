@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   scenario: "checkout_race" as
     | "checkout_race"
+    | "first_purchase"
     | "duplicate"
     | "old_renewal"
     | "trusted_renewal"
@@ -182,6 +183,9 @@ vi.mock("./db", () => {
             if (state.scenario === "duplicate" && state.txSelectOrdinal === 4) {
               return query([state.subscription]);
             }
+            if (state.scenario === "first_purchase" && state.txSelectOrdinal === 4) {
+              return query([state.subscription]);
+            }
             return query([]);
           },
           insert: () => insert(state.txInserts),
@@ -196,7 +200,7 @@ vi.mock("./db", () => {
               },
               where: () => chain,
               returning: async () => (
-                state.scenario === "trusted_renewal" && updateOrdinal === 1
+                (state.scenario === "trusted_renewal" || state.scenario === "first_purchase") && updateOrdinal === 1
                   ? [{
                       ...state.subscription,
                       status: "active",
@@ -236,6 +240,29 @@ beforeEach(() => {
 });
 
 describe("Paystack checkout and renewal settlement ordering", () => {
+  it("retains a first verified purchase reference for delayed trusted subscription identity", async () => {
+    state.scenario = "first_purchase";
+    const service = new BillingService();
+    const completion = vi.spyOn(service, "completePendingPaystackUpgradeIdentity").mockResolvedValue(undefined);
+    vi.spyOn(service, "verifyPaystackTransaction").mockResolvedValue({
+      valid: true,
+      subscription: {
+        id: 1234, status: "success", reference: initialAttempt.paystackReference,
+        amount: initialAttempt.amount, currency: "ZAR", plan: { plan_code: "PLN_monthly" },
+        customer: { customer_code: "CUS_owner", email: "owner@example.com" },
+        paid_at: "2026-08-19T19:10:00Z",
+        authorization: { authorization_code: "AUTH_first", channel: "card", reusable: true },
+      },
+    });
+    const subscription = await service.processPaystackSubscription(10, initialAttempt.paystackReference);
+    expect(subscription.status).toBe("active");
+    expect(state.txInserts).toContainEqual(expect.objectContaining({
+      eventType: "paystack_initial_identity_pending", processed: false,
+      eventData: { transactionReference: initialAttempt.paystackReference },
+    }));
+    expect(completion).toHaveBeenCalledExactlyOnceWith(10);
+    expect(state.txInserts.some(event => event.eventType === "paystack_upgrade_identity_pending")).toBe(false);
+  });
   it("re-reads a checkout invalidated while Paystack verification was in flight", async () => {
     const service = new BillingService();
     let completeVerification!: (value: any) => void;

@@ -1433,6 +1433,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         renewalState: renewalStatus?.state,
         renewalRecoveryCheckoutEligible: renewalStatus?.recoveryCheckoutEligible ?? false,
         renewalManagementLinkEligible: renewalStatus?.managementLinkEligible ?? false,
+        cardManagementState: billingOwner.state === "resolved" && billingOwner.canManageBilling
+          ? await billingService.getPaystackCardManagementStatus(billingOwner.billingOwnerUserId)
+          : "hidden",
       });
     } catch (error) {
       log(`Error getting subscription status: ${error}`, "api");

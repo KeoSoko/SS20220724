@@ -28,6 +28,9 @@ const subscriptionPage = readFileSync(
   new URL("../client/src/pages/subscription-page.tsx", import.meta.url),
   "utf8",
 );
+const cardManagement = readFileSync(
+  new URL("../client/src/components/paystack-card-management.tsx", import.meta.url), "utf8",
+);
 const originalManagementLinkFlag = process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED;
 
 function restoreFlag() {
@@ -142,16 +145,10 @@ describe("Paystack management-link release gate", () => {
     expect(management).not.toContain("refund");
   });
 
-  it("hides both management CTAs and renders support guidance when unavailable", () => {
-    expect(subscriptionPage).toContain(
-      "paymentMethodNeedsAttention && statusData?.renewalManagementLinkEligible",
-    );
-    expect(subscriptionPage).toContain(
-      "statusData?.renewalManagementLinkEligible ? (",
-    );
-    expect(subscriptionPage).toContain(
-      "Your payment method needs attention. Please contact support while we confirm the safest way to update your automatic renewal.",
-    );
+  it("keeps one disabled card action discoverable and payment-attention guidance free of checkout", () => {
+    expect(subscriptionPage).toContain("<PaystackCardManagement");
+    expect(cardManagement).toContain('disabled={state !== "ready" || busy}');
+    expect(cardManagement).toContain("Contact support");
 
     const paymentAttentionBranchStart = subscriptionPage.indexOf(") : paymentMethodNeedsAttention ? (");
     const nextPlanBranchStart = subscriptionPage.indexOf(") : subscription?.planId", paymentAttentionBranchStart);
@@ -169,9 +166,8 @@ describe("Paystack management-link release gate", () => {
       managementLinkEligible: true,
       recoveryCheckoutEligible: false,
     });
-    expect(subscriptionPage).toContain("cardChangeEligible");
-    expect(subscriptionPage).toContain("Change payment card");
-    expect(subscriptionPage).toContain('data-testid="button-change-paystack-payment-card"');
+    expect(cardManagement).toContain("Change payment card");
+    expect(cardManagement).toContain('data-testid="button-change-paystack-payment-card"');
   });
 
   it("offers card management for an active trusted identity with legacy readiness", async () => {

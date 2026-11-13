@@ -22,6 +22,7 @@ const input: LegacyRenewalSettlementInput = {
 
 const periodStart = "2026-08-27T17:03:56.679Z";
 const periodEnd = "2026-09-27T17:03:56.679Z";
+const nextPaymentDate = "2026-09-27T17:03:57.679Z";
 
 function snapshot(): LegacyRenewalSettlementSnapshot {
   return {
@@ -74,6 +75,21 @@ function snapshot(): LegacyRenewalSettlementSnapshot {
       status: "active",
       renewalPeriodStart: periodStart,
       renewalPeriodEnd: periodEnd,
+      nextPaymentDate,
+    },
+    providerInvoice: {
+      valid: true,
+      invoiceCode: "INV_august",
+      state: "paid",
+      transactionReference: input.reference,
+      sourceSubscriptionCode: input.subscriptionCode,
+      subscriptionCode: input.subscriptionCode,
+      customerCode: input.customerCode,
+      planCode: input.planCode,
+      amount: 4_900,
+      currency: "ZAR",
+      periodStart,
+      periodEnd,
     },
     structuredCompensationEvents: [],
     legacyActivationEvents: [],
@@ -83,8 +99,8 @@ function snapshot(): LegacyRenewalSettlementSnapshot {
 
 function compensatedSnapshot() {
   const state = snapshot();
-  state.localSubscription.nextBillingDate = periodEnd;
-  state.entitlement.expiresAt = periodEnd;
+  state.localSubscription.nextBillingDate = nextPaymentDate;
+  state.entitlement.expiresAt = nextPaymentDate;
   const compensation = buildStructuredCompensationEvent({
     adminUserId: 36,
     input,
@@ -94,8 +110,8 @@ function compensatedSnapshot() {
     previousEntitlementExpiresAt: periodStart,
     grantedPeriodStart: periodStart,
     grantedPeriodEnd: periodEnd,
-    resultingNextBillingDate: periodEnd,
-    resultingEntitlementExpiresAt: periodEnd,
+    resultingNextBillingDate: nextPaymentDate,
+    resultingEntitlementExpiresAt: nextPaymentDate,
     recordedAt: "2026-08-27T17:31:01.341Z",
   });
   compensation.billingEventId = 3001;
@@ -187,14 +203,279 @@ function setup(initial = snapshot()) {
       state.localSubscription!.totalPaid += state.providerPayment!.amount;
       state.localSubscription!.lastPaymentDate = state.providerPayment!.paidAt;
       state.localSubscription!.paystackReference = state.providerPayment!.reference;
-      state.localSubscription!.nextBillingDate = periodEnd;
-      state.entitlement.expiresAt = periodEnd;
+      state.localSubscription!.nextBillingDate = nextPaymentDate;
+      state.entitlement.expiresAt = nextPaymentDate;
       return "applied" as const;
     }),
   };
 }
 
 describe("legacy renewal settlement classifier", () => {
+  it("requires the verified exclusive next-payment instant exactly one second after inclusive period_end", () => {
+    const state = snapshot();
+    expect(classifyLegacyRenewalSettlement(input, state)).toMatchObject({
+      outcome: "payment_and_entitlement_applied",
+      preview: {
+        proposed: { nextBillingDate: nextPaymentDate, entitlementExpiresAt: nextPaymentDate },
+      },
+    });
+    expect(Date.parse(nextPaymentDate) - Date.parse(periodEnd)).toBe(1000);
+    for (const invalid of [null, periodEnd, "2026-09-27T17:03:58.679Z"]) {
+      state.providerSubscription!.nextPaymentDate = invalid;
+      expect(classifyLegacyRenewalSettlement(input, state)).toMatchObject({
+        outcome: "manual_review_required",
+        reason: "provider_period_invalid",
+        preview: { executionPermitted: false },
+      });
+    }
+  });
+
+  it("keeps user 142's August and September invoices adjacent and distinct", () => {
+    const august = {
+      reference: "d8f1581133cf638d7aff2c7d39547fa5fae08af613d284df",
+      invoice: "INV_px27immarj5wnkw",
+      transactionId: "6495478356",
+      end: "2026-09-26T16:31:59.000Z",
+    };
+    const september = {
+      reference: "0ed0760e2282ff31e2c255b243e77bc75a7ebb0e25b5bfc8",
+      invoice: "INV_u1dembqgs17ut47",
+      transactionId: "6597890101",
+      start: "2026-09-26T16:32:00.000Z",
+      end: "2026-10-26T16:31:59.000Z",
+      next: "2026-10-26T16:32:00.000Z",
+    };
+    expect(new Set([august.reference, september.reference]).size).toBe(2);
+    expect(new Set([august.invoice, september.invoice]).size).toBe(2);
+    expect(new Set([august.transactionId, september.transactionId]).size).toBe(2);
+    expect(Date.parse(september.start) - Date.parse(august.end)).toBe(1000);
+    const state = snapshot();
+    state.localSubscription!.nextBillingDate = september.start;
+    state.entitlement.expiresAt = september.start;
+    state.providerSubscription!.renewalPeriodStart = september.start;
+    state.providerSubscription!.renewalPeriodEnd = september.end;
+    state.providerSubscription!.nextPaymentDate = september.next;
+    state.providerInvoice!.periodStart = september.start;
+    state.providerInvoice!.periodEnd = september.end;
+    state.providerInvoice!.invoiceCode = september.invoice;
+    state.providerPayment!.reference = september.reference;
+    state.providerPayment!.providerTransactionId = september.transactionId;
+    state.providerInvoice!.transactionReference = september.reference;
+    expect(classifyLegacyRenewalSettlement({ ...input, reference: september.reference }, state))
+      .toMatchObject({
+        outcome: "payment_and_entitlement_applied",
+        preview: { proposed: { nextBillingDate: september.next, entitlementExpiresAt: september.next } },
+      });
+  });
+
+  it("blocks each short drift without the exact reviewed invoice and boundary", () => {
+    const drifts = [
+      { local: "2026-09-11T11:00:39.678Z", start: "2026-09-11T10:58:00.000Z", end: "2026-10-11T10:57:59.000Z", next: "2026-10-11T10:58:00.000Z", invoice: "INV_iia0ax3ggbxbuq6" },
+      { local: "2026-09-18T13:12:47.681Z", start: "2026-09-18T13:12:00.000Z", end: "2026-10-18T13:11:59.000Z", next: "2026-10-18T13:12:00.000Z", invoice: "INV_h76v0mqeordridx" },
+      { local: "2026-09-20T10:30:50.628Z", start: "2026-09-20T10:29:00.000Z", end: "2026-10-20T10:28:59.000Z", next: "2026-10-20T10:29:00.000Z", invoice: "INV_wf1o1y73edrl3i1" },
+    ];
+    for (const evidence of drifts) {
+      const state = snapshot();
+      state.localSubscription!.nextBillingDate = evidence.local;
+      state.entitlement.expiresAt = evidence.local;
+      Object.assign(state.providerSubscription!, {
+        renewalPeriodStart: evidence.start, renewalPeriodEnd: evidence.end, nextPaymentDate: evidence.next,
+      });
+      Object.assign(state.providerInvoice!, {
+        invoiceCode: evidence.invoice, periodStart: evidence.start, periodEnd: evidence.end,
+      });
+      expect(classifyLegacyRenewalSettlement(input, state)).toMatchObject({
+        outcome: "manual_review_required", reason: "entitlement_boundary_mismatch",
+        preview: { executionPermitted: false },
+      });
+      const reviewed = {
+        ...input,
+        reviewedBoundary: {
+          reason: "legacy_paid_at_boundary_drift" as const,
+          invoiceCode: evidence.invoice,
+          expectedLocalBoundary: evidence.local,
+          expectedProviderPeriodStart: evidence.start,
+          expectedProviderPeriodEnd: evidence.end,
+        },
+      };
+      expect(classifyLegacyRenewalSettlement({
+        ...reviewed, reviewedBoundary: { ...reviewed.reviewedBoundary, invoiceCode: "INV_wrong" },
+      }, state)).toMatchObject({ outcome: "manual_review_required", preview: { executionPermitted: false } });
+      expect(classifyLegacyRenewalSettlement(reviewed, state)).toMatchObject({
+        outcome: "payment_and_entitlement_applied",
+        preview: { executionPermitted: true, proposed: { nextBillingDate: evidence.next } },
+      });
+    }
+  });
+  it("keeps an unreviewed boundary mismatch blocked", () => {
+    const state = snapshot();
+    state.localSubscription!.nextBillingDate = "2026-08-27T17:04:44.360Z";
+    state.entitlement.expiresAt = "2026-08-27T17:04:44.360Z";
+
+    expect(classifyLegacyRenewalSettlement(input, state)).toMatchObject({
+      outcome: "manual_review_required",
+      reason: "entitlement_boundary_mismatch",
+      preview: { executionPermitted: false },
+    });
+  });
+
+  it("allows the explicitly reviewed 47.681-second paid-at drift with exact invoice linkage", () => {
+    const localBoundary = "2026-08-27T17:04:44.360Z";
+    const reviewedInput: LegacyRenewalSettlementInput = {
+      ...input,
+      reviewedBoundary: {
+        reason: "legacy_paid_at_boundary_drift",
+        invoiceCode: "INV_august",
+        expectedLocalBoundary: localBoundary,
+        expectedProviderPeriodStart: periodStart,
+        expectedProviderPeriodEnd: periodEnd,
+      },
+    };
+    const state = snapshot();
+    state.localSubscription!.nextBillingDate = localBoundary;
+    state.entitlement.expiresAt = localBoundary;
+
+    expect(classifyLegacyRenewalSettlement(reviewedInput, state)).toMatchObject({
+      outcome: "payment_and_entitlement_applied",
+      preview: {
+        executionPermitted: true,
+        proposed: {
+          nextBillingDate: nextPaymentDate,
+          entitlementExpiresAt: nextPaymentDate,
+        },
+        reviewedBoundaryRepair: {
+          invoiceCode: "INV_august",
+          boundaryDeltaMilliseconds: 47_681,
+        },
+      },
+    });
+  });
+
+  it("accepts the real Paystack invoice shape without invoice-level currency", async () => {
+    const localBoundary = "2026-08-27T17:04:44.360Z";
+    const reviewedInput: LegacyRenewalSettlementInput = {
+      ...input,
+      reviewedBoundary: {
+        reason: "legacy_paid_at_boundary_drift",
+        invoiceCode: "INV_august",
+        expectedLocalBoundary: localBoundary,
+        expectedProviderPeriodStart: periodStart,
+        expectedProviderPeriodEnd: periodEnd,
+      },
+    };
+    const state = snapshot();
+    state.localSubscription!.nextBillingDate = localBoundary;
+    state.entitlement.expiresAt = localBoundary;
+    state.providerInvoice!.currency = null;
+    const preview = classifyLegacyRenewalSettlement(reviewedInput, state);
+    expect(preview).toMatchObject({
+      outcome: "payment_and_entitlement_applied",
+      preview: { executionPermitted: true },
+    });
+
+    const applied: string[] = [];
+    const service = createLegacyRenewalSettlementService({
+      loadSnapshot: async () => state,
+      runAtomicallyWithBillingOwnerLock: async (_userId, callback) => callback(),
+      claimPaymentReference: async () => "claimed",
+      applyPaymentAndEntitlement: async () => { applied.push("payment_and_entitlement"); },
+      applyPaymentForPreviouslyGrantedEntitlement: async () => { applied.push("payment_only"); },
+      recordAuditEvent: async () => { applied.push("audit"); },
+    });
+    const result = await service.execute(
+      reviewedInput,
+      1,
+      legacyRenewalSettlementFingerprint(reviewedInput, preview),
+    );
+    expect(result.outcome).toBe("payment_and_entitlement_applied");
+    expect(applied).toEqual(["payment_and_entitlement", "audit"]);
+  });
+
+  it("rejects an invoice-level currency when it conflicts with verified payment and plan", () => {
+    const state = snapshot();
+    state.providerInvoice!.currency = "USD";
+    expect(classifyLegacyRenewalSettlement(input, state)).toMatchObject({
+      outcome: "manual_review_required",
+      reason: "provider_invoice_mismatch",
+    });
+  });
+
+  it("rejects reviewed drift unless the paid invoice links the exact transaction", () => {
+    const localBoundary = "2026-08-27T17:04:44.360Z";
+    const reviewedInput: LegacyRenewalSettlementInput = {
+      ...input,
+      reviewedBoundary: {
+        reason: "legacy_paid_at_boundary_drift",
+        invoiceCode: "INV_august",
+        expectedLocalBoundary: localBoundary,
+        expectedProviderPeriodStart: periodStart,
+        expectedProviderPeriodEnd: periodEnd,
+      },
+    };
+    const state = snapshot();
+    state.localSubscription!.nextBillingDate = localBoundary;
+    state.entitlement.expiresAt = localBoundary;
+    state.providerInvoice!.transactionReference = "different_transaction";
+
+    expect(classifyLegacyRenewalSettlement(reviewedInput, state)).toMatchObject({
+      outcome: "manual_review_required",
+      reason: "provider_invoice_mismatch",
+      preview: { executionPermitted: false },
+    });
+  });
+
+  it("rejects an unrelated invoice even on the ordinary exact-boundary path", () => {
+    const state = snapshot();
+    state.providerInvoice!.transactionReference = "unrelated_reference";
+
+    expect(classifyLegacyRenewalSettlement(input, state)).toMatchObject({
+      outcome: "manual_review_required",
+      reason: "provider_invoice_mismatch",
+      preview: { executionPermitted: false },
+    });
+  });
+
+  it("rejects reviewed drift outside the narrow five-minute legacy window", () => {
+    const localBoundary = "2026-08-27T17:09:56.680Z";
+    const reviewedInput: LegacyRenewalSettlementInput = {
+      ...input,
+      reviewedBoundary: {
+        reason: "legacy_paid_at_boundary_drift",
+        invoiceCode: "INV_august",
+        expectedLocalBoundary: localBoundary,
+        expectedProviderPeriodStart: periodStart,
+        expectedProviderPeriodEnd: periodEnd,
+      },
+    };
+    const state = snapshot();
+    state.localSubscription!.nextBillingDate = localBoundary;
+    state.entitlement.expiresAt = localBoundary;
+
+    expect(classifyLegacyRenewalSettlement(reviewedInput, state)).toMatchObject({
+      outcome: "manual_review_required",
+      reason: "reviewed_boundary_drift_out_of_range",
+    });
+  });
+
+  it("never bypasses stale reviewed evidence through the ordinary exact-boundary branch", () => {
+    const reviewedInput: LegacyRenewalSettlementInput = {
+      ...input,
+      reviewedBoundary: {
+        reason: "legacy_paid_at_boundary_drift",
+        invoiceCode: "INV_stale",
+        expectedLocalBoundary: periodStart,
+        expectedProviderPeriodStart: periodStart,
+        expectedProviderPeriodEnd: periodEnd,
+      },
+    };
+
+    expect(classifyLegacyRenewalSettlement(reviewedInput, snapshot())).toMatchObject({
+      outcome: "manual_review_required",
+      reason: "reviewed_boundary_invoice_mismatch",
+      preview: { executionPermitted: false },
+    });
+  });
+
   it("records an unpaid payment and grants exactly one missing entitlement period", async () => {
     const { service, state, calls } = setup();
 
@@ -206,11 +487,20 @@ describe("legacy renewal settlement classifier", () => {
     expect(calls.entitlementWrites).toBe(1);
     expect(state.localSubscription).toMatchObject({
       totalPaid: 9_800,
-      nextBillingDate: periodEnd,
+      nextBillingDate: nextPaymentDate,
       lastPaymentDate: periodStart,
       paystackReference: input.reference,
     });
-    expect(state.entitlement.expiresAt).toBe(periodEnd);
+    expect(state.entitlement.expiresAt).toBe(nextPaymentDate);
+    const afterFirst = structuredClone(state);
+    await expect(service.execute(input, 36)).resolves.toMatchObject({
+      outcome: "already_applied",
+      preview: { executionPermitted: false },
+    });
+    expect(state).toEqual(afterFirst);
+    expect(calls.paymentInserts).toBe(1);
+    expect(calls.financialWrites).toBe(1);
+    expect(calls.audits).toHaveLength(1);
   });
 
   it("records payment but grants zero extra entitlement for exact structured compensation", async () => {
@@ -222,8 +512,8 @@ describe("legacy renewal settlement classifier", () => {
     expect(calls.paymentInserts).toBe(1);
     expect(calls.financialWrites).toBe(1);
     expect(calls.entitlementWrites).toBe(0);
-    expect(state.localSubscription!.nextBillingDate).toBe(periodEnd);
-    expect(state.entitlement.expiresAt).toBe(periodEnd);
+    expect(state.localSubscription!.nextBillingDate).toBe(nextPaymentDate);
+    expect(state.entitlement.expiresAt).toBe(nextPaymentDate);
   });
 
   it("uses a server-owned structured compensation contract with no entitlement override", () => {
@@ -287,6 +577,19 @@ describe("legacy renewal settlement classifier", () => {
     });
   });
 
+  it("rejects the inclusive invoice end as a previously stored next boundary", () => {
+    const state = compensatedSnapshot();
+    state.localSubscription!.nextBillingDate = periodEnd;
+    state.entitlement.expiresAt = periodEnd;
+    state.structuredCompensationEvents[0].resultingNextBillingDate = periodEnd;
+    state.structuredCompensationEvents[0].resultingEntitlementExpiresAt = periodEnd;
+    expect(classifyLegacyRenewalSettlement(input, state)).toMatchObject({
+      outcome: "manual_review_required",
+      reason: "compensation_interval_mismatch",
+      preview: { executionPermitted: false },
+    });
+  });
+
   it("blocks multiple plausible structured recovery events", () => {
     const state = compensatedSnapshot();
     state.structuredCompensationEvents.push({
@@ -321,7 +624,7 @@ describe("legacy renewal settlement classifier", () => {
       preview: {
         proposed: {
           totalPaid: 9_800,
-          nextBillingDate: periodEnd,
+          nextBillingDate: nextPaymentDate,
         },
       },
     });
@@ -374,7 +677,7 @@ describe("legacy renewal settlement classifier", () => {
     expect(calls.paymentInserts).toBe(1);
     expect(calls.entitlementWrites).toBe(1);
     expect(state.localSubscription!.totalPaid).toBe(9_800);
-    expect(state.localSubscription!.nextBillingDate).toBe(periodEnd);
+    expect(state.localSubscription!.nextBillingDate).toBe(nextPaymentDate);
   });
 
   it("does not let an older repaired payment replace newer last-payment fields", async () => {
@@ -436,6 +739,14 @@ describe("legacy renewal settlement classifier", () => {
       customerCode: user376Input.customerCode,
       planCode: user376Input.planCode,
     };
+    state.providerInvoice = {
+      ...state.providerInvoice!,
+      transactionReference: user376Input.reference,
+      sourceSubscriptionCode: user376Input.subscriptionCode,
+      subscriptionCode: user376Input.subscriptionCode,
+      customerCode: user376Input.customerCode,
+      planCode: user376Input.planCode,
+    };
     state.legacyActivationEvents = [{
       eventId: 2571,
       createdAt: "2026-08-27T17:31:01.341Z",
@@ -475,5 +786,21 @@ describe("legacy renewal settlement classifier", () => {
     expect(adapter).toContain("onConflictDoNothing");
     expect(adapter).toContain("subscriptionExpiresAt: nextBillingDate");
     expect(adapter).not.toMatch(/subscription\.(disable|create|enable)|transaction\.charge/);
+  });
+
+  it("uses provider invoice periods and transactionReference orphan correlation", () => {
+    const source = readFileSync(new URL("./billing-service.ts", import.meta.url), "utf8");
+    expect(source).toContain("candidate?.recentInvoice?.periodStart");
+    expect(source).toContain("candidate?.recentInvoice?.periodEnd");
+    expect(source).toContain("candidate?.nextPaymentDate");
+    expect(source).toContain("event_data->>'transactionReference'");
+  });
+
+  it("guards monitor overlap and logs database pool pressure", () => {
+    const source = readFileSync(new URL("./billing-service.ts", import.meta.url), "utf8");
+    expect(source).toContain("orphanMonitorInFlight");
+    expect(source).toContain("reconciliationMonitorInFlight");
+    expect(source).toContain("databasePoolSnapshot()");
+    expect(source).toContain("timer.unref?.()");
   });
 });

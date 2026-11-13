@@ -353,6 +353,10 @@ export function selectPaystackSubscriptionIdentityCandidate(
  * used by renewal reconciliation.
  */
 export function getMostRecentPaystackInvoice(subscription: any): any | null {
+  return getPaystackInvoices(subscription)[0] ?? null;
+}
+
+export function getPaystackInvoices(subscription: any): any[] {
   const invoices = [
     ...(subscription?.most_recent_invoice ? [subscription.most_recent_invoice] : []),
     ...(Array.isArray(subscription?.invoices_history) ? subscription.invoices_history : []),
@@ -367,7 +371,7 @@ export function getMostRecentPaystackInvoice(subscription: any): any | null {
     )?.getTime() ?? 0;
     return rightDate - leftDate;
   });
-  return invoices[0] ?? null;
+  return invoices;
 }
 
 export function paystackInvoiceFailureTransactionId(invoiceCode: string): string {

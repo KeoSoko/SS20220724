@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { storage } from './storage';
 import { resolveBillingOwner } from './billing-owner';
+import { complimentaryExpiry } from './complimentary-access';
 
 export interface SubscriptionStatus {
   hasActiveSubscription: boolean;
@@ -15,6 +16,7 @@ export interface SubscriptionStatus {
   // Effective seat capacity for the workspace, derived from the owner's active
   // plan's max_seats. Read-only — no enforcement here. Defaults to 1 (Solo).
   seatCapacity?: number;
+  complimentaryExpiresAt?: string;
 }
 
 /**
@@ -79,6 +81,12 @@ export async function getSubscriptionStatus(userId: number): Promise<Subscriptio
     }
 
     if (subscription.status === 'paused') {
+      const expiresAt = await complimentaryExpiry(userId, subscription.id);
+      if (expiresAt) return {
+        hasActiveSubscription: true, isInTrial: false, subscriptionType: 'premium', seatCapacity,
+        complimentaryExpiresAt: expiresAt, paymentRecoveryRecommended: true,
+        renewalDueDate: subscription.nextBillingDate?.toISOString(), recoveryPath: '/subscription',
+      };
       return {
         hasActiveSubscription: false,
         isInTrial: false,

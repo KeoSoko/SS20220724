@@ -27,6 +27,12 @@ export type LegacyRenewalSettlementReviewReason =
   | "provider_subscription_invalid"
   | "provider_relationship_mismatch"
   | "provider_period_invalid"
+  | "provider_invoice_invalid"
+  | "provider_invoice_mismatch"
+  | "reviewed_boundary_invalid"
+  | "reviewed_boundary_invoice_invalid"
+  | "reviewed_boundary_invoice_mismatch"
+  | "reviewed_boundary_drift_out_of_range"
   | "payment_reference_conflict"
   | "entitlement_boundary_mismatch"
   | "compensation_activation_not_explicitly_linked_to_payment"
@@ -42,6 +48,13 @@ export interface LegacyRenewalSettlementInput {
   subscriptionCode: string;
   customerCode: string;
   planCode: string;
+  reviewedBoundary?: {
+    reason: "legacy_paid_at_boundary_drift";
+    invoiceCode: string;
+    expectedLocalBoundary: string;
+    expectedProviderPeriodStart: string;
+    expectedProviderPeriodEnd: string;
+  };
 }
 
 export interface StructuredLegacyRenewalCompensationEvent {
@@ -121,6 +134,21 @@ export interface LegacyRenewalSettlementSnapshot {
     status: string;
     renewalPeriodStart: string | null;
     renewalPeriodEnd: string | null;
+    nextPaymentDate: string | null;
+  } | null;
+  providerInvoice: {
+    valid: boolean;
+    invoiceCode: string | null;
+    state: string;
+    transactionReference: string | null;
+    sourceSubscriptionCode: string;
+    subscriptionCode: string | null;
+    customerCode: string | null;
+    planCode: string | null;
+    amount: number;
+    currency: string | null;
+    periodStart: string | null;
+    periodEnd: string | null;
   } | null;
   structuredCompensationEvents: StructuredLegacyRenewalCompensationEvent[];
   legacyActivationEvents: Array<{
@@ -154,6 +182,14 @@ export interface LegacyRenewalSettlementPreview {
   };
   executionPermitted: boolean;
   compensationEventId: number | null;
+  reviewedBoundaryRepair: {
+    reason: "legacy_paid_at_boundary_drift";
+    invoiceCode: string;
+    localBoundary: string;
+    providerPeriodStart: string;
+    providerPeriodEnd: string;
+    boundaryDeltaMilliseconds: number;
+  } | null;
 }
 
 export type LegacyRenewalSettlementAssessment =
@@ -199,6 +235,7 @@ export interface LegacyRenewalSettlementAuditEvent {
   planCode: string;
   compensationEventId: number | null;
   providerMutation: "none";
+  reviewedBoundaryRepair: LegacyRenewalSettlementPreview["reviewedBoundaryRepair"];
 }
 
 export interface LegacyRenewalSettlementRepository {
@@ -231,7 +268,7 @@ function sameInstant(left: string | null | undefined, right: string | null | und
 }
 
 function validInput(input: LegacyRenewalSettlementInput): boolean {
-  return Number.isInteger(input.billingOwnerUserId)
+  const baseValid = Number.isInteger(input.billingOwnerUserId)
     && input.billingOwnerUserId > 0
     && Number.isInteger(input.localSubscriptionId)
     && input.localSubscriptionId > 0
@@ -241,6 +278,13 @@ function validInput(input: LegacyRenewalSettlementInput): boolean {
     && /^SUB_[A-Za-z0-9_-]+$/.test(input.subscriptionCode)
     && /^CUS_[A-Za-z0-9_-]+$/.test(input.customerCode)
     && /^PLN_[A-Za-z0-9_-]+$/.test(input.planCode);
+  if (!baseValid || !input.reviewedBoundary) return baseValid;
+  const review = input.reviewedBoundary;
+  return review.reason === "legacy_paid_at_boundary_drift"
+    && /^INV_[A-Za-z0-9_-]+$/.test(review.invoiceCode)
+    && isIsoDate(review.expectedLocalBoundary)
+    && isIsoDate(review.expectedProviderPeriodStart)
+    && isIsoDate(review.expectedProviderPeriodEnd);
 }
 
 export function buildStructuredCompensationEvent(input: {
@@ -287,6 +331,7 @@ function previewFor(
   snapshot: LegacyRenewalSettlementSnapshot,
   outcome: LegacyRenewalSettlementAppliedOutcome | "manual_review_required" | "already_applied",
   compensationEvent: StructuredLegacyRenewalCompensationEvent | null = null,
+  reviewedBoundaryRepair: LegacyRenewalSettlementPreview["reviewedBoundaryRepair"] = null,
 ): LegacyRenewalSettlementPreview {
   const current = {
     nextBillingDate: snapshot.localSubscription?.nextBillingDate ?? null,
@@ -310,10 +355,10 @@ function previewFor(
     current,
     proposed: {
       nextBillingDate: appliesEntitlement
-        ? snapshot.providerSubscription?.renewalPeriodEnd ?? current.nextBillingDate
+        ? snapshot.providerSubscription?.nextPaymentDate ?? current.nextBillingDate
         : current.nextBillingDate,
       entitlementExpiresAt: appliesEntitlement
-        ? snapshot.providerSubscription?.renewalPeriodEnd ?? current.entitlementExpiresAt
+        ? snapshot.providerSubscription?.nextPaymentDate ?? current.entitlementExpiresAt
         : current.entitlementExpiresAt,
       totalPaid: appliesPayment && current.totalPaid !== null && payment
         ? current.totalPaid + payment.amount
@@ -324,6 +369,7 @@ function previewFor(
     executionPermitted: outcome === "payment_and_entitlement_applied"
       || outcome === "payment_applied_entitlement_already_granted",
     compensationEventId: compensationEvent?.billingEventId ?? null,
+    reviewedBoundaryRepair,
   };
 }
 
@@ -399,8 +445,56 @@ export function classifyLegacyRenewalSettlement(
   }
   if (!isIsoDate(providerSubscription.renewalPeriodStart)
     || !isIsoDate(providerSubscription.renewalPeriodEnd)
-    || Date.parse(providerSubscription.renewalPeriodStart) >= Date.parse(providerSubscription.renewalPeriodEnd)) {
+    || !isIsoDate(providerSubscription.nextPaymentDate)
+    || Date.parse(providerSubscription.renewalPeriodStart) >= Date.parse(providerSubscription.renewalPeriodEnd)
+    || Date.parse(providerSubscription.nextPaymentDate) - Date.parse(providerSubscription.renewalPeriodEnd) !== 1000) {
     return review("provider_period_invalid");
+  }
+
+  const invoice = snapshot.providerInvoice;
+  if (!invoice?.valid || invoice.state !== "paid"
+    || !invoice.invoiceCode || !invoice.transactionReference
+    || !isIsoDate(invoice.periodStart) || !isIsoDate(invoice.periodEnd)) {
+    return review("provider_invoice_invalid");
+  }
+  if (invoice.transactionReference !== payment.reference
+    || invoice.sourceSubscriptionCode !== input.subscriptionCode
+    || (invoice.subscriptionCode !== null && invoice.subscriptionCode !== input.subscriptionCode)
+    || (invoice.customerCode !== null && invoice.customerCode !== input.customerCode)
+    || (invoice.planCode !== null && invoice.planCode !== input.planCode)
+    || invoice.amount !== payment.amount
+    || (invoice.currency !== null
+      && invoice.currency.toUpperCase() !== payment.currency.toUpperCase())
+    || !sameInstant(invoice.periodStart, providerSubscription.renewalPeriodStart)
+    || !sameInstant(invoice.periodEnd, providerSubscription.renewalPeriodEnd)) {
+    return review("provider_invoice_mismatch");
+  }
+
+  const boundaryReview = input.reviewedBoundary;
+  let reviewedBoundaryRepair: LegacyRenewalSettlementPreview["reviewedBoundaryRepair"] = null;
+  if (boundaryReview) {
+    if (!sameInstant(subscription.nextBillingDate, boundaryReview.expectedLocalBoundary)
+      || !sameInstant(snapshot.entitlement.expiresAt, boundaryReview.expectedLocalBoundary)
+      || !sameInstant(providerSubscription.renewalPeriodStart, boundaryReview.expectedProviderPeriodStart)
+      || !sameInstant(providerSubscription.renewalPeriodEnd, boundaryReview.expectedProviderPeriodEnd)) {
+      return review("reviewed_boundary_invalid");
+    }
+    if (invoice.invoiceCode !== boundaryReview.invoiceCode) {
+      return review("reviewed_boundary_invoice_mismatch");
+    }
+    const boundaryDeltaMilliseconds = Date.parse(boundaryReview.expectedLocalBoundary)
+      - Date.parse(boundaryReview.expectedProviderPeriodStart);
+    if (boundaryDeltaMilliseconds <= 0 || boundaryDeltaMilliseconds > 5 * 60 * 1000) {
+      return review("reviewed_boundary_drift_out_of_range");
+    }
+    reviewedBoundaryRepair = {
+      reason: boundaryReview.reason,
+      invoiceCode: boundaryReview.invoiceCode,
+      localBoundary: boundaryReview.expectedLocalBoundary,
+      providerPeriodStart: boundaryReview.expectedProviderPeriodStart,
+      providerPeriodEnd: boundaryReview.expectedProviderPeriodEnd,
+      boundaryDeltaMilliseconds,
+    };
   }
 
   if (snapshot.existingPayment) {
@@ -441,8 +535,8 @@ export function classifyLegacyRenewalSettlement(
       || !sameInstant(compensation.previousEntitlementExpiresAt, providerSubscription.renewalPeriodStart)
       || !sameInstant(compensation.grantedPeriodStart, providerSubscription.renewalPeriodStart)
       || !sameInstant(compensation.grantedPeriodEnd, providerSubscription.renewalPeriodEnd)
-      || !sameInstant(compensation.resultingNextBillingDate, providerSubscription.renewalPeriodEnd)
-      || !sameInstant(compensation.resultingEntitlementExpiresAt, providerSubscription.renewalPeriodEnd)) {
+      || !sameInstant(compensation.resultingNextBillingDate, providerSubscription.nextPaymentDate)
+      || !sameInstant(compensation.resultingEntitlementExpiresAt, providerSubscription.nextPaymentDate)) {
       return review("compensation_interval_mismatch");
     }
     if (!sameInstant(subscription.nextBillingDate, compensation.resultingNextBillingDate)
@@ -467,6 +561,12 @@ export function classifyLegacyRenewalSettlement(
   }
   if (snapshot.legacyActivationEvents.length > 0) {
     return review("compensation_activation_not_explicitly_linked_to_payment");
+  }
+  if (reviewedBoundaryRepair) {
+    return {
+      outcome: "payment_and_entitlement_applied",
+      preview: previewFor(snapshot, "payment_and_entitlement_applied", null, reviewedBoundaryRepair),
+    };
   }
   return review("entitlement_boundary_mismatch");
 }
@@ -527,6 +627,7 @@ export function createLegacyRenewalSettlementService(
           planCode: input.planCode,
           compensationEventId: assessment.preview.compensationEventId,
           providerMutation: "none",
+          reviewedBoundaryRepair: assessment.preview.reviewedBoundaryRepair,
         });
         return assessment;
       });

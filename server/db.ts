@@ -19,9 +19,18 @@ export const pool = new pg.Pool({
   keepAlive: true, // Add keepAlive to prevent connection drops
 });
 
+export function databasePoolSnapshot() {
+  return {
+    total: pool.totalCount,
+    idle: pool.idleCount,
+    waiting: pool.waitingCount,
+    max: pool.options.max,
+  };
+}
+
 // Set up error handling for the pool
 pool.on('error', (err) => {
-  log(`Unexpected database pool error: ${err}`, 'db');
+  log(`Unexpected database pool error: ${err}; pool=${JSON.stringify(databasePoolSnapshot())}`, 'db');
   // In a production environment, you might want to attempt to reconnect
 });
 

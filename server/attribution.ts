@@ -50,14 +50,14 @@ export async function recordAttributionVisit(visitorId: string, touch: Attributi
   return pool.query(
     `INSERT INTO attribution_visitors
        (visitor_id, first_touch, latest_touch, first_seen_at, latest_seen_at, session_started_at)
-     VALUES ($1, $2::jsonb, $2::jsonb, $3, $3, $3)
+     VALUES ($1, $2::jsonb, $2::jsonb, $3::timestamptz, $3::timestamptz, $3::timestamptz)
      ON CONFLICT (visitor_id) DO UPDATE SET
-       latest_touch = CASE WHEN $4 AND attribution_visitors.latest_seen_at <= $3 - INTERVAL '30 minutes'
+       latest_touch = CASE WHEN $4 AND attribution_visitors.latest_seen_at <= $3::timestamptz - INTERVAL '30 minutes'
                            THEN EXCLUDED.latest_touch ELSE attribution_visitors.latest_touch END,
-       latest_seen_at = CASE WHEN $4 AND attribution_visitors.latest_seen_at <= $3 - INTERVAL '30 minutes'
-                             THEN $3 ELSE attribution_visitors.latest_seen_at END,
-       session_started_at = CASE WHEN $4 AND attribution_visitors.latest_seen_at <= $3 - INTERVAL '30 minutes'
-                                 THEN $3 ELSE attribution_visitors.session_started_at END
+       latest_seen_at = CASE WHEN $4 AND attribution_visitors.latest_seen_at <= $3::timestamptz - INTERVAL '30 minutes'
+                             THEN $3::timestamptz ELSE attribution_visitors.latest_seen_at END,
+       session_started_at = CASE WHEN $4 AND attribution_visitors.latest_seen_at <= $3::timestamptz - INTERVAL '30 minutes'
+                                 THEN $3::timestamptz ELSE attribution_visitors.session_started_at END
      RETURNING visitor_id`,
     [visitorId, JSON.stringify(touch), now, qualifying],
   );
@@ -69,7 +69,7 @@ export async function attachAttributionVisitor(visitorId: string, userId: number
   const result = await pool.query(
     `UPDATE attribution_visitors SET user_id = $2
        WHERE visitor_id = $1 AND user_id IS NULL
-         AND first_seen_at >= $3 - INTERVAL '90 days'
+         AND first_seen_at >= $3::timestamptz - INTERVAL '90 days'
      RETURNING visitor_id`,
     [visitorId, userId, now],
   );

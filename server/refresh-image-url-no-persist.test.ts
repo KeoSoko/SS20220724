@@ -26,14 +26,14 @@ import { join } from 'path';
 // --- Spies we assert on -----------------------------------------------------
 const getReceipt = vi.fn();
 const updateReceipt = vi.fn();
-const generateSasUrl = vi.fn();
+const resolveReceiptImageLink = vi.fn();
 
 // --- Mock side-effecting / heavy modules so importing ./routes is clean -----
 vi.mock('./auth', () => ({ setupAuth: vi.fn(), comparePasswords: vi.fn() }));
 vi.mock('./admin-routes', () => ({ registerAdminRoutes: vi.fn() }));
 vi.mock('./vite', () => ({ log: vi.fn(), setupVite: vi.fn(), serveStatic: vi.fn() }));
 vi.mock('./storage', () => ({ storage: { getReceipt, updateReceipt } }));
-vi.mock('./azure-storage', () => ({ azureStorage: { generateSasUrl } }));
+vi.mock('./azure-storage', () => ({ azureStorage: { resolveReceiptImageLink } }));
 vi.mock('./azure-form-recognizer', () => ({ azureFormRecognizer: {} }));
 vi.mock('./ai-categorization', () => ({ aiCategorizationService: {} }));
 vi.mock('./smart-search-service', () => ({ smartSearchService: {} }));
@@ -93,6 +93,7 @@ function makeRes() {
   res.status = vi.fn(() => res);
   res.json = vi.fn(() => res);
   res.sendStatus = vi.fn(() => res);
+  res.setHeader = vi.fn(() => res);
   return res;
 }
 
@@ -118,7 +119,7 @@ describe('GET /api/receipts/:id/refresh-image-url (behavioural)', () => {
       blobName: 'receipt_1.jpg',
       blobUrl: STALE_BLOB_URL,
     });
-    generateSasUrl.mockResolvedValue(FRESH_SAS_URL);
+    resolveReceiptImageLink.mockResolvedValue({ status: "available", imageUrl: FRESH_SAS_URL });
 
     const req: any = {
       params: { id: '1' },
@@ -130,8 +131,9 @@ describe('GET /api/receipts/:id/refresh-image-url (behavioural)', () => {
     await handler(req, res);
 
     // A fresh URL was generated from the durable blobName and returned to the client.
-    expect(generateSasUrl).toHaveBeenCalledWith('receipt_1.jpg', expect.anything());
-    expect(res.json).toHaveBeenCalledWith({ imageUrl: FRESH_SAS_URL });
+    expect(resolveReceiptImageLink).toHaveBeenCalledWith('receipt_1.jpg');
+    expect(res.json).toHaveBeenCalledWith({ status: "available", imageUrl: FRESH_SAS_URL });
+    expect(res.setHeader).toHaveBeenCalledWith("Cache-Control", "private, no-store");
     expect(res.status).not.toHaveBeenCalledWith(500);
 
     // The bug guard: nothing was ever written back to the receipt.
@@ -151,7 +153,56 @@ describe('GET /api/receipts/:id/refresh-image-url (behavioural)', () => {
     await handler(req, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(generateSasUrl).not.toHaveBeenCalled();
+    expect(resolveReceiptImageLink).not.toHaveBeenCalled();
+    expect(updateReceipt).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", 404], ["configuration_unavailable", 503], ["inaccessible", 403],
+    ["archived", 409], ["rehydrating", 409], ["temporarily_unavailable", 503],
+  ])("returns a safe %s state without persisting", async (status, httpStatus) => {
+    getReceipt.mockResolvedValue({ id: 1, userId: 5, blobName: "receipt_1.jpg" });
+    resolveReceiptImageLink.mockResolvedValue({ status });
+    const res = makeRes();
+    await handler({ params: { id: "1" }, isAuthenticated: () => true, user: { id: 5 } }, res);
+    expect(res.status).toHaveBeenCalledWith(httpStatus);
+    expect(res.json).toHaveBeenCalledWith({ status, error: expect.any(String) });
+    expect(JSON.stringify(res.json.mock.calls)).not.toMatch(/sig=|AccountKey=/);
+    expect(updateReceipt).not.toHaveBeenCalled();
+  });
+
+  it("does not inspect or sign images for unauthenticated requests", async () => {
+    const res = makeRes();
+    await handler({ params: { id: "1" }, isAuthenticated: () => false }, res);
+    expect(res.sendStatus).toHaveBeenCalledWith(401);
+    expect(getReceipt).not.toHaveBeenCalled();
+    expect(resolveReceiptImageLink).not.toHaveBeenCalled();
+  });
+
+  it("preserves the existing receipt authorization gate", async () => {
+    getReceipt.mockResolvedValue({ id: 1, userId: 6, blobName: "receipt_1.jpg" });
+    const res = makeRes();
+    await handler({ params: { id: "1" }, isAuthenticated: () => true, user: { id: 5 } }, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(resolveReceiptImageLink).not.toHaveBeenCalled();
+    expect(updateReceipt).not.toHaveBeenCalled();
+  });
+
+  it("does not inspect storage for missing receipts", async () => {
+    getReceipt.mockResolvedValue(null);
+    const res = makeRes();
+    await handler({ params: { id: "1" }, isAuthenticated: () => true, user: { id: 5 } }, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(resolveReceiptImageLink).not.toHaveBeenCalled();
+  });
+
+  it("does not expose provider exceptions", async () => {
+    getReceipt.mockResolvedValue({ id: 1, userId: 5, blobName: "receipt_1.jpg" });
+    resolveReceiptImageLink.mockRejectedValue(new Error("https://storage/private?sig=secret"));
+    const res = makeRes();
+    await handler({ params: { id: "1" }, isAuthenticated: () => true, user: { id: 5 } }, res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain("secret");
     expect(updateReceipt).not.toHaveBeenCalled();
   });
 });
@@ -171,7 +222,8 @@ describe('refresh-image-url handler (source invariant)', () => {
     expect(handlerSource).not.toMatch(/storage\.updateReceipt/);
 
     // Sanity: it really is the handler that generates a SAS URL and responds with it.
-    expect(handlerSource).toMatch(/generateSasUrl/);
-    expect(handlerSource).toMatch(/imageUrl:\s*sasUrl/);
+    expect(handlerSource).toMatch(/resolveReceiptImageLink/);
+    expect(handlerSource).toMatch(/res.json\(result\)/);
+    expect(handlerSource).not.toContain("${error}");
   });
 });

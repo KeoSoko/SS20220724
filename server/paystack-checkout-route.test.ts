@@ -359,5 +359,7 @@ describe("Paystack route safety invariants", () => {
     );
     expect(source).toContain("resolveBillingOwner(userId)");
     expect(source).toContain('billingOwner.relationship === "workspace_member"');
+    expect(source).toContain('billingOwner.state === "resolved" && billingOwner.canManageBilling');
+    expect(source).toContain('getPaystackCardManagementStatus(billingOwner.billingOwnerUserId)');
   });
 });

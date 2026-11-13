@@ -14,6 +14,8 @@ import { PageLayout } from '@/components/page-layout';
 import { ContentCard } from '@/components/design-system';
 import { Link } from 'wouter';
 import { PaystackBilling } from '@/components/paystack-billing';
+import { PaystackCardManagement } from '@/components/paystack-card-management';
+import type { PaystackCardManagementState } from '@shared/paystack-card-management';
 import { iosPurchaseBridge, purchaseSimpleSlipsPremium, restoreSimpleSlipsPurchases, isIOSPurchaseAvailable } from '@/lib/ios-purchase-bridge';
 
 interface SubscriptionPlan {
@@ -158,7 +160,7 @@ export function SubscriptionPage() {
     );
   }
 
-  const { data: statusData } = useQuery<{
+  const { data: statusData, refetch: refreshCardManagementStatus, isFetching: statusFetching, isError: statusError } = useQuery<{
     hasActiveSubscription: boolean;
     isInTrial: boolean;
     subscriptionType: string;
@@ -169,6 +171,7 @@ export function SubscriptionPage() {
     renewalState?: 'not_due' | 'reconciling' | 'payment_failed' | 'renewal_setup_required' | 'automatic_renewal_active' | 'subscription_active' | 'payment_method_needs_attention' | 'manual_review_required';
     renewalRecoveryCheckoutEligible?: boolean;
     renewalManagementLinkEligible?: boolean;
+    cardManagementState?: PaystackCardManagementState;
     workspaceContext: {
       isOwner: boolean;
       workspaceName?: string;
@@ -495,17 +498,54 @@ export function SubscriptionPage() {
       'POST',
       '/api/billing/paystack/subscription/manage-link',
     )).json() as Promise<{ url: string }>,
-    onSuccess: ({ url }) => {
-      window.location.assign(url);
-    },
     onError: (error: any) => {
       toast({
         title: "Unable to open Paystack",
-        description: error?.message || "We’re still confirming your renewal status. Please try again shortly.",
+        description: `${error?.message || "Paystack card management is temporarily unavailable."} Retry status or contact support. Do not start another checkout to change your card.`,
         variant: "destructive",
       });
     },
   });
+
+  const openPaymentMethodManager = () => {
+    // Opening the tab during the click keeps browsers from treating it as an
+    // unsolicited popup while the server verifies the Paystack relationship.
+    const paystackWindow = window.open('about:blank', 'paystack-subscription-management');
+    if (paystackWindow) {
+      paystackWindow.opener = null;
+      paystackWindow.document.title = 'Opening secure Paystack page…';
+    }
+
+    managePaymentMethodMutation.mutate(undefined, {
+      onSuccess: ({ url }) => {
+        if (paystackWindow && !paystackWindow.closed) {
+          paystackWindow.location.replace(url);
+        } else {
+          window.location.assign(url);
+        }
+      },
+      onError: () => {
+        paystackWindow?.close();
+        void refreshCardManagementStatus();
+      },
+    });
+  };
+
+  useEffect(() => {
+    const refreshSubscriptionAfterPaystack = () => {
+      if (document.visibilityState !== 'visible') return;
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/subscription/status'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/transactions'] });
+    };
+
+    window.addEventListener('focus', refreshSubscriptionAfterPaystack);
+    document.addEventListener('visibilitychange', refreshSubscriptionAfterPaystack);
+    return () => {
+      window.removeEventListener('focus', refreshSubscriptionAfterPaystack);
+      document.removeEventListener('visibilitychange', refreshSubscriptionAfterPaystack);
+    };
+  }, [queryClient]);
 
   // Show errors if any critical API calls fail
   if (plansError) {
@@ -662,18 +702,16 @@ export function SubscriptionPage() {
                         </AlertDescription>
                       </Alert>
                     )}
-                    {paymentMethodNeedsAttention && statusData?.renewalManagementLinkEligible && (
-                      <Button
-                        size="sm"
-                        onClick={() => managePaymentMethodMutation.mutate()}
-                        disabled={managePaymentMethodMutation.isPending}
-                        data-testid="button-update-paystack-payment-method"
-                      >
-                        {managePaymentMethodMutation.isPending && (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        )}
-                        Update payment method
-                      </Button>
+                    {!cancellationPending && !cancellationNeedsReview && !cancellationConfirmed && (
+                      <PaystackCardManagement
+                        state={statusData?.cardManagementState === "hidden" ? "hidden"
+                          : statusError && statusData?.cardManagementState ? "unavailable"
+                          : statusData?.cardManagementState ?? "hidden"}
+                        busy={managePaymentMethodMutation.isPending}
+                        fetching={statusFetching}
+                        refresh={refreshCardManagementStatus}
+                        open={openPaymentMethodManager}
+                      />
                     )}
                   </div>
                 </div>
@@ -770,25 +808,11 @@ export function SubscriptionPage() {
                          {manualReviewRequired ? 'Renewal needs review' : 'Renewal being checked'}
                       </Badge>
                      ) : paymentMethodNeedsAttention ? (
-                       statusData?.renewalManagementLinkEligible ? (
-                         <Button
-                           className="w-full"
-                           onClick={() => managePaymentMethodMutation.mutate()}
-                           disabled={managePaymentMethodMutation.isPending}
-                           data-testid="button-update-paystack-payment-method-plan"
-                         >
-                           {managePaymentMethodMutation.isPending && (
-                             <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                           )}
-                           Update payment method
-                         </Button>
-                       ) : (
                          <Alert className="border-amber-300 bg-amber-50">
                            <AlertDescription className="text-amber-900 text-sm">
-                             Your payment method needs attention. Please contact support while we confirm the safest way to update your automatic renewal.
+                             Your payment method needs attention. Use Change payment card in Current Subscription, or contact support if it is unavailable. Do not start another checkout to update your card.
                            </AlertDescription>
                          </Alert>
-                       )
                     ) : subscription?.planId === selectedBillingPlan.id
                     && subscription?.status === 'active'
                     && !needsPaymentRecovery ? (

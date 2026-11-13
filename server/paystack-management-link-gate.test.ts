@@ -4,6 +4,19 @@ import { readFileSync } from "node:fs";
 vi.mock("./vite", () => ({ log: vi.fn() }));
 vi.mock("./email-service", () => ({ emailService: null }));
 vi.mock("./storage", () => ({ storage: {} }));
+vi.mock("./db", () => ({
+  db: {
+    select: () => {
+      const chain: any = {
+        from: () => chain,
+        where: () => chain,
+        orderBy: () => chain,
+        limit: async () => [],
+      };
+      return chain;
+    },
+  },
+}));
 
 import {
   BillingService,
@@ -14,6 +27,9 @@ const routes = readFileSync(new URL("./routes.ts", import.meta.url), "utf8");
 const subscriptionPage = readFileSync(
   new URL("../client/src/pages/subscription-page.tsx", import.meta.url),
   "utf8",
+);
+const cardManagement = readFileSync(
+  new URL("../client/src/components/paystack-card-management.tsx", import.meta.url), "utf8",
 );
 const originalManagementLinkFlag = process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED;
 
@@ -39,6 +55,34 @@ async function renewalStatusWithNotReadyIdentity() {
   (service as any).getPaystackBillingSchemaReadiness = vi.fn().mockResolvedValue({ ready: true });
   (service as any).getActivePaystackSubscriptionIdentity = vi.fn().mockResolvedValue({
     recurringReadiness: "not_ready",
+  });
+  return service.getPaystackRenewalStatus(42);
+}
+
+async function renewalStatusWithReadyIdentity() {
+  const service = new BillingService();
+  (service as any).getUserSubscription = vi.fn().mockResolvedValue({
+    status: "active",
+    nextBillingDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    paystackReference: "reference",
+  });
+  (service as any).getPaystackBillingSchemaReadiness = vi.fn().mockResolvedValue({ ready: true });
+  (service as any).getActivePaystackSubscriptionIdentity = vi.fn().mockResolvedValue({
+    recurringReadiness: "ready",
+  });
+  return service.getPaystackRenewalStatus(42);
+}
+
+async function renewalStatusWithUnknownIdentity() {
+  const service = new BillingService();
+  (service as any).getUserSubscription = vi.fn().mockResolvedValue({
+    status: "active",
+    nextBillingDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    paystackReference: "reference",
+  });
+  (service as any).getPaystackBillingSchemaReadiness = vi.fn().mockResolvedValue({ ready: true });
+  (service as any).getActivePaystackSubscriptionIdentity = vi.fn().mockResolvedValue({
+    recurringReadiness: "unknown",
   });
   return service.getPaystackRenewalStatus(42);
 }
@@ -101,16 +145,10 @@ describe("Paystack management-link release gate", () => {
     expect(management).not.toContain("refund");
   });
 
-  it("hides both management CTAs and renders support guidance when unavailable", () => {
-    expect(subscriptionPage).toContain(
-      "paymentMethodNeedsAttention && statusData?.renewalManagementLinkEligible",
-    );
-    expect(subscriptionPage).toContain(
-      "statusData?.renewalManagementLinkEligible ? (",
-    );
-    expect(subscriptionPage).toContain(
-      "Your payment method needs attention. Please contact support while we confirm the safest way to update your automatic renewal.",
-    );
+  it("keeps one disabled card action discoverable and payment-attention guidance free of checkout", () => {
+    expect(subscriptionPage).toContain("<PaystackCardManagement");
+    expect(cardManagement).toContain('disabled={state !== "ready" || busy}');
+    expect(cardManagement).toContain("Contact support");
 
     const paymentAttentionBranchStart = subscriptionPage.indexOf(") : paymentMethodNeedsAttention ? (");
     const nextPlanBranchStart = subscriptionPage.indexOf(") : subscription?.planId", paymentAttentionBranchStart);
@@ -118,6 +156,37 @@ describe("Paystack management-link release gate", () => {
     expect(paymentAttentionBranch).toContain("<Alert");
     expect(paymentAttentionBranch).not.toContain("handleSubscribe");
     expect(paymentAttentionBranch).not.toContain("Restore automatic renewal");
+  });
+
+  it("offers the guarded card-change path to a healthy active subscriber", async () => {
+    process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED = "true";
+
+    await expect(renewalStatusWithReadyIdentity()).resolves.toMatchObject({
+      state: "automatic_renewal_active",
+      managementLinkEligible: true,
+      recoveryCheckoutEligible: false,
+    });
+    expect(cardManagement).toContain("Change payment card");
+    expect(cardManagement).toContain('data-testid="button-change-paystack-payment-card"');
+  });
+
+  it("offers card management for an active trusted identity with legacy readiness", async () => {
+    process.env.PAYSTACK_SUBSCRIPTION_MANAGEMENT_LINK_ENABLED = "true";
+
+    await expect(renewalStatusWithUnknownIdentity()).resolves.toMatchObject({
+      state: "subscription_active",
+      managementLinkEligible: true,
+      recoveryCheckoutEligible: false,
+    });
+  });
+
+  it("keeps Simple Slips open and refreshes billing state after Paystack management", () => {
+    expect(subscriptionPage).toContain("window.open('about:blank', 'paystack-subscription-management')");
+    expect(subscriptionPage).toContain("paystackWindow.location.replace(url)");
+    expect(subscriptionPage).toContain("window.addEventListener('focus', refreshSubscriptionAfterPaystack)");
+    expect(subscriptionPage).toContain("document.addEventListener('visibilitychange', refreshSubscriptionAfterPaystack)");
+    expect(subscriptionPage).toContain("queryKey: ['/api/billing/subscription']");
+    expect(subscriptionPage).toContain("queryKey: ['/api/subscription/status']");
   });
 
   it("does not mislabel or offer an unverified new checkout as a card update", () => {

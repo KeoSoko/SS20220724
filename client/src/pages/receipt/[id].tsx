@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToPDF } from "@/lib/export-individual";
 import { optimizeImage } from "@/utils/image-optimization";
+import { useReceiptImage } from "@/hooks/use-receipt-image";
 import { 
   ArrowLeft, 
   Calendar, 
@@ -128,10 +129,6 @@ export default function ReceiptDetail() {
   const [isAddingNewLabel, setIsAddingNewLabel] = useState(false);
   const [newLabelInput, setNewLabelInput] = useState("");
   const [editedNotes, setEditedNotes] = useState("");
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [isRefreshingImage, setIsRefreshingImage] = useState(false);
-  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
-  const [imageErrorCount, setImageErrorCount] = useState<number>(0);
   const [isAttachingImage, setIsAttachingImage] = useState(false);
   
   // Advanced categorization state
@@ -152,6 +149,7 @@ export default function ReceiptDetail() {
   const handleAttachImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !receipt) return;
+    const attachmentController = image.controller;
     try {
       setIsAttachingImage(true);
       const optimized = await optimizeImage(file, "receipt");
@@ -159,7 +157,7 @@ export default function ReceiptDetail() {
         imageData: optimized.dataUrl,
       });
       const attachData = await attachRes.json();
-      setImageUrl(attachData.imageUrl || optimized.dataUrl);
+      attachmentController.replace(attachData.imageUrl || optimized.dataUrl);
       queryClient.invalidateQueries({ queryKey: [`/api/receipts/${id}`] });
       toast({ title: "Image updated", description: "Receipt image has been saved." });
     } catch (error) {
@@ -175,6 +173,9 @@ export default function ReceiptDetail() {
     queryKey: [`/api/receipts/${id}`],
     enabled: isValidId, // Only run query if ID is valid
   });
+  const image = useReceiptImage(receiptId, receipt);
+  const imageUrl = image.url;
+  const isRefreshingImage = image.phase === "refreshing";
 
   const isEmailBodyReceipt = receipt?.source === 'email';
 
@@ -232,7 +233,6 @@ export default function ReceiptDetail() {
   // Handle receipt data when it loads
   useEffect(() => {
     if (receipt) {
-      console.log(`Receipt data loaded:`, { blobUrl: receipt.blobUrl, imageData: receipt.imageData, blobName: receipt.blobName });
       
       // Initialize form with current values
       setEditedStoreName(receipt.storeName);
@@ -254,56 +254,8 @@ export default function ReceiptDetail() {
       setIsTaxDeductible(receipt.isTaxDeductible || false);
       setTaxCategory(receipt.taxCategory || "");
 
-      // Handle image URL - prioritize local imageData over Azure blobUrl
-      // Since Azure storage isn't set up, imageData (base64) should be used if available
-      const storedImageUrl = receipt.imageData || receipt.blobUrl || null;
-      console.log(`Setting image URL for receipt ${receipt.id}:`, storedImageUrl ? 'URL/data available' : 'No image');
-      console.log(`Image source: ${receipt.imageData ? 'Local storage (base64)' : receipt.blobUrl ? 'Azure blob' : 'None'}`);
-      setImageUrl(storedImageUrl);
     }
   }, [receipt, hasUserModifiedCategory]);
-
-  // Refresh image URL mutation
-  const refreshImageMutation = useMutation({
-    mutationFn: async () => {
-      // Early validation - prevent API calls with invalid IDs
-      if (!isValidId) {
-        throw new Error("Invalid receipt ID");
-      }
-
-      setIsRefreshingImage(true);
-      const res = await apiRequest("GET", `/api/receipts/${id}/refresh-image-url`);
-      return await res.json();
-    },
-    onSuccess: (data) => {
-      // Update the image URL with the new SAS URL and force browser cache refresh
-      const cacheBustedUrl = `${data.imageUrl}&cache=${Date.now()}`;
-      setImageUrl(cacheBustedUrl);
-      
-      // Also invalidate the receipt query to ensure fresh data
-      queryClient.invalidateQueries({ queryKey: ["/api/receipts", id] });
-      
-      toast({
-        title: "Image URL refreshed",
-        description: "The receipt image link has been updated",
-      });
-    },
-    onError: (error: Error) => {
-      // Don't show 404 errors to user - Azure storage may not be configured
-      // Only show toast for unexpected errors
-      if (!error.message.includes("404") && !error.message.includes("Image not available")) {
-        toast({
-          title: "Failed to refresh image URL",
-          description: error.message,
-          variant: "destructive",
-        });
-      }
-      console.log("Refresh image failed (expected when Azure storage not configured):", error.message);
-    },
-    onSettled: () => {
-      setIsRefreshingImage(false);
-    }
-  });
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -589,23 +541,6 @@ export default function ReceiptDetail() {
                     setEditedCategory(receipt.category as ExpenseCategory);
                     setReportLabel(receipt.reportLabel || "");
                     setEditedNotes(receipt.notes || "");
-                    
-                    // Auto-refresh image URL when entering edit mode
-                    if (receipt.blobName) {
-                      try {
-                        setIsRefreshingImage(true);
-                        const res = await apiRequest("GET", `/api/receipts/${id}/refresh-image-url`);
-                        const data = await res.json();
-                        if (data.imageUrl) {
-                          console.log("Successfully refreshed image URL when entering edit mode");
-                          setImageUrl(data.imageUrl);
-                        }
-                      } catch (error) {
-                        console.error("Failed to refresh image URL in edit mode:", error);
-                      } finally {
-                        setIsRefreshingImage(false);
-                      }
-                    }
                     
                     setIsEditing(true);
                   }}
@@ -1109,15 +1044,15 @@ export default function ReceiptDetail() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => refreshImageMutation.mutate()}
-                  disabled={refreshImageMutation.isPending || isRefreshingImage}
+                  onClick={() => void image.refresh()}
+                  disabled={isRefreshingImage}
                 >
-                  {refreshImageMutation.isPending || isRefreshingImage ? (
+                  {isRefreshingImage ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : (
                     <RefreshCcw className="h-4 w-4 mr-2" />
                   )}
-                  Refresh URL
+                   Retry Image
                 </Button>
               )}
               {!emailHtmlContent && isEditing && (
@@ -1150,7 +1085,17 @@ export default function ReceiptDetail() {
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 <span className="ml-2 text-muted-foreground">Loading image...</span>
               </div>
-            ) : imageUrl && (imageUrl.includes('.pdf') || imageUrl.includes('application/pdf')) ? (
+             ) : image.phase === "failed" || image.phase === "missing" ? (
+               <div role="status" className="flex flex-col items-center justify-center h-[400px] w-full bg-gray-50 border-2 border-dashed border-gray-300 rounded-none">
+                 <FileText className="h-12 w-12 text-gray-400 mb-4" />
+                 <p className="text-gray-600 text-center max-w-md px-4">{image.message}</p>
+                 {receipt.blobName && !receipt.imageData && (
+                   <Button className="mt-4" variant="outline" onClick={() => void image.refresh()}>
+                     <RefreshCcw className="h-4 w-4 mr-2" />Retry Image
+                   </Button>
+                 )}
+               </div>
+             ) : imageUrl && (imageUrl.includes('.pdf') || imageUrl.includes('application/pdf')) ? (
               <div className="w-full flex flex-col items-center">
                 <a
                   href={imageUrl}
@@ -1180,55 +1125,19 @@ export default function ReceiptDetail() {
                   </div>
                 </div>
               </div>
-            ) : imageErrorCount >= 3 && receipt?.blobName && !receipt?.imageData ? (
-              <div className="flex flex-col items-center justify-center h-[400px] w-full bg-gray-50 border-2 border-dashed border-gray-300 rounded-none">
-                <FileText className="h-12 w-12 text-gray-400 mb-4" />
-                <p className="text-gray-600 text-center max-w-md">
-                  Receipt image stored in cloud storage (Azure) but not currently accessible.
-                </p>
-                <p className="text-sm text-gray-500 mt-2">
-                  The receipt data is safely stored and can be viewed once cloud storage is configured.
-                </p>
-              </div>
-            ) : (
+             ) : imageUrl ? (
+               <div className="flex flex-col items-center">
+               {image.phase === "loading" && <p role="status" className="text-sm text-muted-foreground mb-2">Loading receipt image…</p>}
               <img
-                src={imageUrl || "https://placehold.co/300x400/lightgray/gray?text=No+Image"}
+                 key={imageUrl}
+                 src={imageUrl}
                 alt="Receipt"
                 className="max-w-full max-h-[600px] object-contain rounded-none"
-                onLoad={() => {
-                  setImageErrorCount(0);
-                }}
-                onError={async (e) => {
-                  const now = Date.now();
-                  
-                  setImageErrorCount(prev => prev + 1);
-                  
-                  if (now - lastRefreshTime > 10000 && imageErrorCount < 3 && receipt?.blobName && !isRefreshingImage) {
-                    console.log(`Image failed to load, attempting refresh... (attempt ${imageErrorCount + 1}/3)`);
-                    try {
-                      setIsRefreshingImage(true);
-                      setLastRefreshTime(now);
-                      
-                      const res = await apiRequest("GET", `/api/receipts/${id}/refresh-image-url`);
-                      const { imageUrl } = await res.json();
-                      if (imageUrl && imageUrl !== (e.target as HTMLImageElement).src) {
-                        console.log("Got new image URL, updating...");
-                        const cacheBustedUrl = `${imageUrl}&cache=${Date.now()}`;
-                        setImageUrl(cacheBustedUrl);
-                      } else {
-                        console.log("No new URL available, keeping current");
-                      }
-                    } catch (error) {
-                      console.error("Failed to refresh image URL:", error);
-                    } finally {
-                      setIsRefreshingImage(false);
-                    }
-                  } else {
-                    console.log(`Rate limited: skipping image refresh (error count: ${imageErrorCount + 1})`);
-                  }
-                }}
+                 onLoad={() => image.controller.loaded(imageUrl)}
+                 onError={() => image.controller.failed(imageUrl)}
               />
-            )}
+               </div>
+             ) : <p role="status">Loading receipt image…</p>}
           </CardContent>
         </Card>
       </div>

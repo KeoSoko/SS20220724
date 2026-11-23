@@ -151,7 +151,7 @@ export class EmailService {
   /**
    * Send a generic plain text email (used for admin alerts)
    */
-  async sendEmail(to: string, subject: string, body: string, htmlBody?: string): Promise<boolean> {
+  async sendEmail(to: string, subject: string, body: string, htmlBody?: string, trackClicks = true): Promise<boolean> {
     if (!process.env.SENDGRID_API_KEY) {
       logger.error("Cannot send email - SENDGRID_API_KEY not configured");
       return false;
@@ -174,6 +174,7 @@ export class EmailService {
         subject,
         text: body,
         html,
+        ...(!trackClicks && { trackingSettings: { clickTracking: { enable: false, enableText: false } } }),
       });
       logger.info(`[EMAIL] Admin alert sent to: ${to}, subject: ${subject}`);
       return true;

@@ -72,6 +72,7 @@ import { smartReminderService } from "./smart-reminder-service";
 import { resolveInitialCategorySource, resolveReceiptSource, shouldRunAiCategorization } from "./receipt-flow-utils";
 import { runWorkspaceIntegrityValidator } from "./workspace-integrity-validator";
 import { profitLossService } from "./profit-loss-service";
+import { registerAccountantRoutes } from "./accountant-routes";
 import { registerAdminRoutes } from "./admin-routes";
 import { registerAttributionRoutes } from "./attribution";
 import { checkFeatureAccess, requireSubscription, getSubscriptionStatus, getEffectiveSubscriptionStatus } from "./subscription-middleware";
@@ -1053,6 +1054,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
   registerAttributionRoutes(app);
   registerAdminRoutes(app);
+  registerAccountantRoutes(app, requireVerifiedEmail, requireWorkspaceRole("owner"), getUserId);
 
   // ===== HEALTH CHECK ENDPOINT =====
   // Required for Replit deployment health checks - must not require authentication

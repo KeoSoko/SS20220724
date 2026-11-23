@@ -17,6 +17,7 @@ import HomePage from "@/pages/home-page";
 import UploadReceipt from "@/pages/upload-receipt";
 import ReceiptDetail from "@/pages/receipt/[id]";
 import AnalyticsPage from "@/pages/analytics-page";
+import { AccountantAccess, AccountantReports } from "@/pages/accountant-access";
 import ProfilePage from "@/pages/profile-page";
 import SplashScreen from "@/pages/splash-screen";
 import TaxProsPage from "@/pages/tax-pros-page";
@@ -97,6 +98,8 @@ function Router() {
       <ProtectedRoute path="/invoices" component={InvoicesPage} />
       <ProtectedRoute path="/invoices/new" component={InvoiceFormPage} />
       <ProtectedRoute path="/invoices/:id/edit" component={InvoiceFormPage} />
+      <Route path="/accountant-reports/:id" component={AccountantReports} />
+      <ProtectedRoute path="/accountant-access" component={AccountantAccess} />
       <ProtectedRoute path="/profile" component={() => <ProfilePage />} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/accept-invite" component={AcceptInvitePage} />

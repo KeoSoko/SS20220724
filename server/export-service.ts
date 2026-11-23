@@ -8,7 +8,7 @@ import { storage } from './storage.js';
 import { azureStorage } from './azure-storage.js';
 import { formatReportingCategory, getReportingCategory } from './reporting-utils.js';
 import { db } from './db.js';
-import { emailDocuments } from '../shared/schema.js';
+import { emailDocuments, receipts as receiptTable } from '../shared/schema.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { createServerLogger } from "./logger";
 import { isReceiptWithinExportDateRange } from "./export-date-range";
@@ -31,6 +31,7 @@ export interface ReceiptPdfExportResult {
 }
 
 interface ReceiptExportSelection {
+  workspaceId?: number;
   startDate?: Date;
   endDateExclusive?: Date;
   category?: string;
@@ -152,7 +153,9 @@ export class ExportService {
     userId: number,
     selection: ReceiptExportSelection = {},
   ): Promise<Receipt[]> {
-    const receipts = await storage.getReceiptsByUser(userId, 10000);
+    const receipts = selection.workspaceId === undefined
+      ? await storage.getReceiptsByUser(userId, 10000)
+      : await db.select().from(receiptTable).where(eq(receiptTable.workspaceId, selection.workspaceId));
     const selected = receipts.filter((receipt) => {
       if (selection.deductibleOnly && !receipt.isTaxDeductible) return false;
       if (!isReceiptWithinExportDateRange(receipt.date, selection)) return false;
@@ -927,6 +930,7 @@ export class ExportService {
    * Generate tax report for a specific year
    */
   async generateTaxReport(userId: number, taxYear: number, options?: {
+    workspaceId?: number;
     startDate?: Date;
     endDateExclusive?: Date;
     category?: string;

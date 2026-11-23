@@ -107,6 +107,21 @@ export const workspaceInvites = pgTable("workspace_invites", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const accountantReportAccess = pgTable("accountant_report_access", {
+  id: uuid("id").primaryKey(),
+  workspaceId: integer("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  year: integer("year").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  tokenHash: text("token_hash"),
+  tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
+  sessionHash: text("session_hash"),
+}, (table) => ({
+  workspaceIndex: index("accountant_report_access_workspace_idx").on(table.workspaceId),
+}));
+
 // Define the users table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),

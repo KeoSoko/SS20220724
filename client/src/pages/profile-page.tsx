@@ -817,6 +817,8 @@ function WorkspaceSection() {
           /* ───── OWNER LAYOUT ───── */
           <div className="space-y-6">
 
+            <a href="/accountant-access" className="text-sm underline">Accountant Access</a>
+
             {/* Company Overview */}
             <div className="border rounded-none p-5 bg-white shadow-sm">
               <div className="flex items-center justify-between mb-4">
